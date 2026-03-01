@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Document Shared</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .header { background: #1a3c6e; padding: 32px 40px; text-align: center; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 24px; }
+    .body { padding: 32px 40px; color: #333333; line-height: 1.6; }
+    .doc-box { background: #f0f4ff; border-left: 4px solid #1a3c6e; padding: 16px 20px; border-radius: 4px; margin: 20px 0; }
+    .doc-box p { margin: 0; font-weight: bold; color: #1a3c6e; }
+    .btn { display: inline-block; margin-top: 24px; padding: 12px 28px; background: #1a3c6e; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: bold; }
+    .footer { background: #f4f6f8; padding: 20px 40px; text-align: center; font-size: 12px; color: #888888; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Document Shared with You</h1>
+    </div>
+    <div class="body">
+      <p>Dear <strong>{{clientName}}</strong>,</p>
+      <p>A new document has been shared with you through our CA Portal:</p>
+      <div class="doc-box">
+        <p>📄 {{documentName}}</p>
+      </div>
+      <p>You can download it securely using the button below. The link will expire after 7 days.</p>
+      <a href="{{downloadUrl}}" class="btn">Download Document</a>
+    </div>
+    <div class="footer">
+      <p>This document was shared by your CA firm. Do not forward this link to others.</p>
+    </div>
+  </div>
+</body>
+</html>
