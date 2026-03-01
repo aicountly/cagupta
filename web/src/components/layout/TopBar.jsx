@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, Bell, AlignJustify, ChevronRight } from 'lucide-react';
+import { Search, Bell, AlignJustify } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
 const breadcrumbMap = {
@@ -61,7 +61,7 @@ export default function TopBar() {
           <div style={styles.breadcrumb}>
             {crumbs.map((c, i) => (
               <span key={i} style={{ display: 'flex', alignItems: 'center' }}>
-                {i > 0 && <ChevronRight size={12} style={{ color: '#9CA3AF', margin: '0 3px' }} />}
+                {i > 0 && <span style={{ color: '#9CA3AF', margin: '0 5px', fontSize: '13px' }}>/</span>}
                 <span style={i === crumbs.length - 1 ? styles.crumbActive : styles.crumb}>{c}</span>
               </span>
             ))}
@@ -220,14 +220,15 @@ const styles = {
     width: 36,
     height: 36,
     borderRadius: '50%',
-    background: '#E5E7EB',
+    background: 'linear-gradient(135deg, #F37920 0%, #f5a623 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     fontWeight: 700,
     fontSize: 12,
-    color: '#374151',
-    border: '2px solid #E5E7EB',
+    color: '#fff',
+    border: '2px solid #fff',
+    boxShadow: '0 0 0 1.5px #E5E7EB',
   },
   dropMenu: {
     position: 'absolute',
