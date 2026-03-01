@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Search, Bell, ChevronRight, User } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Search, Bell, ChevronRight } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
 const breadcrumbMap = {
@@ -18,9 +18,25 @@ const breadcrumbMap = {
 export default function TopBar({ title }) {
   const [search, setSearch] = useState('');
   const [avatarOpen, setAvatarOpen] = useState(false);
+  const dropdownRef = useRef(null);
   const loc = useLocation();
   const crumbs = breadcrumbMap[loc.pathname] || ['Home'];
   const pageTitle = crumbs[crumbs.length - 1];
+
+  // Close the account menu when clicking anywhere outside it.
+  // dropdownRef is intentionally omitted from the dependency array:
+  // refs are stable across renders and do not need to trigger re-subscription.
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+        setAvatarOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   return (
     <header style={styles.bar}>
@@ -54,7 +70,7 @@ export default function TopBar({ title }) {
           <span style={styles.notifDot} />
         </button>
 
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} ref={dropdownRef}>
           <button
             style={styles.avatarBtn}
             onClick={() => setAvatarOpen(v => !v)}
@@ -68,9 +84,14 @@ export default function TopBar({ title }) {
           </button>
           {avatarOpen && (
             <div style={styles.dropMenu}>
-              <div style={styles.dropItem}>My Profile</div>
-              <div style={styles.dropItem}>Change Password</div>
-              <div style={{ ...styles.dropItem, borderTop: '1px solid #f1f5f9', color: '#ef4444', marginTop: 4, paddingTop: 8 }}>Sign Out</div>
+              <div style={styles.dropItem} onClick={() => setAvatarOpen(false)}>My Profile</div>
+              <div style={styles.dropItem} onClick={() => setAvatarOpen(false)}>Change Password</div>
+              <div
+                style={{ ...styles.dropItem, borderTop: '1px solid #f1f5f9', color: '#ef4444', marginTop: 4, paddingTop: 8 }}
+                onClick={() => setAvatarOpen(false)}
+              >
+                Sign Out
+              </div>
             </div>
           )}
         </div>
