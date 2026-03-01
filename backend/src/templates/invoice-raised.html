@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice Raised</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .header { background: #1a3c6e; padding: 32px 40px; text-align: center; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 24px; }
+    .body { padding: 32px 40px; color: #333333; line-height: 1.6; }
+    .invoice-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+    .invoice-table td { padding: 10px 14px; border: 1px solid #e0e0e0; }
+    .invoice-table td:first-child { font-weight: bold; background: #f9f9f9; width: 40%; }
+    .btn { display: inline-block; margin-top: 24px; padding: 12px 28px; background: #1a3c6e; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: bold; }
+    .footer { background: #f4f6f8; padding: 20px 40px; text-align: center; font-size: 12px; color: #888888; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Invoice from Your CA Firm</h1>
+    </div>
+    <div class="body">
+      <p>Dear <strong>{{clientName}}</strong>,</p>
+      <p>An invoice has been raised for your account. Please find the details below:</p>
+      <table class="invoice-table">
+        <tr><td>Invoice Number</td><td>#{{invoiceNumber}}</td></tr>
+        <tr><td>Amount Due</td><td>₹ {{amount}}</td></tr>
+        <tr><td>Due Date</td><td>{{dueDate}}</td></tr>
+      </table>
+      <p>Please make the payment by the due date to avoid any service disruption.</p>
+      <a href="{{invoiceUrl}}" class="btn">View &amp; Download Invoice</a>
+    </div>
+    <div class="footer">
+      <p>For queries regarding this invoice, please reply to this email or contact your assigned CA.</p>
+    </div>
+  </div>
+</body>
+</html>
