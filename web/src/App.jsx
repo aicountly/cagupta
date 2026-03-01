@@ -12,25 +12,12 @@ import Registers from './pages/Registers';
 import Leads from './pages/Leads';
 import Settings from './pages/Settings';
 
-const pageTitles = {
-  '/':              '🏠 Dashboard',
-  '/clients':       '👥 Client Management',
-  '/services':      '📋 Services & Tasks',
-  '/documents':     '📂 Document Management',
-  '/invoices':      '💰 Invoices & Ledger',
-  '/calendar':      '📅 Calendar & Appointments',
-  '/credentials':   '🔑 Credentials Vault',
-  '/registers':     '📊 Compliance Registers',
-  '/leads':         '🎯 Leads & Quotations',
-  '/settings':      '⚙️ Settings',
-};
-
-function Layout({ path, children }) {
+function Layout({ children }) {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f8fafc', overflow: 'hidden' }}>
-        <TopBar title={pageTitles[path] || 'CA Office Portal'} />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F8FAFC', overflow: 'hidden' }}>
+        <TopBar />
         <main style={{ flex: 1, overflowY: 'auto' }}>
           {children}
         </main>
@@ -43,16 +30,16 @@ export default function App() {
   return (
     <HashRouter>
       <Routes>
-        <Route path="/" element={<Layout path="/"><Dashboard /></Layout>} />
-        <Route path="/clients" element={<Layout path="/clients"><Clients /></Layout>} />
-        <Route path="/services" element={<Layout path="/services"><Services /></Layout>} />
-        <Route path="/documents" element={<Layout path="/documents"><Documents /></Layout>} />
-        <Route path="/invoices" element={<Layout path="/invoices"><Invoices /></Layout>} />
-        <Route path="/calendar" element={<Layout path="/calendar"><Calendar /></Layout>} />
-        <Route path="/credentials" element={<Layout path="/credentials"><Credentials /></Layout>} />
-        <Route path="/registers" element={<Layout path="/registers"><Registers /></Layout>} />
-        <Route path="/leads" element={<Layout path="/leads"><Leads /></Layout>} />
-        <Route path="/settings" element={<Layout path="/settings"><Settings /></Layout>} />
+        <Route path="/" element={<Layout><Dashboard /></Layout>} />
+        <Route path="/clients" element={<Layout><Clients /></Layout>} />
+        <Route path="/services" element={<Layout><Services /></Layout>} />
+        <Route path="/documents" element={<Layout><Documents /></Layout>} />
+        <Route path="/invoices" element={<Layout><Invoices /></Layout>} />
+        <Route path="/calendar" element={<Layout><Calendar /></Layout>} />
+        <Route path="/credentials" element={<Layout><Credentials /></Layout>} />
+        <Route path="/registers" element={<Layout><Registers /></Layout>} />
+        <Route path="/leads" element={<Layout><Leads /></Layout>} />
+        <Route path="/settings" element={<Layout><Settings /></Layout>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>

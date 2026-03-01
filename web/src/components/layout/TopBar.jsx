@@ -1,31 +1,41 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, Bell, ChevronRight } from 'lucide-react';
+import { Search, Bell, AlignJustify, ChevronRight } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
 const breadcrumbMap = {
-  '/':            ['Home'],
-  '/clients':     ['Home', 'Clients'],
-  '/services':    ['Home', 'Services & Tasks'],
-  '/documents':   ['Home', 'Documents'],
-  '/invoices':    ['Home', 'Invoices & Ledger'],
-  '/calendar':    ['Home', 'Calendar'],
-  '/credentials': ['Home', 'Credentials Vault'],
-  '/registers':   ['Home', 'Registers'],
-  '/leads':       ['Home', 'Leads & Quotations'],
-  '/settings':    ['Home', 'Settings'],
+  '/':            ['Dashboard'],
+  '/clients':     ['Dashboard', 'Clients'],
+  '/services':    ['Dashboard', 'Services & Tasks'],
+  '/documents':   ['Dashboard', 'Documents'],
+  '/invoices':    ['Dashboard', 'Invoices & Ledger'],
+  '/calendar':    ['Dashboard', 'Calendar & Appointments'],
+  '/credentials': ['Dashboard', 'Credentials Vault'],
+  '/registers':   ['Dashboard', 'Registers'],
+  '/leads':       ['Dashboard', 'Leads & Quotations'],
+  '/settings':    ['Dashboard', 'Settings'],
 };
 
-export default function TopBar({ title }) {
+const pageTitleMap = {
+  '/':            'Dashboard',
+  '/clients':     'Clients',
+  '/services':    'Services & Tasks',
+  '/documents':   'Documents',
+  '/invoices':    'Invoices & Ledger',
+  '/calendar':    'Calendar & Appointments',
+  '/credentials': 'Credentials Vault',
+  '/registers':   'Registers',
+  '/leads':       'Leads & Quotations',
+  '/settings':    'Settings',
+};
+
+export default function TopBar() {
   const [search, setSearch] = useState('');
   const [avatarOpen, setAvatarOpen] = useState(false);
   const dropdownRef = useRef(null);
   const loc = useLocation();
-  const crumbs = breadcrumbMap[loc.pathname] || ['Home'];
-  const pageTitle = crumbs[crumbs.length - 1];
+  const crumbs = breadcrumbMap[loc.pathname] || ['Dashboard'];
+  const pageTitle = pageTitleMap[loc.pathname] || 'CA Office Portal';
 
-  // Close the account menu when clicking anywhere outside it.
-  // dropdownRef is intentionally omitted from the dependency array:
-  // refs are stable across renders and do not need to trigger re-subscription.
   useEffect(() => {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
@@ -40,17 +50,23 @@ export default function TopBar({ title }) {
 
   return (
     <header style={styles.bar}>
-      {/* Left: breadcrumb + title */}
+      {/* Left: hamburger | divider | page title | breadcrumb */}
       <div style={styles.left}>
-        <div style={styles.breadcrumb}>
-          {crumbs.map((c, i) => (
-            <span key={i} style={styles.crumbWrap}>
-              {i > 0 && <ChevronRight size={12} style={{ color: '#94a3b8', margin: '0 2px' }} />}
-              <span style={i === crumbs.length - 1 ? styles.crumbActive : styles.crumb}>{c}</span>
-            </span>
-          ))}
+        <div style={styles.menuIconWrap}>
+          <AlignJustify size={18} color="#374151" />
         </div>
-        <div style={styles.title}>{pageTitle}</div>
+        <div style={styles.divider} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={styles.pageTitle}>{pageTitle}</span>
+          <div style={styles.breadcrumb}>
+            {crumbs.map((c, i) => (
+              <span key={i} style={{ display: 'flex', alignItems: 'center' }}>
+                {i > 0 && <ChevronRight size={12} style={{ color: '#9CA3AF', margin: '0 3px' }} />}
+                <span style={i === crumbs.length - 1 ? styles.crumbActive : styles.crumb}>{c}</span>
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Right: search + bell + avatar */}
@@ -60,14 +76,14 @@ export default function TopBar({ title }) {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search client / service…"
+            placeholder="Search client / service..."
             style={styles.searchInput}
           />
         </div>
 
         <button style={styles.iconBtn} title="Notifications">
-          <Bell size={18} color="#64748b" />
-          <span style={styles.notifDot} />
+          <Bell size={18} color="#374151" />
+          <span style={styles.notifBadge}>3</span>
         </button>
 
         <div style={{ position: 'relative' }} ref={dropdownRef}>
@@ -77,17 +93,13 @@ export default function TopBar({ title }) {
             title="Account menu"
           >
             <div style={styles.avatarCircle}>RG</div>
-            <div style={styles.avatarInfo}>
-              <span style={styles.avatarName}>CA Rahul Gupta</span>
-              <span style={styles.avatarRole}>Admin</span>
-            </div>
           </button>
           {avatarOpen && (
             <div style={styles.dropMenu}>
               <div style={styles.dropItem} onClick={() => setAvatarOpen(false)}>My Profile</div>
               <div style={styles.dropItem} onClick={() => setAvatarOpen(false)}>Change Password</div>
               <div
-                style={{ ...styles.dropItem, borderTop: '1px solid #f1f5f9', color: '#ef4444', marginTop: 4, paddingTop: 8 }}
+                style={{ ...styles.dropItem, borderTop: '1px solid #f3f4f6', color: '#ef4444', marginTop: 4, paddingTop: 8 }}
                 onClick={() => setAvatarOpen(false)}
               >
                 Sign Out
@@ -104,7 +116,7 @@ const styles = {
   bar: {
     height: 60,
     background: '#fff',
-    borderBottom: '1px solid #E6E8F0',
+    borderBottom: '1px solid #E5E7EB',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -112,88 +124,117 @@ const styles = {
     flexShrink: 0,
     gap: 16,
   },
-  left: { display: 'flex', flexDirection: 'column', gap: 1 },
-  breadcrumb: { display: 'flex', alignItems: 'center', flexWrap: 'wrap' },
-  crumbWrap: { display: 'flex', alignItems: 'center' },
-  crumb: { fontSize: 11, color: '#94a3b8', fontWeight: 500 },
-  crumbActive: { fontSize: 11, color: '#F37920', fontWeight: 600 },
-  title: { fontSize: 20, fontWeight: 700, color: '#0B1F3B', lineHeight: 1.2 },
-  right: { display: 'flex', alignItems: 'center', gap: 12 },
+  left: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 14,
+  },
+  menuIconWrap: {
+    width: 34,
+    height: 34,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 8,
+    border: '1px solid #E5E7EB',
+    cursor: 'pointer',
+    flexShrink: 0,
+  },
+  divider: {
+    width: 1,
+    height: 24,
+    background: '#E5E7EB',
+    flexShrink: 0,
+  },
+  pageTitle: {
+    fontSize: 16,
+    fontWeight: 700,
+    color: '#111827',
+    whiteSpace: 'nowrap',
+  },
+  breadcrumb: {
+    display: 'flex',
+    alignItems: 'center',
+  },
+  crumb: { fontSize: 13, color: '#9CA3AF', fontWeight: 400 },
+  crumbActive: { fontSize: 13, color: '#111827', fontWeight: 600 },
+  right: { display: 'flex', alignItems: 'center', gap: 10 },
   searchWrap: {
     position: 'relative',
     display: 'flex',
     alignItems: 'center',
   },
-  searchIcon: { position: 'absolute', left: 10, color: '#94a3b8', pointerEvents: 'none' },
+  searchIcon: { position: 'absolute', left: 11, color: '#9CA3AF', pointerEvents: 'none' },
   searchInput: {
-    paddingLeft: 32,
-    paddingRight: 12,
-    paddingTop: 7,
-    paddingBottom: 7,
-    border: '1px solid #E6E8F0',
-    borderRadius: 8,
+    paddingLeft: 34,
+    paddingRight: 14,
+    paddingTop: 8,
+    paddingBottom: 8,
+    border: '1px solid #E5E7EB',
+    borderRadius: 9999,
     fontSize: 13,
-    color: '#334155',
-    background: '#F6F7FB',
+    color: '#374151',
+    background: '#F9FAFB',
     outline: 'none',
     width: 220,
   },
   iconBtn: {
     position: 'relative',
     background: 'none',
-    border: '1px solid #E6E8F0',
-    borderRadius: 8,
-    width: 36,
-    height: 36,
+    border: '1px solid #E5E7EB',
+    borderRadius: 9999,
+    width: 38,
+    height: 38,
     cursor: 'pointer',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 0,
   },
-  notifDot: {
+  notifBadge: {
     position: 'absolute',
-    top: 7,
-    right: 7,
-    width: 7,
-    height: 7,
-    borderRadius: '50%',
-    background: '#ef4444',
-    border: '1.5px solid #fff',
-  },
-  avatarBtn: {
+    top: 4,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 9999,
+    background: '#F37920',
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: 700,
     display: 'flex',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'center',
+    border: '1.5px solid #fff',
+    lineHeight: 1,
+    padding: '0 3px',
+  },
+  avatarBtn: {
     background: 'none',
-    border: '1px solid #E6E8F0',
-    borderRadius: 10,
-    padding: '5px 10px 5px 6px',
+    border: 'none',
+    padding: 0,
     cursor: 'pointer',
+    borderRadius: '50%',
   },
   avatarCircle: {
-    width: 28,
-    height: 28,
-    borderRadius: 8,
-    background: 'linear-gradient(135deg, #F37920 0%, #f5a623 100%)',
+    width: 36,
+    height: 36,
+    borderRadius: '50%',
+    background: '#E5E7EB',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
     fontWeight: 700,
-    fontSize: 11,
-    color: '#fff',
-    flexShrink: 0,
-    letterSpacing: '0.03em',
+    fontSize: 12,
+    color: '#374151',
+    border: '2px solid #E5E7EB',
   },
-  avatarInfo: { display: 'flex', flexDirection: 'column', alignItems: 'flex-start' },
-  avatarName: { fontSize: 12, fontWeight: 600, color: '#1e293b', lineHeight: 1.2 },
-  avatarRole: { fontSize: 10, color: '#94a3b8' },
   dropMenu: {
     position: 'absolute',
     right: 0,
     top: 'calc(100% + 6px)',
     background: '#fff',
-    border: '1px solid #E6E8F0',
+    border: '1px solid #E5E7EB',
     borderRadius: 10,
     boxShadow: '0 8px 24px rgba(0,0,0,0.10)',
     minWidth: 160,
@@ -203,7 +244,7 @@ const styles = {
   dropItem: {
     padding: '8px 14px',
     fontSize: 13,
-    color: '#334155',
+    color: '#374151',
     cursor: 'pointer',
     fontWeight: 500,
   },
