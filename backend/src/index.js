@@ -1,11 +1,13 @@
 require('dotenv').config();
 const express = require('express');
 const emailRoutes = require('./routes/email.routes');
+const clientRoutes = require('./routes/client.routes');
 
 const app = express();
 app.use(express.json());
 
 app.use('/api/email', emailRoutes);
+app.use('/api/clients', clientRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
