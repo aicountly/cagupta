@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - copilot/add-interface-and-db-structure
   workflow_dispatch:
 
 permissions:
