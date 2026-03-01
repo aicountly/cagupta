@@ -65,7 +65,11 @@ function KpiCard({ item }) {
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 10 }}>
-        <ChevronUp size={12} color={trendNeutral ? '#94a3b8' : trendPositive ? '#22c55e' : '#ef4444'} style={{ transform: trendPositive ? 'none' : trendNeutral ? 'rotate(90deg)' : 'rotate(180deg)' }} />
+        {(() => {
+          const trendColor = trendNeutral ? '#94a3b8' : trendPositive ? '#22c55e' : '#ef4444';
+          const trendRotate = trendNeutral ? 'rotate(90deg)' : trendPositive ? 'none' : 'rotate(180deg)';
+          return <ChevronUp size={12} color={trendColor} style={{ transform: trendRotate }} />;
+        })()}
         <span style={{ fontSize: 11, fontWeight: 600, color: trendNeutral ? '#94a3b8' : trendPositive ? '#22c55e' : '#ef4444' }}>
           {trendNeutral ? 'No change' : `${item.trend} this week`}
         </span>
@@ -149,6 +153,7 @@ export default function Services() {
                   const isActive = selectedService?.id === s.id;
                   const isHover = hoverRow === s.id;
                   const isOdd = idx % 2 === 0;
+                  const isOverdue = new Date(s.dueDate) < new Date() && s.status !== 'completed';
                   let rowBg = isOdd ? '#FAFBFD' : '#ffffff';
                   if (isActive) rowBg = '#EFF6FF';
                   else if (isHover) rowBg = '#F0F4FF';
@@ -169,7 +174,7 @@ export default function Services() {
                       <td style={tdStyle}><span style={serviceTag}>{s.type}</span></td>
                       <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12, color: '#64748b' }}>{s.financialYear}</td>
                       <td style={tdStyle}>{s.assignedTo}</td>
-                      <td style={{ ...tdStyle, color: new Date(s.dueDate) < new Date() && s.status !== 'completed' ? '#ef4444' : '#334155', fontWeight: new Date(s.dueDate) < new Date() && s.status !== 'completed' ? 600 : 400 }}>
+                      <td style={{ ...tdStyle, color: isOverdue ? '#ef4444' : '#334155', fontWeight: isOverdue ? 600 : 400 }}>
                         {s.dueDate}
                       </td>
                       <td style={{ ...tdStyle, fontWeight: 600, color: '#0B1F3B' }}>₹{s.feeAgreed?.toLocaleString('en-IN')}</td>
@@ -183,6 +188,7 @@ export default function Services() {
                     </tr>
                   );
                 })}
+
                 {filteredServices.length === 0 && (
                   <tr>
                     <td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
