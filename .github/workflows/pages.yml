@@ -49,6 +49,8 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    # Only deploy from the main branch; feature/copilot branches just build (CI).
+    if: github.ref == 'refs/heads/main'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
