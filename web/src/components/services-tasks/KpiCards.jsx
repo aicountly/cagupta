@@ -6,54 +6,50 @@ const KPI_CONFIG = [
     label: 'Due this week',
     tasks: '5 tasks',
     trend: '+2',
-    trendDir: 'up',
-    trendColor: '#22C55E',
     delta: '+2',
     icon: CalendarCheck,
     iconBg: '#EDFBE8',
     iconColor: '#22C55E',
+    trendColor: '#22C55E',
   },
   {
     key: 'overdue',
     label: 'Overdue',
     tasks: '2 tasks',
     trend: '-2',
-    trendDir: 'down',
-    trendColor: '#EF4444',
     delta: '-1',
     icon: AlertCircle,
     iconBg: '#FEE2E2',
     iconColor: '#EF4444',
+    trendColor: '#EF4444',
   },
   {
     key: 'pendingInfo',
     label: 'Pending Info',
     tasks: '1 task',
     trend: '+1',
-    trendDir: 'up',
-    trendColor: '#22C55E',
     delta: '+1',
     icon: Info,
     iconBg: '#FEF3E8',
     iconColor: '#F37920',
+    trendColor: '#22C55E',
   },
   {
     key: 'completed',
     label: 'Completed',
     tasks: '8 tasks',
     trend: '+8',
-    trendDir: 'up',
-    trendColor: '#22C55E',
     delta: '+1',
     icon: CheckCircle2,
     iconBg: '#EDFBE8',
     iconColor: '#22C55E',
+    trendColor: '#22C55E',
   },
 ];
 
 function KpiCard({ config }) {
   const Icon = config.icon;
-  const isDown = config.trendDir === 'down';
+  const isDown = config.trend.startsWith('-');
 
   return (
     <div style={card}>

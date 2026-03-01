@@ -18,7 +18,7 @@ const labels = {
 
 export default function StatusPill({ status }) {
   const s = pillStyles[status] || { bg: '#F3F4F6', color: '#6B7280', border: '1px solid #E5E7EB' };
-  const label = labels[status] || (status?.replace(/_/g, ' ') ?? '');
+  const label = labels[status] || (status?.replace(/_/g, ' ') || '');
   return (
     <span style={{
       background: s.bg,

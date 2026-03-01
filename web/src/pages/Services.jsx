@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { mockServices } from '../data/mockData';
 import KpiCards from '../components/services-tasks/KpiCards';
 import ServicesTable from '../components/services-tasks/ServicesTable';
-import { Plus, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 
 export default function Services() {
   const [filterStatus, setFilterStatus] = useState('all');
@@ -67,7 +67,6 @@ function NewEngagementBtn() {
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
-      <Plus size={15} />
       + New Service Engagement
     </button>
   );
