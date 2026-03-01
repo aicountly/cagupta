@@ -116,7 +116,7 @@ const styles = {
   breadcrumb: { display: 'flex', alignItems: 'center', flexWrap: 'wrap' },
   crumbWrap: { display: 'flex', alignItems: 'center' },
   crumb: { fontSize: 11, color: '#94a3b8', fontWeight: 500 },
-  crumbActive: { fontSize: 11, color: '#3B82F6', fontWeight: 600 },
+  crumbActive: { fontSize: 11, color: '#F37920', fontWeight: 600 },
   title: { fontSize: 20, fontWeight: 700, color: '#0B1F3B', lineHeight: 1.2 },
   right: { display: 'flex', alignItems: 'center', gap: 12 },
   searchWrap: {
@@ -175,7 +175,7 @@ const styles = {
     width: 28,
     height: 28,
     borderRadius: 8,
-    background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
+    background: 'linear-gradient(135deg, #F37920 0%, #f5a623 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
