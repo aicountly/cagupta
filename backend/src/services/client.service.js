@@ -33,6 +33,31 @@ function reset() {
   _nextBusinessId = 1;
 }
 
+/**
+ * Seed the store with representative demo data.
+ * Called once at module load so the listing pages are populated out of the box.
+ * Tests call reset() to wipe this state before each case.
+ */
+function _seed() {
+  _people = [
+    { id: 1, name: 'Ramesh Kumar', email: 'ramesh@example.com', phone: '9876543210', pan: 'ABCDE1234F', type: 'individual' },
+    { id: 2, name: 'Sunita Sharma', email: 'sunita@example.com', phone: '9123456789', pan: 'FGHIJ5678K', type: 'individual' },
+    { id: 3, name: 'Arjun Mehta', email: 'arjun@example.com', phone: '9988776655', pan: 'LMNOP9012Q', type: 'individual' },
+    { id: 4, name: 'Priya Nair', email: 'priya@example.com', phone: '9871234560', pan: 'PQRST3456R', type: 'individual' },
+  ];
+  _businesses = [
+    { id: 1, name: 'Kumar Traders', businessType: 'proprietary', pan: 'KUMTR0001P', cin: '', members: [1] },
+    { id: 2, name: 'Sharma HUF', businessType: 'huf', pan: 'SRMHF0002H', cin: '', members: [2] },
+    { id: 3, name: 'Acme Solutions Pvt Ltd', businessType: 'pvt_ltd', pan: 'ACMSO0003C', cin: 'U72200MH2020PTC123456', members: [1, 3] },
+    { id: 4, name: 'XYZ & Associates LLP', businessType: 'llp', pan: 'XYZAS0004L', cin: 'AAA-1234', members: [2, 3] },
+    { id: 5, name: 'Metro Constructions', businessType: 'partnership', pan: 'MTRCO0005P', cin: '', members: [4] },
+  ];
+  _nextPeopleId = _people.length + 1;
+  _nextBusinessId = _businesses.length + 1;
+}
+
+_seed();
+
 // ── People ────────────────────────────────────────────────────────────────────
 
 /**

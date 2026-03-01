@@ -255,6 +255,21 @@
 // Change this to match your backend URL (e.g. https://api.yourdomain.com/api)
 const API = window.CA_API_BASE || 'http://localhost:4000/api';
 
+// ── Fallback demo data (shown when the backend API is not reachable) ──────────
+const DEMO_PEOPLE = [
+  { id: 1, name: 'Ramesh Kumar', email: 'ramesh@example.com', phone: '9876543210', pan: 'ABCDE1234F', type: 'individual' },
+  { id: 2, name: 'Sunita Sharma', email: 'sunita@example.com', phone: '9123456789', pan: 'FGHIJ5678K', type: 'individual' },
+  { id: 3, name: 'Arjun Mehta', email: 'arjun@example.com', phone: '9988776655', pan: 'LMNOP9012Q', type: 'individual' },
+  { id: 4, name: 'Priya Nair', email: 'priya@example.com', phone: '9871234560', pan: 'PQRST3456R', type: 'individual' },
+];
+const DEMO_BUSINESSES = [
+  { id: 1, name: 'Kumar Traders', businessType: 'proprietary', pan: 'KUMTR0001P', cin: '', members: [1] },
+  { id: 2, name: 'Sharma HUF', businessType: 'huf', pan: 'SRMHF0002H', cin: '', members: [2] },
+  { id: 3, name: 'Acme Solutions Pvt Ltd', businessType: 'pvt_ltd', pan: 'ACMSO0003C', cin: 'U72200MH2020PTC123456', members: [1, 3] },
+  { id: 4, name: 'XYZ & Associates LLP', businessType: 'llp', pan: 'XYZAS0004L', cin: 'AAA-1234', members: [2, 3] },
+  { id: 5, name: 'Metro Constructions', businessType: 'partnership', pan: 'MTRCO0005P', cin: '', members: [4] },
+];
+
 // ── State ─────────────────────────────────────────────────────────────────────
 let currentView = 'dashboard';
 
@@ -306,8 +321,8 @@ function showView(view) {
 async function renderDashboard(container) {
   container.innerHTML = '<p style="color:#a0abc4;padding:20px">Loading…</p>';
   const [pd, bd] = await Promise.all([
-    fetch(`${API}/clients/people`).then(r => r.json()).catch(() => ({ people: [] })),
-    fetch(`${API}/clients/businesses`).then(r => r.json()).catch(() => ({ businesses: [] })),
+    fetch(`${API}/clients/people`).then(r => r.json()).catch(() => ({ people: DEMO_PEOPLE })),
+    fetch(`${API}/clients/businesses`).then(r => r.json()).catch(() => ({ businesses: DEMO_BUSINESSES })),
   ]);
   const pc = pd.people.length;
   const bc = bd.businesses.length;
@@ -338,7 +353,7 @@ async function renderDashboard(container) {
 // ── People ─────────────────────────────────────────────────────────────────────
 async function renderPeople(container) {
   container.innerHTML = '<p style="color:#a0abc4;padding:20px">Loading…</p>';
-  const data = await fetch(`${API}/clients/people`).then(r => r.json()).catch(() => ({ people: [] }));
+  const data = await fetch(`${API}/clients/people`).then(r => r.json()).catch(() => ({ people: DEMO_PEOPLE }));
   const rows = data.people.length
     ? data.people.map(p => `
         <tr>
@@ -371,7 +386,7 @@ async function renderPeople(container) {
 // ── Businesses ─────────────────────────────────────────────────────────────────
 async function renderBusinesses(container) {
   container.innerHTML = '<p style="color:#a0abc4;padding:20px">Loading…</p>';
-  const data = await fetch(`${API}/clients/businesses`).then(r => r.json()).catch(() => ({ businesses: [] }));
+  const data = await fetch(`${API}/clients/businesses`).then(r => r.json()).catch(() => ({ businesses: DEMO_BUSINESSES }));
 
   const typeLabels = {
     proprietary : 'Proprietary Firm',
