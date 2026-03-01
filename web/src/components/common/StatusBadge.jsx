@@ -35,7 +35,7 @@ export default function StatusBadge({ status }) {
   const s = statusColors[status] || { bg: '#f1f5f9', color: '#475569' };
   const label = status?.replace(/_/g, ' ') ?? '';
   return (
-    <span style={{ background: s.bg, color: s.color, padding: '2px 10px', borderRadius: 12, fontSize: 12, fontWeight: 600, textTransform: 'capitalize', whiteSpace: 'nowrap' }}>
+    <span style={{ background: s.bg, color: s.color, padding: '3px 10px', borderRadius: 99, fontSize: 11, fontWeight: 700, textTransform: 'capitalize', whiteSpace: 'nowrap', letterSpacing: '0.02em', display: 'inline-block' }}>
       {label}
     </span>
   );
