@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - copilot/add-interface-and-db-structure
+      - copilot/add-interface-and-db-structure  # TODO: remove after PR #2 is merged to main
   workflow_dispatch:
 
 permissions:
