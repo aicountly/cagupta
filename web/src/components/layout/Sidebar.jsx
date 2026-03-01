@@ -2,8 +2,9 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen,
-  Target, Settings, ChevronRight, Scale,
+  Target, Settings, ChevronRight,
 } from 'lucide-react';
+import CaIndiaLogo from '../common/CaIndiaLogo';
 
 const navSections = [
   {
@@ -38,13 +39,10 @@ export default function Sidebar() {
     <aside style={styles.sidebar}>
       {/* Brand */}
       <div style={styles.brand}>
-        <div style={styles.brandIconWrap}>
-          <Scale size={18} color="#60a5fa" />
+        <div style={styles.logoWrap}>
+          <CaIndiaLogo width={100} height={34} />
         </div>
-        <div>
-          <div style={styles.brandName}>CA Rahul Gupta</div>
-          <div style={styles.brandSub}>Office Portal</div>
-        </div>
+        <div style={styles.brandSub}>Office Portal</div>
       </div>
 
       {/* Nav */}
@@ -105,25 +103,20 @@ const styles = {
     borderRight: '1px solid rgba(255,255,255,0.06)',
   },
   brand: {
-    padding: '20px 16px 18px',
+    padding: '16px 16px 14px',
     display: 'flex',
-    alignItems: 'center',
-    gap: 10,
+    flexDirection: 'column',
+    gap: 4,
     borderBottom: '1px solid rgba(255,255,255,0.07)',
   },
-  brandIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 9,
-    background: 'rgba(59,130,246,0.15)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
+  logoWrap: {
+    borderRadius: 6,
+    overflow: 'hidden',
+    display: 'inline-flex',
     flexShrink: 0,
-    border: '1px solid rgba(96,165,250,0.2)',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
   },
-  brandName: { fontWeight: 700, fontSize: 14, color: '#f1f5f9', lineHeight: '1.2' },
-  brandSub: { fontSize: 11, color: '#475569', marginTop: 1 },
+  brandSub: { fontSize: 11, color: '#475569', marginTop: 2, paddingLeft: 2 },
   sectionLabel: {
     fontSize: 10,
     fontWeight: 700,
@@ -148,7 +141,7 @@ const styles = {
   },
   navLinkActive: {
     color: '#e0eaff',
-    background: 'rgba(59,130,246,0.18)',
+    background: 'rgba(20,88,134,0.25)',
     fontWeight: 600,
   },
   navIcon: {
@@ -157,7 +150,7 @@ const styles = {
     justifyContent: 'center',
     opacity: 0.6,
   },
-  navIconActive: { opacity: 1, color: '#60a5fa' },
+  navIconActive: { opacity: 1, color: '#5BA8D4' },
   navText: { flex: 1 },
   userCard: {
     padding: '14px 16px',
@@ -171,7 +164,7 @@ const styles = {
     width: 34,
     height: 34,
     borderRadius: 10,
-    background: 'linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)',
+    background: 'linear-gradient(135deg, #145886 0%, #1d7fbf 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -185,8 +178,8 @@ const styles = {
     width: 7,
     height: 7,
     borderRadius: '50%',
-    background: '#22c55e',
+    background: '#55B848',
     flexShrink: 0,
-    boxShadow: '0 0 0 2px rgba(34,197,94,0.25)',
+    boxShadow: '0 0 0 2px rgba(85,184,72,0.25)',
   },
 };

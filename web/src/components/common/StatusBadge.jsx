@@ -1,33 +1,33 @@
 const statusColors = {
   // services / tasks
   not_started:     { bg: '#f1f5f9', color: '#64748b' },
-  in_progress:     { bg: '#dbeafe', color: '#1d4ed8' },
-  pending_info:    { bg: '#fef3c7', color: '#92400e' },
-  pending:         { bg: '#fef3c7', color: '#92400e' },
+  in_progress:     { bg: '#D8ECF8', color: '#145886' },
+  pending_info:    { bg: '#FEF0E4', color: '#C25C10' },
+  pending:         { bg: '#FEF0E4', color: '#C25C10' },
   review:          { bg: '#ede9fe', color: '#5b21b6' },
-  completed:       { bg: '#dcfce7', color: '#166534' },
-  done:            { bg: '#dcfce7', color: '#166534' },
+  completed:       { bg: '#E4F5E0', color: '#2E7D22' },
+  done:            { bg: '#E4F5E0', color: '#2E7D22' },
   cancelled:       { bg: '#fee2e2', color: '#991b1b' },
   blocked:         { bg: '#fee2e2', color: '#991b1b' },
   // invoices
   draft:           { bg: '#f1f5f9', color: '#64748b' },
-  sent:            { bg: '#dbeafe', color: '#1d4ed8' },
-  partially_paid:  { bg: '#fef3c7', color: '#92400e' },
-  paid:            { bg: '#dcfce7', color: '#166534' },
+  sent:            { bg: '#D8ECF8', color: '#145886' },
+  partially_paid:  { bg: '#FEF0E4', color: '#C25C10' },
+  paid:            { bg: '#E4F5E0', color: '#2E7D22' },
   overdue:         { bg: '#fee2e2', color: '#991b1b' },
   // clients
-  active:          { bg: '#dcfce7', color: '#166534' },
+  active:          { bg: '#E4F5E0', color: '#2E7D22' },
   inactive:        { bg: '#fee2e2', color: '#991b1b' },
-  prospect:        { bg: '#dbeafe', color: '#1d4ed8' },
+  prospect:        { bg: '#D8ECF8', color: '#145886' },
   // appointments
-  scheduled:       { bg: '#dbeafe', color: '#1d4ed8' },
-  confirmed:       { bg: '#dcfce7', color: '#166534' },
+  scheduled:       { bg: '#D8ECF8', color: '#145886' },
+  confirmed:       { bg: '#E4F5E0', color: '#2E7D22' },
   // leads
   new:             { bg: '#f1f5f9', color: '#64748b' },
-  contacted:       { bg: '#dbeafe', color: '#1d4ed8' },
+  contacted:       { bg: '#D8ECF8', color: '#145886' },
   qualified:       { bg: '#ede9fe', color: '#5b21b6' },
-  proposal_sent:   { bg: '#fef3c7', color: '#92400e' },
-  won:             { bg: '#dcfce7', color: '#166534' },
+  proposal_sent:   { bg: '#FEF0E4', color: '#C25C10' },
+  won:             { bg: '#E4F5E0', color: '#2E7D22' },
   lost:            { bg: '#fee2e2', color: '#991b1b' },
 };
 

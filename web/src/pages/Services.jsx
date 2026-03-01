@@ -17,8 +17,8 @@ function kpiData(services) {
       label: 'Due This Week',
       value: services.filter(s => { const d = new Date(s.dueDate); return d >= today && d <= weekAhead; }).length,
       icon: Clock,
-      color: '#3B82F6',
-      bg: '#EFF6FF',
+      color: '#145886',
+      bg: '#EBF3FB',
       trend: '+2',
     },
     {
@@ -33,16 +33,16 @@ function kpiData(services) {
       label: 'Pending Info',
       value: services.filter(s => s.status === 'pending_info').length,
       icon: Info,
-      color: '#F59E0B',
-      bg: '#FFFBEB',
+      color: '#F37920',
+      bg: '#FEF3E6',
       trend: '0',
     },
     {
       label: 'Completed',
       value: services.filter(s => s.status === 'completed').length,
       icon: CheckCircle2,
-      color: '#22C55E',
-      bg: '#F0FDF4',
+      color: '#55B848',
+      bg: '#EEF8EC',
       trend: '+3',
     },
   ];
@@ -66,11 +66,11 @@ function KpiCard({ item }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 10 }}>
         {(() => {
-          const trendColor = trendNeutral ? '#94a3b8' : trendPositive ? '#22c55e' : '#ef4444';
+          const trendColor = trendNeutral ? '#94a3b8' : trendPositive ? '#55B848' : '#ef4444';
           const trendRotate = trendNeutral ? 'rotate(90deg)' : trendPositive ? 'none' : 'rotate(180deg)';
           return <ChevronUp size={12} color={trendColor} style={{ transform: trendRotate }} />;
         })()}
-        <span style={{ fontSize: 11, fontWeight: 600, color: trendNeutral ? '#94a3b8' : trendPositive ? '#22c55e' : '#ef4444' }}>
+        <span style={{ fontSize: 11, fontWeight: 600, color: trendNeutral ? '#94a3b8' : trendPositive ? '#55B848' : '#ef4444' }}>
           {trendNeutral ? 'No change' : `${item.trend} this week`}
         </span>
       </div>
@@ -155,8 +155,8 @@ export default function Services() {
                   const isOdd = idx % 2 === 0;
                   const isOverdue = new Date(s.dueDate) < new Date() && s.status !== 'completed';
                   let rowBg = isOdd ? '#FAFBFD' : '#ffffff';
-                  if (isActive) rowBg = '#EFF6FF';
-                  else if (isHover) rowBg = '#F0F4FF';
+                  if (isActive) rowBg = '#EBF3FB';
+                  else if (isHover) rowBg = '#F0F6FA';
                   return (
                     <tr
                       key={s.id}
@@ -244,7 +244,7 @@ export default function Services() {
               <div key={t.id} style={taskRow}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1, minWidth: 0 }}>
-                    <div style={{ ...taskDot, background: t.status === 'done' ? '#22c55e' : t.status === 'in_progress' ? '#3b82f6' : '#e2e8f0', marginTop: 4, flexShrink: 0 }} />
+                    <div style={{ ...taskDot, background: t.status === 'done' ? '#55B848' : t.status === 'in_progress' ? '#145886' : '#e2e8f0', marginTop: 4, flexShrink: 0 }} />
                     <span style={{ fontSize: 13, fontWeight: t.status === 'done' ? 400 : 600, textDecoration: t.status === 'done' ? 'line-through' : 'none', color: t.status === 'done' ? '#94a3b8' : '#1e293b' }}>
                       {t.title}
                     </span>
@@ -269,7 +269,7 @@ function ActionBtn({ icon: Icon, title }) {
       title={title}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{ ...actionBtn, background: hover ? '#EFF6FF' : '#F6F7FB', borderColor: hover ? '#BFDBFE' : '#E6E8F0', color: hover ? '#2563eb' : '#64748b' }}
+      style={{ ...actionBtn, background: hover ? '#EBF3FB' : '#F6F7FB', borderColor: hover ? '#B0D4EC' : '#E6E8F0', color: hover ? '#145886' : '#64748b' }}
     >
       <Icon size={13} />
     </button>
@@ -299,8 +299,8 @@ const searchBox = { display: 'flex', alignItems: 'center', gap: 8, background: '
 const searchInput = { border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: '#334155', width: '100%' };
 
 const selectStyle = { padding: '7px 12px', border: '1px solid #E6E8F0', borderRadius: 8, fontSize: 13, background: '#fff', color: '#334155', outline: 'none', cursor: 'pointer' };
-const btnPrimary = { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#3B82F6', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, boxShadow: '0 2px 8px rgba(59,130,246,0.30)' };
-const btnSecondary = { display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: '#F6F7FB', color: '#3B82F6', border: '1px solid #BFDBFE', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 };
+const btnPrimary = { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#145886', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, boxShadow: '0 2px 8px rgba(20,88,134,0.30)' };
+const btnSecondary = { display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: '#F6F7FB', color: '#145886', border: '1px solid #B0D4EC', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 };
 
 const tableCard = { background: '#fff', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 6px rgba(0,0,0,0.06)', overflow: 'hidden' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
@@ -320,13 +320,13 @@ const trStyle = { transition: 'background 0.12s' };
 const clientCell = { display: 'flex', alignItems: 'center', gap: 9 };
 const clientAvatar = {
   width: 28, height: 28, borderRadius: 8,
-  background: 'linear-gradient(135deg, #3B82F6 0%, #6366f1 100%)',
+  background: 'linear-gradient(135deg, #145886 0%, #1d7fbf 100%)',
   color: '#fff', fontWeight: 700, fontSize: 11,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   flexShrink: 0,
 };
 const serviceTag = {
-  background: '#F0F4FF', color: '#3730a3',
+  background: '#EBF3FB', color: '#145886',
   padding: '2px 8px', borderRadius: 5,
   fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
 };
@@ -349,7 +349,7 @@ const tableFooter = {
 const sidePanel = { background: '#fff', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 6px rgba(0,0,0,0.06)', padding: 20, overflowY: 'auto', alignSelf: 'start' };
 const closeBtn = { background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', flexShrink: 0 };
 const progressTrack = { height: 7, background: '#E6E8F0', borderRadius: 99, overflow: 'hidden' };
-const progressFill = { height: '100%', background: 'linear-gradient(90deg, #3B82F6 0%, #6366f1 100%)', borderRadius: 99, transition: 'width 0.4s ease' };
+const progressFill = { height: '100%', background: 'linear-gradient(90deg, #145886 0%, #1d7fbf 100%)', borderRadius: 99, transition: 'width 0.4s ease' };
 const taskRow = { padding: '10px 0', borderBottom: '1px solid #F6F7FB' };
 const taskDot = { width: 8, height: 8, borderRadius: '50%' };
 const styles = { env: { fontSize: 11, background: '#fef9c3', color: '#854d0e', padding: '2px 8px', borderRadius: 4, fontWeight: 600 } };
