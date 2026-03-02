@@ -29,7 +29,7 @@ function Layout({ path, children }) {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#f8fafc', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F6F7FB', overflow: 'hidden' }}>
         <TopBar title={pageTitles[path] || 'CA Office Portal'} />
         <main style={{ flex: 1, overflowY: 'auto' }}>
           {children}

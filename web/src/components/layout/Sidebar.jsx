@@ -85,8 +85,8 @@ export default function Sidebar() {
       <div style={styles.userCard}>
         <div style={styles.avatar}>RG</div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>CA Rahul Gupta</div>
-          <div style={{ fontSize: 11, color: '#64748b' }}>Admin · Mumbai</div>
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>CA Rahul Gupta</div>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>Admin · Mumbai</div>
         </div>
         <div style={styles.onlineDot} />
       </div>
@@ -98,19 +98,20 @@ const styles = {
   sidebar: {
     width: 240,
     minHeight: '100vh',
-    background: 'linear-gradient(180deg, #0B1F3B 0%, #0f2a4a 100%)',
-    color: '#e2e8f0',
+    background: '#ffffff',
+    color: '#334155',
     display: 'flex',
     flexDirection: 'column',
     flexShrink: 0,
-    borderRight: '1px solid rgba(255,255,255,0.06)',
+    borderRight: '1px solid #E6E8F0',
+    boxShadow: '1px 0 4px rgba(0,0,0,0.04)',
   },
   brand: {
     padding: '20px 16px 18px',
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    borderBottom: '1px solid rgba(255,255,255,0.07)',
+    borderBottom: '1px solid #F0F2F8',
   },
   brandIconWrap: {
     width: 40,
@@ -128,12 +129,12 @@ const styles = {
   },
   brandLogoText: { fontWeight: 900, fontSize: 13, color: '#fff', letterSpacing: '0.04em', lineHeight: 1 },
   brandLogoSub: { fontWeight: 700, fontSize: 8, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.12em', lineHeight: 1, marginTop: 1 },
-  brandName: { fontWeight: 700, fontSize: 14, color: '#f1f5f9', lineHeight: '1.2' },
-  brandSub: { fontSize: 10, color: 'rgba(241,245,249,0.45)', marginTop: 2, fontWeight: 500, letterSpacing: '0.01em' },
+  brandName: { fontWeight: 700, fontSize: 14, color: '#1e293b', lineHeight: '1.2' },
+  brandSub: { fontSize: 10, color: '#94a3b8', marginTop: 2, fontWeight: 500, letterSpacing: '0.01em' },
   sectionLabel: {
     fontSize: 10,
     fontWeight: 700,
-    color: '#334155',
+    color: '#94a3b8',
     letterSpacing: '0.08em',
     padding: '14px 20px 6px',
     textTransform: 'uppercase',
@@ -153,8 +154,8 @@ const styles = {
     marginBottom: 1,
   },
   navLinkActive: {
-    color: '#fff',
-    background: 'rgba(243,121,32,0.22)',
+    color: '#F37920',
+    background: '#FEF0E6',
     fontWeight: 600,
   },
   navIcon: {
@@ -167,11 +168,11 @@ const styles = {
   navText: { flex: 1 },
   userCard: {
     padding: '14px 16px',
-    borderTop: '1px solid rgba(255,255,255,0.07)',
+    borderTop: '1px solid #F0F2F8',
     display: 'flex',
     alignItems: 'center',
     gap: 10,
-    background: 'rgba(0,0,0,0.15)',
+    background: '#FAFBFD',
   },
   avatar: {
     width: 34,
