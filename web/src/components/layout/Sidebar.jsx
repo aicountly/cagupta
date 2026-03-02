@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router-dom';
+import logoUrl from '../../assets/logo.png';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen,
@@ -38,14 +39,7 @@ export default function Sidebar() {
     <aside style={styles.sidebar}>
       {/* Brand */}
       <div style={styles.brand}>
-        <div style={styles.brandIconWrap}>
-          <span style={styles.brandLogoText}>CA</span>
-          <span style={styles.brandLogoSub}>INDIA</span>
-        </div>
-        <div>
-          <div style={styles.brandName}>CA Rahul Gupta</div>
-          <div style={styles.brandSub}>CA. Rahul Gupta Office Portal</div>
-        </div>
+        <img src={logoUrl} alt="CA Rahul Gupta – Office Portal" style={styles.brandLogo} />
       </div>
 
       {/* Nav */}
@@ -107,30 +101,16 @@ const styles = {
     boxShadow: '1px 0 4px rgba(0,0,0,0.04)',
   },
   brand: {
-    padding: '20px 16px 18px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
+    padding: '16px 16px 14px',
     borderBottom: '1px solid #F0F2F8',
   },
-  brandIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 9,
-    background: '#F37920',
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    border: '1px solid rgba(243,121,32,0.4)',
-    lineHeight: 1,
-    gap: 0,
+  brandLogo: {
+    width: '100%',
+    maxWidth: 200,
+    height: 'auto',
+    display: 'block',
+    objectFit: 'contain',
   },
-  brandLogoText: { fontWeight: 900, fontSize: 13, color: '#fff', letterSpacing: '0.04em', lineHeight: 1 },
-  brandLogoSub: { fontWeight: 700, fontSize: 8, color: 'rgba(255,255,255,0.85)', letterSpacing: '0.12em', lineHeight: 1, marginTop: 1 },
-  brandName: { fontWeight: 700, fontSize: 14, color: '#1e293b', lineHeight: '1.2' },
-  brandSub: { fontSize: 10, color: '#94a3b8', marginTop: 2, fontWeight: 500, letterSpacing: '0.01em' },
   sectionLabel: {
     fontSize: 10,
     fontWeight: 700,
