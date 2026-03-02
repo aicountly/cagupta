@@ -1,12 +1,14 @@
 import { dashboardStats, mockTasks, mockInvoices, mockAppointments } from '../data/mockData';
 import StatusBadge from '../components/common/StatusBadge';
 
-const StatCard = ({ icon, label, value, sub, color }) => (
-  <div style={{ background: '#fff', borderRadius: 10, padding: '20px 24px', boxShadow: '0 1px 3px rgba(0,0,0,.08)', borderLeft: `4px solid ${color}` }}>
-    <div style={{ fontSize: 24 }}>{icon}</div>
-    <div style={{ fontSize: 28, fontWeight: 700, color: '#1e293b', marginTop: 8 }}>{value}</div>
-    <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>{label}</div>
-    {sub && <div style={{ fontSize: 11, color: color, marginTop: 4, fontWeight: 600 }}>{sub}</div>}
+const StatCard = ({ icon, label, value, sub, color, bg }) => (
+  <div style={{ background: '#fff', borderRadius: 14, padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid #E6E8F0', display: 'flex', alignItems: 'center', gap: 16 }}>
+    <div style={{ width: 48, height: 48, borderRadius: 12, background: bg || '#F6F7FB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{icon}</div>
+    <div style={{ flex: 1, minWidth: 0 }}>
+      <div style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 700, color: '#1e293b', lineHeight: 1 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: color, marginTop: 4, fontWeight: 600 }}>{sub}</div>}
+    </div>
   </div>
 );
 
@@ -15,15 +17,15 @@ export default function Dashboard() {
   const pendingInvoices = mockInvoices.filter(i => ['sent','partially_paid','overdue'].includes(i.status));
 
   return (
-    <div style={{ padding: 24 }}>
+    <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))', gap: 16, marginBottom: 28 }}>
-        <StatCard icon="👥" label="Active Clients" value={dashboardStats.activeClients} color="#2563eb" />
-        <StatCard icon="📋" label="Active Services" value={dashboardStats.activeServices} color="#7c3aed" />
-        <StatCard icon="✅" label="Pending Tasks" value={dashboardStats.pendingTasks} sub="3 due this week" color="#d97706" />
-        <StatCard icon="💰" label="Outstanding Amount" value={`₹${dashboardStats.totalOutstanding.toLocaleString('en-IN')}`} sub="1 overdue invoice" color="#dc2626" />
-        <StatCard icon="📂" label="Documents This Month" value={dashboardStats.documentsThisMonth} color="#0891b2" />
-        <StatCard icon="📅" label="Appointments Today" value={dashboardStats.appointmentsToday} color="#16a34a" />
+        <StatCard icon="👥" label="Active Clients" value={dashboardStats.activeClients} color="#2563eb" bg="#EFF6FF" />
+        <StatCard icon="📋" label="Active Services" value={dashboardStats.activeServices} color="#7c3aed" bg="#F5F3FF" />
+        <StatCard icon="✅" label="Pending Tasks" value={dashboardStats.pendingTasks} sub="3 due this week" color="#d97706" bg="#FFFBEB" />
+        <StatCard icon="💰" label="Outstanding Amount" value={`₹${dashboardStats.totalOutstanding.toLocaleString('en-IN')}`} sub="1 overdue invoice" color="#dc2626" bg="#FEF2F2" />
+        <StatCard icon="📂" label="Documents This Month" value={dashboardStats.documentsThisMonth} color="#0891b2" bg="#ECFEFF" />
+        <StatCard icon="📅" label="Appointments Today" value={dashboardStats.appointmentsToday} color="#16a34a" bg="#F0FDF4" />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -95,10 +97,10 @@ export default function Dashboard() {
   );
 }
 
-const cardStyle = { background: '#fff', borderRadius: 10, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,.08)' };
+const cardStyle = { background: '#fff', borderRadius: 14, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,.06)', border: '1px solid #E6E8F0' };
 const cardTitle = { margin: '0 0 14px 0', fontSize: 15, fontWeight: 700, color: '#1e293b' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
-const thStyle = { textAlign: 'left', padding: '6px 8px', color: '#64748b', fontWeight: 600, fontSize: 12, borderBottom: '1px solid #f1f5f9' };
-const tdStyle = { padding: '8px 8px', color: '#334155', verticalAlign: 'middle' };
-const trStyle = { borderBottom: '1px solid #f8fafc' };
-const actionBtn = { padding: '10px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', fontSize: 13, textAlign: 'left', fontWeight: 500, color: '#334155' };
+const thStyle = { textAlign: 'left', padding: '8px 10px', color: '#64748b', fontWeight: 600, fontSize: 11, borderBottom: '1px solid #F0F2F8', background: '#F8FAFC', textTransform: 'uppercase', letterSpacing: '0.04em' };
+const tdStyle = { padding: '9px 10px', color: '#334155', verticalAlign: 'middle' };
+const trStyle = { borderBottom: '1px solid #F6F7FB' };
+const actionBtn = { padding: '9px 12px', background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 10, cursor: 'pointer', fontSize: 13, textAlign: 'left', fontWeight: 500, color: '#334155' };
