@@ -1,0 +1,55 @@
+name: Deploy to cPanel (web + PHP API)
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web deps
+        working-directory: web
+        run: npm ci
+
+      - name: Build web (Vite)
+        working-directory: web
+        run: npm run build
+
+      # Deploy React build output
+      - name: Deploy web/dist to cPanel public_html
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.CPANEL_SSH_HOST }}
+          username: ${{ secrets.CPANEL_SSH_USER }}
+          password: ${{ secrets.CPANEL_SSH_PASS }}
+          port: ${{ secrets.CPANEL_SSH_PORT }}
+          protocol: ftps # if your host supports FTPS; if not, change to "ftp"
+          local-dir: web/dist/
+          server-dir: ${{ secrets.CPANEL_DEPLOY_PATH }}/
+          dangerous-clean-slate: false
+
+      # Deploy PHP API
+      - name: Deploy server-php to cPanel public_html/api
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.CPANEL_SSH_HOST }}
+          username: ${{ secrets.CPANEL_SSH_USER }}
+          password: ${{ secrets.CPANEL_SSH_PASS }}
+          port: ${{ secrets.CPANEL_SSH_PORT }}
+          protocol: ftps
+          local-dir: server-php/
+          server-dir: ${{ secrets.CPANEL_DEPLOY_PATH }}/api/
+          dangerous-clean-slate: false
