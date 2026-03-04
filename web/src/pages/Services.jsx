@@ -1,5 +1,7 @@
 import { useState } from 'react';
-import { mockServices, mockTasks } from '../data/mockData';
+import { useNavigate } from 'react-router-dom';
+import { mockTasks } from '../data/mockData';
+import { getEngagements } from '../data/engagementStore';
 import StatusBadge from '../components/common/StatusBadge';
 import {
   Plus, Search, SlidersHorizontal,
@@ -80,23 +82,32 @@ function KpiCard({ item }) {
 
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Services() {
+  const navigate = useNavigate();
   const [selectedService, setSelectedService] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
   const [hoverRow, setHoverRow] = useState(null);
 
-  const filteredServices = mockServices.filter(s => {
+  // Read from store once on mount (localStorage + mock seed).
+  // The component unmounts/remounts on navigation so this stays fresh.
+  const [allServices] = useState(() => getEngagements());
+
+  const filteredServices = allServices.filter(s => {
     const matchStatus = filterStatus === 'all' || s.status === filterStatus;
     const q = search.toLowerCase();
     const matchSearch = !q || s.clientName.toLowerCase().includes(q) || s.type.toLowerCase().includes(q);
     return matchStatus && matchSearch;
   });
 
-  const serviceTasks = selectedService ? mockTasks.filter(t => t.serviceId === selectedService.id) : [];
+  const serviceTasks = selectedService
+    ? (selectedService.tasks?.length > 0
+        ? selectedService.tasks
+        : mockTasks.filter(t => t.serviceId === selectedService.id))
+    : [];
   const completedTasks = serviceTasks.filter(t => t.status === 'done').length;
   const progress = serviceTasks.length ? Math.round((completedTasks / serviceTasks.length) * 100) : 0;
 
-  const kpis = kpiData(mockServices);
+  const kpis = kpiData(allServices);
 
   return (
     <div style={pageWrap}>
@@ -128,7 +139,7 @@ export default function Services() {
               <option key={s} value={s}>{s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</option>
             ))}
           </select>
-          <button style={btnPrimary}>
+          <button style={btnPrimary} onClick={() => navigate('/services/new')}>
             <Plus size={15} />
             New Service Engagement
           </button>

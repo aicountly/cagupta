@@ -8,6 +8,7 @@ import Dashboard from './pages/Dashboard';
 import Contacts from './pages/Contacts';
 import Organizations from './pages/Organizations';
 import Services from './pages/Services';
+import NewServiceEngagement from './pages/NewServiceEngagement';
 import Documents from './pages/Documents';
 import Invoices from './pages/Invoices';
 import Calendar from './pages/Calendar';
@@ -17,17 +18,18 @@ import Leads from './pages/Leads';
 import Settings from './pages/Settings';
 
 const pageTitles = {
-  '/':                       '🏠 Dashboard',
-  '/clients/contacts':       '👤 Contacts',
-  '/clients/organizations':  '🏢 Organizations',
-  '/services':               '📋 Services & Tasks',
-  '/documents':              '📂 Document Management',
-  '/invoices':               '💰 Invoices & Ledger',
-  '/calendar':               '📅 Calendar & Appointments',
-  '/credentials':            '🔑 Credentials Vault',
-  '/registers':              '📊 Compliance Registers',
-  '/leads':                  '🎯 Leads & Quotations',
-  '/settings':               '⚙️ Settings',
+  '/':                          '🏠 Dashboard',
+  '/clients/contacts':          '👤 Contacts',
+  '/clients/organizations':     '🏢 Organizations',
+  '/services':                  '📋 Services & Tasks',
+  '/services/new':              '➕ New Service Engagement',
+  '/documents':                 '📂 Document Management',
+  '/invoices':                  '💰 Invoices & Ledger',
+  '/calendar':                  '📅 Calendar & Appointments',
+  '/credentials':               '🔑 Credentials Vault',
+  '/registers':                 '📊 Compliance Registers',
+  '/leads':                     '🎯 Leads & Quotations',
+  '/settings':                  '⚙️ Settings',
 };
 
 function Layout({ routePath, children }) {
@@ -58,6 +60,7 @@ export default function App() {
           <Route path="/clients/contacts" element={<ProtectedRoute><Layout routePath="/clients/contacts"><Contacts /></Layout></ProtectedRoute>} />
           <Route path="/clients/organizations" element={<ProtectedRoute><Layout routePath="/clients/organizations"><Organizations /></Layout></ProtectedRoute>} />
           <Route path="/services" element={<ProtectedRoute><Layout routePath="/services"><Services /></Layout></ProtectedRoute>} />
+          <Route path="/services/new" element={<ProtectedRoute><Layout routePath="/services/new"><NewServiceEngagement /></Layout></ProtectedRoute>} />
           <Route path="/documents" element={<ProtectedRoute><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
           <Route path="/calendar" element={<ProtectedRoute><Layout routePath="/calendar"><Calendar /></Layout></ProtectedRoute>} />
