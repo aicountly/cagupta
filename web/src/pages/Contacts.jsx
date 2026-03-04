@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { mockContacts } from '../data/mockData';
+import { useNavigate } from 'react-router-dom';
+import { getContacts } from '../data/contactStore';
 import StatusBadge from '../components/common/StatusBadge';
 
 export default function Contacts() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
 
-  const filtered = mockContacts.filter(c => {
+  const contacts = getContacts();
+  const filtered = contacts.filter(c => {
     const matchSearch =
       c.displayName.toLowerCase().includes(search.toLowerCase()) ||
       c.mobile.includes(search) ||
@@ -32,7 +35,7 @@ export default function Contacts() {
           <option value="inactive">Inactive</option>
           <option value="prospect">Prospect</option>
         </select>
-        <button style={btnPrimary}>➕ Add Contact</button>
+        <button style={btnPrimary} onClick={() => navigate('/clients/contacts/new')}>➕ Add Contact</button>
       </div>
 
       {/* Table */}
@@ -73,7 +76,7 @@ export default function Contacts() {
           </tbody>
         </table>
         <div style={{ padding: '12px 16px', fontSize: 12, color: '#64748b', borderTop: '1px solid #f1f5f9' }}>
-          Showing {filtered.length} of {mockContacts.length} contacts
+          Showing {filtered.length} of {contacts.length} contacts
         </div>
       </div>
     </div>
