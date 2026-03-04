@@ -444,4 +444,56 @@ For questions, suggestions, or collaboration inquiries, please open an issue or 
 
 ---
 
+## 🔐 Authentication Setup
+
+The web app ships with an **authentication-first flow**: unauthenticated users always land on the Login page before reaching the Dashboard.
+
+### Quick Start (Dev / Mock Mode)
+
+No configuration needed.  Just run `npm run dev` inside the `web/` folder.
+
+| Method | Behaviour in mock mode |
+|---|---|
+| Email OTP | Any email works; enter **`123456`** as the OTP |
+| Google | Shows a fallback button that sets a dummy session |
+| Microsoft | Opens the MSAL popup; fails gracefully with a message if not configured |
+
+### Environment Variables (`web/.env`)
+
+Copy `web/.env.example` to `web/.env` and fill in the values:
+
+```env
+VITE_API_BASE_URL=          # optional – omit to use mock/dev mode
+VITE_GOOGLE_CLIENT_ID=      # Google OAuth client ID
+VITE_MSAL_CLIENT_ID=        # Azure App Registration client ID
+VITE_MSAL_TENANT_ID=common  # Tenant ID or "common"
+```
+
+### Google OAuth Setup
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials**.
+2. Create an **OAuth 2.0 Client ID** (Web application).
+3. Add your domain as an **Authorised JavaScript Origin** (e.g. `https://yourdomain.com`).
+4. Copy the **Client ID** into `VITE_GOOGLE_CLIENT_ID`.
+
+### Microsoft / Outlook OAuth Setup
+
+1. Go to [Azure Portal](https://portal.azure.com/) → **Azure Active Directory** → **App Registrations** → **New registration**.
+2. Under **Redirect URIs**, add a **Single-Page Application** URI matching your deployed URL exactly (including any base path and trailing slash).
+3. Copy the **Application (client) ID** into `VITE_MSAL_CLIENT_ID`.
+4. Set `VITE_MSAL_TENANT_ID` to your Directory (tenant) ID, or keep `common` to allow any Microsoft account.
+
+### Backend Endpoints (if `VITE_API_BASE_URL` is set)
+
+| Method | Endpoint | Body |
+|---|---|---|
+| `POST` | `/auth/google` | `{ credential: "<google-id-token>" }` |
+| `POST` | `/auth/microsoft` | `{ idToken, email, name }` |
+| `POST` | `/auth/request-otp` | `{ email }` |
+| `POST` | `/auth/verify-otp` | `{ email, otp }` |
+
+All endpoints should return `{ token: "...", user: { name, email, initials } }` on success.
+
+---
+
 > **Built with ❤️ for the Chartered Accountancy profession — because your practice deserves better than spreadsheets.**

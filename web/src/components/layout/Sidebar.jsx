@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import logoUrl from '../../assets/cropped_logo.png';
+import { useAuth } from '../../auth/AuthContext';
+import { getInitials } from '../../utils/getInitials';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen,
@@ -45,8 +47,13 @@ const navSections = [
 
 export default function Sidebar() {
   const loc = useLocation();
+  const { session } = useAuth();
   const isClientsActive = loc.pathname.startsWith('/clients');
   const [clientsOpen, setClientsOpen] = useState(isClientsActive);
+
+  const user = session?.user;
+  const displayName = user?.name || 'CA Rahul Gupta';
+  const initials = user?.initials || getInitials(displayName);
 
   // Keep the sub-menu open whenever navigating to a /clients/* route
   useEffect(() => {
@@ -154,9 +161,9 @@ export default function Sidebar() {
 
       {/* User card */}
       <div style={styles.userCard}>
-        <div style={styles.avatar}>RG</div>
+        <div style={styles.avatar}>{initials}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 13, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>CA Rahul Gupta</div>
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</div>
           <div style={{ fontSize: 11, color: '#94a3b8' }}>Admin · Mumbai</div>
         </div>
         <div style={styles.onlineDot} />

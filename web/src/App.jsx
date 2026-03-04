@@ -1,4 +1,7 @@
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './auth/AuthContext';
+import ProtectedRoute from './auth/ProtectedRoute';
+import LoginPage from './pages/Login';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 import Dashboard from './pages/Dashboard';
@@ -27,12 +30,12 @@ const pageTitles = {
   '/settings':               '⚙️ Settings',
 };
 
-function Layout({ path, children }) {
+function Layout({ routePath, children }) {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F6F7FB', overflow: 'hidden' }}>
-        <TopBar title={pageTitles[path] || 'CA Office Portal'} />
+        <TopBar title={pageTitles[routePath] || 'CA Office Portal'} />
         <main style={{ flex: 1, overflowY: 'auto' }}>
           {children}
         </main>
@@ -44,21 +47,27 @@ function Layout({ path, children }) {
 export default function App() {
   return (
     <HashRouter>
-      <Routes>
-        <Route path="/" element={<Layout path="/"><Dashboard /></Layout>} />
-        <Route path="/clients" element={<Navigate to="/clients/contacts" replace />} />
-        <Route path="/clients/contacts" element={<Layout path="/clients/contacts"><Contacts /></Layout>} />
-        <Route path="/clients/organizations" element={<Layout path="/clients/organizations"><Organizations /></Layout>} />
-        <Route path="/services" element={<Layout path="/services"><Services /></Layout>} />
-        <Route path="/documents" element={<Layout path="/documents"><Documents /></Layout>} />
-        <Route path="/invoices" element={<Layout path="/invoices"><Invoices /></Layout>} />
-        <Route path="/calendar" element={<Layout path="/calendar"><Calendar /></Layout>} />
-        <Route path="/credentials" element={<Layout path="/credentials"><Credentials /></Layout>} />
-        <Route path="/registers" element={<Layout path="/registers"><Registers /></Layout>} />
-        <Route path="/leads" element={<Layout path="/leads"><Leads /></Layout>} />
-        <Route path="/settings" element={<Layout path="/settings"><Settings /></Layout>} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+      <AuthProvider>
+        <Routes>
+          {/* Public route */}
+          <Route path="/login" element={<LoginPage />} />
+
+          {/* Protected routes — all wrapped in Layout */}
+          <Route path="/" element={<ProtectedRoute><Layout routePath="/"><Dashboard /></Layout></ProtectedRoute>} />
+          <Route path="/clients" element={<ProtectedRoute><Navigate to="/clients/contacts" replace /></ProtectedRoute>} />
+          <Route path="/clients/contacts" element={<ProtectedRoute><Layout routePath="/clients/contacts"><Contacts /></Layout></ProtectedRoute>} />
+          <Route path="/clients/organizations" element={<ProtectedRoute><Layout routePath="/clients/organizations"><Organizations /></Layout></ProtectedRoute>} />
+          <Route path="/services" element={<ProtectedRoute><Layout routePath="/services"><Services /></Layout></ProtectedRoute>} />
+          <Route path="/documents" element={<ProtectedRoute><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
+          <Route path="/invoices" element={<ProtectedRoute><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
+          <Route path="/calendar" element={<ProtectedRoute><Layout routePath="/calendar"><Calendar /></Layout></ProtectedRoute>} />
+          <Route path="/credentials" element={<ProtectedRoute><Layout routePath="/credentials"><Credentials /></Layout></ProtectedRoute>} />
+          <Route path="/registers" element={<ProtectedRoute><Layout routePath="/registers"><Registers /></Layout></ProtectedRoute>} />
+          <Route path="/leads" element={<ProtectedRoute><Layout routePath="/leads"><Leads /></Layout></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><Layout routePath="/settings"><Settings /></Layout></ProtectedRoute>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </AuthProvider>
     </HashRouter>
   );
 }

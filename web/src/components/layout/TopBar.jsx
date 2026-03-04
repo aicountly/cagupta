@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { Search, Bell, ChevronRight } from 'lucide-react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../../auth/AuthContext';
+import { getInitials } from '../../utils/getInitials';
 
 const breadcrumbMap = {
   '/':                       ['Home'],
@@ -22,8 +24,20 @@ export default function TopBar({ title }) {
   const [avatarOpen, setAvatarOpen] = useState(false);
   const dropdownRef = useRef(null);
   const loc = useLocation();
+  const navigate = useNavigate();
+  const { session, logout } = useAuth();
   const crumbs = breadcrumbMap[loc.pathname] || ['Home'];
   const pageTitle = crumbs[crumbs.length - 1];
+
+  const user = session?.user;
+  const displayName = user?.name || 'CA Rahul Gupta';
+  const initials = user?.initials || getInitials(displayName);
+
+  function handleSignOut() {
+    setAvatarOpen(false);
+    logout();
+    navigate('/login', { replace: true });
+  }
 
   // Close the account menu when clicking anywhere outside it.
   // dropdownRef is intentionally omitted from the dependency array:
@@ -78,9 +92,9 @@ export default function TopBar({ title }) {
             onClick={() => setAvatarOpen(v => !v)}
             title="Account menu"
           >
-            <div style={styles.avatarCircle}>RG</div>
+            <div style={styles.avatarCircle}>{initials}</div>
             <div style={styles.avatarInfo}>
-              <span style={styles.avatarName}>CA Rahul Gupta</span>
+              <span style={styles.avatarName}>{displayName}</span>
               <span style={styles.avatarRole}>Admin</span>
             </div>
           </button>
@@ -90,7 +104,7 @@ export default function TopBar({ title }) {
               <div style={styles.dropItem} onClick={() => setAvatarOpen(false)}>Change Password</div>
               <div
                 style={{ ...styles.dropItem, borderTop: '1px solid #f1f5f9', color: '#ef4444', marginTop: 4, paddingTop: 8 }}
-                onClick={() => setAvatarOpen(false)}
+                onClick={handleSignOut}
               >
                 Sign Out
               </div>
