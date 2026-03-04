@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom';
-import logoUrl from '../../assets/logo.png';
+import logoUrl from '../../assets/cropped_logo.png';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen,
