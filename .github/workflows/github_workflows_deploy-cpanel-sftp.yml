@@ -1,8 +1,6 @@
 name: Deploy to cPanel via FTP (web + PHP API)
 
 on:
-  push:
-    branches: ["main"]
   workflow_dispatch:
 
 concurrency:
