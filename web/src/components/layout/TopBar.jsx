@@ -3,16 +3,18 @@ import { Search, Bell, ChevronRight } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 
 const breadcrumbMap = {
-  '/':            ['Home'],
-  '/clients':     ['Home', 'Clients'],
-  '/services':    ['Home', 'Services & Tasks'],
-  '/documents':   ['Home', 'Documents'],
-  '/invoices':    ['Home', 'Invoices & Ledger'],
-  '/calendar':    ['Home', 'Calendar'],
-  '/credentials': ['Home', 'Credentials Vault'],
-  '/registers':   ['Home', 'Registers'],
-  '/leads':       ['Home', 'Leads & Quotations'],
-  '/settings':    ['Home', 'Settings'],
+  '/':                       ['Home'],
+  '/clients':                ['Home', 'Clients'],
+  '/clients/contacts':       ['Home', 'Clients', 'Contacts'],
+  '/clients/organizations':  ['Home', 'Clients', 'Organizations'],
+  '/services':               ['Home', 'Services & Tasks'],
+  '/documents':              ['Home', 'Documents'],
+  '/invoices':               ['Home', 'Invoices & Ledger'],
+  '/calendar':               ['Home', 'Calendar'],
+  '/credentials':            ['Home', 'Credentials Vault'],
+  '/registers':              ['Home', 'Registers'],
+  '/leads':                  ['Home', 'Leads & Quotations'],
+  '/settings':               ['Home', 'Settings'],
 };
 
 export default function TopBar({ title }) {

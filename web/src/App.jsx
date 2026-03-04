@@ -2,7 +2,8 @@ import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 import Dashboard from './pages/Dashboard';
-import Clients from './pages/Clients';
+import Contacts from './pages/Contacts';
+import Organizations from './pages/Organizations';
 import Services from './pages/Services';
 import Documents from './pages/Documents';
 import Invoices from './pages/Invoices';
@@ -13,16 +14,17 @@ import Leads from './pages/Leads';
 import Settings from './pages/Settings';
 
 const pageTitles = {
-  '/':              '🏠 Dashboard',
-  '/clients':       '👥 Client Management',
-  '/services':      '📋 Services & Tasks',
-  '/documents':     '📂 Document Management',
-  '/invoices':      '💰 Invoices & Ledger',
-  '/calendar':      '📅 Calendar & Appointments',
-  '/credentials':   '🔑 Credentials Vault',
-  '/registers':     '📊 Compliance Registers',
-  '/leads':         '🎯 Leads & Quotations',
-  '/settings':      '⚙️ Settings',
+  '/':                       '🏠 Dashboard',
+  '/clients/contacts':       '👤 Contacts',
+  '/clients/organizations':  '🏢 Organizations',
+  '/services':               '📋 Services & Tasks',
+  '/documents':              '📂 Document Management',
+  '/invoices':               '💰 Invoices & Ledger',
+  '/calendar':               '📅 Calendar & Appointments',
+  '/credentials':            '🔑 Credentials Vault',
+  '/registers':              '📊 Compliance Registers',
+  '/leads':                  '🎯 Leads & Quotations',
+  '/settings':               '⚙️ Settings',
 };
 
 function Layout({ path, children }) {
@@ -44,7 +46,9 @@ export default function App() {
     <HashRouter>
       <Routes>
         <Route path="/" element={<Layout path="/"><Dashboard /></Layout>} />
-        <Route path="/clients" element={<Layout path="/clients"><Clients /></Layout>} />
+        <Route path="/clients" element={<Navigate to="/clients/contacts" replace />} />
+        <Route path="/clients/contacts" element={<Layout path="/clients/contacts"><Contacts /></Layout>} />
+        <Route path="/clients/organizations" element={<Layout path="/clients/organizations"><Organizations /></Layout>} />
         <Route path="/services" element={<Layout path="/services"><Services /></Layout>} />
         <Route path="/documents" element={<Layout path="/documents"><Documents /></Layout>} />
         <Route path="/invoices" element={<Layout path="/invoices"><Invoices /></Layout>} />
