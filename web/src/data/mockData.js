@@ -1,5 +1,21 @@
 // ─── Mock data for UI prototyping ────────────────────────────────────────────
 
+export const mockContacts = [
+  { id: 'ct1', clientCode: 'CLT-0001', displayName: 'Ramesh Agarwal', mobile: '9876543210', pan: 'AABPA1234C', linkedOrgsCount: 2, assignedManager: 'CA Rahul Gupta', city: 'Mumbai', status: 'active' },
+  { id: 'ct2', clientCode: 'CLT-0004', displayName: 'Kavita Desai', mobile: '9012345678', pan: 'AAEPK3456F', linkedOrgsCount: 0, assignedManager: 'CA Rahul Gupta', city: 'Mumbai', status: 'inactive' },
+  { id: 'ct3', clientCode: 'CLT-0006', displayName: 'Suresh Mehta', mobile: '9988112233', pan: 'AABSM2233H', linkedOrgsCount: 1, assignedManager: 'CA Priya Sharma', city: 'Nagpur', status: 'active' },
+  { id: 'ct4', clientCode: 'CLT-0007', displayName: 'Anita Joshi', mobile: '9870001122', pan: 'AACAJ4410K', linkedOrgsCount: 3, assignedManager: 'CA Rahul Gupta', city: 'Pune', status: 'active' },
+  { id: 'ct5', clientCode: 'CLT-0009', displayName: 'Vijay Patil', mobile: '9823001122', pan: 'AADVP5501L', linkedOrgsCount: 0, assignedManager: 'CA Priya Sharma', city: 'Thane', status: 'prospect' },
+];
+
+export const mockOrganizations = [
+  { id: 'org1', clientCode: 'ORG-0001', displayName: 'Sunita Enterprises Pvt Ltd', constitution: 'Pvt Ltd', pan: 'AACCS5678D', gstin: '27AACCS5678D1Z3', primaryContact: 'Kavita Desai', assignedManager: 'CA Rahul Gupta', city: 'Pune', status: 'active' },
+  { id: 'org2', clientCode: 'ORG-0002', displayName: 'Mehta & Sons LLP', constitution: 'LLP', pan: 'AADM9012E', gstin: null, primaryContact: 'Suresh Mehta', assignedManager: 'CA Priya Sharma', city: 'Nashik', status: 'active' },
+  { id: 'org3', clientCode: 'ORG-0003', displayName: 'Techno Traders', constitution: 'Partnership', pan: 'AAFT7890G', gstin: '27AAFT7890G1Z1', primaryContact: '—', assignedManager: 'CA Priya Sharma', city: 'Thane', status: 'active' },
+  { id: 'org4', clientCode: 'ORG-0004', displayName: 'Patil Constructions', constitution: 'Proprietorship', pan: 'AABPP1122H', gstin: null, primaryContact: 'Vijay Patil', assignedManager: 'CA Rahul Gupta', city: 'Mumbai', status: 'inactive' },
+  { id: 'org5', clientCode: 'ORG-0005', displayName: 'Sri Balaji HUF', constitution: 'HUF', pan: 'AACHB3344J', gstin: null, primaryContact: '—', assignedManager: 'CA Rahul Gupta', city: 'Mumbai', status: 'active' },
+];
+
 export const mockClients = [
   { id: 'c1', clientCode: 'CLT-0001', displayName: 'Ramesh Agarwal', entityType: 'individual', pan: 'AABPA1234C', gstin: '27AABPA1234C1Z5', status: 'active', primaryPhone: '9876543210', primaryEmail: 'ramesh@example.com', assignedManager: 'CA Rahul Gupta', city: 'Mumbai', onboardingDate: '2022-04-01' },
   { id: 'c2', clientCode: 'CLT-0002', displayName: 'Sunita Enterprises Pvt Ltd', entityType: 'pvt_ltd', pan: 'AACCS5678D', gstin: '27AACCS5678D1Z3', status: 'active', primaryPhone: '9123456789', primaryEmail: 'accounts@sunita.in', assignedManager: 'CA Rahul Gupta', city: 'Pune', onboardingDate: '2021-07-15' },

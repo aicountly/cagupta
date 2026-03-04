@@ -1,9 +1,11 @@
-import { NavLink } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { NavLink, useLocation } from 'react-router-dom';
 import logoUrl from '../../assets/logo.png';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen,
-  Target, Settings, ChevronRight,
+  Target, Settings, ChevronRight, ChevronDown,
+  UserRound, Building2,
 } from 'lucide-react';
 
 const navSections = [
@@ -11,7 +13,14 @@ const navSections = [
     label: 'MAIN',
     items: [
       { to: '/', label: 'Dashboard', icon: LayoutDashboard, exact: true },
-      { to: '/clients', label: 'Clients', icon: Users },
+      {
+        label: 'Clients',
+        icon: Users,
+        children: [
+          { to: '/clients/contacts', label: 'Contacts', icon: UserRound },
+          { to: '/clients/organizations', label: 'Organizations', icon: Building2 },
+        ],
+      },
       { to: '/services', label: 'Services & Tasks', icon: ClipboardList },
       { to: '/documents', label: 'Documents', icon: FolderOpen },
     ],
@@ -35,6 +44,14 @@ const navSections = [
 ];
 
 export default function Sidebar() {
+  const loc = useLocation();
+  const isClientsActive = loc.pathname.startsWith('/clients');
+  const [clientsOpen, setClientsOpen] = useState(isClientsActive);
+
+  // Keep the sub-menu open whenever navigating to a /clients/* route
+  useEffect(() => {
+    if (isClientsActive) setClientsOpen(true);
+  }, [isClientsActive]);
   return (
     <aside style={styles.sidebar}>
       {/* Brand */}
@@ -42,13 +59,73 @@ export default function Sidebar() {
         <img src={logoUrl} alt="CA Rahul Gupta – Office Portal" style={styles.brandLogo} />
       </div>
 
-      {/* Nav */}
       <nav style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
         {navSections.map((section) => (
           <div key={section.label}>
             <div style={styles.sectionLabel}>{section.label}</div>
             {section.items.map((item) => {
               const Icon = item.icon;
+
+              // Clients: render as expandable parent with sub-items
+              if (item.children) {
+                const parentActive = isClientsActive;
+                return (
+                  <div key={item.label}>
+                    <button
+                      onClick={() => setClientsOpen(v => !v)}
+                      style={{
+                        ...styles.navLink,
+                        width: '100%',
+                        background: 'none',
+                        border: 'none',
+                        textAlign: 'left',
+                        cursor: 'pointer',
+                        ...(parentActive ? styles.navLinkActive : {}),
+                      }}
+                    >
+                      <span style={{ ...styles.navIcon, ...(parentActive ? styles.navIconActive : {}) }}>
+                        <Icon size={15} />
+                      </span>
+                      <span style={styles.navText}>{item.label}</span>
+                      {clientsOpen
+                        ? <ChevronDown size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+                        : <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+                      }
+                    </button>
+                    {clientsOpen && (
+                      <div style={{ paddingLeft: 16 }}>
+                        {item.children.map((child) => {
+                          const ChildIcon = child.icon;
+                          return (
+                            <NavLink
+                              key={child.to}
+                              to={child.to}
+                              style={({ isActive }) => ({
+                                ...styles.navLink,
+                                fontSize: 12,
+                                paddingTop: 6,
+                                paddingBottom: 6,
+                                ...(isActive ? styles.navLinkActive : {}),
+                              })}
+                            >
+                              {({ isActive }) => (
+                                <>
+                                  <span style={{ ...styles.navIcon, ...(isActive ? styles.navIconActive : {}) }}>
+                                    <ChildIcon size={14} />
+                                  </span>
+                                  <span style={styles.navText}>{child.label}</span>
+                                  {isActive && <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
+                                </>
+                              )}
+                            </NavLink>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              }
+
               return (
                 <NavLink
                   key={item.to}
