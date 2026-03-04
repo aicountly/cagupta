@@ -30,3 +30,11 @@
     "vite": "^7.3.1"
   }
 }
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:github": "vite build --mode github",
+    "preview": "vite preview"
+  }
+}
