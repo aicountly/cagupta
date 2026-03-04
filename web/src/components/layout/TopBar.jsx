@@ -9,6 +9,7 @@ const breadcrumbMap = {
   '/clients':                ['Home', 'Clients'],
   '/clients/contacts':       ['Home', 'Clients', 'Contacts'],
   '/clients/organizations':  ['Home', 'Clients', 'Organizations'],
+  '/clients/organizations/new': ['Home', 'Clients', 'Organizations', 'Add Organization'],
   '/services':               ['Home', 'Services & Tasks'],
   '/services/new':           ['Home', 'Services & Tasks', 'New Service Engagement'],
   '/documents':              ['Home', 'Documents'],

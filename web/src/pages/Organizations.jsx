@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { mockOrganizations } from '../data/mockData';
+import { useNavigate } from 'react-router-dom';
+import { getOrganizations } from '../data/organizationStore';
 import StatusBadge from '../components/common/StatusBadge';
 
 export default function Organizations() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
 
-  const filtered = mockOrganizations.filter(o => {
+  const orgs = getOrganizations();
+  const filtered = orgs.filter(o => {
     const matchSearch =
       o.displayName.toLowerCase().includes(search.toLowerCase()) ||
       o.pan?.includes(search.toUpperCase()) ||
@@ -32,7 +35,7 @@ export default function Organizations() {
           <option value="inactive">Inactive</option>
           <option value="prospect">Prospect</option>
         </select>
-        <button style={btnPrimary}>➕ Add Organization</button>
+        <button style={btnPrimary} onClick={() => navigate('/clients/organizations/new')}>➕ Add Organization</button>
       </div>
 
       {/* Table */}
@@ -68,7 +71,7 @@ export default function Organizations() {
           </tbody>
         </table>
         <div style={{ padding: '12px 16px', fontSize: 12, color: '#64748b', borderTop: '1px solid #f1f5f9' }}>
-          Showing {filtered.length} of {mockOrganizations.length} organizations
+          Showing {filtered.length} of {orgs.length} organizations
         </div>
       </div>
     </div>
