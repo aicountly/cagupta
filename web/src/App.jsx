@@ -6,6 +6,7 @@ import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 import Dashboard from './pages/Dashboard';
 import Contacts from './pages/Contacts';
+import ContactCreatePage from './pages/ContactCreatePage';
 import Organizations from './pages/Organizations';
 import Services from './pages/Services';
 import NewServiceEngagement from './pages/NewServiceEngagement';
@@ -20,6 +21,7 @@ import Settings from './pages/Settings';
 const pageTitles = {
   '/':                          '🏠 Dashboard',
   '/clients/contacts':          '👤 Contacts',
+  '/clients/contacts/new':      '➕ Add Contact',
   '/clients/organizations':     '🏢 Organizations',
   '/services':                  '📋 Services & Tasks',
   '/services/new':              '➕ New Service Engagement',
@@ -58,6 +60,7 @@ export default function App() {
           <Route path="/" element={<ProtectedRoute><Layout routePath="/"><Dashboard /></Layout></ProtectedRoute>} />
           <Route path="/clients" element={<ProtectedRoute><Navigate to="/clients/contacts" replace /></ProtectedRoute>} />
           <Route path="/clients/contacts" element={<ProtectedRoute><Layout routePath="/clients/contacts"><Contacts /></Layout></ProtectedRoute>} />
+          <Route path="/clients/contacts/new" element={<ProtectedRoute><Layout routePath="/clients/contacts/new"><ContactCreatePage /></Layout></ProtectedRoute>} />
           <Route path="/clients/organizations" element={<ProtectedRoute><Layout routePath="/clients/organizations"><Organizations /></Layout></ProtectedRoute>} />
           <Route path="/services" element={<ProtectedRoute><Layout routePath="/services"><Services /></Layout></ProtectedRoute>} />
           <Route path="/services/new" element={<ProtectedRoute><Layout routePath="/services/new"><NewServiceEngagement /></Layout></ProtectedRoute>} />
