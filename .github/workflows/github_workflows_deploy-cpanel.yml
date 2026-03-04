@@ -43,7 +43,13 @@ jobs:
           protocol: ftp
           local-dir: web/dist/
           server-dir: ${{ secrets.CPANEL_FTP_REMOTE_ROOT }}/
-
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/node_modules/**
+            **/.DS_Store
+            **/Thumbs.db
+      
       - name: Deploy server-php via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
@@ -54,3 +60,9 @@ jobs:
           protocol: ftp
           local-dir: server-php/
           server-dir: ${{ secrets.CPANEL_FTP_REMOTE_ROOT }}/api/
+          exclude: |
+            **/.git*
+            **/.github/**
+            **/node_modules/**
+            **/.DS_Store
+            **/Thumbs.db
