@@ -48,10 +48,10 @@ export const mockDocuments = [
 ];
 
 export const mockInvoices = [
-  { id: 'i1', invoiceNumber: 'RG/24-25/001', clientId: 'c1', clientName: 'Ramesh Agarwal', invoiceDate: '2025-04-01', dueDate: '2025-04-15', totalAmount: 5900, amountPaid: 5900, status: 'paid' },
-  { id: 'i2', invoiceNumber: 'RG/24-25/002', clientId: 'c2', clientName: 'Sunita Enterprises Pvt Ltd', invoiceDate: '2025-04-05', dueDate: '2025-04-30', totalAmount: 35400, amountPaid: 20000, status: 'partially_paid' },
-  { id: 'i3', invoiceNumber: 'RG/24-25/003', clientId: 'c3', clientName: 'Mehta & Sons LLP', invoiceDate: '2025-05-01', dueDate: '2025-05-15', totalAmount: 11800, amountPaid: 0, status: 'overdue' },
-  { id: 'i4', invoiceNumber: 'RG/24-25/004', clientId: 'c5', clientName: 'Techno Traders', invoiceDate: '2025-05-10', dueDate: '2025-05-31', totalAmount: 8260, amountPaid: 0, status: 'sent' },
+  { id: 'i1', invoiceNumber: 'RG/24-25/001', clientId: 'c1', clientName: 'Ramesh Agarwal', invoiceDate: '2025-04-01', dueDate: '2025-04-15', totalAmount: 5900, amountPaid: 5900, status: 'paid', billingProfileCode: 'RBGC-CHD' },
+  { id: 'i2', invoiceNumber: 'RG/24-25/002', clientId: 'c2', clientName: 'Sunita Enterprises Pvt Ltd', invoiceDate: '2025-04-05', dueDate: '2025-04-30', totalAmount: 35400, amountPaid: 20000, status: 'partially_paid', billingProfileCode: 'RBGC-JAL' },
+  { id: 'i3', invoiceNumber: 'RG/24-25/003', clientId: 'c3', clientName: 'Mehta & Sons LLP', invoiceDate: '2025-05-01', dueDate: '2025-05-15', totalAmount: 11800, amountPaid: 0, status: 'overdue', billingProfileCode: 'PROFS' },
+  { id: 'i4', invoiceNumber: 'RG/24-25/004', clientId: 'c5', clientName: 'Techno Traders', invoiceDate: '2025-05-10', dueDate: '2025-05-31', totalAmount: 8260, amountPaid: 0, status: 'sent', billingProfileCode: 'TEFL' },
 ];
 
 export const mockAppointments = [
