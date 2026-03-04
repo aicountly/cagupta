@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import logoUrl from '../../assets/logo.png';
-import { NavLink } from 'react-router-dom';
 import logoUrl from '../../assets/cropped_logo.png';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
