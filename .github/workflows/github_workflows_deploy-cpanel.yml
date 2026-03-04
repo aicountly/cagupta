@@ -25,7 +25,21 @@ jobs:
       - name: Install web dependencies
         working-directory: web
         run: npm ci
-
+        
+     - name: Debug web/package.json (CI)
+            run: |
+              echo "=== HEAD ==="
+              git rev-parse HEAD
+              echo "=== web/package.json (first 120 lines) ==="
+              nl -ba web/package.json | sed -n '1,120p'
+              echo "=== bytes/encoding check ==="
+              python3 - <<'PY'
+              b=open('web/package.json','rb').read()
+              print("len:", len(b))
+              print("first20bytes:", b[:20])
+              print("contains_null:", b'\x00' in b)
+              PY
+              
       - name: Build web (Vite)
         working-directory: web
         run: npm run build
