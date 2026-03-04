@@ -1,17 +1,155 @@
 import { useState } from 'react';
 import { mockInvoices, mockClients } from '../data/mockData';
 import StatusBadge from '../components/common/StatusBadge';
+import { BILLING_PROFILES, getBillingProfileByCode } from '../constants/billingProfiles';
 
 const ledger = [
-  { date:'2025-04-01', narration:'Invoice RG/24-25/001', debit:5900, credit:0, balance:5900 },
-  { date:'2025-04-10', narration:'Payment received – NEFT', debit:0, credit:5900, balance:0 },
-  { date:'2025-04-05', narration:'Invoice RG/24-25/002', debit:35400, credit:0, balance:35400 },
-  { date:'2025-04-20', narration:'Part payment – UPI', debit:0, credit:20000, balance:15400 },
+  { date:'2025-04-01', narration:'Invoice RG/24-25/001', debit:5900, credit:0, balance:5900, billingProfileCode:'RBGC-CHD' },
+  { date:'2025-04-10', narration:'Payment received – NEFT', debit:0, credit:5900, balance:0, billingProfileCode:'RBGC-CHD' },
+  { date:'2025-04-05', narration:'Invoice RG/24-25/002', debit:35400, credit:0, balance:35400, billingProfileCode:'RBGC-JAL' },
+  { date:'2025-04-20', narration:'Part payment – UPI', debit:0, credit:20000, balance:15400, billingProfileCode:'RBGC-JAL' },
 ];
+
+function BillingProfileBadge({ code }) {
+  const profile = getBillingProfileByCode(code);
+  if (!code) return <span style={{ color:'#94a3b8' }}>—</span>;
+  return (
+    <span
+      title={profile ? profile.name : code}
+      style={{ background:'#f0f4ff', color:'#3730a3', padding:'2px 8px', borderRadius:99, fontSize:11, fontWeight:700, whiteSpace:'nowrap', letterSpacing:'0.02em', display:'inline-block', border:'1px solid #c7d2fe' }}
+    >
+      {code}
+    </span>
+  );
+}
+
+function RaiseInvoiceModal({ onClose, onSave, clients }) {
+  const [form, setForm] = useState({ clientId: clients[0]?.id || '', invoiceDate: new Date().toISOString().slice(0,10), dueDate: '', totalAmount: '', notes: '', billingProfileCode: '' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const handleSave = () => {
+    if (!form.clientId || !form.invoiceDate || !form.totalAmount) return;
+    onSave(form);
+    onClose();
+  };
+  return (
+    <div style={overlayStyle}>
+      <div style={modalStyle}>
+        <div style={modalHeaderStyle}>
+          <span style={{ fontSize:15, fontWeight:700 }}>🧾 Raise Invoice</span>
+          <button onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+          <label style={labelStyle}>
+            Client
+            <select style={inputStyle} value={form.clientId} onChange={e=>set('clientId',e.target.value)}>
+              {clients.map(c=><option key={c.id} value={c.id}>{c.displayName}</option>)}
+            </select>
+          </label>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+            <label style={labelStyle}>
+              Invoice Date
+              <input type="date" style={inputStyle} value={form.invoiceDate} onChange={e=>set('invoiceDate',e.target.value)} />
+            </label>
+            <label style={labelStyle}>
+              Due Date
+              <input type="date" style={inputStyle} value={form.dueDate} onChange={e=>set('dueDate',e.target.value)} />
+            </label>
+          </div>
+          <label style={labelStyle}>
+            Amount (₹)
+            <input type="number" style={inputStyle} placeholder="e.g. 5900" value={form.totalAmount} onChange={e=>set('totalAmount',e.target.value)} />
+          </label>
+          <label style={labelStyle}>
+            Billing Profile
+            <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
+              <option value="">— Select Billing Profile —</option>
+              {BILLING_PROFILES.map(p=>(
+                <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
+              ))}
+            </select>
+          </label>
+          <label style={labelStyle}>
+            Notes
+            <input type="text" style={inputStyle} placeholder="Optional notes" value={form.notes} onChange={e=>set('notes',e.target.value)} />
+          </label>
+        </div>
+        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }}>
+          <button onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button onClick={handleSave} style={btnPrimary}>Save Invoice</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecordPaymentModal({ onClose, onSave, invoice }) {
+  const [form, setForm] = useState({ amount: '', paymentDate: new Date().toISOString().slice(0,10), method: 'NEFT', reference: '', billingProfileCode: invoice?.billingProfileCode || '' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const handleSave = () => {
+    if (!form.amount || !form.paymentDate) return;
+    onSave(form);
+    onClose();
+  };
+  return (
+    <div style={overlayStyle}>
+      <div style={modalStyle}>
+        <div style={modalHeaderStyle}>
+          <span style={{ fontSize:15, fontWeight:700 }}>💳 Record Payment</span>
+          <button onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        {invoice && (
+          <div style={{ margin:'16px 24px 0', padding:'10px 14px', background:'#f8fafc', borderRadius:8, fontSize:12, color:'#475569' }}>
+            Invoice: <strong>{invoice.invoiceNumber}</strong> · Client: <strong>{invoice.clientName}</strong> · Balance: <strong>₹{(invoice.totalAmount-invoice.amountPaid).toLocaleString('en-IN')}</strong>
+          </div>
+        )}
+        <div style={{ padding:'16px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+            <label style={labelStyle}>
+              Amount (₹)
+              <input type="number" style={inputStyle} placeholder="e.g. 5900" value={form.amount} onChange={e=>set('amount',e.target.value)} />
+            </label>
+            <label style={labelStyle}>
+              Payment Date
+              <input type="date" style={inputStyle} value={form.paymentDate} onChange={e=>set('paymentDate',e.target.value)} />
+            </label>
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+            <label style={labelStyle}>
+              Payment Method
+              <select style={inputStyle} value={form.method} onChange={e=>set('method',e.target.value)}>
+                {['NEFT','RTGS','UPI','Cheque','Cash','IMPS'].map(m=><option key={m}>{m}</option>)}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Reference No.
+              <input type="text" style={inputStyle} placeholder="UTR / Cheque No." value={form.reference} onChange={e=>set('reference',e.target.value)} />
+            </label>
+          </div>
+          <label style={labelStyle}>
+            Billing Profile
+            <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
+              <option value="">— Select Billing Profile —</option>
+              {BILLING_PROFILES.map(p=>(
+                <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }}>
+          <button onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button onClick={handleSave} style={btnPrimary}>Save Payment</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Invoices() {
   const [tab, setTab] = useState('invoices');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [showRaiseInvoice, setShowRaiseInvoice] = useState(false);
+  const [showRecordPayment, setShowRecordPayment] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
 
   const filtered = mockInvoices.filter(i => statusFilter==='all' || i.status===statusFilter);
   const totalOutstanding = mockInvoices.filter(i=>i.status!=='paid'&&i.status!=='cancelled').reduce((a,i)=>a+(i.totalAmount-i.amountPaid),0);
@@ -19,6 +157,21 @@ export default function Invoices() {
 
   return (
     <div style={{ padding:24 }}>
+      {showRaiseInvoice && (
+        <RaiseInvoiceModal
+          clients={mockClients}
+          onClose={() => setShowRaiseInvoice(false)}
+          onSave={(data) => { console.log('New invoice:', data); }}
+        />
+      )}
+      {showRecordPayment && (
+        <RecordPaymentModal
+          invoice={selectedInvoice}
+          onClose={() => { setShowRecordPayment(false); setSelectedInvoice(null); }}
+          onSave={(data) => { console.log('Payment recorded:', data); }}
+        />
+      )}
+
       {/* Summary cards */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:24 }}>
         {[
@@ -41,7 +194,7 @@ export default function Invoices() {
             {t==='invoices'?'🧾 Invoices':'📒 Ledger'}
           </button>
         ))}
-        <button style={{ ...btnPrimary, marginLeft:'auto' }}>🧾 Raise Invoice</button>
+        <button onClick={() => setShowRaiseInvoice(true)} style={{ ...btnPrimary, marginLeft:'auto' }}>🧾 Raise Invoice</button>
       </div>
 
       {tab==='invoices' && (
@@ -71,7 +224,7 @@ export default function Invoices() {
                   <td style={tdStyle}>
                     <button style={iconBtn}>👁️</button>
                     <button style={iconBtn}>📧</button>
-                    <button style={iconBtn}>💳 Record Payment</button>
+                    <button style={iconBtn} onClick={() => { setSelectedInvoice(i); setShowRecordPayment(true); }}>💳 Record Payment</button>
                   </td>
                 </tr>
               ))}
@@ -90,13 +243,18 @@ export default function Invoices() {
           </div>
           <table style={tableStyle}>
             <thead>
-              <tr>{['Date','Narration','Debit (Dr)','Credit (Cr)','Balance'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
+              <tr>
+                {['Date','Narration','Billing Profile','Debit (Dr)','Credit (Cr)','Balance'].map(h=>(
+                  <th key={h} style={thStyle} title={h==='Billing Profile'?'Billing Profile':undefined} aria-label={h==='Billing Profile'?'Billing Profile':undefined}>{h}</th>
+                ))}
+              </tr>
             </thead>
             <tbody>
               {ledger.map((e,i)=>(
                 <tr key={i} style={trStyle}>
                   <td style={tdStyle}>{e.date}</td>
                   <td style={tdStyle}>{e.narration}</td>
+                  <td style={tdStyle}><BillingProfileBadge code={e.billingProfileCode} /></td>
                   <td style={{ ...tdStyle, color:'#dc2626', fontWeight: e.debit?600:400 }}>{e.debit ? `₹${e.debit.toLocaleString('en-IN')}` : '—'}</td>
                   <td style={{ ...tdStyle, color:'#16a34a', fontWeight: e.credit?600:400 }}>{e.credit ? `₹${e.credit.toLocaleString('en-IN')}` : '—'}</td>
                   <td style={{ ...tdStyle, fontWeight:700 }}>₹{e.balance.toLocaleString('en-IN')}</td>
@@ -117,3 +275,10 @@ const tdStyle = { padding:'10px 12px', color:'#334155', verticalAlign:'middle', 
 const trStyle = { borderBottom:'1px solid #f8fafc' };
 const btnPrimary = { padding:'8px 16px', background:'#2563eb', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
 const iconBtn = { background:'none', border:'none', cursor:'pointer', fontSize:13, padding:'2px 6px', marginRight:2, color:'#2563eb' };
+const overlayStyle = { position:'fixed', inset:0, background:'rgba(15,23,42,0.35)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' };
+const modalStyle = { background:'#fff', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', minWidth:480, maxWidth:560, width:'100%' };
+const modalHeaderStyle = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom:'1px solid #f1f5f9' };
+const closeBtnStyle = { background:'none', border:'none', cursor:'pointer', fontSize:16, color:'#64748b', padding:'2px 6px', borderRadius:4 };
+const labelStyle = { display:'flex', flexDirection:'column', gap:4, fontSize:12, fontWeight:600, color:'#475569' };
+const inputStyle = { padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, color:'#334155', outline:'none' };
+const btnSecondary = { padding:'8px 16px', background:'#f8fafc', color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
