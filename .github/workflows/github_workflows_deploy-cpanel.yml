@@ -40,7 +40,7 @@ jobs:
           username: ${{ secrets.CPANEL_FTP_USER }}
           password: ${{ secrets.CPANEL_FTP_PASSWORD }}
           port: ${{ secrets.CPANEL_FTP_PORT }}
-          protocol: ftp
+          protocol: ftps
           local-dir: web/dist/
           server-dir: ${{ secrets.CPANEL_FTP_REMOTE_ROOT }}/
           exclude: |
@@ -57,7 +57,7 @@ jobs:
           username: ${{ secrets.CPANEL_FTP_USER }}
           password: ${{ secrets.CPANEL_FTP_PASSWORD }}
           port: ${{ secrets.CPANEL_FTP_PORT }}
-          protocol: ftp
+          protocol: ftps
           local-dir: server-php/
           server-dir: ${{ secrets.CPANEL_FTP_REMOTE_ROOT }}/api/
           exclude: |
