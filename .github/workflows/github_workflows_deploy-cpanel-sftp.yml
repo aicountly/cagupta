@@ -41,8 +41,7 @@ jobs:
           port: ${{ secrets.CPANEL_FTP_PORT }}
           protocol: ftp
           local-dir: web/dist/
-          server-dir: ${{ secrets.CPANEL_DEPLOY_PATH }}/
-          dangerous-clean-slate: false
+          server-dir: ${{ secrets.CPANEL_FTP_REMOTE_ROOT }}/
 
       - name: Deploy server-php via FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -53,5 +52,4 @@ jobs:
           port: ${{ secrets.CPANEL_FTP_PORT }}
           protocol: ftp
           local-dir: server-php/
-          server-dir: ${{ secrets.CPANEL_DEPLOY_PATH }}/api/
-          dangerous-clean-slate: false
+          server-dir: ${{ secrets.CPANEL_FTP_REMOTE_ROOT }}/api/
