@@ -1,9 +1,6 @@
-name: Deploy to cPanel via FTP (web + PHP API)
+name: Deploy to cPanel via FTPS (web + PHP API)
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:
@@ -33,7 +30,7 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Deploy web/dist via FTP
+      - name: Deploy web/dist via FTPS
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.CPANEL_FTP_HOST }}
@@ -46,11 +43,10 @@ jobs:
           exclude: |
             **/.git*
             **/.github/**
-            **/node_modules/**
             **/.DS_Store
             **/Thumbs.db
-      
-      - name: Deploy server-php via FTP
+
+      - name: Deploy server-php via FTPS
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.CPANEL_FTP_HOST }}
@@ -63,6 +59,5 @@ jobs:
           exclude: |
             **/.git*
             **/.github/**
-            **/node_modules/**
             **/.DS_Store
             **/Thumbs.db
