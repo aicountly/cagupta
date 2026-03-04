@@ -1,4 +1,4 @@
-name: Deploy to cPanel via SFTP (web + PHP API)
+name: Deploy to cPanel via FTP (web + PHP API)
 
 on:
   push:
@@ -32,28 +32,26 @@ jobs:
         working-directory: web
         run: npm run build
 
-      # Deploy React build output to public_html (or your chosen folder)
-      - name: Deploy web/dist via SFTP
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.6
+      - name: Deploy web/dist via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          username: ${{ secrets.CPANEL_SFTP_USER }}
-          server: ${{ secrets.CPANEL_SFTP_HOST }}
-          password: ${{ secrets.CPANEL_SFTP_PASSWORD }}
-          port: ${{ secrets.CPANEL_SFTP_PORT }}
-          local_path: web/dist/*
-          remote_path: ${{ secrets.CPANEL_DEPLOY_PATH }}/
-          sftp_only: true
-          delete_remote_files: false
+          server: ${{ secrets.CPANEL_FTP_HOST }}
+          username: ${{ secrets.CPANEL_FTP_USER }}
+          password: ${{ secrets.CPANEL_FTP_PASSWORD }}
+          port: ${{ secrets.CPANEL_FTP_PORT }}
+          protocol: ftp
+          local-dir: web/dist/
+          server-dir: ${{ secrets.CPANEL_DEPLOY_PATH }}/
+          dangerous-clean-slate: false
 
-      # Deploy PHP API source to public_html/api
-      - name: Deploy server-php via SFTP
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.6
+      - name: Deploy server-php via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          username: ${{ secrets.CPANEL_SFTP_USER }}
-          server: ${{ secrets.CPANEL_SFTP_HOST }}
-          password: ${{ secrets.CPANEL_SFTP_PASSWORD }}
-          port: ${{ secrets.CPANEL_SFTP_PORT }}
-          local_path: server-php/*
-          remote_path: ${{ secrets.CPANEL_DEPLOY_PATH }}/api/
-          sftp_only: true
-          delete_remote_files: false
+          server: ${{ secrets.CPANEL_FTP_HOST }}
+          username: ${{ secrets.CPANEL_FTP_USER }}
+          password: ${{ secrets.CPANEL_FTP_PASSWORD }}
+          port: ${{ secrets.CPANEL_FTP_PORT }}
+          protocol: ftp
+          local-dir: server-php/
+          server-dir: ${{ secrets.CPANEL_DEPLOY_PATH }}/api/
+          dangerous-clean-slate: false
