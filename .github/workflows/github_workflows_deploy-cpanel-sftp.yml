@@ -1,0 +1,59 @@
+name: Deploy to cPanel via SFTP (web + PHP API)
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+concurrency:
+  group: cpanel-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "18"
+          cache: "npm"
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web dependencies
+        working-directory: web
+        run: npm ci
+
+      - name: Build web (Vite)
+        working-directory: web
+        run: npm run build
+
+      # Deploy React build output to public_html (or your chosen folder)
+      - name: Deploy web/dist via SFTP
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.6
+        with:
+          username: ${{ secrets.CPANEL_SFTP_USER }}
+          server: ${{ secrets.CPANEL_SFTP_HOST }}
+          password: ${{ secrets.CPANEL_SFTP_PASSWORD }}
+          port: ${{ secrets.CPANEL_SFTP_PORT }}
+          local_path: web/dist/*
+          remote_path: ${{ secrets.CPANEL_DEPLOY_PATH }}/
+          sftp_only: true
+          delete_remote_files: false
+
+      # Deploy PHP API source to public_html/api
+      - name: Deploy server-php via SFTP
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.6
+        with:
+          username: ${{ secrets.CPANEL_SFTP_USER }}
+          server: ${{ secrets.CPANEL_SFTP_HOST }}
+          password: ${{ secrets.CPANEL_SFTP_PASSWORD }}
+          port: ${{ secrets.CPANEL_SFTP_PORT }}
+          local_path: server-php/*
+          remote_path: ${{ secrets.CPANEL_DEPLOY_PATH }}/api/
+          sftp_only: true
+          delete_remote_files: false
