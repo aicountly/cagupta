@@ -61,6 +61,7 @@ jobs:
             **/.env
             **/.env.*
             !**/.env.example
+            **/.htaccess
 
       - name: Deploy server-php via FTPS
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
