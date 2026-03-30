@@ -1,12 +1,10 @@
-<IfModule mod_rewrite.c>
-  RewriteEngine On
-  RewriteBase /
+Options -MultiViews
+RewriteEngine On
 
-  RewriteRule ^api/ - [L]
+# Route /api/* requests to PHP backend
+RewriteRule ^api/(.*)$ /api/public/index.php [QSA,L]
 
-  RewriteCond %{REQUEST_FILENAME} -f [OR]
-  RewriteCond %{REQUEST_FILENAME} -d
-  RewriteRule ^ - [L]
-
-  RewriteRule ^ index.html [L]
-</IfModule>
+# Route everything else to React app
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [QSA,L]
