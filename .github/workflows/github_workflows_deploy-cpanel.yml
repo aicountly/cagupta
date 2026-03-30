@@ -1,4 +1,4 @@
-name: Deploy to cPanel via FTPS (manual)
+name: Deploy to cPanel via SSH (manual)
 
 on:
   workflow_dispatch:
@@ -17,23 +17,9 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "18"
+          node-version: "20"
           cache: "npm"
           cache-dependency-path: web/package-lock.json
-
-      - name: Debug web/package.json (CI)
-        run: |
-          echo "=== HEAD ==="
-          git rev-parse HEAD
-          echo "=== web/package.json (first 120 lines) ==="
-          nl -ba web/package.json | sed -n '1,120p'
-          echo "=== bytes/encoding check ==="
-          python3 - <<'PY'
-          b=open('web/package.json','rb').read()
-          print("len:", len(b))
-          print("first20bytes:", b[:20])
-          print("contains_null:", b'\x00' in b)
-          PY
 
       - name: Install web dependencies
         working-directory: web
@@ -43,42 +29,39 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Deploy web/dist via FTPS
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: Deploy web/dist to server via SCP
+        uses: appleboy/scp-action@v0.1.7
         with:
-          server: ${{ secrets.CPANEL_FTP_HOST }}
-          username: ${{ secrets.CPANEL_FTP_USER }}
-          password: ${{ secrets.CPANEL_FTP_PASSWORD }}
-          port: ${{ secrets.CPANEL_FTP_PORT }}
-          protocol: ftps
-          local-dir: web/dist/
-          server-dir: ${{ secrets.CPANEL_FTP_REMOTE_ROOT }}/
-          exclude: |
-            **/.git*
-            **/.github/**
-            **/.DS_Store
-            **/Thumbs.db
-            **/.env
-            **/.env.*
-            !**/.env.example
-            **/.htaccess
+          host: ${{ secrets.CPANEL_SSH_HOST }}
+          username: ${{ secrets.CPANEL_SSH_USER }}
+          key: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.CPANEL_SSH_PORT }}
+          source: "web/dist/*"
+          target: ${{ secrets.CPANEL_REMOTE_ROOT }}/
+          strip_components: 2
+          overwrite: true
 
-      - name: Deploy server-php via FTPS
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+      - name: Deploy server-php to server via SCP
+        uses: appleboy/scp-action@v0.1.7
         with:
-          server: ${{ secrets.CPANEL_FTP_HOST }}
-          username: ${{ secrets.CPANEL_FTP_USER }}
-          password: ${{ secrets.CPANEL_FTP_PASSWORD }}
-          port: ${{ secrets.CPANEL_FTP_PORT }}
-          protocol: ftps
-          local-dir: server-php/
-          server-dir: ${{ secrets.CPANEL_FTP_REMOTE_ROOT }}/api/
-          exclude: |
-            **/.git*
-            **/.github/**
-            **/.DS_Store
-            **/Thumbs.db
-            **/.env
-            **/.env.*
-            !**/.env.example
-            **/.htaccess
+          host: ${{ secrets.CPANEL_SSH_HOST }}
+          username: ${{ secrets.CPANEL_SSH_USER }}
+          key: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.CPANEL_SSH_PORT }}
+          source: "server-php/*,!server-php/.env,!server-php/.env.*"
+          target: ${{ secrets.CPANEL_REMOTE_ROOT }}/api/
+          strip_components: 1
+          overwrite: true
+
+      - name: Fix file permissions via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.CPANEL_SSH_HOST }}
+          username: ${{ secrets.CPANEL_SSH_USER }}
+          key: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
+          port: ${{ secrets.CPANEL_SSH_PORT }}
+          script: |
+            find ${{ secrets.CPANEL_REMOTE_ROOT }}/api -type d -exec chmod 755 {} \;
+            find ${{ secrets.CPANEL_REMOTE_ROOT }}/api -type f -exec chmod 644 {} \;
+            echo "✅ Permissions fixed"
+            echo "✅ Deploy complete"
