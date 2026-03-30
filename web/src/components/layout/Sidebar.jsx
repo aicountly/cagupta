@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen,
   Target, Settings, ChevronRight, ChevronDown,
-  UserRound, Building2,
+  UserRound, Building2, ShieldCheck,
 } from 'lucide-react';
 
 const navSections = [
@@ -45,25 +45,37 @@ const navSections = [
   },
 ];
 
+/** Items shown only to users with users.manage permission */
+const adminNavItems = [
+  { to: '/admin/users', label: 'User Management', icon: ShieldCheck, permission: 'users.manage' },
+];
+
 export default function Sidebar() {
   const loc = useLocation();
-  const { session } = useAuth();
+  const { session, hasPermission } = useAuth();
   const isClientsActive = loc.pathname.startsWith('/clients');
   const [clientsOpen, setClientsOpen] = useState(isClientsActive);
 
   const user = session?.user;
   const displayName = user?.name || 'CA Rahul Gupta';
   const initials = user?.initials || getInitials(displayName);
+  const roleName = user?.role || '';
 
   // Keep the sub-menu open whenever navigating to a /clients/* route
   useEffect(() => {
     if (isClientsActive) setClientsOpen(true);
   }, [isClientsActive]);
+
+  // Build admin section if user has any admin items visible
+  const visibleAdminItems = adminNavItems.filter(
+    (item) => !item.permission || hasPermission(item.permission)
+  );
+
   return (
     <aside style={styles.sidebar}>
       {/* Brand */}
       <div style={styles.brand}>
-        <img src={logoUrl} alt="CA Rahul Gupta – Office Portal" style={styles.brandLogo} />
+        <img src={logoUrl} alt="CA Rahul Gupta - Office Portal" style={styles.brandLogo} />
       </div>
 
       <nav style={{ flex: 1, overflowY: 'auto', padding: '8px 0' }}>
@@ -157,6 +169,36 @@ export default function Sidebar() {
             })}
           </div>
         ))}
+
+        {/* Admin section -- only shown when user has admin access */}
+        {visibleAdminItems.length > 0 && (
+          <div>
+            <div style={styles.sectionLabel}>ADMIN</div>
+            {visibleAdminItems.map((item) => {
+              const Icon = item.icon;
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  style={({ isActive }) => ({
+                    ...styles.navLink,
+                    ...(isActive ? styles.navLinkActive : {}),
+                  })}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <span style={{ ...styles.navIcon, ...(isActive ? styles.navIconActive : {}) }}>
+                        <Icon size={15} />
+                      </span>
+                      <span style={styles.navText}>{item.label}</span>
+                      {isActive && <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
+                    </>
+                  )}
+                </NavLink>
+              );
+            })}
+          </div>
+        )}
       </nav>
 
       {/* User card */}
@@ -164,7 +206,7 @@ export default function Sidebar() {
         <div style={styles.avatar}>{initials}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 13, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</div>
-          <div style={{ fontSize: 11, color: '#94a3b8' }}>Admin · Mumbai</div>
+          <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'capitalize' }}>{roleName || 'User'}</div>
         </div>
         <div style={styles.onlineDot} />
       </div>

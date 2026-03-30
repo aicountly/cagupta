@@ -2,7 +2,7 @@
  * authService.js
  *
  * Centralised authentication helpers.  All functions:
- *  - Call real backend endpoints when VITE_API_BASE_URL is set.
+ *  - Call the PHP backend when VITE_API_BASE_URL is set.
  *  - Fall back to a safe mock/dev mode otherwise so the UI remains usable
  *    without a backend.
  *
@@ -14,8 +14,10 @@
  */
 
 import { getInitials } from '../utils/getInitials';
+import { SUPER_ADMIN_EMAIL, API_BASE_URL } from '../constants/config';
+import { PERMISSIONS } from '../constants/roles';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+const API_BASE = API_BASE_URL;
 const IS_DEV = import.meta.env.DEV;
 
 /** Persist token + user profile to localStorage and return the pair. */
@@ -25,64 +27,136 @@ function saveSession(token, user) {
   return { token, user };
 }
 
+/**
+ * Parse an API response, throwing a descriptive Error on failure.
+ * @param {Response} res
+ */
+async function parseResponse(res) {
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(json.message || `Request failed (${res.status})`);
+  }
+  return json;
+}
+
+/**
+ * Build a mock user for dev mode.
+ * The super-admin email is always given the super_admin role.
+ */
+function buildMockUser(name, email, role = null) {
+  const effectiveRole = email === SUPER_ADMIN_EMAIL ? 'super_admin' : (role || 'viewer');
+  return {
+    id:          0,
+    name,
+    email,
+    role:        effectiveRole,
+    permissions: PERMISSIONS[effectiveRole] || [],
+    initials:    getInitials(name),
+    is_active:   true,
+  };
+}
+
 /** Exchange a Google ID-token / credential for an app session. */
 export async function loginWithGoogle(googleCredential) {
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/auth/google`, {
-      method: 'POST',
+    // Decode the Google JWT payload to extract name/email/avatar
+    let name = 'Google User';
+    let email = '';
+    let avatarUrl = '';
+    try {
+      const payload = JSON.parse(atob(googleCredential.split('.')[1]));
+      name      = payload.name  || payload.email || name;
+      email     = payload.email || '';
+      avatarUrl = payload.picture || '';
+    } catch {
+      // ignore decode errors
+    }
+
+    const res = await fetch(`${API_BASE}/auth/sso`, {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential: googleCredential }),
+      body:    JSON.stringify({
+        provider:   'google',
+        sso_token:  googleCredential,
+        name,
+        email,
+        avatar_url: avatarUrl,
+      }),
     });
-    if (!res.ok) throw new Error('Google login failed');
-    const data = await res.json();
-    return saveSession(data.token, data.user);
+    const data = await parseResponse(res);
+    return saveSession(data.data.token, data.data.user);
   }
 
   // ── Mock mode (dev only) ──────────────────────────────────────────────────
-  // NOTE: This path is intentionally insecure — it is a development
-  // convenience only.  No JWT signature is verified.
-  let mockUser = { name: 'Google User', email: 'user@google.com', initials: 'GU' };
+  let mockName = 'Google User';
+  let mockEmail = 'user@google.com';
   if (IS_DEV) {
     try {
       const payload = JSON.parse(atob(googleCredential.split('.')[1]));
-      const name = payload.name || payload.email || 'Google User';
-      mockUser = { name, email: payload.email || mockUser.email, initials: getInitials(name) };
+      mockName  = payload.name  || payload.email || mockName;
+      mockEmail = payload.email || mockEmail;
     } catch {
-      // ignore decode errors in dev
+      // ignore
     }
   }
-  return saveSession('mock-google-token', mockUser);
+  return saveSession('mock-google-token', buildMockUser(mockName, mockEmail));
 }
 
 /** Exchange a Microsoft MSAL response for an app session. */
 export async function loginWithMicrosoft(msalResponse) {
   const idToken = msalResponse.idToken || '';
   const account = msalResponse.account || {};
-  const email = account.username || account.upn || '';
-  const name = account.name || email || 'Microsoft User';
+  const email   = account.username || account.upn || '';
+  const name    = account.name || email || 'Microsoft User';
 
   if (API_BASE) {
-    const res = await fetch(`${API_BASE}/auth/microsoft`, {
-      method: 'POST',
+    const res = await fetch(`${API_BASE}/auth/sso`, {
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ idToken, email, name }),
+      body:    JSON.stringify({
+        provider:  'microsoft',
+        sso_token: idToken,
+        name,
+        email,
+      }),
     });
-    if (!res.ok) throw new Error('Microsoft login failed');
-    const data = await res.json();
-    return saveSession(data.token, data.user);
+    const data = await parseResponse(res);
+    return saveSession(data.data.token, data.data.user);
   }
 
   // ── Mock mode ────────────────────────────────────────────────────────────
-  return saveSession('mock-microsoft-token', { name, email, initials: getInitials(name) });
+  return saveSession('mock-microsoft-token', buildMockUser(name, email));
+}
+
+/**
+ * Authenticate with email + password (PHP backend).
+ *
+ * In mock/dev mode the OTP flow is preserved as the fallback.
+ */
+export async function loginWithPassword(email, password) {
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ email, password }),
+    });
+    const data = await parseResponse(res);
+    return saveSession(data.data.token, data.data.user);
+  }
+
+  // Mock: accept any password in dev
+  if (!IS_DEV) throw new Error('Authentication service is not configured.');
+  const name = email.split('@')[0];
+  return saveSession('mock-password-token', buildMockUser(name, email));
 }
 
 /** Ask the backend (or mock) to send an OTP to the given email. */
 export async function requestEmailOtp(email) {
   if (API_BASE) {
     const res = await fetch(`${API_BASE}/auth/request-otp`, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+      body:    JSON.stringify({ email }),
     });
     if (!res.ok) throw new Error('Failed to send OTP');
     return;
@@ -94,31 +168,65 @@ export async function requestEmailOtp(email) {
  * Verify the OTP entered by the user.
  *
  * ⚠️  In mock/dev mode "123456" is accepted for any email.
- *     This shortcut is ONLY available when both VITE_API_BASE_URL is unset
- *     AND the build mode is development (import.meta.env.DEV).
  */
 export async function verifyEmailOtp(email, otp) {
   if (API_BASE) {
     const res = await fetch(`${API_BASE}/auth/verify-otp`, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, otp }),
+      body:    JSON.stringify({ email, otp }),
     });
-    if (!res.ok) throw new Error('Invalid or expired OTP');
-    const data = await res.json();
-    return saveSession(data.token, data.user);
+    const data = await parseResponse(res);
+    return saveSession(data.data.token, data.data.user);
   }
 
   // ── Mock mode (dev only) ──────────────────────────────────────────────────
   if (!IS_DEV) throw new Error('Authentication service is not configured.');
   if (otp !== '123456') throw new Error('Invalid OTP. (Hint: use 123456 in dev mode)');
   const name = email.split('@')[0];
-  return saveSession('mock-email-token', { name, email, initials: getInitials(name) });
+  return saveSession('mock-email-token', buildMockUser(name, email));
 }
 
 /**
- * Clear the stored session.
- * Returns the cleared values so callers can update context state immediately.
+ * Fetch the current user profile from the PHP backend.
+ * Returns null when the token is missing or invalid.
+ *
+ * @param {string} token  Bearer token from localStorage.
+ * @returns {Promise<object|null>}
+ */
+export async function fetchCurrentUser(token) {
+  if (!token || !API_BASE) return null;
+  try {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.data ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Notify the PHP backend to invalidate the current session.
+ *
+ * @param {string} token  Bearer token.
+ */
+export async function logoutFromServer(token) {
+  if (!token || !API_BASE) return;
+  try {
+    await fetch(`${API_BASE}/auth/logout`, {
+      method:  'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    // ignore network errors on logout
+  }
+}
+
+/**
+ * Clear the stored session from localStorage.
  */
 export function logout() {
   localStorage.removeItem('auth_token');

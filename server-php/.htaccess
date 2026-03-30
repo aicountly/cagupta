@@ -1,0 +1,25 @@
+Options -Indexes
+RewriteEngine On
+
+# Redirect all requests to public/index.php (front controller)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ public/index.php [QSA,L]
+
+# Security headers
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "DENY"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Deny access to sensitive files
+<FilesMatch "^\.(env|git|htpasswd)">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+<FilesMatch "\.(sql|log|json|lock)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
