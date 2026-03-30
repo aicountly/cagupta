@@ -29,29 +29,34 @@ jobs:
         working-directory: web
         run: npm run build
 
-      - name: Deploy web/dist to server via SCP
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.CPANEL_SSH_HOST }}
-          username: ${{ secrets.CPANEL_SSH_USER }}
-          key: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
-          port: ${{ secrets.CPANEL_SSH_PORT }}
-          source: "web/dist/*"
-          target: ${{ secrets.CPANEL_REMOTE_ROOT }}/
-          strip_components: 2
-          overwrite: true
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.CPANEL_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p ${{ secrets.CPANEL_SSH_PORT }} ${{ secrets.CPANEL_SSH_HOST }} >> ~/.ssh/known_hosts
 
-      - name: Deploy server-php to server via SCP
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ secrets.CPANEL_SSH_HOST }}
-          username: ${{ secrets.CPANEL_SSH_USER }}
-          key: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
-          port: ${{ secrets.CPANEL_SSH_PORT }}
-          source: "server-php/*"
-          target: ${{ secrets.CPANEL_REMOTE_ROOT }}/api/
-          strip_components: 1
-          overwrite: true
+      - name: Deploy web/dist to public_html via rsync
+        run: |
+          rsync -avz --delete \
+            --exclude='.htaccess' \
+            --exclude='.env' \
+            --include='.env.example' \
+            --exclude='.env.*' \
+            -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.CPANEL_SSH_PORT }}" \
+            web/dist/ \
+            ${{ secrets.CPANEL_SSH_USER }}@${{ secrets.CPANEL_SSH_HOST }}:${{ secrets.CPANEL_REMOTE_ROOT }}/
+
+      - name: Deploy server-php to public_html/api via rsync
+        run: |
+          rsync -avz --delete \
+            --exclude='.htaccess' \
+            --exclude='.env' \
+            --include='.env.example' \
+            --exclude='.env.*' \
+            -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.CPANEL_SSH_PORT }}" \
+            server-php/ \
+            ${{ secrets.CPANEL_SSH_USER }}@${{ secrets.CPANEL_SSH_HOST }}:${{ secrets.CPANEL_REMOTE_ROOT }}/api/
 
       - name: Fix file permissions via SSH
         uses: appleboy/ssh-action@v1.0.3
