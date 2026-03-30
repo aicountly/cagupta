@@ -18,6 +18,7 @@ import Credentials from './pages/Credentials';
 import Registers from './pages/Registers';
 import Leads from './pages/Leads';
 import Settings from './pages/Settings';
+import UserManagement from './pages/UserManagement';
 
 const pageTitles = {
   '/':                          '🏠 Dashboard',
@@ -34,6 +35,7 @@ const pageTitles = {
   '/registers':                 '📊 Compliance Registers',
   '/leads':                     '🎯 Leads & Quotations',
   '/settings':                  '⚙️ Settings',
+  '/admin/users':               '👥 User Management',
 };
 
 function Layout({ routePath, children }) {
@@ -74,6 +76,16 @@ export default function App() {
           <Route path="/registers" element={<ProtectedRoute><Layout routePath="/registers"><Registers /></Layout></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute><Layout routePath="/leads"><Leads /></Layout></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Layout routePath="/settings"><Settings /></Layout></ProtectedRoute>} />
+
+          {/* Admin routes — super_admin only */}
+          <Route path="/admin/users" element={
+            <ProtectedRoute requiredPermission="users.manage">
+              <Layout routePath="/admin/users">
+                <UserManagement />
+              </Layout>
+            </ProtectedRoute>
+          } />
+
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
