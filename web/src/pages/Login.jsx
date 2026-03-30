@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { PublicClientApplication } from '@azure/msal-browser';
@@ -7,8 +7,7 @@ import { useAuth } from '../auth/AuthContext';
 import {
   loginWithGoogle,
   loginWithMicrosoft,
-  requestEmailOtp,
-  verifyEmailOtp,
+  loginWithPassword,
 } from '../services/authService';
 
 /* ─── OAuth configuration ────────────────────────────────────────────────── */
@@ -28,7 +27,6 @@ const msalConfig = {
 const msalInstance = new PublicClientApplication(msalConfig);
 msalInstance.initialize().catch((err) => console.warn('MSAL init failed:', err));
 
-const OTP_RESEND_SECONDS = 30;
 const MSAL_USER_CANCELLED = 'user_cancelled';
 
 /**
@@ -58,29 +56,10 @@ export default function LoginPage() {
     if (isAuthenticated) navigate('/', { replace: true });
   }, [isAuthenticated, navigate]);
 
-  const [step, setStep] = useState('email'); // 'email' | 'otp'
   const [email, setEmail] = useState('');
-  const [otp, setOtp] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [resendCountdown, setResendCountdown] = useState(0);
-  const timerRef = useRef(null);
-
-  /* OTP resend countdown */
-  function startResendTimer() {
-    setResendCountdown(OTP_RESEND_SECONDS);
-    timerRef.current = setInterval(() => {
-      setResendCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(timerRef.current);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }
-
-  useEffect(() => () => clearInterval(timerRef.current), []);
 
   /* ── Handlers ────────────────────────────────────────────────────────── */
 
@@ -122,53 +101,24 @@ export default function LoginPage() {
     }
   }
 
-  async function handleSendOtp(e) {
+  async function handlePasswordLogin(e) {
     e.preventDefault();
     setError('');
     if (!isValidEmail(email)) {
       setError('Please enter a valid email address.');
       return;
     }
-    setLoading(true);
-    try {
-      await requestEmailOtp(email);
-      setStep('otp');
-      startResendTimer();
-    } catch (err) {
-      setError(err.message || 'Failed to send OTP. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleVerifyOtp(e) {
-    e.preventDefault();
-    setError('');
-    if (otp.length !== 6) {
-      setError('OTP must be exactly 6 digits.');
+    if (!password) {
+      setError('Please enter your password.');
       return;
     }
     setLoading(true);
     try {
-      const { token, user } = await verifyEmailOtp(email, otp);
+      const { token, user } = await loginWithPassword(email, password);
       login(token, user);
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err.message || 'Invalid or expired OTP. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleResendOtp() {
-    setError('');
-    setLoading(true);
-    try {
-      await requestEmailOtp(email);
-      setOtp('');
-      startResendTimer();
-    } catch (err) {
-      setError(err.message || 'Failed to resend OTP.');
+      setError(err.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
@@ -228,77 +178,38 @@ export default function LoginPage() {
             <div style={s.dividerLine} />
           </div>
 
-          {/* ── Email / OTP ── */}
-          {step === 'email' ? (
-            <form onSubmit={handleSendOtp} style={s.form} noValidate>
-              <label style={s.label} htmlFor="login-email">Official email address</label>
-              <input
-                id="login-email"
-                type="email"
-                value={email}
-                onChange={e => { setEmail(e.target.value); setError(''); }}
-                placeholder="name@company.com"
-                style={s.input}
-                autoComplete="email"
-                disabled={loading}
-              />
-              <button
-                type="submit"
-                style={{ ...s.primaryBtn, opacity: loading ? 0.7 : 1 }}
-                disabled={loading}
-              >
-                {loading ? 'Sending OTP…' : 'Send OTP'}
-              </button>
-            </form>
-          ) : (
-            <form onSubmit={handleVerifyOtp} style={s.form} noValidate>
-              <div style={s.otpInfo}>
-                OTP sent to <strong>{email}</strong>.{' '}
-                <button
-                  type="button"
-                  style={s.changeLink}
-                  onClick={() => { setStep('email'); setOtp(''); setError(''); clearInterval(timerRef.current); }}
-                >
-                  Change
-                </button>
-              </div>
-              <label style={s.label} htmlFor="login-otp">Enter 6-digit OTP</label>
-              <input
-                id="login-otp"
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                value={otp}
-                onChange={e => { setOtp(e.target.value.replace(/\D/g, '')); setError(''); }}
-                placeholder="••••••"
-                style={{ ...s.input, letterSpacing: 8, textAlign: 'center', fontSize: 20 }}
-                autoComplete="one-time-code"
-                disabled={loading}
-                autoFocus
-              />
-              <button
-                type="submit"
-                style={{ ...s.primaryBtn, opacity: loading ? 0.7 : 1 }}
-                disabled={loading}
-              >
-                {loading ? 'Verifying…' : 'Verify & Login'}
-              </button>
-              <div style={s.resendRow}>
-                {resendCountdown > 0 ? (
-                  <span style={s.resendTimer}>Resend OTP in {resendCountdown}s</span>
-                ) : (
-                  <button
-                    type="button"
-                    style={s.resendBtn}
-                    onClick={handleResendOtp}
-                    disabled={loading}
-                  >
-                    Resend OTP
-                  </button>
-                )}
-              </div>
-            </form>
-          )}
+          {/* ── Email + Password ── */}
+          <form onSubmit={handlePasswordLogin} style={s.form} noValidate>
+            <label style={s.label} htmlFor="login-email">Official email address</label>
+            <input
+              id="login-email"
+              type="email"
+              value={email}
+              onChange={e => { setEmail(e.target.value); setError(''); }}
+              placeholder="name@company.com"
+              style={s.input}
+              autoComplete="email"
+              disabled={loading}
+            />
+            <label style={s.label} htmlFor="login-password">Password</label>
+            <input
+              id="login-password"
+              type="password"
+              value={password}
+              onChange={e => { setPassword(e.target.value); setError(''); }}
+              placeholder="Enter your password"
+              style={s.input}
+              autoComplete="current-password"
+              disabled={loading}
+            />
+            <button
+              type="submit"
+              style={{ ...s.primaryBtn, opacity: loading ? 0.7 : 1 }}
+              disabled={loading}
+            >
+              {loading ? 'Signing in…' : 'Sign In'}
+            </button>
+          </form>
 
           {/* ── Error ── */}
           {error && <div style={s.errorBox}>{error}</div>}
