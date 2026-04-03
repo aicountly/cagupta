@@ -26,6 +26,15 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { instance: msalInstance } = useMsal();
 
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (isAuthenticated) navigate('/', { replace: true });
+  }, [isAuthenticated, navigate]);
+
   useEffect(() => {
     const msalError = sessionStorage.getItem('msal_login_error');
     if (msalError) {
@@ -33,13 +42,6 @@ export default function LoginPage() {
       sessionStorage.removeItem('msal_login_error');
     }
   }, []);
-    if (isAuthenticated) navigate('/', { replace: true });
-  }, [isAuthenticated, navigate]);
-
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   async function handleGoogleSuccess(credentialResponse) {
     setError('');
