@@ -27,6 +27,12 @@ export default function LoginPage() {
   const { instance: msalInstance } = useMsal();
 
   useEffect(() => {
+    const msalError = sessionStorage.getItem('msal_login_error');
+    if (msalError) {
+      setError(msalError);
+      sessionStorage.removeItem('msal_login_error');
+    }
+  }, []);
     if (isAuthenticated) navigate('/', { replace: true });
   }, [isAuthenticated, navigate]);
 

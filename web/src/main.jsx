@@ -9,7 +9,9 @@ import App from './App.jsx'
 msalInstance.initialize().then(() => {
   msalInstance.handleRedirectPromise().then((response) => {
     if (response && response.idToken) {
-      loginWithMicrosoft(response).catch(() => {})
+      return loginWithMicrosoft(response).catch((err) => {
+        sessionStorage.setItem('msal_login_error', err.message || 'Microsoft login failed. Please contact the administrator.');
+      })
     }
   }).catch(() => {}).finally(() => {
     createRoot(document.getElementById('root')).render(
