@@ -84,6 +84,23 @@ class AuthController extends BaseController
             $this->error('email and sso_token are required.', 422);
         }
 
+        // Extract provider user ID from JWT payload (sub claim).
+        // Storing only the short sub (~21 chars) instead of the full token
+        // prevents column overflow on VARCHAR/TEXT length limits.
+        $providerUserId = $ssoToken; // fallback
+        try {
+            $parts = explode('.', $ssoToken);
+            if (count($parts) === 3) {
+                $padded  = str_pad(strtr($parts[1], '-_', '+/'), (int)ceil(strlen($parts[1]) / 4) * 4, '=', STR_PAD_RIGHT);
+                $payload = json_decode(base64_decode($padded), true);
+                if (!empty($payload['sub'])) {
+                    $providerUserId = (string)$payload['sub'];
+                }
+            }
+        } catch (\Throwable $e) {
+            // keep fallback
+        }
+
         // Look up existing user; create one if needed
         $user = $this->users->findByEmail($email);
 
@@ -100,14 +117,14 @@ class AuthController extends BaseController
                 'is_active'       => true,
                 'is_email_verified' => true,
                 'login_provider'  => $provider,
-                'sso_provider_id' => $ssoToken,
+                'sso_provider_id' => $providerUserId,
                 'avatar_url'      => $avatar ?: null,
             ]);
             $user = $this->users->find($newId);
         } else {
             // Update SSO fields if changed
             $this->users->update((int)$user['id'], [
-                'sso_provider_id' => $ssoToken,
+                'sso_provider_id' => $providerUserId,
                 'avatar_url'      => $avatar ?: ($user['avatar_url'] ?? null),
                 'last_login_at'   => date('Y-m-d H:i:sO'),
             ]);
