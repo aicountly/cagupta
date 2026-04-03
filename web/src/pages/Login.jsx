@@ -18,7 +18,7 @@ const MOCK_GOOGLE_CREDENTIAL =
   '.sig';
 
 function isValidEmail(email) {
-  return /^[^\s@]+@[^"]+\.[^\s@]+$/.test(email);
+  return /^[^\s@]+@[^\"]+\.[^\s@]+$/.test(email);
 }
 
 export default function LoginPage() {
@@ -53,20 +53,12 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const response = await msalInstance.loginPopup({
+      await msalInstance.loginRedirect({
         scopes: ['openid', 'profile', 'email', 'User.Read'],
         prompt: 'select_account',
       });
-      const { token, user } = await loginWithMicrosoft(response);
-      login(token, user);
-      navigate('/', { replace: true });
     } catch (err) {
-      if (err?.errorCode === 'user_cancelled' || err?.message?.includes('user_cancelled')) {
-        // user closed popup — do nothing
-      } else {
-        setError(err.message || 'Microsoft login failed. Please try again.');
-      }
-    } finally {
+      setError(err.message || 'Microsoft login failed. Please try again.');
       setLoading(false);
     }
   }
@@ -130,7 +122,7 @@ export default function LoginPage() {
               onClick={handleMicrosoftLogin}
               disabled={loading}
             >
-              <MicrosoftIcon /> Continue with Outlook
+              <MicrosoftIcon /> {loading ? 'Redirecting…' : 'Continue with Outlook'}
             </button>
           </div>
           <div style={s.divider}>
@@ -182,7 +174,7 @@ export default function LoginPage() {
 function GoogleIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 48 48" style={{ flexShrink: 0 }}>
-      <path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.9 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 19.4-7 21.8-16.6L44.5 20z" />
+      <path fill="#4285F4" d="M44.5 20H24v8.5h11.8C34.7 33.9 29.9 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21c10.5 0 19.5-7.1 21-17H24v-8h20.5z" />
       <path fill="#34A853" d="M6.3 14.7l7 5.1C15.1 16.1 19.2 13 24 13c3.1 0 5.9 1.1 8.1 2.9l6.4-6.4C34.6 5.1 29.6 3 24 3c-7.7 0-14.3 4.4-17.7 11.7z" />
       <path fill="#FBBC05" d="M24 45c5.8 0 10.7-1.9 14.3-5.2l-6.6-5.4C29.9 36.1 27.1 37 24 37c-5.8 0-10.7-3.8-12.5-9.1l-7 5.4C8 40.1 15.4 45 24 45z" />
       <path fill="#EA4335" d="M44.5 20H24v8.5h11.8c-.9 2.8-2.8 5.1-5.3 6.6l6.6 5.4C41.3 37.1 44.5 31 44.5 24c0-1.3-.2-2.7-.5-4z" />
