@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
-import { PublicClientApplication } from '@azure/msal-browser';
+import { useMsal } from '@azure/msal-react';
 import logoUrl from '../assets/cropped_logo.png';
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -10,39 +10,21 @@ import {
   loginWithPassword,
 } from '../services/authService';
 
-/* ─── OAuth configuration ────────────────────────────────────────────────── */
-
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
-
-const msalConfig = {
-  auth: {
-    clientId: import.meta.env.VITE_MSAL_CLIENT_ID || 'dev-placeholder',
-    authority: import.meta.env.VITE_MSAL_TENANT_ID
-      ? `https://login.microsoftonline.com/${import.meta.env.VITE_MSAL_TENANT_ID}`
-      : 'https://login.microsoftonline.com/common',
-    redirectUri: window.location.origin + '/auth-redirect.html',
-  },
-};
-
-const msalInstance = new PublicClientApplication(msalConfig);
-const msalInitPromise = msalInstance.initialize().catch((err) => console.warn('MSAL init failed:', err));
-
-const MSAL_USER_CANCELLED = 'user_cancelled';
 
 const MOCK_GOOGLE_CREDENTIAL =
   'mock-google-credential.' +
   btoa(JSON.stringify({ name: 'Google User', email: 'user@gmail.com' })) +
   '.sig';
 
-/* ─── Helper: email validator ────────────────────────────────────────────── */
 function isValidEmail(email) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  return /^[^\s@]+@[^"]+\.[^\s@]+$/.test(email);
 }
 
-/* ─── Main Login Page ────────────────────────────────────────────────────── */
 export default function LoginPage() {
   const { isAuthenticated, login } = useAuth();
   const navigate = useNavigate();
+  const { instance: msalInstance } = useMsal();
 
   useEffect(() => {
     if (isAuthenticated) navigate('/', { replace: true });
@@ -71,17 +53,6 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await msalInitPromise;
-
-      // Clear any stale interaction locks
-      Object.keys(sessionStorage)
-        .filter(key => key.includes('msal') && key.includes('interaction'))
-        .forEach(key => sessionStorage.removeItem(key));
-
-      // Store clientId and tenantId so the redirect page can initialize MSAL correctly
-      sessionStorage.setItem('msal.redirect.clientId', import.meta.env.VITE_MSAL_CLIENT_ID || '');
-      sessionStorage.setItem('msal.redirect.tenantId', import.meta.env.VITE_MSAL_TENANT_ID || 'common');
-
       const response = await msalInstance.loginPopup({
         scopes: ['openid', 'profile', 'email', 'User.Read'],
         prompt: 'select_account',
@@ -90,19 +61,10 @@ export default function LoginPage() {
       login(token, user);
       navigate('/', { replace: true });
     } catch (err) {
-      if (err.errorCode === MSAL_USER_CANCELLED || err.errorCode === 'user_cancelled') {
-        // User closed the popup — do nothing
-      } else if (err.errorCode === 'interaction_in_progress') {
-        Object.keys(sessionStorage)
-          .filter(key => key.startsWith('msal.'))
-          .forEach(key => sessionStorage.removeItem(key));
-        setError('Login was interrupted. Please try again.');
+      if (err?.errorCode === 'user_cancelled' || err?.message?.includes('user_cancelled')) {
+        // user closed popup — do nothing
       } else {
-        setError(
-          import.meta.env.VITE_MSAL_CLIENT_ID
-            ? (err.message || 'Microsoft login failed. Please try again.')
-            : 'Microsoft login is not configured yet.',
-        );
+        setError(err.message || 'Microsoft login failed. Please try again.');
       }
     } finally {
       setLoading(false);
@@ -139,10 +101,8 @@ export default function LoginPage() {
           <div style={s.logoWrap}>
             <img src={logoUrl} alt="CA Office Portal" style={s.logo} />
           </div>
-
           <h1 style={s.heading}>Sign in to your account</h1>
           <p style={s.subheading}>CA Rahul Gupta – Office Portal</p>
-
           <div style={s.socialSection}>
             {GOOGLE_CLIENT_ID ? (
               <div style={s.googleWrap}>
@@ -165,7 +125,6 @@ export default function LoginPage() {
                 <GoogleIcon /> Continue with Google
               </button>
             )}
-
             <button
               style={{ ...s.socialBtn, opacity: loading ? 0.7 : 1 }}
               onClick={handleMicrosoftLogin}
@@ -174,13 +133,11 @@ export default function LoginPage() {
               <MicrosoftIcon /> Continue with Outlook
             </button>
           </div>
-
           <div style={s.divider}>
             <div style={s.dividerLine} />
             <span style={s.dividerText}>or</span>
             <div style={s.dividerLine} />
           </div>
-
           <form onSubmit={handlePasswordLogin} style={s.form} noValidate>
             <label style={s.label} htmlFor="login-email">Official email address</label>
             <input
@@ -212,9 +169,7 @@ export default function LoginPage() {
               {loading ? 'Signing in…' : 'Sign In'}
             </button>
           </form>
-
           {error && <div style={s.errorBox}>{error}</div>}
-
           <p style={s.adminNote}>
             Access is provided by admin. Contact support if you need access.
           </p>
