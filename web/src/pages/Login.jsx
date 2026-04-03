@@ -20,7 +20,7 @@ const msalConfig = {
     authority: import.meta.env.VITE_MSAL_TENANT_ID
       ? `https://login.microsoftonline.com/${import.meta.env.VITE_MSAL_TENANT_ID}`
       : 'https://login.microsoftonline.com/common',
-    redirectUri: window.location.origin + window.location.pathname,
+    redirectUri: window.location.origin + '/auth-redirect.html',
   },
 };
 
