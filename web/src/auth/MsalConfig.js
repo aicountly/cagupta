@@ -6,7 +6,7 @@ export const msalConfig = {
     authority: import.meta.env.VITE_MSAL_TENANT_ID
       ? `https://login.microsoftonline.com/${import.meta.env.VITE_MSAL_TENANT_ID}`
       : 'https://login.microsoftonline.com/common',
-    redirectUri: window.location.origin,
+    redirectUri: `${window.location.origin}/auth-redirect.html`,
   },
   cache: { cacheLocation: 'sessionStorage' },
 };
