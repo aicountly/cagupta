@@ -25,6 +25,16 @@ jobs:
         working-directory: web
         run: npm ci
 
+      - name: Create web .env from secrets
+        working-directory: web
+        run: |
+          printf 'VITE_API_BASE_URL=%s\nVITE_GOOGLE_CLIENT_ID=%s\nVITE_MSAL_CLIENT_ID=%s\nVITE_MSAL_TENANT_ID=%s\n' \
+            "${{ secrets.VITE_API_BASE_URL }}" \
+            "${{ secrets.VITE_GOOGLE_CLIENT_ID }}" \
+            "${{ secrets.VITE_MSAL_CLIENT_ID }}" \
+            "${{ secrets.VITE_MSAL_TENANT_ID }}" \
+            > .env
+
       - name: Build web
         working-directory: web
         run: npm run build
