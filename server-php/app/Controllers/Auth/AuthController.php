@@ -8,7 +8,6 @@ use App\Config\Auth as AuthConfig;
 use App\Libraries\JWT;
 use App\Libraries\PasswordHasher;
 use App\Models\UserModel;
-use App\Models\RoleModel;
 use App\Models\SessionModel;
 
 /**
@@ -17,13 +16,11 @@ use App\Models\SessionModel;
 class AuthController extends BaseController
 {
     private UserModel    $users;
-    private RoleModel    $roles;
     private SessionModel $sessions;
 
     public function __construct()
     {
         $this->users    = new UserModel();
-        $this->roles    = new RoleModel();
         $this->sessions = new SessionModel();
     }
 
@@ -101,38 +98,27 @@ class AuthController extends BaseController
             // keep fallback
         }
 
-        // Look up existing user; create one if needed
+        // Look up existing user — access is invite-only, no auto-registration
         $user = $this->users->findByEmail($email);
 
         if ($user === null) {
-            $superAdminRole = $this->roles->findByName('super_admin');
-            $viewerRole     = $this->roles->findByName('viewer');
-            $isSuperAdmin   = strtolower($email) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL);
-            $roleId         = $isSuperAdmin ? ($superAdminRole['id'] ?? null) : ($viewerRole['id'] ?? null);
-
-            $newId = $this->users->create([
-                'name'            => $name ?: $email,
-                'email'           => $email,
-                'role_id'         => $roleId,
-                'is_active'       => true,
-                'is_email_verified' => true,
-                'login_provider'  => $provider,
-                'sso_provider_id' => $providerUserId,
-                'avatar_url'      => $avatar ?: null,
-            ]);
-            $user = $this->users->find($newId);
-        } else {
-            // Update SSO fields if changed
-            $this->users->update((int)$user['id'], [
-                'sso_provider_id' => $providerUserId,
-                'avatar_url'      => $avatar ?: ($user['avatar_url'] ?? null),
-                'last_login_at'   => date('Y-m-d H:i:sO'),
-            ]);
-            $user = $this->users->find((int)$user['id']);
+            $this->error('Your account is not registered. Please contact the administrator to request access.', 403);
         }
 
-        if ($user === null || !$user['is_active']) {
-            $this->error('Account is deactivated.', 403);
+        if (!$user['is_active']) {
+            $this->error('Your account has been deactivated. Please contact the administrator.', 403);
+        }
+
+        // Update SSO fields if changed
+        $this->users->update((int)$user['id'], [
+            'sso_provider_id' => $providerUserId,
+            'avatar_url'      => $avatar ?: ($user['avatar_url'] ?? null),
+            'last_login_at'   => date('Y-m-d H:i:sO'),
+        ]);
+        $user = $this->users->find((int)$user['id']);
+
+        if ($user === null) {
+            $this->error('Account could not be loaded. Please contact the administrator.', 500);
         }
 
         $result = $this->buildSession($user);
