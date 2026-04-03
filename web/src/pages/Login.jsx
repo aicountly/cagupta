@@ -25,7 +25,9 @@ const msalConfig = {
 };
 
 const msalInstance = new PublicClientApplication(msalConfig);
-msalInstance.initialize().catch((err) => console.warn('MSAL init failed:', err));
+const msalInitPromise = msalInstance.initialize().catch((err) => {
+  console.warn('MSAL init failed:', err);
+});
 
 const MSAL_USER_CANCELLED = 'user_cancelled';
 
@@ -81,19 +83,35 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
+      // Await MSAL initialization
+      await msalInitPromise;
+
+      // Clear any stale interaction locks (common cause of interaction_in_progress error)
+      Object.keys(sessionStorage)
+        .filter(key => key.startsWith('msal.') && key.includes('interaction'))
+        .forEach(key => sessionStorage.removeItem(key));
+
       const response = await msalInstance.loginPopup({
         scopes: ['openid', 'profile', 'email', 'User.Read'],
+        prompt: 'select_account',
       });
       const { token, user } = await loginWithMicrosoft(response);
       login(token, user);
       navigate('/', { replace: true });
     } catch (err) {
-      // User cancelled the popup or MSAL not configured → show friendly message
-      if (err.errorCode !== MSAL_USER_CANCELLED) {
+      if (err.errorCode === MSAL_USER_CANCELLED || err.errorCode === 'user_cancelled') {
+        // User closed the popup — do nothing
+      } else if (err.errorCode === 'interaction_in_progress') {
+        // Clear ALL msal session storage and show retry message
+        Object.keys(sessionStorage)
+          .filter(key => key.startsWith('msal.'))
+          .forEach(key => sessionStorage.removeItem(key));
+        setError('Login was interrupted. Please try again.');
+      } else {
         setError(
           import.meta.env.VITE_MSAL_CLIENT_ID
-            ? (err.message || 'Microsoft login failed.')
-            : 'Microsoft login is not configured yet. Set VITE_MSAL_CLIENT_ID to enable it.',
+            ? (err.message || 'Microsoft login failed. Please try again.')
+            : 'Microsoft login is not configured yet.',
         );
       }
     } finally {
