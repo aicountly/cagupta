@@ -1,31 +1,18 @@
 <!DOCTYPE html>
 <html>
-  <head>
-    <title>Signing in…</title>
-  </head>
+  <head><title>Signing in...</title></head>
   <body>
-    <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+    <script src="https://alcdn.msauth.net/browser/3.27.0/js/msal-browser.min.js"></script>
     <script>
       (async function () {
         try {
-          // Read clientId that was stored by the parent window before opening popup
           var clientId = sessionStorage.getItem('msal.redirect.clientId') || '';
           var tenantId = sessionStorage.getItem('msal.redirect.tenantId') || 'common';
-          if (!clientId) {
-            // Fallback: scan sessionStorage for any msal client id key
-            for (var i = 0; i < sessionStorage.length; i++) {
-              var k = sessionStorage.key(i);
-              if (k && k.startsWith('msal.') && k.endsWith('.keys')) {
-                var parts = k.split('.');
-                if (parts.length >= 2) { clientId = parts[1]; break; }
-              }
-            }
-          }
           var pca = new msal.PublicClientApplication({
             auth: {
               clientId: clientId || '00000000-0000-0000-0000-000000000000',
               authority: 'https://login.microsoftonline.com/' + tenantId,
-              redirectUri: window.location.origin + '/auth-redirect.html',
+              redirectUri: window.location.href,
             },
             cache: { cacheLocation: 'sessionStorage' },
           });
