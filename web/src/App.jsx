@@ -1,4 +1,4 @@
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthContext';
 import ProtectedRoute from './auth/ProtectedRoute';
 import LoginPage from './pages/Login';
@@ -54,13 +54,10 @@ function Layout({ routePath, children }) {
 
 export default function App() {
   return (
-    <HashRouter>
+    <BrowserRouter>
       <AuthProvider>
         <Routes>
-          {/* Public route */}
           <Route path="/login" element={<LoginPage />} />
-
-          {/* Protected routes — all wrapped in Layout */}
           <Route path="/" element={<ProtectedRoute><Layout routePath="/"><Dashboard /></Layout></ProtectedRoute>} />
           <Route path="/clients" element={<ProtectedRoute><Navigate to="/clients/contacts" replace /></ProtectedRoute>} />
           <Route path="/clients/contacts" element={<ProtectedRoute><Layout routePath="/clients/contacts"><Contacts /></Layout></ProtectedRoute>} />
@@ -76,8 +73,6 @@ export default function App() {
           <Route path="/registers" element={<ProtectedRoute><Layout routePath="/registers"><Registers /></Layout></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute><Layout routePath="/leads"><Leads /></Layout></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Layout routePath="/settings"><Settings /></Layout></ProtectedRoute>} />
-
-          {/* Admin routes — super_admin only */}
           <Route path="/admin/users" element={
             <ProtectedRoute requiredPermission="users.manage">
               <Layout routePath="/admin/users">
@@ -85,10 +80,9 @@ export default function App() {
               </Layout>
             </ProtectedRoute>
           } />
-
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
-    </HashRouter>
+    </BrowserRouter>
   );
 }
