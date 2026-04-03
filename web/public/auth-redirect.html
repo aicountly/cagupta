@@ -1,5 +1,26 @@
 <!DOCTYPE html>
 <html>
-  <head><title>Redirecting…</title></head>
-  <body></body>
+  <head>
+    <title>Signing in…</title>
+  </head>
+  <body>
+    <script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
+    <script>
+      (async function () {
+        try {
+          const pca = new msal.PublicClientApplication({
+            auth: {
+              clientId: new URLSearchParams(window.location.search).get('client_id') || 'placeholder',
+              redirectUri: window.location.origin + '/auth-redirect.html',
+            },
+            cache: { cacheLocation: 'sessionStorage' },
+          });
+          await pca.initialize();
+          await pca.handleRedirectPromise();
+        } catch (e) {
+          console.warn('MSAL redirect handler error:', e);
+        }
+      })();
+    </script>
+  </body>
 </html>
