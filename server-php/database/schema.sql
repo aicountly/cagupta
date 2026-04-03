@@ -29,7 +29,7 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url          TEXT,
     last_login_at       TIMESTAMPTZ,
     login_provider      VARCHAR(30)   DEFAULT 'local',
-    sso_provider_id     VARCHAR(255),
+    sso_provider_id     TEXT,
     created_by          INTEGER       REFERENCES users(id),
     created_at          TIMESTAMPTZ   DEFAULT NOW(),
     updated_at          TIMESTAMPTZ   DEFAULT NOW()
