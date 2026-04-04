@@ -3,15 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import { addContact, generateContactCode, getContacts, updateContact } from '../data/contactStore';
 import { mockOrganizations } from '../data/mockData';
-
-// ── Managers list (mirrors NewServiceEngagement) ──────────────────────────────
-const MANAGERS = [
-  'CA Rahul Gupta',
-  'CA Priya Sharma',
-  'Staff A',
-  'Staff B',
-  'Staff C',
-];
+import { useStaffUsers } from '../hooks/useStaffUsers';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function generateId() {
@@ -92,6 +84,9 @@ export default function ContactCreatePage() {
   const [code] = useState(() => isEdit && existingContact ? existingContact.clientCode : generateContactCode());
   const [contactId] = useState(() => isEdit && existingContact ? existingContact.id : null);
 
+  // Dynamic staff/manager list
+  const { staffUsers } = useStaffUsers();
+
   // Track "dirty" state so we can warn on cancel
   const [dirty, setDirty] = useState(false);
 
@@ -141,7 +136,7 @@ export default function ContactCreatePage() {
       pan: form.pan.trim().toUpperCase() || undefined,
       city: form.city.trim() || undefined,
       status: form.status,
-      assignedManager: form.assignedManager || MANAGERS[0],
+      assignedManager: form.assignedManager || '',
       linkedOrgIds: form.linkedOrgIds,
       linkedOrgsCount: form.linkedOrgIds.length,
       linkedOrgNames: linkedOrgs.map(o => o.displayName),
@@ -284,7 +279,7 @@ export default function ContactCreatePage() {
           <FormField label="Manager">
             <select value={form.assignedManager} onChange={e => update('assignedManager', e.target.value)} style={inputStyle}>
               <option value="">— Select Manager —</option>
-              {MANAGERS.map(m => <option key={m} value={m}>{m}</option>)}
+              {staffUsers.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
             </select>
           </FormField>
         </div>
