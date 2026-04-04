@@ -37,6 +37,7 @@ export default function Settings() {
   const [showBillingForm, setShowBillingForm] = useState(false);
   const [billingEdit, setBillingEdit] = useState(null);
   const [billingForm, setBillingForm] = useState({ code:'', name:'' });
+  const [billingError, setBillingError] = useState('');
 
   function handleAddPortal() {
     const val = newPortal.trim();
@@ -228,24 +229,27 @@ export default function Settings() {
               <div style={{ display:'grid', gridTemplateColumns:'1fr 2fr', gap:12, marginBottom:12 }}>
                 <div>
                   <label style={labelStyle}>Code</label>
-                  <input value={billingForm.code} onChange={e=>setBillingForm(v=>({...v,code:e.target.value}))} style={inputStyle} placeholder="e.g. RBGC-CHD" />
+                  <input value={billingForm.code} onChange={e=>{ setBillingForm(v=>({...v,code:e.target.value})); setBillingError(''); }} style={inputStyle} placeholder="e.g. RBGC-CHD" />
                 </div>
                 <div>
                   <label style={labelStyle}>Firm Name</label>
-                  <input value={billingForm.name} onChange={e=>setBillingForm(v=>({...v,name:e.target.value}))} style={inputStyle} placeholder="e.g. RAHUL B GUPTA & CO." />
+                  <input value={billingForm.name} onChange={e=>{ setBillingForm(v=>({...v,name:e.target.value})); setBillingError(''); }} style={inputStyle} placeholder="e.g. RAHUL B GUPTA & CO." />
                 </div>
               </div>
+              {billingError && <div style={{ fontSize:11, color:'#dc2626', marginBottom:8 }}>{billingError}</div>}
               <div style={{ display:'flex', gap:8 }}>
                 <button style={btnPrimary} onClick={() => {
-                  if (!billingForm.code.trim() || !billingForm.name.trim()) return;
+                  if (!billingForm.code.trim()) { setBillingError('Code is required.'); return; }
+                  if (!billingForm.name.trim()) { setBillingError('Firm name is required.'); return; }
                   if (billingEdit) {
-                    setBillingProfiles(prev => prev.map(p => p.id === billingEdit ? { ...p, code:billingForm.code, name:billingForm.name } : p));
+                    setBillingProfiles(prev => prev.map(p => p.id === billingEdit ? { ...p, code:billingForm.code.trim(), name:billingForm.name.trim() } : p));
                   } else {
-                    setBillingProfiles(prev => [...prev, { id: billingForm.code, code:billingForm.code, name:billingForm.name }]);
+                    setBillingProfiles(prev => [...prev, { id: String(Date.now()), code:billingForm.code.trim(), name:billingForm.name.trim() }]);
                   }
+                  setBillingError('');
                   setShowBillingForm(false);
                 }}>💾 Save</button>
-                <button style={btnOutline} onClick={() => setShowBillingForm(false)}>Cancel</button>
+                <button style={btnOutline} onClick={() => { setShowBillingForm(false); setBillingError(''); }}>Cancel</button>
               </div>
             </div>
           )}

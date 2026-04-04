@@ -161,8 +161,12 @@ export default function TopBar({ title }) {
                 searchResults.map((r, i) => (
                   <div
                     key={i}
-                    style={styles.searchItem}
-                    onMouseDown={() => handleResultClick(r.route)}
+                    style={{ ...styles.searchItem, cursor: 'pointer' }}
+                    role="option"
+                    tabIndex={0}
+                    onMouseDown={e => { e.preventDefault(); handleResultClick(r.route); }}
+                    onClick={() => handleResultClick(r.route)}
+                    onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && handleResultClick(r.route)}
                   >
                     <span style={{ fontSize: 15, flexShrink: 0 }}>{typeIcons[r.type]}</span>
                     <div style={{ minWidth: 0 }}>
