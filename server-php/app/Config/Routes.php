@@ -58,6 +58,12 @@ class Routes
                 'handler'    => 'Auth\AuthController@verifyOtp',
                 'middleware' => [],
             ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/auth/request-otp',
+                'handler'    => 'Auth\AuthController@requestOtp',
+                'middleware' => [],
+            ],
 
             // ── Admin — Users ─────────────────────────────────────────────────
             [

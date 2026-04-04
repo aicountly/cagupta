@@ -123,6 +123,55 @@ class AuthController extends BaseController
         $this->success($result, 'Login successful');
     }
 
+    // ── POST /api/auth/request-otp ───────────────────────────────────────────
+
+    /**
+     * Re-send an OTP to the given email (used by the "Resend OTP" button).
+     *
+     * Body: { email }
+     */
+    public function requestOtp(): never
+    {
+        $body  = $this->getJsonBody();
+        $email = strtolower(trim((string)($body['email'] ?? '')));
+
+        if ($email === '') {
+            $this->error('Email is required.', 422);
+        }
+
+        $user = $this->users->findByEmail($email);
+        if ($user === null || !$user['is_active']) {
+            // Return success anyway to avoid user enumeration
+            $this->success(null, 'If that email exists, a new OTP has been sent.');
+        }
+
+        if ($user['password_hash'] === null || $user['password_hash'] === '') {
+            $this->success(null, 'If that email exists, a new OTP has been sent.');
+        }
+
+        $otp = OtpService::generate((int)$user['id']);
+
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('login-otp', [
+                'userName'      => $user['name'] ?? $email,
+                'otpCode'       => $otp,
+                'expiryMinutes' => OtpService::expiryMinutes(),
+            ]);
+            if ($htmlBody !== '') {
+                BrevoMailer::send(
+                    $email,
+                    $user['name'] ?? $email,
+                    'Your Login OTP - CA Rahul Gupta',
+                    $htmlBody
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[AuthController] Resend OTP email failed: ' . $e->getMessage());
+        }
+
+        $this->success(null, 'If that email exists, a new OTP has been sent.');
+    }
+
     // ── POST /api/auth/sso ───────────────────────────────────────────────────
 
     /**
