@@ -95,6 +95,38 @@ async function sendPasswordResetEmail({ to, clientName, resetUrl }) {
   return sendEmail({ to, subject: 'Reset Your Password', htmlContent });
 }
 
+/**
+ * Send a login OTP email to a portal user.
+ */
+async function sendLoginOtpEmail({ to, userName, otpCode, expiryMinutes }) {
+  const htmlContent = loadTemplate('login-otp', { userName, otpCode, expiryMinutes });
+  return sendEmail({ to, subject: 'Your Login OTP - CA Rahul Gupta', htmlContent });
+}
+
+/**
+ * Send a password-changed security alert to the affected user.
+ */
+async function sendPasswordChangedEmail({ to, userName, userEmail, changedAt, ipAddress }) {
+  const htmlContent = loadTemplate('password-changed', { userName, userEmail, changedAt, ipAddress });
+  return sendEmail({ to, subject: 'Password Changed Successfully - CA Rahul Gupta', htmlContent });
+}
+
+/**
+ * Send a contact activity alert to the Superadmin.
+ */
+async function sendContactActivityEmail({ to, action, contactName, actorName, actorEmail, timestamp, status }) {
+  const htmlContent = loadTemplate('contact-activity', { action, contactName, actorName, actorEmail, timestamp, status });
+  return sendEmail({ to, subject: `Contact ${action} Alert - CA Rahul Gupta`, htmlContent });
+}
+
+/**
+ * Send an organization activity alert to the Superadmin.
+ */
+async function sendOrganizationActivityEmail({ to, action, orgName, actorName, actorEmail, timestamp, status }) {
+  const htmlContent = loadTemplate('organization-activity', { action, orgName, actorName, actorEmail, timestamp, status });
+  return sendEmail({ to, subject: `Organization ${action} Alert - CA Rahul Gupta`, htmlContent });
+}
+
 module.exports = {
   sendEmail,
   sendWelcomeEmail,
@@ -102,4 +134,8 @@ module.exports = {
   sendInvoiceRaisedEmail,
   sendAppointmentConfirmationEmail,
   sendPasswordResetEmail,
+  sendLoginOtpEmail,
+  sendPasswordChangedEmail,
+  sendContactActivityEmail,
+  sendOrganizationActivityEmail,
 };

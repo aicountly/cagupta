@@ -1,0 +1,186 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Models;
+
+use App\Config\Database;
+use PDO;
+
+/**
+ * OrganizationModel — CRUD operations for the `organizations` table.
+ *
+ * All queries use PDO prepared statements; no raw string interpolation.
+ */
+class OrganizationModel
+{
+    private PDO $db;
+
+    public function __construct()
+    {
+        $this->db = Database::getConnection();
+    }
+
+    /**
+     * Find an organization by primary key.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function find(int $id): ?array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT o.*, u.name AS created_by_name
+             FROM organizations o
+             LEFT JOIN users u ON u.id = o.created_by
+             WHERE o.id = :id
+             LIMIT 1'
+        );
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    /**
+     * Return a paginated list of organizations.
+     *
+     * @return array{total: int, organizations: array<int, array<string, mixed>>}
+     */
+    public function paginate(
+        int    $page    = 1,
+        int    $perPage = 20,
+        string $search  = '',
+        string $status  = ''
+    ): array {
+        $where  = ['1=1'];
+        $params = [];
+
+        if ($search !== '') {
+            $where[]           = "(o.name ILIKE :search OR o.gstin ILIKE :search
+                                   OR o.pan ILIKE :search OR o.email ILIKE :search)";
+            $params[':search'] = "%{$search}%";
+        }
+        if ($status !== '') {
+            $where[]             = 'o.is_active = :is_active';
+            $params[':is_active'] = ($status === 'active') ? 'true' : 'false';
+        }
+
+        $whereClause = implode(' AND ', $where);
+        $offset      = ($page - 1) * $perPage;
+
+        $countStmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM organizations o WHERE {$whereClause}"
+        );
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+
+        $stmt = $this->db->prepare(
+            "SELECT o.*, u.name AS created_by_name
+             FROM organizations o
+             LEFT JOIN users u ON u.id = o.created_by
+             WHERE {$whereClause}
+             ORDER BY o.created_at DESC
+             LIMIT :limit OFFSET :offset"
+        );
+        foreach ($params as $key => $value) {
+            $stmt->bindValue($key, $value);
+        }
+        $stmt->bindValue(':limit',  $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset,  PDO::PARAM_INT);
+        $stmt->execute();
+
+        return ['total' => $total, 'organizations' => $stmt->fetchAll()];
+    }
+
+    /**
+     * Create a new organization record.
+     *
+     * @param array<string, mixed> $data
+     * @return int The new organization's id.
+     */
+    public function create(array $data): int
+    {
+        $stmt = $this->db->prepare(
+            'INSERT INTO organizations (
+                name, type, gstin, pan, email, phone,
+                address, city, state, pincode, website, notes,
+                is_active, created_by
+             ) VALUES (
+                :name, :type, :gstin, :pan, :email, :phone,
+                :address, :city, :state, :pincode, :website, :notes,
+                :is_active, :created_by
+             ) RETURNING id'
+        );
+        $stmt->execute([
+            ':name'       => $data['name'],
+            ':type'       => $data['type']       ?? null,
+            ':gstin'      => $data['gstin']      ?? null,
+            ':pan'        => $data['pan']        ?? null,
+            ':email'      => $data['email']      ?? null,
+            ':phone'      => $data['phone']      ?? null,
+            ':address'    => $data['address']    ?? null,
+            ':city'       => $data['city']       ?? null,
+            ':state'      => $data['state']      ?? null,
+            ':pincode'    => $data['pincode']    ?? null,
+            ':website'    => $data['website']    ?? null,
+            ':notes'      => $data['notes']      ?? null,
+            ':is_active'  => ((bool)($data['is_active'] ?? true)) ? 'true' : 'false',
+            ':created_by' => $data['created_by'] ?? null,
+        ]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * Update an existing organization.
+     *
+     * @param array<string, mixed> $data
+     */
+    public function update(int $id, array $data): bool
+    {
+        $setClauses = [];
+        $params     = [':id' => $id];
+
+        $allowed = [
+            'name', 'type', 'gstin', 'pan', 'email', 'phone',
+            'address', 'city', 'state', 'pincode', 'website', 'notes',
+        ];
+        foreach ($allowed as $field) {
+            if (array_key_exists($field, $data)) {
+                $setClauses[]       = "{$field} = :{$field}";
+                $params[":{$field}"] = $data[$field];
+            }
+        }
+        if (array_key_exists('is_active', $data)) {
+            $setClauses[]       = 'is_active = :is_active';
+            $params[':is_active'] = ((bool)$data['is_active']) ? 'true' : 'false';
+        }
+
+        if (empty($setClauses)) {
+            return false;
+        }
+
+        $setClauses[] = 'updated_at = NOW()';
+        $setClause    = implode(', ', $setClauses);
+
+        $stmt = $this->db->prepare("UPDATE organizations SET {$setClause} WHERE id = :id");
+        return $stmt->execute($params);
+    }
+
+    /**
+     * Update only the is_active status of an organization.
+     */
+    public function updateStatus(int $id, bool $isActive): bool
+    {
+        $stmt = $this->db->prepare(
+            'UPDATE organizations SET is_active = :is_active, updated_at = NOW() WHERE id = :id'
+        );
+        return $stmt->execute([':is_active' => $isActive ? 'true' : 'false', ':id' => $id]);
+    }
+
+    /**
+     * Delete an organization record permanently.
+     */
+    public function delete(int $id): bool
+    {
+        $stmt = $this->db->prepare('DELETE FROM organizations WHERE id = :id');
+        return $stmt->execute([':id' => $id]);
+    }
+}

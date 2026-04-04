@@ -7,6 +7,7 @@ use App\Controllers\BaseController;
 use App\Config\Auth as AuthConfig;
 use App\Models\UserModel;
 use App\Models\RoleModel;
+use App\Libraries\BrevoMailer;
 use App\Libraries\PasswordHasher;
 
 /**
@@ -177,6 +178,30 @@ class UserController extends BaseController
 
         $this->users->update($id, $data);
         $updated = $this->users->find($id);
+
+        // ── Password-change alert (best-effort) ───────────────────────────────
+        if (!empty($data['password'])) {
+            try {
+                $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'Unknown';
+                $htmlBody  = BrevoMailer::renderTemplate('password-changed', [
+                    'userName'  => $updated['name']  ?? '',
+                    'userEmail' => $updated['email'] ?? '',
+                    'changedAt' => date('d M Y, h:i A T'),
+                    'ipAddress' => $ipAddress,
+                ]);
+                if ($htmlBody !== '') {
+                    BrevoMailer::send(
+                        $updated['email'] ?? '',
+                        $updated['name']  ?? '',
+                        'Password Changed Successfully - CA Rahul Gupta',
+                        $htmlBody
+                    );
+                }
+            } catch (\Throwable $e) {
+                error_log('[UserController] Password-change alert failed: ' . $e->getMessage());
+            }
+        }
+
         $this->success($this->formatUserRow($updated), 'User updated');
     }
 

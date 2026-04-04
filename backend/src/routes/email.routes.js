@@ -88,4 +88,94 @@ router.post('/password-reset', async (req, res) => {
   }
 });
 
+/**
+ * POST /api/email/login-otp
+ * Body: { to, userName, otpCode, expiryMinutes }
+ */
+router.post('/login-otp', async (req, res) => {
+  const { to, userName, otpCode, expiryMinutes } = req.body;
+  if (!to || !userName || !otpCode) {
+    return res.status(400).json({ error: 'Missing required fields: to, userName, otpCode' });
+  }
+  try {
+    await emailService.sendLoginOtpEmail({ to, userName, otpCode, expiryMinutes: expiryMinutes || 10 });
+    res.json({ success: true, message: 'Login OTP email sent.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/email/password-changed
+ * Body: { to, userName, userEmail, changedAt, ipAddress }
+ */
+router.post('/password-changed', async (req, res) => {
+  const { to, userName, userEmail, changedAt, ipAddress } = req.body;
+  if (!to || !userName || !userEmail) {
+    return res.status(400).json({ error: 'Missing required fields: to, userName, userEmail' });
+  }
+  try {
+    await emailService.sendPasswordChangedEmail({
+      to,
+      userName,
+      userEmail,
+      changedAt: changedAt || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      ipAddress: ipAddress || 'Unknown',
+    });
+    res.json({ success: true, message: 'Password-changed alert sent.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/email/contact-activity
+ * Body: { to, action, contactName, actorName, actorEmail, timestamp, status }
+ */
+router.post('/contact-activity', async (req, res) => {
+  const { to, action, contactName, actorName, actorEmail, timestamp, status } = req.body;
+  if (!to || !action || !contactName) {
+    return res.status(400).json({ error: 'Missing required fields: to, action, contactName' });
+  }
+  try {
+    await emailService.sendContactActivityEmail({
+      to,
+      action,
+      contactName,
+      actorName:  actorName  || 'Unknown',
+      actorEmail: actorEmail || 'Unknown',
+      timestamp:  timestamp  || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      status:     status     || 'Unknown',
+    });
+    res.json({ success: true, message: 'Contact activity alert sent.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/email/organization-activity
+ * Body: { to, action, orgName, actorName, actorEmail, timestamp, status }
+ */
+router.post('/organization-activity', async (req, res) => {
+  const { to, action, orgName, actorName, actorEmail, timestamp, status } = req.body;
+  if (!to || !action || !orgName) {
+    return res.status(400).json({ error: 'Missing required fields: to, action, orgName' });
+  }
+  try {
+    await emailService.sendOrganizationActivityEmail({
+      to,
+      action,
+      orgName,
+      actorName:  actorName  || 'Unknown',
+      actorEmail: actorEmail || 'Unknown',
+      timestamp:  timestamp  || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      status:     status     || 'Unknown',
+    });
+    res.json({ success: true, message: 'Organization activity alert sent.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

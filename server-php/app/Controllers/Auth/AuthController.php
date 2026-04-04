@@ -5,7 +5,9 @@ namespace App\Controllers\Auth;
 
 use App\Controllers\BaseController;
 use App\Config\Auth as AuthConfig;
+use App\Libraries\BrevoMailer;
 use App\Libraries\JWT;
+use App\Libraries\OtpService;
 use App\Libraries\PasswordHasher;
 use App\Models\UserModel;
 use App\Models\SessionModel;
@@ -28,6 +30,13 @@ class AuthController extends BaseController
 
     /**
      * Authenticate with email + password.
+     *
+     * Step 1 of the two-step login flow: validate credentials, then issue an
+     * OTP to the user's registered email address.  The response will be:
+     *   { otp_required: true, masked_email: "j***@example.com" }
+     *
+     * The caller must then POST to /api/auth/verify-otp with { email, otp }
+     * to complete login and receive a JWT.
      */
     public function login(): never
     {
@@ -51,6 +60,62 @@ class AuthController extends BaseController
 
         if (!PasswordHasher::verify($pass, $user['password_hash'])) {
             $this->error('Invalid credentials.', 401);
+        }
+
+        // Credentials are valid — generate and send OTP
+        $userId      = (int)$user['id'];
+        $otp         = OtpService::generate($userId);
+        $maskedEmail = $this->maskEmail($email);
+
+        // Send OTP email (best-effort — never fail the API call on mail error)
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('login-otp', [
+                'userName'      => $user['name'] ?? $email,
+                'otpCode'       => $otp,
+                'expiryMinutes' => OtpService::expiryMinutes(),
+            ]);
+            if ($htmlBody !== '') {
+                BrevoMailer::send(
+                    $email,
+                    $user['name'] ?? $email,
+                    'Your Login OTP - CA Rahul Gupta',
+                    $htmlBody
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[AuthController] OTP email failed: ' . $e->getMessage());
+        }
+
+        $this->success(
+            ['otp_required' => true, 'masked_email' => $maskedEmail],
+            'OTP sent to your registered email address'
+        );
+    }
+
+    // ── POST /api/auth/verify-otp ────────────────────────────────────────────
+
+    /**
+     * Step 2 of the two-step login flow: verify OTP and issue a JWT.
+     *
+     * Body: { email, otp }
+     */
+    public function verifyOtp(): never
+    {
+        $body  = $this->getJsonBody();
+        $email = strtolower(trim((string)($body['email'] ?? '')));
+        $otp   = trim((string)($body['otp'] ?? ''));
+
+        if ($email === '' || $otp === '') {
+            $this->error('Email and OTP are required.', 422);
+        }
+
+        $user = $this->users->findByEmail($email);
+        if ($user === null || !$user['is_active']) {
+            $this->error('Invalid request.', 401);
+        }
+
+        if (!OtpService::verify((int)$user['id'], $otp)) {
+            $this->error('Invalid or expired OTP. Please try again.', 401);
         }
 
         $this->users->touchLastLogin((int)$user['id']);
@@ -271,5 +336,25 @@ class AuthController extends BaseController
             'is_active'   => (bool)$user['is_active'],
             'last_login_at' => $user['last_login_at'] ?? null,
         ];
+    }
+
+    /**
+     * Mask an email address for display (e.g. "john@example.com" → "j**n@example.com").
+     */
+    private function maskEmail(string $email): string
+    {
+        $parts = explode('@', $email, 2);
+        if (count($parts) !== 2) {
+            return '***@***.***';
+        }
+        $local  = $parts[0];
+        $domain = $parts[1];
+        $len    = strlen($local);
+        if ($len <= 2) {
+            $masked = $local[0] . str_repeat('*', max(1, $len - 1));
+        } else {
+            $masked = $local[0] . str_repeat('*', $len - 2) . $local[$len - 1];
+        }
+        return $masked . '@' . $domain;
     }
 }
