@@ -1,3 +1,8 @@
+// Redirect www → non-www canonical domain
+if (window.location.hostname.startsWith('www.')) {
+  window.location.replace(window.location.href.replace(window.location.hostname, window.location.hostname.substring(4)));
+}
+
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MsalProvider } from '@azure/msal-react'

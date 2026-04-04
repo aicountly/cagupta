@@ -70,11 +70,17 @@ $appConfig = new AppConfig();
 date_default_timezone_set($appConfig->timezone);
 
 // ── CORS headers ──────────────────────────────────────────────────────────────
-$origin         = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowedOrigin  = $appConfig->corsOrigin;
+$origin           = $_SERVER['HTTP_ORIGIN'] ?? '';
+$allowedOrigin    = $appConfig->corsOrigin;
 
-// Allow the configured origin or (in dev) any localhost origin
-if ($origin === $allowedOrigin || (str_starts_with($origin, 'http://localhost') && $appConfig->environment === 'development')) {
+// Normalize: treat www.domain same as non-www domain
+$normalizedOrigin = preg_replace('#^(https?://)www\.#', '$1', $origin);
+
+// Allow the configured origin (with or without www) or (in dev) any localhost origin
+if (
+    $normalizedOrigin === $allowedOrigin
+    || (str_starts_with($origin, 'http://localhost') && $appConfig->environment === 'development')
+) {
     header("Access-Control-Allow-Origin: {$origin}");
 } else {
     header("Access-Control-Allow-Origin: {$allowedOrigin}");
