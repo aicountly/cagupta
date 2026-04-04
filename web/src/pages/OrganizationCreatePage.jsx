@@ -56,6 +56,13 @@ function generateId() {
   return 'org-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
 }
 
+function generateContactId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return 'ct-' + crypto.randomUUID();
+  }
+  return 'ct-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
+}
+
 // ── Blank form state ──────────────────────────────────────────────────────────
 function blankForm(defaultManager) {
   return {
@@ -256,7 +263,7 @@ export default function OrganizationCreatePage() {
     }
     setSavingNewContact(true);
     const newContact = {
-      id: 'ct-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9),
+      id: generateContactId(),
       clientCode: generateContactCode(),
       displayName: newContactForm.displayName.trim(),
       mobile: newContactForm.mobile.trim() || undefined,
