@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { mockAppointments } from '../data/mockData';
 import StatusBadge from '../components/common/StatusBadge';
+import { useNotification } from '../context/NotificationContext';
 
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -12,10 +13,17 @@ function getFirstDayOfMonth(year, month) {
   return new Date(year, month, 1).getDay();
 }
 
+const emptyForm = { clientName:'', staffName:'', date:'', startTime:'', endTime:'', mode:'in_person', subject:'' };
+
 export default function Calendar() {
   const [tab, setTab] = useState('appointments');
   const [year, setYear] = useState(2025);
   const [month, setMonth] = useState(5); // June
+  const [appointments, setAppointments] = useState(mockAppointments);
+  const [showBookModal, setShowBookModal] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [form, setForm] = useState(emptyForm);
+  const { addNotification } = useNotification();
 
   const daysInMonth = getDaysInMonth(year, month);
   const firstDay = getFirstDayOfMonth(year, month);
@@ -23,7 +31,7 @@ export default function Calendar() {
   while (cells.length % 7) cells.push(null);
 
   const apptByDate = {};
-  mockAppointments.forEach(a => {
+  appointments.forEach(a => {
     const d = parseInt(a.date.split('-')[2]);
     if (!apptByDate[d]) apptByDate[d] = [];
     apptByDate[d].push(a);
@@ -37,6 +45,36 @@ export default function Calendar() {
   const deadlinesByDay = {};
   filingDeadlines.forEach(d=>{ if(!deadlinesByDay[d.day]) deadlinesByDay[d.day]=[]; deadlinesByDay[d.day].push(d); });
 
+  function openAddModal() {
+    setForm(emptyForm);
+    setEditId(null);
+    setShowBookModal(true);
+  }
+
+  function openEditModal(a) {
+    setForm({ clientName:a.clientName, staffName:a.staffName, date:a.date, startTime:a.startTime, endTime:a.endTime, mode:a.mode, subject:a.subject });
+    setEditId(a.id);
+    setShowBookModal(true);
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (editId) {
+      setAppointments(prev => prev.map(a => a.id === editId ? { ...a, ...form } : a));
+    } else {
+      const newAppt = { id: 'a' + Date.now(), ...form, status: 'scheduled' };
+      setAppointments(prev => [...prev, newAppt]);
+      addNotification('Appointment booked: ' + form.subject, 'appointment');
+    }
+    setShowBookModal(false);
+  }
+
+  function handleCancel(id) {
+    if (window.confirm('Cancel this appointment?')) {
+      setAppointments(prev => prev.filter(a => a.id !== id));
+    }
+  }
+
   return (
     <div style={{ padding:24 }}>
       <div style={{ display:'flex', gap:4, marginBottom:16, borderBottom:'2px solid #e2e8f0' }}>
@@ -45,7 +83,7 @@ export default function Calendar() {
             {t==='calendar'?'📅 Calendar View':'📋 Appointments List'}
           </button>
         ))}
-        <button style={{ ...btnPrimary, marginLeft:'auto' }}>➕ Book Appointment</button>
+        <button style={{ ...btnPrimary, marginLeft:'auto' }} onClick={openAddModal}>➕ Book Appointment</button>
       </div>
 
       {tab==='calendar' && (
@@ -97,7 +135,7 @@ export default function Calendar() {
               <tr>{['Client','Staff','Date & Time','Mode','Subject','Status','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
             </thead>
             <tbody>
-              {mockAppointments.map(a=>(
+              {appointments.map(a=>(
                 <tr key={a.id} style={trStyle}>
                   <td style={{ ...tdStyle, fontWeight:600 }}>{a.clientName}</td>
                   <td style={tdStyle}>{a.staffName}</td>
@@ -106,13 +144,51 @@ export default function Calendar() {
                   <td style={tdStyle}>{a.subject}</td>
                   <td style={tdStyle}><StatusBadge status={a.status} /></td>
                   <td style={tdStyle}>
-                    <button style={iconBtn}>✏️</button>
-                    <button style={iconBtn}>✕</button>
+                    <button style={iconBtn} onClick={() => openEditModal(a)}>✏️</button>
+                    <button style={iconBtn} onClick={() => handleCancel(a.id)}>✕</button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {showBookModal && (
+        <div style={modalOverlay}>
+          <div style={modalBox}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+              <h3 style={{ margin:0, fontSize:16, fontWeight:700 }}>{editId ? 'Edit Appointment' : 'Book Appointment'}</h3>
+              <button onClick={() => setShowBookModal(false)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer' }}>✕</button>
+            </div>
+            <form onSubmit={handleSubmit}>
+              {[
+                { label:'Client Name', key:'clientName', type:'text', required:true },
+                { label:'Staff Name', key:'staffName', type:'text', required:true },
+                { label:'Date', key:'date', type:'date', required:true },
+                { label:'Start Time', key:'startTime', type:'time', required:true },
+                { label:'End Time', key:'endTime', type:'time', required:true },
+                { label:'Subject', key:'subject', type:'text', required:true },
+              ].map(f=>(
+                <div key={f.key} style={{ marginBottom:12 }}>
+                  <label style={labelStyle}>{f.label}{f.required && <span style={{ color:'#ef4444' }}> *</span>}</label>
+                  <input type={f.type} required={f.required} value={form[f.key]} onChange={e=>setForm(v=>({...v,[f.key]:e.target.value}))} style={inputStyle} />
+                </div>
+              ))}
+              <div style={{ marginBottom:16 }}>
+                <label style={labelStyle}>Mode</label>
+                <select value={form.mode} onChange={e=>setForm(v=>({...v,mode:e.target.value}))} style={inputStyle}>
+                  <option value="in_person">In Person</option>
+                  <option value="video">Video</option>
+                  <option value="phone">Phone</option>
+                </select>
+              </div>
+              <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+                <button type="button" onClick={() => setShowBookModal(false)} style={btnOutline}>Cancel</button>
+                <button type="submit" style={btnPrimary}>{editId ? 'Save Changes' : 'Book Appointment'}</button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>
@@ -125,5 +201,10 @@ const thStyle = { textAlign:'left', padding:'10px 12px', color:'#64748b', fontWe
 const tdStyle = { padding:'10px 12px', color:'#334155', verticalAlign:'middle', whiteSpace:'nowrap' };
 const trStyle = { borderBottom:'1px solid #f8fafc' };
 const btnPrimary = { padding:'8px 16px', background:'#2563eb', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
+const btnOutline = { padding:'8px 16px', background:'#fff', color:'#2563eb', border:'1px solid #2563eb', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
 const navBtn = { padding:'4px 14px', background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:6, cursor:'pointer', fontSize:18 };
 const iconBtn = { background:'none', border:'none', cursor:'pointer', fontSize:15, padding:'2px 4px' };
+const modalOverlay = { position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:500, display:'flex', alignItems:'center', justifyContent:'center' };
+const modalBox = { background:'#fff', borderRadius:12, padding:28, width:440, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 16px 48px rgba(0,0,0,0.2)' };
+const labelStyle = { display:'block', fontSize:12, color:'#64748b', fontWeight:600, marginBottom:4 };
+const inputStyle = { width:'100%', padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, boxSizing:'border-box' };

@@ -1,8 +1,5 @@
 // ─── Engagement store ────────────────────────────────────────────────────────
 // Persists engagements to localStorage so they survive page refresh.
-// Seed with mockServices so the Services table is pre-populated on first load.
-
-import { mockServices } from './mockData';
 
 const STORAGE_KEY = 'engagements';
 
@@ -17,7 +14,7 @@ export function getEngagements() {
   } catch {
     // ignore
   }
-  return mockServices;
+  return [];
 }
 
 /** Persist the full engagements array. */

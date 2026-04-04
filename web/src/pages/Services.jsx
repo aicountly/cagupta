@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { mockTasks } from '../data/mockData';
 import { getEngagements } from '../data/engagementStore';
 import StatusBadge from '../components/common/StatusBadge';
 import {
@@ -100,9 +99,7 @@ export default function Services() {
   });
 
   const serviceTasks = selectedService
-    ? (selectedService.tasks?.length > 0
-        ? selectedService.tasks
-        : mockTasks.filter(t => t.serviceId === selectedService.id))
+    ? (selectedService.tasks || [])
     : [];
   const completedTasks = serviceTasks.filter(t => t.status === 'done').length;
   const progress = serviceTasks.length ? Math.round((completedTasks / serviceTasks.length) * 100) : 0;
@@ -213,7 +210,7 @@ export default function Services() {
           {/* Table footer */}
           <div style={tableFooter}>
             <span>{filteredServices.length} engagement{filteredServices.length !== 1 ? 's' : ''}</span>
-            <div style={styles.env}>Prototype — Mock Data</div>
+            <span style={{ fontSize: 11, color: '#94a3b8' }}>Live Data</span>
           </div>
         </div>
 
@@ -364,4 +361,3 @@ const progressTrack = { height: 7, background: '#E6E8F0', borderRadius: 99, over
 const progressFill = { height: '100%', background: 'linear-gradient(90deg, #55B848 0%, #7dcc72 100%)', borderRadius: 99, transition: 'width 0.4s ease' };
 const taskRow = { padding: '10px 0', borderBottom: '1px solid #F6F7FB' };
 const taskDot = { width: 8, height: 8, borderRadius: '50%' };
-const styles = { env: { fontSize: 11, background: '#fef9c3', color: '#854d0e', padding: '2px 8px', borderRadius: 4, fontWeight: 600 } };
