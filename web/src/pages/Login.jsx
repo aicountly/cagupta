@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { useMsal } from '@azure/msal-react';
@@ -8,6 +8,8 @@ import {
   loginWithGoogle,
   loginWithMicrosoft,
   loginWithPassword,
+  requestEmailOtp,
+  verifyEmailOtp,
 } from '../services/authService';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
@@ -26,8 +28,16 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { instance: msalInstance } = useMsal();
 
+  // Step 1 state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+  // OTP step state
+  const [otpStep, setOtpStep] = useState(false);
+  const [maskedEmail, setMaskedEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [resendTimer, setResendTimer] = useState(0);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -42,6 +52,13 @@ export default function LoginPage() {
       sessionStorage.removeItem('msal_login_error');
     }
   }, []);
+
+  // Countdown timer for OTP resend
+  useEffect(() => {
+    if (resendTimer <= 0) return;
+    const id = setTimeout(() => setResendTimer(t => t - 1), 1000);
+    return () => clearTimeout(id);
+  }, [resendTimer]);
 
   async function handleGoogleSuccess(credentialResponse) {
     setError('');
@@ -84,14 +101,57 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      const { token, user } = await loginWithPassword(email, password);
-      login(token, user);
-      navigate('/', { replace: true });
+      const result = await loginWithPassword(email, password);
+      if (result.otpRequired) {
+        setMaskedEmail(result.maskedEmail || email);
+        setOtpStep(true);
+        setResendTimer(60);
+      } else {
+        login(result.token, result.user);
+        navigate('/', { replace: true });
+      }
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleVerifyOtp(e) {
+    e.preventDefault();
+    setError('');
+    if (!otp || otp.length !== 6) {
+      setError('Please enter the 6-digit OTP.');
+      return;
+    }
+    setLoading(true);
+    try {
+      const { token, user } = await verifyEmailOtp(email, otp);
+      login(token, user);
+      navigate('/', { replace: true });
+    } catch (err) {
+      setError(err.message || 'Invalid OTP. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const handleResendOtp = useCallback(async () => {
+    if (resendTimer > 0) return;
+    setError('');
+    setResendTimer(60);
+    try {
+      await requestEmailOtp(email);
+    } catch (err) {
+      setError(err.message || 'Failed to resend OTP. Please try again.');
+    }
+  }, [email, resendTimer]);
+
+  function handleChangeEmail() {
+    setOtpStep(false);
+    setOtp('');
+    setError('');
+    setResendTimer(0);
   }
 
   return (
@@ -103,72 +163,121 @@ export default function LoginPage() {
           </div>
           <h1 style={s.heading}>Sign in to your account</h1>
           <p style={s.subheading}>CA Rahul Gupta – Office Portal</p>
-          <div style={s.socialSection}>
-            {GOOGLE_CLIENT_ID ? (
-              <div style={s.googleWrap}>
-                <GoogleLogin
-                  onSuccess={handleGoogleSuccess}
-                  onError={() => setError('Google login failed. Please try again.')}
-                  width="340"
-                  text="continue_with"
-                  shape="rectangular"
-                  size="large"
-                  theme="outline"
-                />
+
+          {otpStep ? (
+            /* ── OTP Verification Step ─────────────────────────────────── */
+            <>
+              <div style={s.otpInfo}>
+                <strong>Check your inbox</strong><br />
+                We sent a 6-digit OTP to <strong>{maskedEmail}</strong>.
+                It expires in 10 minutes.{' '}
+                <button style={s.changeLink} onClick={handleChangeEmail}>Change email</button>
               </div>
-            ) : (
-              <button
-                style={{ ...s.socialBtn, opacity: loading ? 0.7 : 1 }}
-                onClick={handleGoogleSuccess.bind(null, { credential: MOCK_GOOGLE_CREDENTIAL })}
-                disabled={loading}
-              >
-                <GoogleIcon /> Continue with Google
-              </button>
-            )}
-            <button
-              style={{ ...s.socialBtn, opacity: loading ? 0.7 : 1 }}
-              onClick={handleMicrosoftLogin}
-              disabled={loading}
-            >
-              <MicrosoftIcon /> {loading ? 'Redirecting…' : 'Continue with Outlook'}
-            </button>
-          </div>
-          <div style={s.divider}>
-            <div style={s.dividerLine} />
-            <span style={s.dividerText}>or</span>
-            <div style={s.dividerLine} />
-          </div>
-          <form onSubmit={handlePasswordLogin} style={s.form} noValidate>
-            <label style={s.label} htmlFor="login-email">Official email address</label>
-            <input
-              id="login-email"
-              type="email"
-              value={email}
-              onChange={e => { setEmail(e.target.value); setError(''); }}
-              placeholder="name@company.com"
-              style={s.input}
-              autoComplete="email"
-              disabled={loading}
-            />
-            <label style={s.label} htmlFor="login-password">Password</label>
-            <input
-              id="login-password"
-              type="password"
-              value={password}
-              onChange={e => { setPassword(e.target.value); setError(''); }}
-              placeholder="Enter your password"
-              style={s.input}
-              autoComplete="current-password"
-              disabled={loading}
-            />
-            <button
-              type="submit"
-              style={{ ...s.primaryBtn, opacity: loading ? 0.7 : 1 }}
-              disabled={loading}
-            >
-              {loading ? 'Signing in…' : 'Sign In'}
-            </button>
-          </form>
+              <form onSubmit={handleVerifyOtp} style={{ ...s.form, marginTop: 16 }} noValidate>
+                <label style={s.label} htmlFor="login-otp">Enter OTP</label>
+                <input
+                  id="login-otp"
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={otp}
+                  onChange={e => { setOtp(e.target.value.replace(/\D/g, '')); setError(''); }}
+                  placeholder="_ _ _ _ _ _"
+                  style={{ ...s.input, letterSpacing: 8, textAlign: 'center', fontSize: 22, fontWeight: 700 }}
+                  autoComplete="one-time-code"
+                  disabled={loading}
+                  autoFocus
+                />
+                <button
+                  type="submit"
+                  style={{ ...s.primaryBtn, opacity: loading ? 0.7 : 1 }}
+                  disabled={loading}
+                >
+                  {loading ? 'Verifying…' : 'Verify OTP & Sign In'}
+                </button>
+              </form>
+              <div style={s.resendRow}>
+                {resendTimer > 0 ? (
+                  <span style={s.resendTimer}>Resend OTP in {resendTimer}s</span>
+                ) : (
+                  <button style={s.resendBtn} onClick={handleResendOtp} disabled={loading}>
+                    Resend OTP
+                  </button>
+                )}
+              </div>
+            </>
+          ) : (
+            /* ── Email + Password Step ─────────────────────────────────── */
+            <>
+              <div style={s.socialSection}>
+                {GOOGLE_CLIENT_ID ? (
+                  <div style={s.googleWrap}>
+                    <GoogleLogin
+                      onSuccess={handleGoogleSuccess}
+                      onError={() => setError('Google login failed. Please try again.')}
+                      width="340"
+                      text="continue_with"
+                      shape="rectangular"
+                      size="large"
+                      theme="outline"
+                    />
+                  </div>
+                ) : (
+                  <button
+                    style={{ ...s.socialBtn, opacity: loading ? 0.7 : 1 }}
+                    onClick={handleGoogleSuccess.bind(null, { credential: MOCK_GOOGLE_CREDENTIAL })}
+                    disabled={loading}
+                  >
+                    <GoogleIcon /> Continue with Google
+                  </button>
+                )}
+                <button
+                  style={{ ...s.socialBtn, opacity: loading ? 0.7 : 1 }}
+                  onClick={handleMicrosoftLogin}
+                  disabled={loading}
+                >
+                  <MicrosoftIcon /> {loading ? 'Redirecting…' : 'Continue with Outlook'}
+                </button>
+              </div>
+              <div style={s.divider}>
+                <div style={s.dividerLine} />
+                <span style={s.dividerText}>or</span>
+                <div style={s.dividerLine} />
+              </div>
+              <form onSubmit={handlePasswordLogin} style={s.form} noValidate>
+                <label style={s.label} htmlFor="login-email">Official email address</label>
+                <input
+                  id="login-email"
+                  type="email"
+                  value={email}
+                  onChange={e => { setEmail(e.target.value); setError(''); }}
+                  placeholder="name@company.com"
+                  style={s.input}
+                  autoComplete="email"
+                  disabled={loading}
+                />
+                <label style={s.label} htmlFor="login-password">Password</label>
+                <input
+                  id="login-password"
+                  type="password"
+                  value={password}
+                  onChange={e => { setPassword(e.target.value); setError(''); }}
+                  placeholder="Enter your password"
+                  style={s.input}
+                  autoComplete="current-password"
+                  disabled={loading}
+                />
+                <button
+                  type="submit"
+                  style={{ ...s.primaryBtn, opacity: loading ? 0.7 : 1 }}
+                  disabled={loading}
+                >
+                  {loading ? 'Sending OTP…' : 'Sign In'}
+                </button>
+              </form>
+            </>
+          )}
+
           {error && <div style={s.errorBox}>{error}</div>}
           <p style={s.adminNote}>
             Access is provided by admin. Contact support if you need access.

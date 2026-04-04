@@ -131,7 +131,9 @@ export async function loginWithMicrosoft(msalResponse) {
 /**
  * Authenticate with email + password (PHP backend).
  *
- * In mock/dev mode the OTP flow is preserved as the fallback.
+ * If the backend returns { otp_required: true }, this function returns
+ * { otpRequired: true, maskedEmail } so the caller can show the OTP step.
+ * Otherwise it saves the session and returns { token, user } as normal.
  */
 export async function loginWithPassword(email, password) {
   if (API_BASE) {
@@ -141,13 +143,15 @@ export async function loginWithPassword(email, password) {
       body:    JSON.stringify({ email, password }),
     });
     const data = await parseResponse(res);
+    if (data.data?.otp_required) {
+      return { otpRequired: true, maskedEmail: data.data.masked_email || email };
+    }
     return saveSession(data.data.token, data.data.user);
   }
 
-  // Mock: accept any password in dev
+  // Mock: in dev mode simulate OTP flow
   if (!IS_DEV) throw new Error('Authentication service is not configured.');
-  const name = email.split('@')[0];
-  return saveSession('mock-password-token', buildMockUser(name, email));
+  return { otpRequired: true, maskedEmail: maskEmailLocal(email) };
 }
 
 /** Ask the backend (or mock) to send an OTP to the given email. */
@@ -243,4 +247,20 @@ export function getStoredSession() {
   } catch {
     return null;
   }
+}
+
+/**
+ * Mask an email for display in the OTP screen.
+ * e.g. "john.doe@example.com" → "j*******e@example.com"
+ * @param {string} email
+ * @returns {string}
+ */
+function maskEmailLocal(email) {
+  const [local, domain] = (email || '').split('@');
+  if (!local || !domain) return email;
+  const len    = local.length;
+  const masked = len <= 2
+    ? local[0] + '*'.repeat(Math.max(1, len - 1))
+    : local[0] + '*'.repeat(len - 2) + local[len - 1];
+  return masked + '@' + domain;
 }

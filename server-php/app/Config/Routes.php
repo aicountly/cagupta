@@ -52,6 +52,12 @@ class Routes
                 'handler'    => 'Auth\AuthController@refresh',
                 'middleware' => ['auth'],
             ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/auth/verify-otp',
+                'handler'    => 'Auth\AuthController@verifyOtp',
+                'middleware' => [],
+            ],
 
             // ── Admin — Users ─────────────────────────────────────────────────
             [
@@ -97,6 +103,82 @@ class Routes
                 'pattern'    => '/api/admin/roles/:id',
                 'handler'    => 'Admin\UserController@updateRole',
                 'middleware' => ['auth', 'role:super_admin'],
+            ],
+
+            // ── Admin — Contacts (clients) ────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/contacts',
+                'handler'    => 'Admin\ContactController@index',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/contacts',
+                'handler'    => 'Admin\ContactController@store',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/contacts/:id',
+                'handler'    => 'Admin\ContactController@show',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/contacts/:id',
+                'handler'    => 'Admin\ContactController@update',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/contacts/:id/status',
+                'handler'    => 'Admin\ContactController@updateStatus',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/contacts/:id',
+                'handler'    => 'Admin\ContactController@destroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+
+            // ── Admin — Organizations ─────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/organizations',
+                'handler'    => 'Admin\OrganizationController@index',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/organizations',
+                'handler'    => 'Admin\OrganizationController@store',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/organizations/:id',
+                'handler'    => 'Admin\OrganizationController@show',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/organizations/:id',
+                'handler'    => 'Admin\OrganizationController@update',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/organizations/:id/status',
+                'handler'    => 'Admin\OrganizationController@updateStatus',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/organizations/:id',
+                'handler'    => 'Admin\OrganizationController@destroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
             ],
         ];
     }
