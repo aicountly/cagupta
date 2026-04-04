@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
-import { addContact, generateContactCode } from '../data/contactStore';
+import { addContact, generateContactCode, getContacts, updateContact } from '../data/contactStore';
 import { mockOrganizations } from '../data/mockData';
 
 // ── Managers list (mirrors NewServiceEngagement) ──────────────────────────────
@@ -65,12 +65,32 @@ function emptyForm(defaultManager = '') {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function ContactCreatePage() {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEdit = Boolean(id);
 
-  const [form, setForm] = useState(() => emptyForm());
+  const existingContact = isEdit ? getContacts().find(c => c.id === id) : null;
+
+  const [form, setForm] = useState(() => {
+    if (isEdit && existingContact) {
+      return {
+        displayName: existingContact.displayName || '',
+        mobile: existingContact.mobile || '',
+        email: existingContact.email || '',
+        pan: existingContact.pan || '',
+        city: existingContact.city || '',
+        status: existingContact.status || 'active',
+        assignedManager: existingContact.assignedManager || '',
+        linkedOrgIds: existingContact.linkedOrgIds || [],
+        notes: existingContact.notes || '',
+      };
+    }
+    return emptyForm();
+  });
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
-  const [code] = useState(() => generateContactCode());
+  const [code] = useState(() => isEdit && existingContact ? existingContact.clientCode : generateContactCode());
+  const [contactId] = useState(() => isEdit && existingContact ? existingContact.id : null);
 
   // Track "dirty" state so we can warn on cancel
   const [dirty, setDirty] = useState(false);
@@ -113,7 +133,7 @@ export default function ContactCreatePage() {
 
     const linkedOrgs = mockOrganizations.filter(o => form.linkedOrgIds.includes(o.id));
     const contact = {
-      id: generateId(),
+      id: isEdit ? contactId : generateId(),
       clientCode: code,
       displayName: form.displayName.trim(),
       mobile: form.mobile.trim(),
@@ -128,17 +148,21 @@ export default function ContactCreatePage() {
       notes: form.notes.trim() || undefined,
     };
     return contact;
-  }, [form, code]);
+  }, [form, code, isEdit, contactId]);
 
   async function handleSaveQuit() {
     const contact = doSave();
     if (!contact) return;
     setSaving(true);
     await new Promise(r => setTimeout(r, 400)); // simulate async
-    addContact(contact);
+    if (isEdit) {
+      updateContact(contact);
+    } else {
+      addContact(contact);
+    }
     setSaving(false);
     setDirty(false);
-    setToast('Contact saved successfully!');
+    setToast(isEdit ? 'Contact updated successfully!' : 'Contact saved successfully!');
     setTimeout(() => navigate('/clients/contacts'), 900);
   }
 
@@ -172,13 +196,13 @@ export default function ContactCreatePage() {
         <ChevronRight size={13} color="#94a3b8" />
         <span style={breadcrumbLink} onClick={() => navigate('/clients/contacts')}>Contacts</span>
         <ChevronRight size={13} color="#94a3b8" />
-        <span style={{ color: '#334155', fontWeight: 600 }}>Add Contact</span>
+        <span style={{ color: '#334155', fontWeight: 600 }}>{isEdit ? 'Edit Contact' : 'Add Contact'}</span>
       </div>
 
       {/* Page title */}
       <div style={{ marginBottom: 24 }}>
-        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Add Contact</h2>
-        <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>Create a new client contact record.</p>
+        <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>{isEdit ? 'Edit Contact' : 'Add Contact'}</h2>
+        <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>{isEdit ? 'Update contact record details.' : 'Create a new client contact record.'}</p>
       </div>
 
       {/* Form card */}
@@ -324,21 +348,23 @@ export default function ContactCreatePage() {
           >
             Cancel
           </button>
-          <button
-            type="button"
-            onClick={handleSaveAddNew}
-            style={saving ? { ...btnOutline, opacity: 0.6, cursor: 'not-allowed' } : btnOutline}
-            disabled={saving}
-          >
-            {saving && <Spinner />} Save &amp; Add New
-          </button>
+          {!isEdit && (
+            <button
+              type="button"
+              onClick={handleSaveAddNew}
+              style={saving ? { ...btnOutline, opacity: 0.6, cursor: 'not-allowed' } : btnOutline}
+              disabled={saving}
+            >
+              {saving && <Spinner />} Save &amp; Add New
+            </button>
+          )}
           <button
             type="button"
             onClick={handleSaveQuit}
             style={saving ? { ...btnPrimary, opacity: 0.6, cursor: 'not-allowed' } : btnPrimary}
             disabled={saving}
           >
-            {saving && <Spinner />} Save &amp; Quit
+            {saving && <Spinner />} {isEdit ? 'Save Changes' : 'Save & Quit'}
           </button>
         </div>
       </div>
