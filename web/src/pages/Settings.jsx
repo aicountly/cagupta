@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { getPortalTypes, savePortalTypes } from '../constants/portalTypes';
+import { getRegisterTypes, saveRegisterTypes, DEFAULT_REGISTER_TYPES } from '../constants/registerTypes';
 
 const firmData = {
   name: 'CA Rahul Gupta & Associates',
@@ -27,6 +28,9 @@ export default function Settings() {
   const [portalTypes, setPortalTypes] = useState(() => getPortalTypes());
   const [newPortal, setNewPortal] = useState('');
   const [portalError, setPortalError] = useState('');
+  const [registerTypes, setRegisterTypes] = useState(() => getRegisterTypes());
+  const [newRegister, setNewRegister] = useState('');
+  const [registerError, setRegisterError] = useState('');
 
   function handleAddPortal() {
     const val = newPortal.trim();
@@ -43,6 +47,24 @@ export default function Settings() {
     const updated = portalTypes.filter(p => p !== name);
     setPortalTypes(updated);
     savePortalTypes(updated);
+  }
+
+  function handleAddRegister() {
+    const val = newRegister.trim();
+    if (!val) { setRegisterError('Register name cannot be empty.'); return; }
+    if (registerTypes.find(r => r.label === val)) { setRegisterError('This register already exists.'); return; }
+    const key = val.toLowerCase().replace(/[^a-z0-9]/g, '_').replace(/_+/g, '_');
+    const updated = [...registerTypes, { key, label: val, icon: '📁' }];
+    setRegisterTypes(updated);
+    saveRegisterTypes(updated);
+    setNewRegister('');
+    setRegisterError('');
+  }
+
+  function handleDeleteRegister(key) {
+    const updated = registerTypes.filter(r => r.key !== key);
+    setRegisterTypes(updated);
+    saveRegisterTypes(updated);
   }
 
   return (
@@ -170,6 +192,29 @@ export default function Settings() {
               <button onClick={handleAddPortal} style={btnPrimary}>➕ Add</button>
             </div>
             {portalError && <div style={{ fontSize:11, color:'#dc2626', marginTop:4 }}>{portalError}</div>}
+          </div>
+          <div style={{ ...cardStyle, marginTop: 20 }}>
+            <h3 style={sectionTitle}>🗂️ Register Types</h3>
+            <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>
+              These determine which register tabs appear on the Registers page.
+            </p>
+            {registerTypes.map(r => (
+              <div key={r.key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
+                <span style={{ fontSize:13, color:'#334155' }}>{r.icon} {r.label}</span>
+                <button onClick={() => handleDeleteRegister(r.key)} style={iconBtn} title="Delete">🗑️</button>
+              </div>
+            ))}
+            <div style={{ display:'flex', gap:8, marginTop:12 }}>
+              <input
+                value={newRegister}
+                onChange={e => { setNewRegister(e.target.value); setRegisterError(''); }}
+                onKeyDown={e => e.key === 'Enter' && handleAddRegister()}
+                placeholder="e.g. PT Register"
+                style={{ ...inputStyle, flex:1 }}
+              />
+              <button onClick={handleAddRegister} style={btnPrimary}>➕ Add</button>
+            </div>
+            {registerError && <div style={{ fontSize:11, color:'#dc2626', marginTop:4 }}>{registerError}</div>}
           </div>
         </div>
       )}
