@@ -3,6 +3,9 @@ import { Search, Bell, ChevronRight } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import { getInitials } from '../../utils/getInitials';
+import { useNotification } from '../../context/NotificationContext';
+import { ROLE_LABELS } from '../../constants/roles';
+import { mockContacts, mockOrganizations, mockServices, mockLeads } from '../../data/mockData';
 
 const breadcrumbMap = {
   '/':                       ['Home'],
@@ -23,11 +26,17 @@ const breadcrumbMap = {
 
 export default function TopBar({ title }) {
   const [search, setSearch] = useState('');
+  const [showSearchResults, setShowSearchResults] = useState(false);
+  const [searchResults, setSearchResults] = useState([]);
   const [avatarOpen, setAvatarOpen] = useState(false);
+  const [notifOpen, setNotifOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const notifRef = useRef(null);
+  const searchRef = useRef(null);
   const loc = useLocation();
   const navigate = useNavigate();
   const { session, logout } = useAuth();
+  const { notifications, clearNotification } = useNotification();
   const crumbs = breadcrumbMap[loc.pathname] || ['Home'];
   const pageTitle = crumbs[crumbs.length - 1];
 
@@ -41,6 +50,61 @@ export default function TopBar({ title }) {
     navigate('/login', { replace: true });
   }
 
+  function performSearch(query) {
+    const q = query.toLowerCase();
+    const results = [];
+
+    mockContacts.forEach(c => {
+      if (c.displayName.toLowerCase().includes(q)) {
+        results.push({ label: c.displayName, sublabel: c.city || 'Contact', route: '/clients/contacts', type: 'contact' });
+      }
+    });
+    mockOrganizations.forEach(o => {
+      if (o.displayName.toLowerCase().includes(q)) {
+        results.push({ label: o.displayName, sublabel: o.constitution || 'Organization', route: '/clients/organizations', type: 'org' });
+      }
+    });
+    mockServices.forEach(s => {
+      if (s.clientName.toLowerCase().includes(q) || s.type.toLowerCase().includes(q)) {
+        results.push({ label: s.clientName, sublabel: s.type, route: '/services', type: 'service' });
+      }
+    });
+    mockLeads.forEach(l => {
+      if (l.contactName.toLowerCase().includes(q) || (l.company || '').toLowerCase().includes(q)) {
+        results.push({ label: l.contactName, sublabel: l.company || 'Lead', route: '/leads', type: 'lead' });
+      }
+    });
+
+    return results.slice(0, 8);
+  }
+
+  function handleSearchChange(e) {
+    const val = e.target.value;
+    setSearch(val);
+    if (val.length >= 2) {
+      const results = performSearch(val);
+      setSearchResults(results);
+      setShowSearchResults(true);
+    } else {
+      setSearchResults([]);
+      setShowSearchResults(false);
+    }
+  }
+
+  function handleResultClick(route) {
+    navigate(route);
+    setSearch('');
+    setSearchResults([]);
+    setShowSearchResults(false);
+  }
+
+  const typeIcons = { contact: '👤', org: '🏢', service: '📋', lead: '🎯' };
+
+  function formatTimestamp(ts) {
+    const d = new Date(ts);
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+  }
+
   // Close the account menu when clicking anywhere outside it.
   // dropdownRef is intentionally omitted from the dependency array:
   // refs are stable across renders and do not need to trigger re-subscription.
@@ -48,6 +112,12 @@ export default function TopBar({ title }) {
     function handleClickOutside(event) {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setAvatarOpen(false);
+      }
+      if (notifRef.current && !notifRef.current.contains(event.target)) {
+        setNotifOpen(false);
+      }
+      if (searchRef.current && !searchRef.current.contains(event.target)) {
+        setShowSearchResults(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -73,20 +143,70 @@ export default function TopBar({ title }) {
 
       {/* Right: search + bell + avatar */}
       <div style={styles.right}>
-        <div style={styles.searchWrap}>
-          <Search size={14} style={styles.searchIcon} />
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="Search client / service…"
-            style={styles.searchInput}
-          />
+        <div style={{ position: 'relative' }} ref={searchRef}>
+          <div style={styles.searchWrap}>
+            <Search size={14} style={styles.searchIcon} />
+            <input
+              value={search}
+              onChange={handleSearchChange}
+              placeholder="Search client / service…"
+              style={styles.searchInput}
+            />
+          </div>
+          {showSearchResults && (
+            <div style={styles.searchDropdown}>
+              {searchResults.length === 0 ? (
+                <div style={{ padding: '10px 12px', fontSize: 13, color: '#94a3b8' }}>No results found.</div>
+              ) : (
+                searchResults.map((r, i) => (
+                  <div
+                    key={i}
+                    style={styles.searchItem}
+                    onMouseDown={() => handleResultClick(r.route)}
+                  >
+                    <span style={{ fontSize: 15, flexShrink: 0 }}>{typeIcons[r.type]}</span>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.label}</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{r.sublabel}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
 
-        <button style={styles.iconBtn} title="Notifications">
-          <Bell size={18} color="#64748b" />
-          <span style={styles.notifDot} />
-        </button>
+        <div style={{ position: 'relative' }} ref={notifRef}>
+          <button
+            style={styles.iconBtn}
+            title="Notifications"
+            onClick={() => setNotifOpen(v => !v)}
+          >
+            <Bell size={18} color="#64748b" />
+            {notifications.length > 0 && <span style={styles.notifDot} />}
+          </button>
+          {notifOpen && (
+            <div style={styles.notifDropdown}>
+              <div style={{ padding: '10px 14px 8px', fontWeight: 700, fontSize: 13, color: '#1e293b', borderBottom: '1px solid #f1f5f9' }}>
+                Notifications
+              </div>
+              {notifications.length === 0 ? (
+                <div style={{ padding: '16px 14px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No new notifications</div>
+              ) : (
+                notifications.map(n => (
+                  <div key={n.id} style={styles.notifItem}>
+                    <span style={{ fontSize: 16 }}>{n.type === 'lead' ? '🎯' : n.type === 'appointment' ? '📅' : n.type === 'service' ? '📋' : '🔔'}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, color: '#334155', fontWeight: 500 }}>{n.message}</div>
+                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{formatTimestamp(n.timestamp)}</div>
+                    </div>
+                    <button onClick={() => clearNotification(n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 16, padding: '0 2px', flexShrink: 0 }}>✕</button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+        </div>
 
         <div style={{ position: 'relative' }} ref={dropdownRef}>
           <button
@@ -97,7 +217,7 @@ export default function TopBar({ title }) {
             <div style={styles.avatarCircle}>{initials}</div>
             <div style={styles.avatarInfo}>
               <span style={styles.avatarName}>{displayName}</span>
-              <span style={styles.avatarRole}>Admin</span>
+              <span style={styles.avatarRole}>{ROLE_LABELS[user?.role] || user?.role || 'User'}</span>
             </div>
           </button>
           {avatarOpen && (
@@ -156,6 +276,28 @@ const styles = {
     outline: 'none',
     width: 220,
   },
+  searchDropdown: {
+    position: 'absolute',
+    top: 'calc(100% + 6px)',
+    left: 0,
+    right: 0,
+    background: '#fff',
+    border: '1px solid #E6E8F0',
+    borderRadius: 10,
+    boxShadow: '0 8px 24px rgba(0,0,0,0.10)',
+    zIndex: 200,
+    minWidth: 260,
+    maxHeight: 320,
+    overflowY: 'auto',
+  },
+  searchItem: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 10,
+    padding: '9px 12px',
+    cursor: 'pointer',
+    borderBottom: '1px solid #f8fafc',
+  },
   iconBtn: {
     position: 'relative',
     background: 'none',
@@ -178,6 +320,27 @@ const styles = {
     borderRadius: '50%',
     background: '#ef4444',
     border: '1.5px solid #fff',
+  },
+  notifDropdown: {
+    position: 'absolute',
+    right: 0,
+    top: 'calc(100% + 6px)',
+    background: '#fff',
+    border: '1px solid #E6E8F0',
+    borderRadius: 10,
+    boxShadow: '0 8px 24px rgba(0,0,0,0.10)',
+    minWidth: 280,
+    maxWidth: 340,
+    zIndex: 200,
+    maxHeight: 360,
+    overflowY: 'auto',
+  },
+  notifItem: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: 10,
+    padding: '10px 14px',
+    borderBottom: '1px solid #f8fafc',
   },
   avatarBtn: {
     display: 'flex',

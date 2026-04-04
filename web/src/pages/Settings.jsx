@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { getPortalTypes, savePortalTypes } from '../constants/portalTypes';
-import { getRegisterTypes, saveRegisterTypes, DEFAULT_REGISTER_TYPES } from '../constants/registerTypes';
+import { getRegisterTypes, saveRegisterTypes } from '../constants/registerTypes';
+import { BILLING_PROFILES } from '../constants/billingProfiles';
+import { mockCredentials } from '../data/mockData';
 
 const firmData = {
   name: 'CA Rahul Gupta & Associates',
@@ -31,6 +33,10 @@ export default function Settings() {
   const [registerTypes, setRegisterTypes] = useState(() => getRegisterTypes());
   const [newRegister, setNewRegister] = useState('');
   const [registerError, setRegisterError] = useState('');
+  const [billingProfiles, setBillingProfiles] = useState(BILLING_PROFILES);
+  const [showBillingForm, setShowBillingForm] = useState(false);
+  const [billingEdit, setBillingEdit] = useState(null);
+  const [billingForm, setBillingForm] = useState({ code:'', name:'' });
 
   function handleAddPortal() {
     const val = newPortal.trim();
@@ -44,9 +50,25 @@ export default function Settings() {
   }
 
   function handleDeletePortal(name) {
+    // Check mockCredentials for usage
+    const usedInMock = mockCredentials.some(c => c.portalName === name);
+    // Check localStorage credentials
+    let usedInStorage = false;
+    try {
+      const stored = localStorage.getItem('credentials');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) usedInStorage = parsed.some(c => c.portalName === name);
+      }
+    } catch { /* ignore */ }
+    if (usedInMock || usedInStorage) {
+      setPortalError(`Cannot delete "${name}" — it is used by existing credentials. Remove those credentials first.`);
+      return;
+    }
     const updated = portalTypes.filter(p => p !== name);
     setPortalTypes(updated);
     savePortalTypes(updated);
+    setPortalError('');
   }
 
   function handleAddRegister() {
@@ -62,9 +84,21 @@ export default function Settings() {
   }
 
   function handleDeleteRegister(key) {
+    // Check localStorage registers for existing records
+    try {
+      const stored = localStorage.getItem('registers');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.some(r => r.registerType === key)) {
+          setRegisterError('Cannot delete this register type — it has existing records. Delete those records first.');
+          return;
+        }
+      }
+    } catch { /* ignore */ }
     const updated = registerTypes.filter(r => r.key !== key);
     setRegisterTypes(updated);
     saveRegisterTypes(updated);
+    setRegisterError('');
   }
 
   return (
@@ -160,11 +194,69 @@ export default function Settings() {
         </div>
       )}
 
-      {(tab==='billing'||tab==='notifications') && (
+      {tab==='billing' && (
+        <div style={{ maxWidth:700 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+            <div>
+              <h2 style={{ margin:'0 0 4px 0', fontSize:18, fontWeight:700, color:'#1e293b' }}>🏢 Billing Firms</h2>
+              <p style={{ margin:0, fontSize:13, color:'#64748b' }}>These billing profiles appear as options when raising invoices.</p>
+            </div>
+            <button style={btnPrimary} onClick={() => { setBillingForm({ code:'', name:'' }); setBillingEdit(null); setShowBillingForm(true); }}>➕ Add Billing Firm</button>
+          </div>
+          <div style={cardStyle}>
+            <table style={tableStyle}>
+              <thead>
+                <tr>{['Code','Firm Name','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
+              </thead>
+              <tbody>
+                {billingProfiles.map(p=>(
+                  <tr key={p.id} style={trStyle}>
+                    <td style={{ ...tdStyle, fontFamily:'monospace', fontWeight:700 }}>{p.code}</td>
+                    <td style={{ ...tdStyle, fontWeight:600 }}>{p.name}</td>
+                    <td style={tdStyle}>
+                      <button style={iconBtn} onClick={() => { setBillingForm({ code:p.code, name:p.name }); setBillingEdit(p.id); setShowBillingForm(true); }}>✏️ Edit</button>
+                      <button style={{ ...iconBtn, color:'#ef4444' }} onClick={() => { if(window.confirm(`Delete "${p.name}"?`)) setBillingProfiles(prev=>prev.filter(x=>x.id!==p.id)); }}>🗑️</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {showBillingForm && (
+            <div style={{ ...cardStyle, marginTop:16 }}>
+              <h3 style={sectionTitle}>{billingEdit ? 'Edit Billing Firm' : 'Add Billing Firm'}</h3>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 2fr', gap:12, marginBottom:12 }}>
+                <div>
+                  <label style={labelStyle}>Code</label>
+                  <input value={billingForm.code} onChange={e=>setBillingForm(v=>({...v,code:e.target.value}))} style={inputStyle} placeholder="e.g. RBGC-CHD" />
+                </div>
+                <div>
+                  <label style={labelStyle}>Firm Name</label>
+                  <input value={billingForm.name} onChange={e=>setBillingForm(v=>({...v,name:e.target.value}))} style={inputStyle} placeholder="e.g. RAHUL B GUPTA & CO." />
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:8 }}>
+                <button style={btnPrimary} onClick={() => {
+                  if (!billingForm.code.trim() || !billingForm.name.trim()) return;
+                  if (billingEdit) {
+                    setBillingProfiles(prev => prev.map(p => p.id === billingEdit ? { ...p, code:billingForm.code, name:billingForm.name } : p));
+                  } else {
+                    setBillingProfiles(prev => [...prev, { id: billingForm.code, code:billingForm.code, name:billingForm.name }]);
+                  }
+                  setShowBillingForm(false);
+                }}>💾 Save</button>
+                <button style={btnOutline} onClick={() => setShowBillingForm(false)}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab==='notifications' && (
         <div style={{ ...cardStyle, maxWidth:600, padding:32, textAlign:'center' }}>
           <div style={{ fontSize:40, marginBottom:12 }}>🚧</div>
-          <div style={{ fontWeight:700, fontSize:16, color:'#1e293b' }}>{tab==='billing'?'Billing Firms':'Notifications'} Configuration</div>
-          <div style={{ color:'#64748b', fontSize:13, marginTop:8 }}>This section will allow you to configure {tab==='billing'?'multiple billing firm profiles and GST numbers':'email and SMS notification templates and triggers'}.</div>
+          <div style={{ fontWeight:700, fontSize:16, color:'#1e293b' }}>Notifications Configuration</div>
+          <div style={{ color:'#64748b', fontSize:13, marginTop:8 }}>This section will allow you to configure email and SMS notification templates and triggers.</div>
         </div>
       )}
 

@@ -5,6 +5,7 @@ import { getServiceCatalog } from '../data/serviceCatalog';
 import { addEngagement } from '../data/engagementStore';
 import { mockContacts, mockOrganizations } from '../data/mockData';
 import { useStaffUsers } from '../hooks/useStaffUsers';
+import { useNotification } from '../context/NotificationContext';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -129,6 +130,7 @@ export default function NewServiceEngagement() {
   const navigate = useNavigate();
   const catalog = getServiceCatalog();
   const hasCatalog = catalog.categories && catalog.categories.length > 0;
+  const { addNotification } = useNotification();
 
   // Client selection
   const [clientType, setClientType] = useState('contact'); // 'contact' | 'organization'
@@ -244,6 +246,7 @@ export default function NewServiceEngagement() {
     };
 
     addEngagement(engagement);
+    addNotification('New service engagement created', 'service');
     setToast('Engagement created');
     setTimeout(() => navigate('/services'), 1200);
   }
