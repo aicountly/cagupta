@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { getPortalTypes, savePortalTypes } from '../constants/portalTypes';
 
 const firmData = {
   name: 'CA Rahul Gupta & Associates',
@@ -23,11 +24,31 @@ const roleTextColors = { admin:'#5b21b6', partner:'#1d4ed8', manager:'#166534', 
 
 export default function Settings() {
   const [tab, setTab] = useState('firm');
+  const [portalTypes, setPortalTypes] = useState(() => getPortalTypes());
+  const [newPortal, setNewPortal] = useState('');
+  const [portalError, setPortalError] = useState('');
+
+  function handleAddPortal() {
+    const val = newPortal.trim();
+    if (!val) { setPortalError('Portal name cannot be empty.'); return; }
+    if (portalTypes.includes(val)) { setPortalError('This portal already exists.'); return; }
+    const updated = [...portalTypes, val];
+    setPortalTypes(updated);
+    savePortalTypes(updated);
+    setNewPortal('');
+    setPortalError('');
+  }
+
+  function handleDeletePortal(name) {
+    const updated = portalTypes.filter(p => p !== name);
+    setPortalTypes(updated);
+    savePortalTypes(updated);
+  }
 
   return (
     <div style={{ padding:24 }}>
       <div style={{ display:'flex', gap:4, marginBottom:24, borderBottom:'2px solid #e2e8f0' }}>
-        {[['firm','Firm Profile'],['team','Team & Users'],['roles','Roles & Permissions'],['billing','Billing Firms'],['notifications','Notifications']].map(([t,l])=>(
+        {[['firm','Firm Profile'],['team','Team & Users'],['roles','Roles & Permissions'],['billing','Billing Firms'],['notifications','Notifications'],['other','Other Settings']].map(([t,l])=>(
           <button key={t} onClick={()=>setTab(t)} style={{ padding:'8px 20px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600, color:tab===t?'#2563eb':'#64748b', borderBottom:tab===t?'2px solid #2563eb':'2px solid transparent', marginBottom:-2 }}>
             {l}
           </button>
@@ -122,6 +143,34 @@ export default function Settings() {
           <div style={{ fontSize:40, marginBottom:12 }}>🚧</div>
           <div style={{ fontWeight:700, fontSize:16, color:'#1e293b' }}>{tab==='billing'?'Billing Firms':'Notifications'} Configuration</div>
           <div style={{ color:'#64748b', fontSize:13, marginTop:8 }}>This section will allow you to configure {tab==='billing'?'multiple billing firm profiles and GST numbers':'email and SMS notification templates and triggers'}.</div>
+        </div>
+      )}
+
+      {tab==='other' && (
+        <div style={{ maxWidth:640 }}>
+          <h2 style={{ margin:'0 0 4px 0', fontSize:18, fontWeight:700, color:'#1e293b' }}>⚙️ Other Settings</h2>
+          <p style={{ margin:'0 0 20px 0', fontSize:13, color:'#64748b' }}>Manage lookup lists and occasional configuration used across the portal.</p>
+          <div style={cardStyle}>
+            <h3 style={sectionTitle}>🔑 Portal Types</h3>
+            <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>These portal names appear as a dropdown when adding credentials in the Credentials Vault.</p>
+            {portalTypes.map(name => (
+              <div key={name} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
+                <span style={{ fontSize:13, color:'#334155' }}>{name}</span>
+                <button onClick={() => handleDeletePortal(name)} style={iconBtn} title="Delete">🗑️</button>
+              </div>
+            ))}
+            <div style={{ display:'flex', gap:8, marginTop:12 }}>
+              <input
+                value={newPortal}
+                onChange={e => { setNewPortal(e.target.value); setPortalError(''); }}
+                onKeyDown={e => e.key === 'Enter' && handleAddPortal()}
+                placeholder="e.g. NSDL e-Gov Portal"
+                style={{ ...inputStyle, flex:1 }}
+              />
+              <button onClick={handleAddPortal} style={btnPrimary}>➕ Add</button>
+            </div>
+            {portalError && <div style={{ fontSize:11, color:'#dc2626', marginTop:4 }}>{portalError}</div>}
+          </div>
         </div>
       )}
     </div>
