@@ -68,7 +68,7 @@ export default function ContactCreatePage() {
   const { id } = useParams();
   const isEdit = Boolean(id);
 
-  const existingContact = isEdit ? getContacts().find(c => c.id === id) : null;
+  const existingContact = isEdit ? getContacts().find(c => String(c.id) === id) : null;
 
   const [form, setForm] = useState(() => {
     if (isEdit && existingContact) {

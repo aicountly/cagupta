@@ -84,7 +84,7 @@ export default function OrganizationCreatePage() {
   const { id } = useParams();
   const isEdit = Boolean(id);
 
-  const existingOrg = isEdit ? getOrganizations().find(o => o.id === id) : null;
+  const existingOrg = isEdit ? getOrganizations().find(o => String(o.id) === id) : null;
 
   const [orgCode] = useState(() => isEdit && existingOrg ? existingOrg.clientCode : generateOrgCode());
   const [orgId] = useState(() => isEdit && existingOrg ? existingOrg.id : null);
