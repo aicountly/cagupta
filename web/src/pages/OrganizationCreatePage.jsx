@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
-import { mockContacts } from '../data/mockData';
+import { getContacts, addContact, generateContactCode } from '../data/contactStore';
 import { addOrganization, generateOrgCode, getOrganizations, updateOrganization } from '../data/organizationStore';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 
@@ -65,6 +65,7 @@ function blankForm(defaultManager) {
     gstin: '',
     cin: '',
     primaryContactId: '',
+    secondaryContactIds: [],
     email: '',
     phone: '',
     addressLine1: '',
@@ -87,7 +88,7 @@ export default function OrganizationCreatePage() {
   const existingOrg = isEdit ? getOrganizations().find(o => String(o.id) === id) : null;
 
   const [orgCode] = useState(() => isEdit && existingOrg ? existingOrg.clientCode : generateOrgCode());
-  const [orgId] = useState(() => isEdit && existingOrg ? existingOrg.id : null);
+  const [orgId] = useState(() => isEdit && existingOrg ? existingOrg.id : generateId());
   const [form, setForm] = useState(() => {
     if (isEdit && existingOrg) {
       return {
@@ -97,6 +98,7 @@ export default function OrganizationCreatePage() {
         gstin: existingOrg.gstin || '',
         cin: existingOrg.cin || '',
         primaryContactId: existingOrg.primaryContactId || '',
+        secondaryContactIds: existingOrg.secondaryContactIds || [],
         email: existingOrg.email || '',
         phone: existingOrg.phone || '',
         addressLine1: existingOrg.addressLine1 || '',
@@ -114,6 +116,15 @@ export default function OrganizationCreatePage() {
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
+
+  // Live contacts list
+  const [contacts, setContacts] = useState(() => getContacts());
+
+  // Inline "Create New Contact" modal state
+  const [showNewContactModal, setShowNewContactModal] = useState(false);
+  const [newContactForm, setNewContactForm] = useState({ displayName: '', mobile: '', email: '' });
+  const [newContactErrors, setNewContactErrors] = useState({});
+  const [savingNewContact, setSavingNewContact] = useState(false);
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -151,9 +162,9 @@ export default function OrganizationCreatePage() {
 
   // ── Save ────────────────────────────────────────────────────────────────────
   function buildOrg(f) {
-    const primaryContact = mockContacts.find(c => c.id === f.primaryContactId);
+    const primaryContact = contacts.find(c => c.id === f.primaryContactId);
     return {
-      id: isEdit ? orgId : generateId(),
+      id: orgId,
       clientCode: orgCode,
       displayName: f.displayName.trim(),
       constitution: f.constitution || '',
@@ -162,6 +173,7 @@ export default function OrganizationCreatePage() {
       cin: f.cin.toUpperCase() || null,
       primaryContactId: f.primaryContactId || null,
       primaryContact: primaryContact ? primaryContact.displayName : '—',
+      secondaryContactIds: f.secondaryContactIds || [],
       email: f.email || null,
       phone: f.phone || null,
       addressLine1: f.addressLine1 || null,
@@ -211,6 +223,56 @@ export default function OrganizationCreatePage() {
 
   function handleCancel() {
     navigate('/clients/organizations');
+  }
+
+  // ── Inline "Create New Contact" modal ────────────────────────────────────────
+  function openNewContactModal() {
+    setNewContactForm({ displayName: '', mobile: '', email: '' });
+    setNewContactErrors({});
+    setShowNewContactModal(true);
+  }
+
+  function closeNewContactModal() {
+    setShowNewContactModal(false);
+  }
+
+  function handleSaveNewContact() {
+    const errs = {};
+    if (!newContactForm.displayName.trim()) errs.displayName = 'Full name is required.';
+    const hasMobile = newContactForm.mobile.trim().length > 0;
+    const hasEmail = newContactForm.email.trim().length > 0;
+    if (!hasMobile && !hasEmail) {
+      errs.mobile = 'Either Mobile or Email is required.';
+      errs.email = 'Either Mobile or Email is required.';
+    } else if (hasMobile && !/^\+?[\d\s\-]{7,15}$/.test(newContactForm.mobile.trim())) {
+      errs.mobile = 'Enter a valid mobile number.';
+    }
+    if (newContactForm.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newContactForm.email.trim())) {
+      errs.email = 'Enter a valid email address.';
+    }
+    if (Object.keys(errs).length > 0) {
+      setNewContactErrors(errs);
+      return;
+    }
+    setSavingNewContact(true);
+    const newContact = {
+      id: 'ct-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9),
+      clientCode: generateContactCode(),
+      displayName: newContactForm.displayName.trim(),
+      mobile: newContactForm.mobile.trim() || undefined,
+      email: newContactForm.email.trim() || undefined,
+      status: 'active',
+      linkedOrgIds: [orgId],
+      linkedOrgsCount: 1,
+      linkedOrgNames: [form.displayName.trim() || 'New Organization'],
+    };
+    addContact(newContact);
+    const refreshed = getContacts();
+    setContacts(refreshed);
+    setField('primaryContactId', newContact.id);
+    setSavingNewContact(false);
+    setShowNewContactModal(false);
+    setToast({ message: `✅ Contact "${newContact.displayName}" created and set as Primary Contact.`, type: 'success' });
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────
@@ -329,20 +391,86 @@ export default function OrganizationCreatePage() {
 
           <div style={{ marginTop: 14 }}>
             <FieldLabel label="Primary Contact" />
-            <select
-              value={form.primaryContactId}
-              onChange={e => setField('primaryContactId', e.target.value)}
-              style={selectStyle}
-            >
-              <option value="">— None —</option>
-              {mockContacts.length === 0 ? (
-                <option disabled value="">No contacts available yet</option>
-              ) : (
-                mockContacts.map(c => (
-                  <option key={c.id} value={c.id}>{c.displayName}</option>
-                ))
-              )}
-            </select>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <select
+                value={form.primaryContactId}
+                onChange={e => setField('primaryContactId', e.target.value)}
+                style={{ ...selectStyle, flex: 1 }}
+              >
+                <option value="">— None —</option>
+                {contacts.length === 0 ? (
+                  <option disabled value="">No contacts available yet</option>
+                ) : (
+                  contacts.map(c => (
+                    <option key={c.id} value={c.id}>{c.displayName}</option>
+                  ))
+                )}
+              </select>
+              <button
+                type="button"
+                onClick={openNewContactModal}
+                style={{
+                  padding: '7px 12px',
+                  background: '#F37920',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                + Create New Contact
+              </button>
+            </div>
+          </div>
+
+          {/* Secondary Contacts */}
+          <div style={{ marginTop: 14 }}>
+            <FieldLabel label="Secondary Contacts" />
+            {contacts.filter(c => c.id !== form.primaryContactId).length === 0 ? (
+              <div style={{ fontSize: 13, color: '#94a3b8' }}>No other contacts available.</div>
+            ) : (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+                {contacts
+                  .filter(c => c.id !== form.primaryContactId)
+                  .map(c => {
+                    const selected = (form.secondaryContactIds || []).includes(c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        onClick={() => {
+                          const current = form.secondaryContactIds || [];
+                          const updated = selected
+                            ? current.filter(x => x !== c.id)
+                            : [...current, c.id];
+                          setField('secondaryContactIds', updated);
+                        }}
+                        style={{
+                          padding: '5px 12px',
+                          borderRadius: 20,
+                          fontSize: 12,
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          border: `1.5px solid ${selected ? '#F37920' : '#E6E8F0'}`,
+                          background: selected ? '#FEF0E6' : '#fff',
+                          color: selected ? '#C25A0A' : '#64748b',
+                          transition: 'all 0.15s',
+                        }}
+                      >
+                        {selected ? '✓ ' : ''}{c.displayName}
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+            {(form.secondaryContactIds || []).length > 0 && (
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
+                {form.secondaryContactIds.length} secondary contact{form.secondaryContactIds.length > 1 ? 's' : ''} selected
+              </div>
+            )}
           </div>
         </FormSection>
 
@@ -452,6 +580,82 @@ export default function OrganizationCreatePage() {
           </button>
         </div>
       </div>
+
+      {/* ── Inline Create New Contact Modal ─────────────────────────────────── */}
+      {showNewContactModal && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 10000, padding: 16,
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 14, padding: 24,
+            width: '100%', maxWidth: 440,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#0B1F3B' }}>Create New Contact</div>
+              <button onClick={closeNewContactModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <X size={18} color="#64748b" />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <div style={fieldLabelStyle}>Full Name <span style={{ color: '#ef4444' }}>*</span></div>
+                <input
+                  value={newContactForm.displayName}
+                  onChange={e => setNewContactForm(prev => ({ ...prev, displayName: e.target.value }))}
+                  placeholder="e.g. Ramesh Agarwal"
+                  style={{ ...inputStyle, borderColor: newContactErrors.displayName ? '#ef4444' : '#E6E8F0' }}
+                  autoFocus
+                />
+                {newContactErrors.displayName && <div style={errorMsgStyle}>{newContactErrors.displayName}</div>}
+              </div>
+
+              <div>
+                <div style={fieldLabelStyle}>Primary Mobile <span style={{ color: '#94a3b8', fontWeight: 400, fontSize: 11 }}>(required if no email)</span></div>
+                <input
+                  value={newContactForm.mobile}
+                  onChange={e => setNewContactForm(prev => ({ ...prev, mobile: e.target.value }))}
+                  placeholder="e.g. 9876543210"
+                  style={{ ...inputStyle, borderColor: newContactErrors.mobile ? '#ef4444' : '#E6E8F0' }}
+                />
+                {newContactErrors.mobile && <div style={errorMsgStyle}>{newContactErrors.mobile}</div>}
+              </div>
+
+              <div>
+                <div style={fieldLabelStyle}>Email <span style={{ color: '#94a3b8', fontWeight: 400, fontSize: 11 }}>(optional)</span></div>
+                <input
+                  type="email"
+                  value={newContactForm.email}
+                  onChange={e => setNewContactForm(prev => ({ ...prev, email: e.target.value }))}
+                  placeholder="e.g. ramesh@example.com"
+                  style={{ ...inputStyle, borderColor: newContactErrors.email ? '#ef4444' : '#E6E8F0' }}
+                />
+                {newContactErrors.email && <div style={errorMsgStyle}>{newContactErrors.email}</div>}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+              <button
+                onClick={closeNewContactModal}
+                style={btnCancel}
+                disabled={savingNewContact}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveNewContact}
+                style={{ ...btnPrimary, opacity: savingNewContact ? 0.7 : 1 }}
+                disabled={savingNewContact}
+              >
+                {savingNewContact ? '⏳ Saving…' : 'Save Contact'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
