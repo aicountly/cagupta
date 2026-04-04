@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import { mockContacts } from '../data/mockData';
-import { addOrganization, generateOrgCode } from '../data/organizationStore';
+import { addOrganization, generateOrgCode, getOrganizations, updateOrganization } from '../data/organizationStore';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ORG_TYPES = ['Company', 'LLP', 'Partnership', 'Proprietorship', 'Trust', 'Society', 'Other'];
@@ -81,9 +81,36 @@ function blankForm(defaultManager) {
 // ── Main page component ───────────────────────────────────────────────────────
 export default function OrganizationCreatePage() {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEdit = Boolean(id);
 
-  const [orgCode] = useState(() => generateOrgCode());
-  const [form, setForm] = useState(() => blankForm(MANAGER_LIST[0]));
+  const existingOrg = isEdit ? getOrganizations().find(o => o.id === id) : null;
+
+  const [orgCode] = useState(() => isEdit && existingOrg ? existingOrg.clientCode : generateOrgCode());
+  const [orgId] = useState(() => isEdit && existingOrg ? existingOrg.id : null);
+  const [form, setForm] = useState(() => {
+    if (isEdit && existingOrg) {
+      return {
+        displayName: existingOrg.displayName || '',
+        constitution: existingOrg.constitution || '',
+        pan: existingOrg.pan || '',
+        gstin: existingOrg.gstin || '',
+        cin: existingOrg.cin || '',
+        primaryContactId: existingOrg.primaryContactId || '',
+        email: existingOrg.email || '',
+        phone: existingOrg.phone || '',
+        addressLine1: existingOrg.addressLine1 || '',
+        addressLine2: existingOrg.addressLine2 || '',
+        city: existingOrg.city || '',
+        state: existingOrg.state || '',
+        pin: existingOrg.pin || '',
+        status: existingOrg.status || 'active',
+        assignedManager: existingOrg.assignedManager || MANAGER_LIST[0],
+        notes: existingOrg.notes || '',
+      };
+    }
+    return blankForm(MANAGER_LIST[0]);
+  });
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
@@ -123,7 +150,7 @@ export default function OrganizationCreatePage() {
   function buildOrg(f) {
     const primaryContact = mockContacts.find(c => c.id === f.primaryContactId);
     return {
-      id: generateId(),
+      id: isEdit ? orgId : generateId(),
       clientCode: orgCode,
       displayName: f.displayName.trim(),
       constitution: f.constitution || '',
@@ -157,9 +184,14 @@ export default function OrganizationCreatePage() {
 
     // Simulate async save (no real backend)
     await new Promise(r => setTimeout(r, 500));
-    addOrganization(buildOrg(form));
+    if (isEdit) {
+      updateOrganization(buildOrg(form));
+      setToast({ message: '✅ Organization updated successfully!', type: 'success' });
+    } else {
+      addOrganization(buildOrg(form));
+      setToast({ message: '✅ Organization created successfully!', type: 'success' });
+    }
     setSubmitting(false);
-    setToast({ message: '✅ Organization created successfully!', type: 'success' });
     afterSave();
   }
 
@@ -189,10 +221,10 @@ export default function OrganizationCreatePage() {
         <ChevronRight size={13} color="#94a3b8" />
         <span style={crumb} onClick={() => navigate('/clients/organizations')} role="button" tabIndex={0} onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/clients/organizations'); } }}>Organizations</span>
         <ChevronRight size={13} color="#94a3b8" />
-        <span style={crumbActive}>Add Organization</span>
+        <span style={crumbActive}>{isEdit ? 'Edit Organization' : 'Add Organization'}</span>
       </div>
 
-      <div style={pageTitleStyle}>Add Organization</div>
+      <div style={pageTitleStyle}>{isEdit ? 'Edit Organization' : 'Add Organization'}</div>
 
       {/* Form grid – 2 columns on desktop, 1 on mobile */}
       <div style={formGrid}>
@@ -399,19 +431,21 @@ export default function OrganizationCreatePage() {
       <div style={actionBar}>
         <button onClick={handleCancel} style={btnCancel} disabled={submitting}>Cancel</button>
         <div style={{ display: 'flex', gap: 10 }}>
-          <button
-            onClick={handleSaveNew}
-            style={{ ...btnSecondary, opacity: submitting ? 0.7 : 1 }}
-            disabled={submitting}
-          >
-            {submitting ? '⏳ Saving…' : '💾 Save & Add New'}
-          </button>
+          {!isEdit && (
+            <button
+              onClick={handleSaveNew}
+              style={{ ...btnSecondary, opacity: submitting ? 0.7 : 1 }}
+              disabled={submitting}
+            >
+              {submitting ? '⏳ Saving…' : '💾 Save & Add New'}
+            </button>
+          )}
           <button
             onClick={handleSaveQuit}
             style={{ ...btnPrimary, opacity: submitting ? 0.7 : 1 }}
             disabled={submitting}
           >
-            {submitting ? '⏳ Saving…' : '✅ Save & Quit'}
+            {submitting ? '⏳ Saving…' : isEdit ? '✅ Save Changes' : '✅ Save & Quit'}
           </button>
         </div>
       </div>

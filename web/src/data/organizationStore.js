@@ -37,6 +37,14 @@ export function addOrganization(org) {
   return updated;
 }
 
+/** Replace an existing organization by id and persist. Returns updated list. */
+export function updateOrganization(org) {
+  const list = getOrganizations();
+  const updated = list.map(o => o.id === org.id ? org : o);
+  saveOrganizations(updated);
+  return updated;
+}
+
 /**
  * Generate the next ORG code by reading existing orgs and incrementing the max.
  * Format: ORG-0001

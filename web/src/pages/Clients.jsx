@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { mockClients } from '../data/mockData';
 import StatusBadge from '../components/common/StatusBadge';
 
 const entityLabels = { individual:'Individual', pvt_ltd:'Pvt Ltd', llp:'LLP', partnership:'Partnership', trust:'Trust', huf:'HUF' };
 
 export default function Clients() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
@@ -37,7 +39,7 @@ export default function Clients() {
           </thead>
           <tbody>
             {filtered.map(c => (
-              <tr key={c.id} style={trStyle} onClick={()=>setSelected(c)}>
+              <tr key={c.id} style={trStyle}>
                 <td style={tdStyle}><code style={{ fontSize:11, background:'#f1f5f9', padding:'2px 6px', borderRadius:4 }}>{c.clientCode}</code></td>
                 <td style={{ ...tdStyle, fontWeight:600, color:'#F37920', cursor:'pointer' }}>{c.displayName}</td>
                 <td style={tdStyle}>{entityLabels[c.entityType] || c.entityType}</td>
@@ -47,8 +49,8 @@ export default function Clients() {
                 <td style={tdStyle}>{c.city}</td>
                 <td style={tdStyle}><StatusBadge status={c.status} /></td>
                 <td style={tdStyle}>
-                  <button style={iconBtn} title="View">👁️</button>
-                  <button style={iconBtn} title="Edit">✏️</button>
+                  <button style={iconBtn} title="View" onClick={e => { e.stopPropagation(); setSelected(c); }}>👁️</button>
+                  <button style={iconBtn} title="Edit" onClick={e => { e.stopPropagation(); navigate(`/clients/${c.id}/edit`); }}>✏️</button>
                 </td>
               </tr>
             ))}

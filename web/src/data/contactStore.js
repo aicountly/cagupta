@@ -37,6 +37,14 @@ export function addContact(contact) {
   return updated;
 }
 
+/** Replace an existing contact by id and persist. Returns updated list. */
+export function updateContact(contact) {
+  const list = getContacts();
+  const updated = list.map(c => c.id === contact.id ? contact : c);
+  saveContacts(updated);
+  return updated;
+}
+
 /** Generate the next available client code (e.g. CLT-0006 → CLT-0007). */
 export function generateContactCode() {
   const contacts = getContacts();
