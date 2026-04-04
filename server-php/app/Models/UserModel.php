@@ -101,7 +101,7 @@ class UserModel
         }
         if ($status !== '') {
             $where[]         = 'u.is_active = :is_active_filter';
-            $params[':is_active_filter'] = ($status === 'active');
+            $params[':is_active_filter'] = ($status === 'active') ? 'true' : 'false';
         }
 
         $whereClause = implode(' AND ', $where);
@@ -157,8 +157,8 @@ class UserModel
             ':email'           => $data['email'],
             ':password_hash'   => $data['password_hash'] ?? null,
             ':role_id'         => $data['role_id'] ?? null,
-            ':is_active'       => isset($data['is_active']) ? (bool)$data['is_active'] : true,
-            ':is_email_verified' => isset($data['is_email_verified']) ? (bool)$data['is_email_verified'] : false,
+            ':is_active'         => (isset($data['is_active']) ? (bool)$data['is_active'] : true) ? 'true' : 'false',
+            ':is_email_verified' => (isset($data['is_email_verified']) ? (bool)$data['is_email_verified'] : false) ? 'true' : 'false',
             ':login_provider'  => $data['login_provider'] ?? 'local',
             ':sso_provider_id' => $data['sso_provider_id'] ?? null,
             ':avatar_url'      => $data['avatar_url'] ?? null,
@@ -181,7 +181,11 @@ class UserModel
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
                 $setClauses[]       = "{$field} = :{$field}";
-                $params[":{$field}"] = $data[$field];
+                if ($field === 'is_active') {
+                    $params[":{$field}"] = ((bool)$data[$field]) ? 'true' : 'false';
+                } else {
+                    $params[":{$field}"] = $data[$field];
+                }
             }
         }
         if (!empty($data['password'])) {
