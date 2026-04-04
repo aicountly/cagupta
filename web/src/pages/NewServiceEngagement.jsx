@@ -4,15 +4,7 @@ import { ChevronRight, User, Building2, Search, X, CheckSquare, Square } from 'l
 import { getServiceCatalog } from '../data/serviceCatalog';
 import { addEngagement } from '../data/engagementStore';
 import { mockContacts, mockOrganizations } from '../data/mockData';
-
-// ── Mock staff list ───────────────────────────────────────────────────────────
-const mockStaff = [
-  'CA Rahul Gupta',
-  'CA Priya Sharma',
-  'Staff A',
-  'Staff B',
-  'Staff C',
-];
+import { useStaffUsers } from '../hooks/useStaffUsers';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -159,6 +151,9 @@ export default function NewServiceEngagement() {
   // UI state
   const [errors, setErrors] = useState({});
   const [toast, setToast] = useState('');
+
+  // Dynamic staff list
+  const { staffUsers } = useStaffUsers();
 
   // ── Derived catalog data ────────────────────────────────────────────────────
   const categories = catalog.categories;
@@ -396,7 +391,7 @@ export default function NewServiceEngagement() {
                   style={{ ...selectStyle, borderColor: errors.assignedTo ? '#ef4444' : '#E6E8F0' }}
                 >
                   <option value="">Select staff…</option>
-                  {mockStaff.map(s => <option key={s} value={s}>{s}</option>)}
+                  {staffUsers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
                 </select>
                 {errors.assignedTo && <ErrorMsg msg={errors.assignedTo} />}
               </div>

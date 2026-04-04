@@ -3,11 +3,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import { mockContacts } from '../data/mockData';
 import { addOrganization, generateOrgCode, getOrganizations, updateOrganization } from '../data/organizationStore';
+import { useStaffUsers } from '../hooks/useStaffUsers';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ORG_TYPES = ['Company', 'LLP', 'Partnership', 'Proprietorship', 'Trust', 'Society', 'Other'];
 const STATUS_OPTIONS = ['active', 'inactive', 'prospect'];
-const MANAGER_LIST = ['CA Rahul Gupta', 'CA Priya Sharma', 'Staff A', 'Staff B', 'Staff C'];
 
 const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
@@ -73,7 +73,7 @@ function blankForm(defaultManager) {
     state: '',
     pin: '',
     status: 'active',
-    assignedManager: defaultManager || MANAGER_LIST[0],
+    assignedManager: defaultManager || '',
     notes: '',
   };
 }
@@ -105,15 +105,18 @@ export default function OrganizationCreatePage() {
         state: existingOrg.state || '',
         pin: existingOrg.pin || '',
         status: existingOrg.status || 'active',
-        assignedManager: existingOrg.assignedManager || MANAGER_LIST[0],
+        assignedManager: existingOrg.assignedManager || '',
         notes: existingOrg.notes || '',
       };
     }
-    return blankForm(MANAGER_LIST[0]);
+    return blankForm();
   });
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
+
+  // Dynamic staff/manager list
+  const { staffUsers } = useStaffUsers();
 
   // Close toast automatically after 3 s
   useEffect(() => {
@@ -409,7 +412,7 @@ export default function OrganizationCreatePage() {
             <div style={fieldWrap}>
               <FieldLabel label="Manager" />
               <select value={form.assignedManager} onChange={e => setField('assignedManager', e.target.value)} style={selectStyle}>
-                {MANAGER_LIST.map(m => <option key={m} value={m}>{m}</option>)}
+                {staffUsers.map(m => <option key={m.id} value={m.name}>{m.name}</option>)}
               </select>
             </div>
           </div>

@@ -192,8 +192,8 @@ export default function Services() {
                       <td style={tdStyle}><StatusBadge status={s.status} /></td>
                       <td style={tdStyle} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <ActionBtn icon={Pencil} title="Edit" />
-                          <ActionBtn icon={FolderOpen} title="View Files" />
+                          <ActionBtn icon={Pencil} title="Edit" onClick={() => navigate(`/services/${s.id}/edit`)} />
+                          <ActionBtn icon={FolderOpen} title="View Files" onClick={() => navigate(`/services/${s.id}/files`)} />
                         </div>
                       </td>
                     </tr>
@@ -273,11 +273,12 @@ export default function Services() {
 }
 
 // ── Small components ──────────────────────────────────────────────────────────
-function ActionBtn({ icon: Icon, title }) {
+function ActionBtn({ icon: Icon, title, onClick }) {
   const [hover, setHover] = useState(false);
   return (
     <button
       title={title}
+      onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{ ...actionBtn, background: hover ? '#FEF0E6' : '#F6F7FB', borderColor: hover ? 'rgba(243,121,32,0.4)' : '#E6E8F0', color: hover ? '#F37920' : '#64748b' }}
