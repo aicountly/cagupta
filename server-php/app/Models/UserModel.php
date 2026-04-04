@@ -33,7 +33,7 @@ class UserModel
                     r.permissions AS role_permissions
              FROM users u
              LEFT JOIN roles r ON r.id = u.role_id
-             WHERE u.email = :email
+             WHERE LOWER(u.email) = LOWER(:email)
              LIMIT 1'
         );
         $stmt->execute([':email' => $email]);

@@ -41,7 +41,7 @@ class AuthController extends BaseController
     public function login(): never
     {
         $body  = $this->getJsonBody();
-        $email = trim((string)($body['email'] ?? ''));
+        $email = strtolower(trim((string)($body['email'] ?? '')));
         $pass  = (string)($body['password'] ?? '');
 
         if ($email === '' || $pass === '') {
