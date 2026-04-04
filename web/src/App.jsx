@@ -24,8 +24,10 @@ const pageTitles = {
   '/':                          '🏠 Dashboard',
   '/clients/contacts':          '👤 Contacts',
   '/clients/contacts/new':      '➕ Add Contact',
+  '/clients/contacts/edit':     '✏️ Edit Contact',
   '/clients/organizations':     '🏢 Organizations',
   '/clients/organizations/new': '🏢 Add Organization',
+  '/clients/organizations/edit':'🏢 Edit Organization',
   '/services':                  '📋 Services & Tasks',
   '/services/new':              '➕ New Service Engagement',
   '/documents':                 '📂 Document Management',
@@ -62,10 +64,10 @@ export default function App() {
           <Route path="/clients" element={<ProtectedRoute><Navigate to="/clients/contacts" replace /></ProtectedRoute>} />
           <Route path="/clients/contacts" element={<ProtectedRoute><Layout routePath="/clients/contacts"><Contacts /></Layout></ProtectedRoute>} />
           <Route path="/clients/contacts/new" element={<ProtectedRoute><Layout routePath="/clients/contacts/new"><ContactCreatePage /></Layout></ProtectedRoute>} />
-          <Route path="/clients/contacts/:id/edit" element={<ProtectedRoute><Layout routePath="/clients/contacts/new"><ContactCreatePage /></Layout></ProtectedRoute>} />
+          <Route path="/clients/contacts/:id/edit" element={<ProtectedRoute><Layout routePath="/clients/contacts/edit"><ContactCreatePage /></Layout></ProtectedRoute>} />
           <Route path="/clients/organizations" element={<ProtectedRoute><Layout routePath="/clients/organizations"><Organizations /></Layout></ProtectedRoute>} />
           <Route path="/clients/organizations/new" element={<ProtectedRoute><Layout routePath="/clients/organizations/new"><OrganizationCreatePage /></Layout></ProtectedRoute>} />
-          <Route path="/clients/organizations/:id/edit" element={<ProtectedRoute><Layout routePath="/clients/organizations/new"><OrganizationCreatePage /></Layout></ProtectedRoute>} />
+          <Route path="/clients/organizations/:id/edit" element={<ProtectedRoute><Layout routePath="/clients/organizations/edit"><OrganizationCreatePage /></Layout></ProtectedRoute>} />
           <Route path="/services" element={<ProtectedRoute><Layout routePath="/services"><Services /></Layout></ProtectedRoute>} />
           <Route path="/services/new" element={<ProtectedRoute><Layout routePath="/services/new"><NewServiceEngagement /></Layout></ProtectedRoute>} />
           <Route path="/documents" element={<ProtectedRoute><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
