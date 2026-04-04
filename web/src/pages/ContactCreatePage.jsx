@@ -2,8 +2,30 @@ import { useState, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import { addContact, generateContactCode, getContacts, updateContact } from '../data/contactStore';
-import { mockOrganizations } from '../data/mockData';
+import { getOrganizations } from '../data/organizationStore';
 import { useStaffUsers } from '../hooks/useStaffUsers';
+
+// ── Country / State data ──────────────────────────────────────────────────────
+const COUNTRIES = [
+  'India', 'United States', 'United Kingdom', 'Canada', 'Australia',
+  'Germany', 'France', 'Japan', 'China', 'Singapore', 'UAE',
+  'Saudi Arabia', 'Qatar', 'Bahrain', 'Kuwait', 'Oman',
+  'Nepal', 'Bangladesh', 'Sri Lanka', 'Malaysia', 'Thailand',
+  'Indonesia', 'South Africa', 'Brazil', 'Italy', 'Netherlands',
+  'Switzerland', 'New Zealand', 'Other',
+];
+
+const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand',
+  'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur',
+  'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab',
+  'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura',
+  'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
+  'Andaman & Nicobar Islands', 'Chandigarh',
+  'Dadra & Nagar Haveli and Daman & Diu', 'Delhi',
+  'Jammu & Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
+];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function generateId() {
@@ -30,9 +52,13 @@ function FieldError({ msg }) {
 }
 
 // ── Validators ────────────────────────────────────────────────────────────────
-function validateMobile(val) {
-  const stripped = val.replace(/^\+91\s*/, '');
-  return /^\d{10}$/.test(stripped);
+function validateMobile(val, country) {
+  if (!country || country === 'India') {
+    const stripped = val.replace(/^\+91\s*/, '');
+    return /^\d{10}$/.test(stripped);
+  }
+  // International: E.164 format (+countrycode digits, 7–15 digits total)
+  return /^\+\d{7,15}$/.test(val);
 }
 
 function validatePAN(val) {
@@ -47,6 +73,11 @@ function emptyForm(defaultManager = '') {
     email: '',
     pan: '',
     city: '',
+    country: 'India',
+    state: '',
+    landline: '',
+    secondaryMobile: '',
+    waMobile: '',
     status: 'active',
     assignedManager: defaultManager,
     linkedOrgIds: [],
@@ -70,6 +101,11 @@ export default function ContactCreatePage() {
         email: existingContact.email || '',
         pan: existingContact.pan || '',
         city: existingContact.city || '',
+        country: existingContact.country || 'India',
+        state: existingContact.state || '',
+        landline: existingContact.landline || '',
+        secondaryMobile: existingContact.secondaryMobile || '',
+        waMobile: existingContact.waMobile || '',
         status: existingContact.status || 'active',
         assignedManager: existingContact.assignedManager || '',
         linkedOrgIds: existingContact.linkedOrgIds || [],
@@ -89,11 +125,38 @@ export default function ContactCreatePage() {
 
   // Track "dirty" state so we can warn on cancel
   const [dirty, setDirty] = useState(false);
+  // Track WA Mobile "same as primary" sync
+  const [waMobileSameAsPrimary, setWaMobileSameAsPrimary] = useState(false);
 
   function update(field, value) {
-    setForm(prev => ({ ...prev, [field]: value }));
+    setForm(prev => {
+      const updated = { ...prev, [field]: value };
+      if (field === 'mobile' && waMobileSameAsPrimary) {
+        updated.waMobile = value;
+      }
+      return updated;
+    });
     setErrors(prev => ({ ...prev, [field]: undefined }));
     setDirty(true);
+  }
+
+  function handleCountryChange(country) {
+    setForm(prev => ({
+      ...prev,
+      country,
+      state: country !== 'India' ? 'Outside India' : (prev.state === 'Outside India' ? '' : prev.state),
+    }));
+    setErrors(prev => ({ ...prev, country: undefined, state: undefined }));
+    setDirty(true);
+  }
+
+  function toggleWaMobileSameAsPrimary(checked) {
+    setWaMobileSameAsPrimary(checked);
+    if (checked) {
+      setForm(prev => ({ ...prev, waMobile: prev.mobile }));
+      setErrors(prev => ({ ...prev, waMobile: undefined }));
+      setDirty(true);
+    }
   }
 
   function toggleOrg(orgId) {
@@ -109,11 +172,23 @@ export default function ContactCreatePage() {
   const doSave = useCallback(() => {
     const errs = {};
     if (!form.displayName.trim()) errs.displayName = 'Full name is required.';
-    if (!form.mobile.trim()) {
-      errs.mobile = 'Mobile number is required.';
-    } else if (!validateMobile(form.mobile.trim())) {
-      errs.mobile = 'Enter a valid 10-digit mobile number (optionally prefixed with +91).';
+
+    const hasMobile = form.mobile.trim().length > 0;
+    const hasEmail = form.email.trim().length > 0;
+    if (!hasMobile && !hasEmail) {
+      errs.mobile = 'Either Primary Mobile or Primary Email is required.';
+      errs.email = 'Either Primary Mobile or Primary Email is required.';
+    } else if (hasMobile && !validateMobile(form.mobile.trim(), form.country)) {
+      errs.mobile = form.country === 'India'
+        ? 'Enter a valid 10-digit mobile number (optionally prefixed with +91).'
+        : 'Enter a valid international number in E.164 format (e.g. +14155552671).';
     }
+    if (form.secondaryMobile.trim() && !validateMobile(form.secondaryMobile.trim(), form.country)) {
+      errs.secondaryMobile = form.country === 'India'
+        ? 'Enter a valid 10-digit mobile number.'
+        : 'Enter a valid international number in E.164 format.';
+    }
+
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       errs.email = 'Enter a valid email address.';
     }
@@ -126,15 +201,21 @@ export default function ContactCreatePage() {
       return null;
     }
 
-    const linkedOrgs = mockOrganizations.filter(o => form.linkedOrgIds.includes(o.id));
+    const allOrgs = getOrganizations();
+    const linkedOrgs = allOrgs.filter(o => form.linkedOrgIds.includes(o.id));
     const contact = {
       id: isEdit ? contactId : generateId(),
       clientCode: code,
       displayName: form.displayName.trim(),
-      mobile: form.mobile.trim(),
+      mobile: form.mobile.trim() || undefined,
       email: form.email.trim() || undefined,
       pan: form.pan.trim().toUpperCase() || undefined,
       city: form.city.trim() || undefined,
+      country: form.country || 'India',
+      state: form.state || undefined,
+      landline: form.landline.trim() || undefined,
+      secondaryMobile: form.secondaryMobile.trim() || undefined,
+      waMobile: form.waMobile.trim() || undefined,
       status: form.status,
       assignedManager: form.assignedManager || '',
       linkedOrgIds: form.linkedOrgIds,
@@ -231,18 +312,18 @@ export default function ContactCreatePage() {
           </FormField>
 
           {/* Mobile */}
-          <FormField label="Mobile" required error={errors.mobile}>
+          <FormField label="Primary Mobile" hint="At least one of Mobile or Email required" error={errors.mobile}>
             <input
               value={form.mobile}
               onChange={e => update('mobile', e.target.value)}
-              placeholder="e.g. 9876543210 or +91 9876543210"
+              placeholder={form.country === 'India' ? 'e.g. 9876543210 or +91 9876543210' : 'e.g. +14155552671'}
               style={{ ...inputStyle, borderColor: errors.mobile ? '#dc2626' : '#E6E8F0' }}
             />
             <FieldError msg={errors.mobile} />
           </FormField>
 
           {/* Email */}
-          <FormField label="Email" error={errors.email}>
+          <FormField label="Email" hint="At least one of Mobile or Email required" error={errors.email}>
             <input
               type="email"
               value={form.email}
@@ -275,6 +356,29 @@ export default function ContactCreatePage() {
             />
           </FormField>
 
+          {/* Country */}
+          <FormField label="Country">
+            <select value={form.country} onChange={e => handleCountryChange(e.target.value)} style={inputStyle}>
+              {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </FormField>
+
+          {/* State */}
+          <FormField label="State">
+            {form.country === 'India' ? (
+              <select value={form.state} onChange={e => update('state', e.target.value)} style={inputStyle}>
+                <option value="">— Select State —</option>
+                {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            ) : (
+              <input
+                value="Outside India"
+                readOnly
+                style={{ ...inputStyle, background: '#F8FAFC', color: '#64748b', cursor: 'not-allowed' }}
+              />
+            )}
+          </FormField>
+
           {/* Manager */}
           <FormField label="Manager">
             <select value={form.assignedManager} onChange={e => update('assignedManager', e.target.value)} style={inputStyle}>
@@ -284,38 +388,89 @@ export default function ContactCreatePage() {
           </FormField>
         </div>
 
+        {/* ── Section: Phone Numbers ── */}
+        <SectionHeader title="Phone Numbers" style={{ marginTop: 24 }} />
+        <div style={gridStyle}>
+          {/* Landline */}
+          <FormField label="Landline">
+            <input
+              value={form.landline}
+              onChange={e => update('landline', e.target.value)}
+              placeholder="e.g. 022-12345678"
+              style={inputStyle}
+            />
+          </FormField>
+
+          {/* Secondary Mobile */}
+          <FormField label="Secondary Mobile" error={errors.secondaryMobile}>
+            <input
+              value={form.secondaryMobile}
+              onChange={e => update('secondaryMobile', e.target.value)}
+              placeholder={form.country === 'India' ? 'e.g. 9876543210' : 'e.g. +14155552671'}
+              style={{ ...inputStyle, borderColor: errors.secondaryMobile ? '#dc2626' : '#E6E8F0' }}
+            />
+            <FieldError msg={errors.secondaryMobile} />
+          </FormField>
+
+          {/* WA Mobile */}
+          <FormField label="WA Mobile (WhatsApp)">
+            <input
+              value={form.waMobile}
+              onChange={e => {
+                setWaMobileSameAsPrimary(false);
+                update('waMobile', e.target.value);
+              }}
+              placeholder={form.country === 'India' ? 'e.g. 9876543210' : 'e.g. +14155552671'}
+              style={inputStyle}
+            />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, fontSize: 12, color: '#64748b', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={waMobileSameAsPrimary}
+                onChange={e => toggleWaMobileSameAsPrimary(e.target.checked)}
+                style={{ accentColor: '#F37920' }}
+              />
+              Same as Primary Mobile
+            </label>
+          </FormField>
+        </div>
+
         {/* ── Section: Linked Organizations ── */}
         <SectionHeader title="Linked Organizations" style={{ marginTop: 24 }} />
         <div style={{ padding: '0 0 8px' }}>
-          {mockOrganizations.length === 0 ? (
-            <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>No organizations available yet.</p>
-          ) : (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {mockOrganizations.map(org => {
-                const selected = form.linkedOrgIds.includes(org.id);
-                return (
-                  <button
-                    key={org.id}
-                    type="button"
-                    onClick={() => toggleOrg(org.id)}
-                    style={{
-                      padding: '5px 12px',
-                      borderRadius: 20,
-                      fontSize: 12,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      border: `1.5px solid ${selected ? '#F37920' : '#E6E8F0'}`,
-                      background: selected ? '#FEF0E6' : '#fff',
-                      color: selected ? '#C25A0A' : '#64748b',
-                      transition: 'all 0.15s',
-                    }}
-                  >
-                    {selected ? '✓ ' : ''}{org.displayName}
-                  </button>
-                );
-              })}
-            </div>
-          )}
+          {(() => {
+            const organizations = getOrganizations();
+            if (organizations.length === 0) {
+              return <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>No organizations available yet.</p>;
+            }
+            return (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {organizations.map(org => {
+                  const selected = form.linkedOrgIds.includes(org.id);
+                  return (
+                    <button
+                      key={org.id}
+                      type="button"
+                      onClick={() => toggleOrg(org.id)}
+                      style={{
+                        padding: '5px 12px',
+                        borderRadius: 20,
+                        fontSize: 12,
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        border: `1.5px solid ${selected ? '#F37920' : '#E6E8F0'}`,
+                        background: selected ? '#FEF0E6' : '#fff',
+                        color: selected ? '#C25A0A' : '#64748b',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {selected ? '✓ ' : ''}{org.displayName}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
           {form.linkedOrgIds.length > 0 && (
             <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>
               {form.linkedOrgIds.length} organization{form.linkedOrgIds.length > 1 ? 's' : ''} selected
