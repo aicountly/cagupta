@@ -47,15 +47,16 @@ export default function Settings() {
   // ── Service Configuration state ────────────────────────────────────────────
   const [serviceCategories, setServiceCategories] = useState([]);
   const [svcCatLoading, setSvcCatLoading] = useState(false);
-  const [newCatName, setNewCatName] = useState('');
-  const [newSubName, setNewSubName] = useState({});   // { [categoryId]: string }
-  const [newEtName, setNewEtName] = useState({});     // { [categoryId]: string }
-  const [expandedCat, setExpandedCat] = useState({});
+  const [svcCatError, setSvcCatError] = useState('');
 
   useEffect(() => {
     if (tab === 'service_config') {
       setSvcCatLoading(true);
-      getCategories().then(setServiceCategories).catch(() => {}).finally(() => setSvcCatLoading(false));
+      setSvcCatError('');
+      getCategories()
+        .then(setServiceCategories)
+        .catch(() => setSvcCatError('Failed to load service categories.'))
+        .finally(() => setSvcCatLoading(false));
     }
   }, [tab]);
 
@@ -66,14 +67,14 @@ export default function Settings() {
         setServiceCategories(prev => [...prev, { ...cat, subcategories: [], engagementTypes: [] }]);
         setNewCatName('');
       })
-      .catch(() => {});
+      .catch(() => setSvcCatError('Failed to add category.'));
   }
 
   function handleDeleteCategory(id) {
     if (!window.confirm('Delete this category and all its subcategories and engagement types?')) return;
     deleteCategory(id)
       .then(() => setServiceCategories(prev => prev.filter(c => c.id !== id)))
-      .catch(() => {});
+      .catch(() => setSvcCatError('Failed to delete category.'));
   }
 
   function handleAddSubcategory(categoryId) {
@@ -86,7 +87,7 @@ export default function Settings() {
         ));
         setNewSubName(prev => ({ ...prev, [categoryId]: '' }));
       })
-      .catch(() => {});
+      .catch(() => setSvcCatError('Failed to add subcategory.'));
   }
 
   function handleDeleteSubcategory(categoryId, subId) {
@@ -94,7 +95,7 @@ export default function Settings() {
       .then(() => setServiceCategories(prev => prev.map(c =>
         c.id === categoryId ? { ...c, subcategories: (c.subcategories || []).filter(s => s.id !== subId) } : c
       )))
-      .catch(() => {});
+      .catch(() => setSvcCatError('Failed to delete subcategory.'));
   }
 
   function handleAddEngagementType(categoryId) {
@@ -107,7 +108,7 @@ export default function Settings() {
         ));
         setNewEtName(prev => ({ ...prev, [categoryId]: '' }));
       })
-      .catch(() => {});
+      .catch(() => setSvcCatError('Failed to add engagement type.'));
   }
 
   function handleDeleteEngagementType(categoryId, etId) {
@@ -115,7 +116,7 @@ export default function Settings() {
       .then(() => setServiceCategories(prev => prev.map(c =>
         c.id === categoryId ? { ...c, engagementTypes: (c.engagementTypes || []).filter(e => e.id !== etId) } : c
       )))
-      .catch(() => {});
+      .catch(() => setSvcCatError('Failed to delete engagement type.'));
   }
 
   function handleAddPortal() {
@@ -413,6 +414,7 @@ export default function Settings() {
             <button onClick={handleAddCategory} style={btnPrimary}>➕ Add Category</button>
           </div>
 
+          {svcCatError && <div style={{ color:'#dc2626', background:'#fef2f2', padding:'8px 12px', borderRadius:6, fontSize:13, marginBottom:12 }}>{svcCatError}</div>}
           {svcCatLoading && <div style={{ color:'#64748b', fontSize:13 }}>Loading…</div>}
 
           {serviceCategories.map(cat => (
