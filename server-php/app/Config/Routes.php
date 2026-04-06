@@ -114,6 +114,12 @@ class Routes
             // ── Admin — Contacts (clients) ────────────────────────────────────
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/contacts/search',
+                'handler'    => 'Admin\ContactController@search',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/contacts',
                 'handler'    => 'Admin\ContactController@index',
                 'middleware' => ['auth', 'role:super_admin,admin'],
@@ -426,6 +432,26 @@ class Routes
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/engagement-types/:id',
                 'handler'    => 'Admin\ServiceCategoryController@engagementTypeDestroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+
+            // ── Admin — Opening Balances ──────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/opening-balances',
+                'handler'    => 'Admin\OpeningBalanceController@index',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/opening-balances',
+                'handler'    => 'Admin\OpeningBalanceController@store',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/opening-balances',
+                'handler'    => 'Admin\OpeningBalanceController@destroy',
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
         ];
