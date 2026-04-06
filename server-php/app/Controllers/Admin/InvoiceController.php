@@ -150,7 +150,7 @@ class InvoiceController extends BaseController
         $clientId = (int)$this->query('client_id', 0);
 
         if ($clientId <= 0) {
-            $this->success([], 'Ledger entries retrieved');
+            $this->error('client_id is required.', 422);
         }
 
         $entries = $this->invoices->getLedgerByClient($clientId);

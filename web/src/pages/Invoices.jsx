@@ -291,7 +291,7 @@ export default function Invoices() {
             <thead>
               <tr>
                 {['Date','Narration','Billing Profile','Debit (Dr)','Credit (Cr)','Balance'].map(h=>(
-                  <th key={h} style={thStyle}>{h}</th>
+                  <th key={h} style={thStyle} title={h} aria-label={h}>{h}</th>
                 ))}
               </tr>
             </thead>

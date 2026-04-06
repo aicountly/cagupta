@@ -213,7 +213,10 @@ class InvoiceModel
              JOIN invoices i ON i.id = p.invoice_id
              WHERE i.client_id = :client_id2
 
-             ORDER BY date ASC, entry_type DESC"
+             -- Entries are ordered by date ascending; for same-date entries,
+             -- 'invoice' sorts before 'payment' alphabetically (ASC), ensuring
+             -- debit rows are always shown before corresponding credit rows.
+             ORDER BY date ASC, entry_type ASC"
         );
         $stmt->execute([':client_id' => $clientId, ':client_id2' => $clientId]);
         $rows = $stmt->fetchAll();
