@@ -28,6 +28,12 @@ const INDIAN_STATES = [
 ];
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+function toTitleCase(str) {
+  return str.replace(/\w\S*/g, (word) =>
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  );
+}
+
 function generateId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return 'ct-' + crypto.randomUUID();
@@ -143,10 +149,14 @@ export default function ContactCreatePage() {
   }, [isEdit, id]);
 
   function update(field, value) {
+    const formatted =
+      (field === 'displayName' || field === 'city')
+        ? toTitleCase(value)
+        : value;
     setForm(prev => {
-      const updated = { ...prev, [field]: value };
+      const updated = { ...prev, [field]: formatted };
       if (field === 'mobile' && waMobileSameAsPrimary) {
-        updated.waMobile = value;
+        updated.waMobile = formatted;
       }
       return updated;
     });
