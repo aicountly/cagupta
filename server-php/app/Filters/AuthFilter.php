@@ -58,6 +58,11 @@ class AuthFilter
             $user['role_name'] = 'super_admin';
         }
 
+        // 4b. Parse role permissions into a flat array for PermissionFilter
+        $rawPerms = $user['role_permissions'] ?? '{}';
+        $decoded  = is_string($rawPerms) ? (json_decode($rawPerms, true) ?? []) : $rawPerms;
+        $user['role_permissions_array'] = (array)($decoded['permissions'] ?? $decoded ?? []);
+
         // 5. Inject into globals so controllers can read it
         $GLOBALS['auth_user']  = $user;
         $GLOBALS['auth_token'] = $token;

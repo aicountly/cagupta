@@ -113,6 +113,8 @@ class ContactController extends BaseController
             'pincode'           => $body['pincode']  ?? null,
             'country'           => $body['country']  ?? 'India',
             'notes'             => $body['notes']    ?? null,
+            'reference'         => $body['reference'] ?? null,
+            'group_id'          => $body['group_id']  ?? null,
             'is_active'         => $body['is_active'] ?? true,
             'created_by'        => $actingUser ? (int)$actingUser['id'] : null,
         ]);
@@ -160,7 +162,7 @@ class ContactController extends BaseController
             'type', 'first_name', 'last_name', 'organization_name',
             'email', 'phone', 'pan', 'gstin',
             'address_line1', 'address_line2', 'city', 'state', 'pincode', 'country',
-            'notes',
+            'notes', 'reference',
         ];
         foreach ($textFields as $field) {
             if (array_key_exists($field, $body)) {
@@ -169,6 +171,9 @@ class ContactController extends BaseController
         }
         if (isset($body['is_active'])) {
             $data['is_active'] = (bool)$body['is_active'];
+        }
+        if (array_key_exists('group_id', $body)) {
+            $data['group_id'] = $body['group_id'];
         }
 
         $this->clients->update($id, $data);

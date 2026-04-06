@@ -26,9 +26,14 @@ class LeadModel
     public function find(int $id): ?array
     {
         $stmt = $this->db->prepare(
-            "SELECT l.*, u.name AS assigned_to_name
+            "SELECT l.*, u.name AS assigned_to_name,
+                    c.first_name AS contact_first_name, c.last_name AS contact_last_name,
+                    c.organization_name AS contact_org_name,
+                    o.name AS org_name
              FROM leads l
              LEFT JOIN users u ON u.id = l.assigned_to
+             LEFT JOIN clients c ON c.id = l.contact_id
+             LEFT JOIN organizations o ON o.id = l.organization_id
              WHERE l.id = :id
              LIMIT 1"
         );
@@ -70,9 +75,14 @@ class LeadModel
         $total = (int)$countStmt->fetchColumn();
 
         $stmt = $this->db->prepare(
-            "SELECT l.*, u.name AS assigned_to_name
+            "SELECT l.*, u.name AS assigned_to_name,
+                    c.first_name AS contact_first_name, c.last_name AS contact_last_name,
+                    c.organization_name AS contact_org_name,
+                    o.name AS org_name
              FROM leads l
              LEFT JOIN users u ON u.id = l.assigned_to
+             LEFT JOIN clients c ON c.id = l.contact_id
+             LEFT JOIN organizations o ON o.id = l.organization_id
              WHERE {$whereClause}
              ORDER BY l.created_at DESC
              LIMIT :limit OFFSET :offset"
@@ -99,11 +109,11 @@ class LeadModel
             'INSERT INTO leads (
                 name, company, email, phone, source, service_interest,
                 estimated_value, status, probability, assigned_to,
-                notes, follow_up_date, created_by
+                notes, follow_up_date, contact_id, organization_id, created_by
              ) VALUES (
                 :name, :company, :email, :phone, :source, :service_interest,
                 :estimated_value, :status, :probability, :assigned_to,
-                :notes, :follow_up_date, :created_by
+                :notes, :follow_up_date, :contact_id, :organization_id, :created_by
              ) RETURNING id'
         );
         $stmt->execute([
@@ -119,6 +129,8 @@ class LeadModel
             ':assigned_to'      => $data['assigned_to']      ?? null,
             ':notes'            => $data['notes']            ?? null,
             ':follow_up_date'   => $data['follow_up_date']   ?? null,
+            ':contact_id'       => isset($data['contact_id'])      && $data['contact_id']      !== '' ? (int)$data['contact_id']      : null,
+            ':organization_id'  => isset($data['organization_id']) && $data['organization_id'] !== '' ? (int)$data['organization_id'] : null,
             ':created_by'       => $data['created_by']       ?? null,
         ]);
         return (int)$stmt->fetchColumn();
@@ -144,6 +156,14 @@ class LeadModel
                 $setClauses[]       = "{$field} = :{$field}";
                 $params[":{$field}"] = $data[$field];
             }
+        }
+        if (array_key_exists('contact_id', $data)) {
+            $setClauses[]         = 'contact_id = :contact_id';
+            $params[':contact_id'] = isset($data['contact_id']) && $data['contact_id'] !== '' ? (int)$data['contact_id'] : null;
+        }
+        if (array_key_exists('organization_id', $data)) {
+            $setClauses[]              = 'organization_id = :organization_id';
+            $params[':organization_id'] = isset($data['organization_id']) && $data['organization_id'] !== '' ? (int)$data['organization_id'] : null;
         }
 
         if (empty($setClauses)) {

@@ -148,12 +148,12 @@ class ClientModel
                 type, first_name, last_name, organization_name,
                 email, phone, pan, gstin,
                 address_line1, address_line2, city, state, pincode, country,
-                notes, is_active, created_by
+                notes, reference, group_id, is_active, created_by
              ) VALUES (
                 :type, :first_name, :last_name, :organization_name,
                 :email, :phone, :pan, :gstin,
                 :address_line1, :address_line2, :city, :state, :pincode, :country,
-                :notes, :is_active, :created_by
+                :notes, :reference, :group_id, :is_active, :created_by
              ) RETURNING id'
         );
         $stmt->execute([
@@ -172,6 +172,8 @@ class ClientModel
             ':pincode'           => $data['pincode']           ?? null,
             ':country'           => $data['country']           ?? 'India',
             ':notes'             => $data['notes']             ?? null,
+            ':reference'         => $data['reference']         ?? null,
+            ':group_id'          => isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null,
             ':is_active'         => ((bool)($data['is_active'] ?? true)) ? 'true' : 'false',
             ':created_by'        => $data['created_by']        ?? null,
         ]);
@@ -192,7 +194,7 @@ class ClientModel
             'type', 'first_name', 'last_name', 'organization_name',
             'email', 'phone', 'pan', 'gstin',
             'address_line1', 'address_line2', 'city', 'state', 'pincode', 'country',
-            'notes',
+            'notes', 'reference',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
@@ -203,6 +205,10 @@ class ClientModel
         if (array_key_exists('is_active', $data)) {
             $setClauses[]       = 'is_active = :is_active';
             $params[':is_active'] = ((bool)$data['is_active']) ? 'true' : 'false';
+        }
+        if (array_key_exists('group_id', $data)) {
+            $setClauses[]      = 'group_id = :group_id';
+            $params[':group_id'] = isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null;
         }
 
         if (empty($setClauses)) {

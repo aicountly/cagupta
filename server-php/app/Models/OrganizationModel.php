@@ -102,11 +102,11 @@ class OrganizationModel
             'INSERT INTO organizations (
                 name, type, gstin, pan, email, phone,
                 address, city, state, pincode, website, notes,
-                is_active, created_by
+                reference, group_id, is_active, created_by
              ) VALUES (
                 :name, :type, :gstin, :pan, :email, :phone,
                 :address, :city, :state, :pincode, :website, :notes,
-                :is_active, :created_by
+                :reference, :group_id, :is_active, :created_by
              ) RETURNING id'
         );
         $stmt->execute([
@@ -122,6 +122,8 @@ class OrganizationModel
             ':pincode'    => $data['pincode']    ?? null,
             ':website'    => $data['website']    ?? null,
             ':notes'      => $data['notes']      ?? null,
+            ':reference'  => $data['reference']  ?? null,
+            ':group_id'   => isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null,
             ':is_active'  => ((bool)($data['is_active'] ?? true)) ? 'true' : 'false',
             ':created_by' => $data['created_by'] ?? null,
         ]);
@@ -140,7 +142,7 @@ class OrganizationModel
 
         $allowed = [
             'name', 'type', 'gstin', 'pan', 'email', 'phone',
-            'address', 'city', 'state', 'pincode', 'website', 'notes',
+            'address', 'city', 'state', 'pincode', 'website', 'notes', 'reference',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
@@ -151,6 +153,10 @@ class OrganizationModel
         if (array_key_exists('is_active', $data)) {
             $setClauses[]       = 'is_active = :is_active';
             $params[':is_active'] = ((bool)$data['is_active']) ? 'true' : 'false';
+        }
+        if (array_key_exists('group_id', $data)) {
+            $setClauses[]      = 'group_id = :group_id';
+            $params[':group_id'] = isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null;
         }
 
         if (empty($setClauses)) {

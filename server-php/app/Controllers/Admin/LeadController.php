@@ -78,6 +78,8 @@ class LeadController extends BaseController
             'assigned_to'      => $body['assigned_to']      ?? null,
             'notes'            => $body['notes']            ?? null,
             'follow_up_date'   => $body['follow_up_date']   ?? null,
+            'contact_id'       => $body['contact_id']       ?? null,
+            'organization_id'  => $body['organization_id']  ?? null,
             'created_by'       => $actingUser ? (int)$actingUser['id'] : null,
         ]);
 
@@ -118,6 +120,8 @@ class LeadController extends BaseController
             'name', 'company', 'email', 'phone', 'source',
             'service_interest', 'estimated_value', 'status',
             'probability', 'assigned_to', 'notes', 'follow_up_date',
+            'contact_id', 'organization_id',
+        ];
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $body)) {
