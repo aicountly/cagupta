@@ -181,6 +181,107 @@ class InvoiceModel
     }
 
     /**
+     * Return chronological ledger entries (invoices as debits, payments as credits)
+     * for a given client, with a running balance.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getLedgerByClient(int $clientId): array
+    {
+        // Combine invoice rows (debit) and payment rows (credit) into a single set
+        $stmt = $this->db->prepare(
+            "SELECT
+                i.invoice_date        AS date,
+                i.invoice_number      AS narration,
+                i.total               AS debit,
+                0                     AS credit,
+                i.billing_profile_code AS billing_profile_code,
+                'invoice'             AS entry_type
+             FROM invoices i
+             WHERE i.client_id = :client_id
+
+             UNION ALL
+
+             SELECT
+                p.payment_date        AS date,
+                CONCAT('Payment received – ', COALESCE(p.payment_method, 'Transfer')) AS narration,
+                0                     AS debit,
+                p.amount              AS credit,
+                p.billing_profile_code AS billing_profile_code,
+                'payment'             AS entry_type
+             FROM payments p
+             JOIN invoices i ON i.id = p.invoice_id
+             WHERE i.client_id = :client_id2
+
+             ORDER BY date ASC, entry_type DESC"
+        );
+        $stmt->execute([':client_id' => $clientId, ':client_id2' => $clientId]);
+        $rows = $stmt->fetchAll();
+
+        // Compute running balance
+        $balance = 0.0;
+        foreach ($rows as &$row) {
+            $balance += (float)$row['debit'] - (float)$row['credit'];
+            $row['balance'] = $balance;
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
+     * Record a payment for an invoice:
+     *  - inserts a row into the `payments` table
+     *  - updates invoice.amount_paid and recalculates invoice.status
+     *
+     * @param array<string, mixed> $data
+     */
+    public function addPayment(int $invoiceId, array $data): void
+    {
+        // Insert payment record
+        $stmt = $this->db->prepare(
+            'INSERT INTO payments (
+                invoice_id, amount, payment_date, payment_method,
+                reference_number, billing_profile_code, notes, created_by
+             ) VALUES (
+                :invoice_id, :amount, :payment_date, :payment_method,
+                :reference_number, :billing_profile_code, :notes, :created_by
+             )'
+        );
+        $stmt->execute([
+            ':invoice_id'           => $invoiceId,
+            ':amount'               => (float)($data['amount'] ?? 0),
+            ':payment_date'         => $data['payment_date']         ?? date('Y-m-d'),
+            ':payment_method'       => $data['payment_method']       ?? null,
+            ':reference_number'     => $data['reference_number']     ?? null,
+            ':billing_profile_code' => $data['billing_profile_code'] ?? null,
+            ':notes'                => $data['notes']                ?? null,
+            ':created_by'           => $data['created_by']           ?? null,
+        ]);
+
+        // Recalculate amount_paid from all payments
+        $sumStmt = $this->db->prepare(
+            'SELECT COALESCE(SUM(amount), 0) FROM payments WHERE invoice_id = :id'
+        );
+        $sumStmt->execute([':id' => $invoiceId]);
+        $totalPaid = (float)$sumStmt->fetchColumn();
+
+        // Determine new status
+        $invoice = $this->find($invoiceId);
+        $total   = (float)($invoice['total'] ?? 0);
+
+        if ($totalPaid <= 0) {
+            $newStatus = 'sent';
+        } elseif ($totalPaid >= $total) {
+            $newStatus = 'paid';
+        } else {
+            $newStatus = 'partially_paid';
+        }
+
+        $this->update($invoiceId, ['amount_paid' => $totalPaid, 'status' => $newStatus]);
+    }
+
+    /**
      * Generate a sequential invoice number (e.g. INV-2025-001).
      */
     private function generateInvoiceNumber(): string

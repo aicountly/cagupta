@@ -1,15 +1,8 @@
 import { useState, useEffect } from 'react';
-import { getInvoices, createInvoice } from '../services/invoiceService';
+import { getInvoices, createInvoice, recordPayment, getLedger } from '../services/invoiceService';
 import { getContacts } from '../services/contactService';
 import StatusBadge from '../components/common/StatusBadge';
 import { BILLING_PROFILES, getBillingProfileByCode } from '../constants/billingProfiles';
-
-const ledger = [
-  { date:'2025-04-01', narration:'Invoice RG/24-25/001', debit:5900, credit:0, balance:5900, billingProfileCode:'RBGC-CHD' },
-  { date:'2025-04-10', narration:'Payment received – NEFT', debit:0, credit:5900, balance:0, billingProfileCode:'RBGC-CHD' },
-  { date:'2025-04-05', narration:'Invoice RG/24-25/002', debit:35400, credit:0, balance:35400, billingProfileCode:'RBGC-JAL' },
-  { date:'2025-04-20', narration:'Part payment – UPI', debit:0, credit:20000, balance:15400, billingProfileCode:'RBGC-JAL' },
-];
 
 function BillingProfileBadge({ code }) {
   const profile = getBillingProfileByCode(code);
@@ -154,6 +147,9 @@ export default function Invoices() {
   const [invoices, setInvoices] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [ledgerClientId, setLedgerClientId] = useState('');
+  const [ledger, setLedger] = useState([]);
+  const [ledgerLoading, setLedgerLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -163,8 +159,19 @@ export default function Invoices() {
     ]).then(([invs, cts]) => {
       setInvoices(invs);
       setClients(cts);
+      if (cts.length > 0) setLedgerClientId(String(cts[0].id));
     }).finally(() => setLoading(false));
   }, []);
+
+  // Fetch ledger whenever the selected client changes (on ledger tab)
+  useEffect(() => {
+    if (tab !== 'ledger' || !ledgerClientId) return;
+    setLedgerLoading(true);
+    getLedger(ledgerClientId)
+      .then(entries => setLedger(entries))
+      .catch(() => setLedger([]))
+      .finally(() => setLedgerLoading(false));
+  }, [tab, ledgerClientId]);
 
   const filtered = invoices.filter(i => statusFilter==='all' || i.status===statusFilter);
   const totalOutstanding = invoices.filter(i=>i.status!=='paid'&&i.status!=='cancelled').reduce((a,i)=>a+(i.totalAmount-i.amountPaid),0);
@@ -174,6 +181,20 @@ export default function Invoices() {
     createInvoice(data)
       .then(newInvoice => setInvoices(prev => [newInvoice, ...prev]))
       .catch(() => {});
+  }
+
+  function handleRecordPayment(data) {
+    if (!selectedInvoice) return;
+    recordPayment(selectedInvoice.id, data)
+      .then(updated => {
+        setInvoices(prev => prev.map(inv => inv.id === updated.id ? updated : inv));
+        setSelectedInvoice(null);
+        setShowRecordPayment(false);
+      })
+      .catch(() => {
+        setSelectedInvoice(null);
+        setShowRecordPayment(false);
+      });
   }
 
   return (
@@ -189,7 +210,7 @@ export default function Invoices() {
         <RecordPaymentModal
           invoice={selectedInvoice}
           onClose={() => { setShowRecordPayment(false); setSelectedInvoice(null); }}
-          onSave={(data) => { console.log('Payment recorded:', data); }}
+          onSave={handleRecordPayment}
         />
       )}
 
@@ -258,20 +279,28 @@ export default function Invoices() {
         <div style={cardStyle}>
           <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', gap:12, alignItems:'center' }}>
             <span style={{ fontSize:13, color:'#64748b' }}>Client:</span>
-            <select style={{ padding:'6px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13 }}>
-              {clients.map(c=><option key={c.id}>{c.displayName}</option>)}
+            <select
+              style={{ padding:'6px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13 }}
+              value={ledgerClientId}
+              onChange={e => setLedgerClientId(e.target.value)}
+            >
+              {clients.map(c=><option key={c.id} value={c.id}>{c.displayName}</option>)}
             </select>
           </div>
           <table style={tableStyle}>
             <thead>
               <tr>
                 {['Date','Narration','Billing Profile','Debit (Dr)','Credit (Cr)','Balance'].map(h=>(
-                  <th key={h} style={thStyle} title={h==='Billing Profile'?'Billing Profile':undefined} aria-label={h==='Billing Profile'?'Billing Profile':undefined}>{h}</th>
+                  <th key={h} style={thStyle}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {ledger.map((e,i)=>(
+              {ledgerLoading ? (
+                <tr><td colSpan={6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading ledger…</td></tr>
+              ) : ledger.length === 0 ? (
+                <tr><td colSpan={6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No ledger entries for this client.</td></tr>
+              ) : ledger.map((e,i)=>(
                 <tr key={i} style={trStyle}>
                   <td style={tdStyle}>{e.date}</td>
                   <td style={tdStyle}>{e.narration}</td>
