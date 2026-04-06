@@ -21,6 +21,50 @@ class ClientModel
     }
 
     /**
+     * Fast type-ahead search — returns a minimal list for autocomplete dropdowns.
+     *
+     * Matches on name (first, last, organization), email, and PAN.
+     * Returns at most $limit rows ordered by display name.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function search(string $q, int $limit = 20): array
+    {
+        $like = "%{$q}%";
+
+        $stmt = $this->db->prepare(
+            "SELECT id,
+                    first_name,
+                    last_name,
+                    organization_name,
+                    email,
+                    pan,
+                    is_active
+             FROM clients
+             WHERE is_active = true
+               AND (
+                       first_name        ILIKE :like
+                    OR last_name         ILIKE :like2
+                    OR organization_name ILIKE :like3
+                    OR email             ILIKE :like4
+                    OR pan               ILIKE :like5
+               )
+             ORDER BY COALESCE(organization_name,
+                               TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,'')))) ASC
+             LIMIT :limit"
+        );
+        $stmt->bindValue(':like',  $like);
+        $stmt->bindValue(':like2', $like);
+        $stmt->bindValue(':like3', $like);
+        $stmt->bindValue(':like4', $like);
+        $stmt->bindValue(':like5', $like);
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll();
+    }
+
+    /**
      * Find a client by primary key.
      *
      * @return array<string, mixed>|null

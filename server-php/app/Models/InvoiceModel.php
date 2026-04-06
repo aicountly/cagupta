@@ -184,10 +184,24 @@ class InvoiceModel
      * Return chronological ledger entries (invoices as debits, payments as credits)
      * for a given client, with a running balance.
      *
+     * Opening balances (from the opening_balances table) are prepended as
+     * the first entry for each billing profile with a non-zero balance.
+     *
      * @return array<int, array<string, mixed>>
      */
     public function getLedgerByClient(int $clientId): array
     {
+        // ── 1. Load opening balances for this client ──────────────────────────
+        $obStmt = $this->db->prepare(
+            'SELECT billing_profile_code, amount, type
+             FROM opening_balances
+             WHERE client_id = :client_id
+             ORDER BY billing_profile_code ASC'
+        );
+        $obStmt->execute([':client_id' => $clientId]);
+        $openingBalances = $obStmt->fetchAll();
+
+        // ── 2. Load transaction rows (invoices + payments) ────────────────────
         // Combine invoice rows (debit) and payment rows (credit) into a single set
         $stmt = $this->db->prepare(
             "SELECT
@@ -221,15 +235,36 @@ class InvoiceModel
         $stmt->execute([':client_id' => $clientId, ':client_id2' => $clientId]);
         $rows = $stmt->fetchAll();
 
-        // Compute running balance
+        // ── 3. Build opening balance rows (one per profile that has one) ───────
+        $openingRows = [];
+        foreach ($openingBalances as $ob) {
+            if ((float)$ob['amount'] == 0) {
+                continue;
+            }
+            $isDebit = $ob['type'] === 'debit';
+            $openingRows[] = [
+                'date'                => null,
+                'narration'           => 'Opening Balance',
+                'debit'               => $isDebit  ? (float)$ob['amount'] : 0,
+                'credit'              => !$isDebit ? (float)$ob['amount'] : 0,
+                'balance'             => 0.0,  // will be computed below
+                'billing_profile_code'=> $ob['billing_profile_code'],
+                'entry_type'          => 'opening_balance',
+            ];
+        }
+
+        // Combine: opening rows first, then transaction rows
+        $allRows = array_merge($openingRows, $rows);
+
+        // ── 4. Compute running balance ────────────────────────────────────────
         $balance = 0.0;
-        foreach ($rows as &$row) {
+        foreach ($allRows as &$row) {
             $balance += (float)$row['debit'] - (float)$row['credit'];
             $row['balance'] = $balance;
         }
         unset($row);
 
-        return $rows;
+        return $allRows;
     }
 
     /**

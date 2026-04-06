@@ -8,6 +8,128 @@ import {
   createSubcategory, deleteSubcategory,
   createEngagementType, deleteEngagementType,
 } from '../services/serviceCategoryService';
+import { API_BASE_URL } from '../constants/config';
+
+// ── Available permission modules ─────────────────────────────────────────────
+const PERMISSION_GROUPS = [
+  { group: 'Dashboard', keys: ['dashboard.view'] },
+  { group: 'Clients',   keys: ['clients.view', 'clients.create', 'clients.edit', 'clients.delete'] },
+  { group: 'Services',  keys: ['services.view', 'services.create', 'services.edit', 'services.delete'] },
+  { group: 'Documents', keys: ['documents.view', 'documents.upload'] },
+  { group: 'Invoices',  keys: ['invoices.view', 'invoices.create', 'invoices.edit'] },
+  { group: 'Calendar',  keys: ['calendar.view', 'calendar.create'] },
+  { group: 'Credentials', keys: ['credentials.view'] },
+  { group: 'Registers', keys: ['registers.view'] },
+  { group: 'Leads',     keys: ['leads.view', 'leads.create', 'leads.edit'] },
+  { group: 'Settings',  keys: ['settings.view'] },
+  { group: 'Users',     keys: ['users.manage'] },
+];
+
+function authHeaders() {
+  const token = localStorage.getItem('auth_token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+}
+
+async function parseApiResponse(res) {
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.message || `Request failed (${res.status})`);
+  return json;
+}
+
+// ── Configure Role Modal ──────────────────────────────────────────────────────
+function ConfigureRoleModal({ role, onClose, onSaved }) {
+  // Parse permissions — DB stores as {"permissions": [...]} or just [...]
+  function parsePerms(raw) {
+    if (!raw) return [];
+    try {
+      const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      if (Array.isArray(parsed)) return parsed;
+      if (Array.isArray(parsed.permissions)) return parsed.permissions;
+    } catch { /* ignore */ }
+    return [];
+  }
+
+  const initial = parsePerms(role.permissions);
+  const [enabled, setEnabled] = useState(() => new Set(initial));
+  const [saving, setSaving]   = useState(false);
+  const [error, setError]     = useState('');
+
+  function toggle(key) {
+    setEnabled(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/roles/${role.id}`, {
+        method:  'PUT',
+        headers: authHeaders(),
+        body:    JSON.stringify({ permissions: Array.from(enabled) }),
+      });
+      await parseApiResponse(res);
+      onSaved();
+      onClose();
+    } catch (e) {
+      setError(e.message || 'Failed to save permissions.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={overlayStyle}>
+      <div style={{ background:'#fff', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', width:'100%', maxWidth:560, maxHeight:'90vh', display:'flex', flexDirection:'column' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+          <span style={{ fontSize:15, fontWeight:700 }}>🔐 Configure — {role.display_name || role.name}</span>
+          <button onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        <div style={{ padding:'16px 24px', overflowY:'auto', flex:1 }}>
+          {role.name === 'super_admin' ? (
+            <div style={{ padding:'16px', background:'#fef9c3', border:'1px solid #fde047', borderRadius:8, fontSize:13, color:'#713f12' }}>
+              The Super Admin role has full access to everything and cannot be restricted.
+            </div>
+          ) : (
+            PERMISSION_GROUPS.map(g => (
+              <div key={g.group} style={{ marginBottom:16 }}>
+                <div style={{ fontSize:12, fontWeight:700, color:'#475569', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>{g.group}</div>
+                <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                  {g.keys.map(key => (
+                    <label key={key} style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:13, color:'#334155', padding:'4px 10px', border:`1px solid ${enabled.has(key)?'#2563eb':'#e2e8f0'}`, borderRadius:6, background: enabled.has(key)?'#eff6ff':'#fff', userSelect:'none' }}>
+                      <input
+                        type="checkbox"
+                        checked={enabled.has(key)}
+                        onChange={() => toggle(key)}
+                        style={{ accentColor:'#2563eb', cursor:'pointer' }}
+                      />
+                      {key.split('.')[1]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
+          {error && <div style={{ color:'#dc2626', fontSize:12, marginTop:8 }}>{error}</div>}
+        </div>
+        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10, borderTop:'1px solid #f1f5f9', flexShrink:0 }}>
+          <button onClick={onClose} style={btnSecondary} disabled={saving}>Cancel</button>
+          {role.name !== 'super_admin' && (
+            <button onClick={handleSave} style={btnPrimary} disabled={saving}>
+              {saving ? 'Saving…' : '💾 Save Permissions'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const firmData = {
   name: 'CA Rahul Gupta & Associates',
@@ -52,6 +174,22 @@ export default function Settings() {
   const [expandedCat, setExpandedCat] = useState({});
   const [newSubName, setNewSubName] = useState({});
   const [newEtName, setNewEtName] = useState({});
+
+  // ── Roles & Permissions state ──────────────────────────────────────────────
+  const [roles, setRoles]                   = useState([]);
+  const [rolesLoading, setRolesLoading]     = useState(false);
+  const [configureRole, setConfigureRole]   = useState(null);
+
+  useEffect(() => {
+    if (tab === 'roles') {
+      setRolesLoading(true);
+      fetch(`${API_BASE_URL}/admin/roles`, { headers: authHeaders() })
+        .then(r => r.json())
+        .then(data => setRoles(data.data || []))
+        .catch(() => {})
+        .finally(() => setRolesLoading(false));
+    }
+  }, [tab]);
 
   useEffect(() => {
     if (tab === 'service_config') {
@@ -256,25 +394,44 @@ export default function Settings() {
       )}
 
       {tab==='roles' && (
-        <div style={{ maxWidth:600 }}>
+        <div style={{ maxWidth:640 }}>
+          {configureRole && (
+            <ConfigureRoleModal
+              role={configureRole}
+              onClose={() => setConfigureRole(null)}
+              onSaved={() => {
+                // Re-load roles after saving
+                fetch(`${API_BASE_URL}/admin/roles`, { headers: authHeaders() })
+                  .then(r => r.json())
+                  .then(data => setRoles(data.data || []))
+                  .catch(() => {});
+              }}
+            />
+          )}
           <div style={cardStyle}>
             <h3 style={sectionTitle}>🔐 Roles & Permissions</h3>
             <p style={{ fontSize:13, color:'#64748b', marginBottom:16 }}>Define what each role can access across the portal.</p>
-            {[
-              { role:'Admin', desc:'Full access to all modules, settings, and user management.' },
-              { role:'Partner', desc:'Access to all client data, financials, and reports. Cannot manage users.' },
-              { role:'Manager', desc:'Manage assigned clients, services, tasks, and documents. View-only for financials.' },
-              { role:'Staff', desc:'Work on assigned tasks and services. Cannot view credentials or financials.' },
-              { role:'Client', desc:'View-only access to own documents, invoices, and appointments.' },
-            ].map(r=>(
-              <div key={r.role} style={{ padding:'14px 0', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            {rolesLoading && <div style={{ fontSize:13, color:'#64748b' }}>Loading roles…</div>}
+            {roles.length > 0 && roles.map(r => (
+              <div key={r.id} style={{ padding:'14px 0', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
                 <div>
-                  <span style={{ fontWeight:700, fontSize:13 }}>{r.role}</span>
-                  <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>{r.desc}</div>
+                  <span style={{ fontWeight:700, fontSize:13 }}>{r.display_name || r.name}</span>
+                  <div style={{ fontSize:12, color:'#64748b', marginTop:2 }}>
+                    {r.name === 'super_admin' ? 'Full access to everything (cannot be configured).' : (() => {
+                      try {
+                        const p = typeof r.permissions === 'string' ? JSON.parse(r.permissions) : r.permissions;
+                        const perms = Array.isArray(p) ? p : (p?.permissions || []);
+                        return perms.includes('*') ? 'All permissions' : `${perms.length} permission(s) granted`;
+                      } catch { return 'Permissions not set'; }
+                    })()}
+                  </div>
                 </div>
-                <button style={btnOutline}>Configure</button>
+                <button style={btnOutline} onClick={() => setConfigureRole(r)}>Configure</button>
               </div>
             ))}
+            {!rolesLoading && roles.length === 0 && (
+              <div style={{ fontSize:13, color:'#94a3b8', padding:'16px 0' }}>No roles found.</div>
+            )}
           </div>
         </div>
       )}
@@ -507,7 +664,10 @@ const thStyle = { textAlign:'left', padding:'10px 12px', color:'#64748b', fontWe
 const tdStyle = { padding:'10px 12px', color:'#334155', verticalAlign:'middle' };
 const trStyle = { borderBottom:'1px solid #f8fafc' };
 const btnPrimary = { padding:'8px 16px', background:'#2563eb', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
+const btnSecondary = { padding:'8px 16px', background:'#f8fafc', color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
 const btnOutline = { padding:'6px 14px', background:'#fff', color:'#2563eb', border:'1px solid #2563eb', borderRadius:8, cursor:'pointer', fontSize:12, fontWeight:600 };
 const iconBtn = { background:'none', border:'none', cursor:'pointer', fontSize:13, padding:'2px 6px', color:'#2563eb' };
 const labelStyle = { display:'block', fontSize:12, color:'#64748b', fontWeight:600, marginBottom:4 };
 const inputStyle = { width:'100%', padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, boxSizing:'border-box' };
+const overlayStyle = { position:'fixed', inset:0, background:'rgba(15,23,42,0.35)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' };
+const closeBtnStyle = { background:'none', border:'none', cursor:'pointer', fontSize:16, color:'#64748b', padding:'2px 6px', borderRadius:4 };

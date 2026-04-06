@@ -25,6 +25,28 @@ class ContactController extends BaseController
         $this->clients = new ClientModel();
     }
 
+    // ── GET /api/admin/contacts/search ──────────────────────────────────────
+
+    /**
+     * Fast type-ahead search for clients.
+     *
+     * Query params:
+     *   q      — search term (partial match on name, email, PAN)
+     *   limit  — max results (default 20, max 50)
+     */
+    public function search(): never
+    {
+        $q     = trim((string)$this->query('q', ''));
+        $limit = min(50, max(1, (int)$this->query('limit', 20)));
+
+        if ($q === '') {
+            $this->success([], 'No query provided');
+        }
+
+        $results = $this->clients->search($q, $limit);
+        $this->success($results, 'Clients found');
+    }
+
     // ── GET /api/admin/contacts ──────────────────────────────────────────────
 
     /**
