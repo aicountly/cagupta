@@ -13,6 +13,13 @@ const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 const CIN_REGEX = /^[A-Z]{1}[0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/;
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function toTitleCase(str) {
+  return str.replace(/\w\S*/g, (word) =>
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  );
+}
+
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function Toast({ message, type, onClose }) {
   const bg = type === 'error' ? '#fee2e2' : '#e8f7e6';
@@ -157,7 +164,8 @@ export default function OrganizationCreatePage() {
   }, [toast]);
 
   function setField(field, value) {
-    setForm(prev => ({ ...prev, [field]: value }));
+    const formatted = field === 'displayName' ? toTitleCase(value) : value;
+    setForm(prev => ({ ...prev, [field]: formatted }));
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }));
   }
 
@@ -622,7 +630,7 @@ export default function OrganizationCreatePage() {
                 <div style={fieldLabelStyle}>Full Name <span style={{ color: '#ef4444' }}>*</span></div>
                 <input
                   value={newContactForm.displayName}
-                  onChange={e => setNewContactForm(prev => ({ ...prev, displayName: e.target.value }))}
+                  onChange={e => setNewContactForm(prev => ({ ...prev, displayName: toTitleCase(e.target.value) }))}
                   placeholder="e.g. Ramesh Agarwal"
                   style={{ ...inputStyle, borderColor: newContactErrors.displayName ? '#ef4444' : '#E6E8F0' }}
                   autoFocus

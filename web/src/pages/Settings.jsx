@@ -48,6 +48,10 @@ export default function Settings() {
   const [serviceCategories, setServiceCategories] = useState([]);
   const [svcCatLoading, setSvcCatLoading] = useState(false);
   const [svcCatError, setSvcCatError] = useState('');
+  const [newCatName, setNewCatName] = useState('');
+  const [expandedCat, setExpandedCat] = useState({});
+  const [newSubName, setNewSubName] = useState({});
+  const [newEtName, setNewEtName] = useState({});
 
   useEffect(() => {
     if (tab === 'service_config') {
