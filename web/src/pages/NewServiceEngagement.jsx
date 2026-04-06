@@ -133,6 +133,7 @@ export default function NewServiceEngagement() {
 
   // Catalog loaded from API
   const [categories, setCategories] = useState([]);
+  const [dataError, setDataError] = useState('');
   const hasCatalog = categories.length > 0;
 
   // Client lists loaded from API
@@ -140,9 +141,15 @@ export default function NewServiceEngagement() {
   const [organizations, setOrganizations] = useState([]);
 
   useEffect(() => {
-    getCategories().then(setCategories).catch(() => setCategories([]));
-    getContacts().then(setContacts).catch(() => setContacts([]));
-    getOrganizations().then(setOrganizations).catch(() => setOrganizations([]));
+    Promise.all([
+      getCategories().catch(() => null),
+      getContacts().catch(() => null),
+      getOrganizations().catch(() => null),
+    ]).then(([cats, cts, orgs]) => {
+      if (cats) setCategories(cats); else setDataError(e => e || 'Failed to load service catalog.');
+      if (cts) setContacts(cts);
+      if (orgs) setOrganizations(orgs);
+    });
   }, []);
 
   // Client selection
@@ -276,6 +283,7 @@ export default function NewServiceEngagement() {
   return (
     <div style={pageWrap}>
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
+      {dataError && <div style={{ background:'#fef2f2', color:'#dc2626', padding:'8px 14px', borderRadius:8, fontSize:13, marginBottom:12 }}>{dataError}</div>}
 
       {/* Breadcrumb */}
       <div style={breadcrumbRow}>
