@@ -1,11 +1,34 @@
-import { useState } from 'react';
-import { mockCredentials, mockClients } from '../data/mockData';
+import { useState, useEffect } from 'react';
+import { getCredentials, createCredential, deleteCredential } from '../services/credentialService';
+import { getContacts } from '../services/contactService';
 
 export default function Credentials() {
   const [clientFilter, setClientFilter] = useState('all');
   const [revealed, setRevealed] = useState({});
+  const [credentials, setCredentials] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = mockCredentials.filter(c => clientFilter==='all' || c.clientId===clientFilter);
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      getCredentials().catch(() => []),
+      getContacts().catch(() => []),
+    ]).then(([creds, cts]) => {
+      setCredentials(creds);
+      setClients(cts);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  const filtered = credentials.filter(c => clientFilter==='all' || String(c.clientId)===String(clientFilter));
+
+  function handleDelete(id) {
+    if (window.confirm('Delete this credential?')) {
+      deleteCredential(id)
+        .then(() => setCredentials(prev => prev.filter(c => c.id !== id)))
+        .catch(() => {});
+    }
+  }
 
   return (
     <div style={{ padding:24 }}>
@@ -16,7 +39,7 @@ export default function Credentials() {
       <div style={{ display:'flex', gap:12, marginBottom:20 }}>
         <select value={clientFilter} onChange={e=>setClientFilter(e.target.value)} style={selectStyle}>
           <option value="all">All Clients</option>
-          {mockClients.map(c=><option key={c.id} value={c.id}>{c.displayName}</option>)}
+          {clients.map(c=><option key={c.id} value={c.id}>{c.displayName}</option>)}
         </select>
         <button style={btnPrimary}>➕ Add Credential</button>
       </div>
@@ -27,7 +50,11 @@ export default function Credentials() {
             <tr>{['Client','Portal Name','Portal URL','Username','Password','Last Changed','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {filtered.map(cr=>(
+            {loading ? (
+              <tr><td colSpan={7} style={{ padding:'24px', textAlign:'center', color:'#64748b' }}>Loading credentials…</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={7} style={{ padding:'24px', textAlign:'center', color:'#94a3b8' }}>No credentials found.</td></tr>
+            ) : filtered.map(cr=>(
               <tr key={cr.id} style={trStyle}>
                 <td style={{ ...tdStyle, fontWeight:600 }}>{cr.clientName}</td>
                 <td style={tdStyle}>{cr.portalName}</td>
@@ -42,8 +69,8 @@ export default function Credentials() {
                 <td style={tdStyle}>{cr.lastChangedAt}</td>
                 <td style={tdStyle}>
                   <button style={iconBtn} title="Edit">✏️</button>
-                  <button style={iconBtn} title="Copy Username">��</button>
-                  <button style={iconBtn} title="Delete">🗑️</button>
+                  <button style={iconBtn} title="Copy Username" onClick={() => navigator.clipboard?.writeText(cr.username || '')}>📋</button>
+                  <button style={iconBtn} title="Delete" onClick={() => handleDelete(cr.id)}>🗑️</button>
                 </td>
               </tr>
             ))}

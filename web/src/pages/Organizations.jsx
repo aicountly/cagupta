@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getOrganizations } from '../data/organizationStore';
+import { getOrganizations } from '../services/organizationService';
 import StatusBadge from '../components/common/StatusBadge';
 
 export default function Organizations() {
@@ -8,20 +8,30 @@ export default function Organizations() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
+  const [orgs, setOrgs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const orgs = getOrganizations();
+  useEffect(() => {
+    setLoading(true);
+    getOrganizations()
+      .then(data => { setOrgs(data); setError(''); })
+      .catch(err => setError(err.message || 'Failed to load organizations.'))
+      .finally(() => setLoading(false));
+  }, []);
   const filtered = orgs.filter(o => {
     const matchSearch =
       o.displayName.toLowerCase().includes(search.toLowerCase()) ||
-      o.pan?.includes(search.toUpperCase()) ||
-      o.gstin?.includes(search.toUpperCase()) ||
-      o.clientCode.toLowerCase().includes(search.toLowerCase());
+      (o.pan || '').includes(search.toUpperCase()) ||
+      (o.gstin || '').includes(search.toUpperCase()) ||
+      (o.clientCode || '').toLowerCase().includes(search.toLowerCase());
     const matchFilter = filter === 'all' || o.status === filter;
     return matchSearch && matchFilter;
   });
 
   return (
     <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
+      {error && <div style={{ color: '#dc2626', marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 8, fontSize: 13 }}>{error}</div>}
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center' }}>
         <input
@@ -50,7 +60,11 @@ export default function Organizations() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(o => (
+            {loading ? (
+              <tr><td colSpan={10} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>Loading organizations…</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={10} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No organizations found.</td></tr>
+            ) : filtered.map(o => (
               <tr key={o.id} style={trStyle}>
                 <td style={tdStyle}>
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{o.clientCode}</code>

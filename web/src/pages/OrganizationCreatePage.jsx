@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
-import { getContacts, addContact, generateContactCode } from '../data/contactStore';
-import { addOrganization, generateOrgCode, getOrganizations, updateOrganization } from '../data/organizationStore';
+import { getContacts, createContact } from '../services/contactService';
+import { createOrganization, updateOrganization as updateOrganizationApi, getOrganizations } from '../services/organizationService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -92,40 +92,15 @@ export default function OrganizationCreatePage() {
   const { id } = useParams();
   const isEdit = Boolean(id);
 
-  const existingOrg = isEdit ? getOrganizations().find(o => String(o.id) === id) : null;
-
-  const [orgCode] = useState(() => isEdit && existingOrg ? existingOrg.clientCode : generateOrgCode());
-  const [orgId] = useState(() => isEdit && existingOrg ? existingOrg.id : generateId());
-  const [form, setForm] = useState(() => {
-    if (isEdit && existingOrg) {
-      return {
-        displayName: existingOrg.displayName || '',
-        constitution: existingOrg.constitution || '',
-        pan: existingOrg.pan || '',
-        gstin: existingOrg.gstin || '',
-        cin: existingOrg.cin || '',
-        primaryContactId: existingOrg.primaryContactId || '',
-        secondaryContactIds: existingOrg.secondaryContactIds || [],
-        email: existingOrg.email || '',
-        phone: existingOrg.phone || '',
-        addressLine1: existingOrg.addressLine1 || '',
-        addressLine2: existingOrg.addressLine2 || '',
-        city: existingOrg.city || '',
-        state: existingOrg.state || '',
-        pin: existingOrg.pin || '',
-        status: existingOrg.status || 'active',
-        assignedManager: existingOrg.assignedManager || '',
-        notes: existingOrg.notes || '',
-      };
-    }
-    return blankForm();
-  });
+  const [orgCode, setOrgCode] = useState('Auto-generated');
+  const [orgId, setOrgId] = useState(null);
+  const [form, setForm] = useState(() => blankForm());
   const [errors, setErrors] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
 
   // Live contacts list
-  const [contacts, setContacts] = useState(() => getContacts());
+  const [contacts, setContacts] = useState([]);
 
   // Inline "Create New Contact" modal state
   const [showNewContactModal, setShowNewContactModal] = useState(false);
@@ -135,6 +110,44 @@ export default function OrganizationCreatePage() {
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
+
+  // Load contacts list
+  useEffect(() => {
+    getContacts().then(setContacts).catch(() => setContacts([]));
+  }, []);
+
+  // Load existing org in edit mode
+  useEffect(() => {
+    if (!isEdit) return;
+    getOrganizations()
+      .then(list => {
+        const existing = list.find(o => String(o.id) === id);
+        if (existing) {
+          setOrgCode(existing.clientCode || `ORG-${String(existing.id).padStart(4, '0')}`);
+          setOrgId(existing.id);
+          setForm({
+            displayName:        existing.displayName        || '',
+            constitution:       existing.constitution       || '',
+            pan:                existing.pan                || '',
+            gstin:              existing.gstin              || '',
+            cin:                existing.cin                || '',
+            primaryContactId:   existing.primaryContactId   || '',
+            secondaryContactIds: existing.secondaryContactIds || [],
+            email:              existing.email              || '',
+            phone:              existing.phone              || '',
+            addressLine1:       existing.addressLine1        || '',
+            addressLine2:       existing.addressLine2        || '',
+            city:               existing.city               || '',
+            state:              existing.state              || '',
+            pin:                existing.pin                || '',
+            status:             existing.status             || 'active',
+            assignedManager:    existing.assignedManager    || '',
+            notes:              existing.notes              || '',
+          });
+        }
+      })
+      .catch(() => {});
+  }, [isEdit, id]);
 
   // Close toast automatically after 3 s
   useEffect(() => {
@@ -169,28 +182,23 @@ export default function OrganizationCreatePage() {
 
   // ── Save ────────────────────────────────────────────────────────────────────
   function buildOrg(f) {
-    const primaryContact = contacts.find(c => c.id === f.primaryContactId);
     return {
-      id: orgId,
-      clientCode: orgCode,
-      displayName: f.displayName.trim(),
-      constitution: f.constitution || '',
-      pan: f.pan.toUpperCase() || null,
-      gstin: f.gstin.toUpperCase() || null,
-      cin: f.cin.toUpperCase() || null,
+      displayName:  f.displayName.trim(),
+      constitution: f.constitution       || null,
+      pan:          f.pan.toUpperCase()  || null,
+      gstin:        f.gstin.toUpperCase() || null,
+      cin:          f.cin.toUpperCase()  || null,
       primaryContactId: f.primaryContactId || null,
-      primaryContact: primaryContact ? primaryContact.displayName : '—',
-      secondaryContactIds: f.secondaryContactIds || [],
-      email: f.email || null,
-      phone: f.phone || null,
-      addressLine1: f.addressLine1 || null,
-      addressLine2: f.addressLine2 || null,
-      city: f.city || '',
-      state: f.state || null,
-      pin: f.pin || null,
-      status: f.status,
+      email:        f.email              || null,
+      phone:        f.phone              || null,
+      addressLine1: f.addressLine1        || null,
+      addressLine2: f.addressLine2        || null,
+      city:         f.city               || null,
+      state:        f.state              || null,
+      pin:          f.pin                || null,
+      status:       f.status,
       assignedManager: f.assignedManager,
-      notes: f.notes || null,
+      notes:        f.notes              || null,
     };
   }
 
@@ -204,17 +212,20 @@ export default function OrganizationCreatePage() {
     setErrors({});
     setSubmitting(true);
 
-    // Simulate async save (no real backend)
-    await new Promise(r => setTimeout(r, 500));
-    if (isEdit) {
-      updateOrganization(buildOrg(form));
-      setToast({ message: '✅ Organization updated successfully!', type: 'success' });
-    } else {
-      addOrganization(buildOrg(form));
-      setToast({ message: '✅ Organization created successfully!', type: 'success' });
+    try {
+      if (isEdit && orgId) {
+        await updateOrganizationApi(orgId, buildOrg(form));
+        setToast({ message: '✅ Organization updated successfully!', type: 'success' });
+      } else {
+        await createOrganization(buildOrg(form));
+        setToast({ message: '✅ Organization created successfully!', type: 'success' });
+      }
+      afterSave();
+    } catch (err) {
+      setToast({ message: '❌ Error: ' + (err.message || 'Failed to save.'), type: 'error' });
+    } finally {
+      setSubmitting(false);
     }
-    setSubmitting(false);
-    afterSave();
   }
 
   function handleSaveQuit() {
@@ -262,24 +273,23 @@ export default function OrganizationCreatePage() {
       return;
     }
     setSavingNewContact(true);
-    const newContact = {
-      id: generateContactId(),
-      clientCode: generateContactCode(),
+    createContact({
       displayName: newContactForm.displayName.trim(),
-      mobile: newContactForm.mobile.trim() || undefined,
-      email: newContactForm.email.trim() || undefined,
-      status: 'active',
-      linkedOrgIds: [orgId],
-      linkedOrgsCount: 1,
-      linkedOrgNames: [form.displayName.trim() || 'New Organization'],
-    };
-    addContact(newContact);
-    const refreshed = getContacts();
-    setContacts(refreshed);
-    setField('primaryContactId', newContact.id);
-    setSavingNewContact(false);
-    setShowNewContactModal(false);
-    setToast({ message: `✅ Contact "${newContact.displayName}" created and set as Primary Contact.`, type: 'success' });
+      mobile:      newContactForm.mobile.trim() || undefined,
+      email:       newContactForm.email.trim()  || undefined,
+      status:      'active',
+    }).then(newContact => {
+      getContacts().then(refreshed => {
+        setContacts(refreshed);
+        setField('primaryContactId', newContact.id);
+      }).catch(() => {});
+      setSavingNewContact(false);
+      setShowNewContactModal(false);
+      setToast({ message: `✅ Contact "${newContact.displayName}" created and set as Primary Contact.`, type: 'success' });
+    }).catch(err => {
+      setSavingNewContact(false);
+      setToast({ message: '❌ Error: ' + (err.message || 'Failed to create contact.'), type: 'error' });
+    });
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────

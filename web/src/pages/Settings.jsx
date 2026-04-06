@@ -1,8 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { getPortalTypes, savePortalTypes } from '../constants/portalTypes';
 import { getRegisterTypes, saveRegisterTypes } from '../constants/registerTypes';
 import { BILLING_PROFILES } from '../constants/billingProfiles';
-import { mockCredentials } from '../data/mockData';
+import {
+  getCategories,
+  createCategory, deleteCategory,
+  createSubcategory, deleteSubcategory,
+  createEngagementType, deleteEngagementType,
+} from '../services/serviceCategoryService';
 
 const firmData = {
   name: 'CA Rahul Gupta & Associates',
@@ -39,6 +44,80 @@ export default function Settings() {
   const [billingForm, setBillingForm] = useState({ code:'', name:'' });
   const [billingError, setBillingError] = useState('');
 
+  // ── Service Configuration state ────────────────────────────────────────────
+  const [serviceCategories, setServiceCategories] = useState([]);
+  const [svcCatLoading, setSvcCatLoading] = useState(false);
+  const [newCatName, setNewCatName] = useState('');
+  const [newSubName, setNewSubName] = useState({});   // { [categoryId]: string }
+  const [newEtName, setNewEtName] = useState({});     // { [categoryId]: string }
+  const [expandedCat, setExpandedCat] = useState({});
+
+  useEffect(() => {
+    if (tab === 'service_config') {
+      setSvcCatLoading(true);
+      getCategories().then(setServiceCategories).catch(() => {}).finally(() => setSvcCatLoading(false));
+    }
+  }, [tab]);
+
+  function handleAddCategory() {
+    if (!newCatName.trim()) return;
+    createCategory({ name: newCatName.trim() })
+      .then(cat => {
+        setServiceCategories(prev => [...prev, { ...cat, subcategories: [], engagementTypes: [] }]);
+        setNewCatName('');
+      })
+      .catch(() => {});
+  }
+
+  function handleDeleteCategory(id) {
+    if (!window.confirm('Delete this category and all its subcategories and engagement types?')) return;
+    deleteCategory(id)
+      .then(() => setServiceCategories(prev => prev.filter(c => c.id !== id)))
+      .catch(() => {});
+  }
+
+  function handleAddSubcategory(categoryId) {
+    const name = (newSubName[categoryId] || '').trim();
+    if (!name) return;
+    createSubcategory(categoryId, { name })
+      .then(sub => {
+        setServiceCategories(prev => prev.map(c =>
+          c.id === categoryId ? { ...c, subcategories: [...(c.subcategories || []), sub] } : c
+        ));
+        setNewSubName(prev => ({ ...prev, [categoryId]: '' }));
+      })
+      .catch(() => {});
+  }
+
+  function handleDeleteSubcategory(categoryId, subId) {
+    deleteSubcategory(subId)
+      .then(() => setServiceCategories(prev => prev.map(c =>
+        c.id === categoryId ? { ...c, subcategories: (c.subcategories || []).filter(s => s.id !== subId) } : c
+      )))
+      .catch(() => {});
+  }
+
+  function handleAddEngagementType(categoryId) {
+    const name = (newEtName[categoryId] || '').trim();
+    if (!name) return;
+    createEngagementType(categoryId, { name })
+      .then(et => {
+        setServiceCategories(prev => prev.map(c =>
+          c.id === categoryId ? { ...c, engagementTypes: [...(c.engagementTypes || []), et] } : c
+        ));
+        setNewEtName(prev => ({ ...prev, [categoryId]: '' }));
+      })
+      .catch(() => {});
+  }
+
+  function handleDeleteEngagementType(categoryId, etId) {
+    deleteEngagementType(etId)
+      .then(() => setServiceCategories(prev => prev.map(c =>
+        c.id === categoryId ? { ...c, engagementTypes: (c.engagementTypes || []).filter(e => e.id !== etId) } : c
+      )))
+      .catch(() => {});
+  }
+
   function handleAddPortal() {
     const val = newPortal.trim();
     if (!val) { setPortalError('Portal name cannot be empty.'); return; }
@@ -51,8 +130,8 @@ export default function Settings() {
   }
 
   function handleDeletePortal(name) {
-    // Check mockCredentials for usage
-    const usedInMock = mockCredentials.some(c => c.portalName === name);
+    // Check API credentials for usage (skip mock check)
+    const usedInMock = false;
     // Check localStorage credentials
     let usedInStorage = false;
     try {
@@ -105,7 +184,7 @@ export default function Settings() {
   return (
     <div style={{ padding:24 }}>
       <div style={{ display:'flex', gap:4, marginBottom:24, borderBottom:'2px solid #e2e8f0' }}>
-        {[['firm','Firm Profile'],['team','Team & Users'],['roles','Roles & Permissions'],['billing','Billing Firms'],['notifications','Notifications'],['other','Other Settings']].map(([t,l])=>(
+        {[['firm','Firm Profile'],['team','Team & Users'],['roles','Roles & Permissions'],['billing','Billing Firms'],['notifications','Notifications'],['other','Other Settings'],['service_config','Service Configuration']].map(([t,l])=>(
           <button key={t} onClick={()=>setTab(t)} style={{ padding:'8px 20px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600, color:tab===t?'#2563eb':'#64748b', borderBottom:tab===t?'2px solid #2563eb':'2px solid transparent', marginBottom:-2 }}>
             {l}
           </button>
@@ -312,6 +391,103 @@ export default function Settings() {
             </div>
             {registerError && <div style={{ fontSize:11, color:'#dc2626', marginTop:4 }}>{registerError}</div>}
           </div>
+        </div>
+      )}
+
+      {tab==='service_config' && (
+        <div style={cardStyle}>
+          <h3 style={sectionTitle}>⚙️ Service Configuration</h3>
+          <p style={{ fontSize:13, color:'#64748b', marginBottom:20 }}>
+            Manage service categories, subcategories, and engagement types. These drive the dropdowns in New Service Engagement.
+          </p>
+
+          {/* Add new category */}
+          <div style={{ display:'flex', gap:8, marginBottom:20 }}>
+            <input
+              value={newCatName}
+              onChange={e => setNewCatName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleAddCategory()}
+              placeholder="New category name (e.g. ITR, GST, Bookkeeping)"
+              style={{ ...inputStyle, flex:1 }}
+            />
+            <button onClick={handleAddCategory} style={btnPrimary}>➕ Add Category</button>
+          </div>
+
+          {svcCatLoading && <div style={{ color:'#64748b', fontSize:13 }}>Loading…</div>}
+
+          {serviceCategories.map(cat => (
+            <div key={cat.id} style={{ border:'1px solid #e2e8f0', borderRadius:8, marginBottom:12, overflow:'hidden' }}>
+              {/* Category header */}
+              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 14px', background:'#f8fafc', cursor:'pointer' }}
+                   onClick={() => setExpandedCat(prev => ({ ...prev, [cat.id]: !prev[cat.id] }))}>
+                <span style={{ fontSize:13, fontWeight:700, color:'#1e293b', flex:1 }}>
+                  {expandedCat[cat.id] ? '▾' : '▸'} {cat.name}
+                </span>
+                <span style={{ fontSize:11, color:'#64748b' }}>
+                  {(cat.subcategories||[]).length} subcats · {(cat.engagementTypes||[]).length} types
+                </span>
+                <button onClick={e => { e.stopPropagation(); handleDeleteCategory(cat.id); }} style={{ ...iconBtn, color:'#dc2626' }} title="Delete category">🗑️</button>
+              </div>
+
+              {expandedCat[cat.id] && (
+                <div style={{ padding:'12px 14px' }}>
+                  {/* Subcategories */}
+                  <div style={{ marginBottom:14 }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#475569', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>Subcategories</div>
+                    {(cat.subcategories || []).length === 0 && (
+                      <div style={{ fontSize:12, color:'#94a3b8', marginBottom:8 }}>No subcategories yet.</div>
+                    )}
+                    {(cat.subcategories || []).map(sub => (
+                      <div key={sub.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid #f1f5f9' }}>
+                        <span style={{ fontSize:13, color:'#334155', flex:1 }}>• {sub.name}</span>
+                        <button onClick={() => handleDeleteSubcategory(cat.id, sub.id)} style={{ ...iconBtn, color:'#dc2626' }}>🗑️</button>
+                      </div>
+                    ))}
+                    <div style={{ display:'flex', gap:8, marginTop:8 }}>
+                      <input
+                        value={newSubName[cat.id] || ''}
+                        onChange={e => setNewSubName(prev => ({ ...prev, [cat.id]: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && handleAddSubcategory(cat.id)}
+                        placeholder="New subcategory name"
+                        style={{ ...inputStyle, flex:1, fontSize:12, padding:'6px 8px' }}
+                      />
+                      <button onClick={() => handleAddSubcategory(cat.id)} style={{ ...btnPrimary, fontSize:12, padding:'6px 12px' }}>Add</button>
+                    </div>
+                  </div>
+
+                  {/* Engagement Types */}
+                  <div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#475569', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>Engagement Types</div>
+                    {(cat.engagementTypes || []).length === 0 && (
+                      <div style={{ fontSize:12, color:'#94a3b8', marginBottom:8 }}>No engagement types yet.</div>
+                    )}
+                    {(cat.engagementTypes || []).map(et => (
+                      <div key={et.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid #f1f5f9' }}>
+                        <span style={{ fontSize:13, color:'#334155', flex:1 }}>• {et.name}</span>
+                        <button onClick={() => handleDeleteEngagementType(cat.id, et.id)} style={{ ...iconBtn, color:'#dc2626' }}>🗑️</button>
+                      </div>
+                    ))}
+                    <div style={{ display:'flex', gap:8, marginTop:8 }}>
+                      <input
+                        value={newEtName[cat.id] || ''}
+                        onChange={e => setNewEtName(prev => ({ ...prev, [cat.id]: e.target.value }))}
+                        onKeyDown={e => e.key === 'Enter' && handleAddEngagementType(cat.id)}
+                        placeholder="New engagement type name"
+                        style={{ ...inputStyle, flex:1, fontSize:12, padding:'6px 8px' }}
+                      />
+                      <button onClick={() => handleAddEngagementType(cat.id)} style={{ ...btnPrimary, fontSize:12, padding:'6px 12px' }}>Add</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+
+          {!svcCatLoading && serviceCategories.length === 0 && (
+            <div style={{ color:'#94a3b8', fontSize:13, textAlign:'center', padding:'24px 0' }}>
+              No service categories yet. Add one above to get started.
+            </div>
+          )}
         </div>
       )}
     </div>

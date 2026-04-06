@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getEngagements } from '../data/engagementStore';
+import { getEngagements } from '../services/engagementService';
 import StatusBadge from '../components/common/StatusBadge';
 import {
   Plus, Search, SlidersHorizontal,
@@ -86,10 +86,16 @@ export default function Services() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
   const [hoverRow, setHoverRow] = useState(null);
+  const [allServices, setAllServices] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  // Read from store once on mount (localStorage + mock seed).
-  // The component unmounts/remounts on navigation so this stays fresh.
-  const [allServices] = useState(() => getEngagements());
+  useEffect(() => {
+    setLoading(true);
+    getEngagements()
+      .then(data => setAllServices(data))
+      .catch(() => setAllServices([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   const filteredServices = allServices.filter(s => {
     const matchStatus = filterStatus === 'all' || s.status === filterStatus;

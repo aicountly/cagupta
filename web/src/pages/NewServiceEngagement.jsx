@@ -1,9 +1,10 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, User, Building2, Search, X, CheckSquare, Square } from 'lucide-react';
-import { getServiceCatalog } from '../data/serviceCatalog';
-import { addEngagement } from '../data/engagementStore';
-import { mockContacts, mockOrganizations } from '../data/mockData';
+import { getCategories } from '../services/serviceCategoryService';
+import { createEngagement } from '../services/engagementService';
+import { getContacts } from '../services/contactService';
+import { getOrganizations } from '../services/organizationService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useNotification } from '../context/NotificationContext';
 
@@ -128,9 +129,21 @@ function SearchableDropdown({ items, value, onChange, placeholder }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function NewServiceEngagement() {
   const navigate = useNavigate();
-  const catalog = getServiceCatalog();
-  const hasCatalog = catalog.categories && catalog.categories.length > 0;
   const { addNotification } = useNotification();
+
+  // Catalog loaded from API
+  const [categories, setCategories] = useState([]);
+  const hasCatalog = categories.length > 0;
+
+  // Client lists loaded from API
+  const [contacts, setContacts] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
+
+  useEffect(() => {
+    getCategories().then(setCategories).catch(() => setCategories([]));
+    getContacts().then(setContacts).catch(() => setContacts([]));
+    getOrganizations().then(setOrganizations).catch(() => setOrganizations([]));
+  }, []);
 
   // Client selection
   const [clientType, setClientType] = useState('contact'); // 'contact' | 'organization'
@@ -153,24 +166,23 @@ export default function NewServiceEngagement() {
   // UI state
   const [errors, setErrors] = useState({});
   const [toast, setToast] = useState('');
+  const [saving, setSaving] = useState(false);
 
   // Dynamic staff list
   const { staffUsers } = useStaffUsers();
 
   // ── Derived catalog data ────────────────────────────────────────────────────
-  const categories = catalog.categories;
-
-  const selectedCategory = categories.find(c => c.id === categoryId);
+  const selectedCategory = categories.find(c => String(c.id) === String(categoryId));
   const subcategories = selectedCategory?.subcategories ?? [];
 
-  const selectedSubcategory = subcategories.find(s => s.id === subcategoryId);
-  const engagementTypes = selectedSubcategory?.engagementTypes ?? [];
+  const selectedSubcategory = subcategories.find(s => String(s.id) === String(subcategoryId));
+  const engagementTypes = selectedSubcategory?.engagementTypes ?? selectedCategory?.engagementTypes ?? [];
 
-  const selectedEngagementType = engagementTypes.find(e => e.id === engagementTypeId);
+  const selectedEngagementType = engagementTypes.find(e => String(e.id) === String(engagementTypeId));
 
   // ── Client lists ────────────────────────────────────────────────────────────
-  const clientList = clientType === 'contact' ? mockContacts : mockOrganizations;
-  const selectedClient = clientList.find(c => c.id === clientId);
+  const clientList = clientType === 'contact' ? contacts : organizations;
+  const selectedClient = clientList.find(c => String(c.id) === String(clientId));
 
   // ── Cascade reset helpers ───────────────────────────────────────────────────
   function handleCategoryChange(id) {
@@ -224,17 +236,15 @@ export default function NewServiceEngagement() {
       : [];
 
     const engagement = {
-      id: generateId(),
       clientType,
       clientId,
       clientName: selectedClient.displayName,
       categoryId,
       categoryName: selectedCategory.name,
       subcategoryId,
-      subcategoryName: selectedSubcategory.name,
+      subcategoryName: selectedSubcategory ? selectedSubcategory.name : '',
       engagementTypeId,
       engagementTypeName: selectedEngagementType.name,
-      // Services table uses `type` for the service label
       type: `${selectedCategory.name} – ${selectedEngagementType.name}`,
       financialYear: fy,
       assignedTo,
@@ -245,10 +255,17 @@ export default function NewServiceEngagement() {
       tasks: checklist,
     };
 
-    addEngagement(engagement);
-    addNotification('New service engagement created', 'service');
-    setToast('Engagement created');
-    setTimeout(() => navigate('/services'), 1200);
+    setSaving(true);
+    createEngagement(engagement)
+      .then(() => {
+        addNotification('New service engagement created', 'service');
+        setToast('Engagement created');
+        setTimeout(() => navigate('/services'), 1200);
+      })
+      .catch(err => {
+        setToast('Error: ' + (err.message || 'Failed to create engagement.'));
+      })
+      .finally(() => setSaving(false));
   }
 
   function handleCancel() {
@@ -480,7 +497,7 @@ export default function NewServiceEngagement() {
       <div style={actionRow}>
         <button style={btnSecondary} onClick={handleCancel}>Cancel</button>
         {hasCatalog && (
-          <button style={btnPrimary} onClick={handleCreate}>Create Engagement</button>
+          <button style={btnPrimary} disabled={saving} onClick={handleCreate}>{saving ? 'Saving…' : 'Create Engagement'}</button>
         )}
       </div>
     </div>

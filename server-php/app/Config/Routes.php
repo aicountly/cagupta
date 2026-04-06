@@ -186,6 +186,222 @@ class Routes
                 'handler'    => 'Admin\OrganizationController@destroy',
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
+
+            // ── Admin — Services (Engagements) ────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/services',
+                'handler'    => 'Admin\ServiceController@index',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/services',
+                'handler'    => 'Admin\ServiceController@store',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/services/:id',
+                'handler'    => 'Admin\ServiceController@show',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/services/:id',
+                'handler'    => 'Admin\ServiceController@update',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/services/:id',
+                'handler'    => 'Admin\ServiceController@destroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+
+            // ── Admin — Invoices ──────────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/invoices',
+                'handler'    => 'Admin\InvoiceController@index',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/invoices',
+                'handler'    => 'Admin\InvoiceController@store',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/invoices/:id',
+                'handler'    => 'Admin\InvoiceController@show',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/invoices/:id',
+                'handler'    => 'Admin\InvoiceController@update',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/invoices/:id',
+                'handler'    => 'Admin\InvoiceController@destroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+
+            // ── Admin — Appointments (calendar events) ────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/appointments',
+                'handler'    => 'Admin\AppointmentController@index',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/appointments',
+                'handler'    => 'Admin\AppointmentController@store',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/appointments/:id',
+                'handler'    => 'Admin\AppointmentController@show',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/appointments/:id',
+                'handler'    => 'Admin\AppointmentController@update',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/appointments/:id',
+                'handler'    => 'Admin\AppointmentController@destroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+
+            // ── Admin — Credentials Vault ─────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/credentials',
+                'handler'    => 'Admin\CredentialController@index',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/credentials',
+                'handler'    => 'Admin\CredentialController@store',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/credentials/:id',
+                'handler'    => 'Admin\CredentialController@show',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/credentials/:id',
+                'handler'    => 'Admin\CredentialController@update',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/credentials/:id',
+                'handler'    => 'Admin\CredentialController@destroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+
+            // ── Admin — Leads ─────────────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/leads',
+                'handler'    => 'Admin\LeadController@index',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/leads',
+                'handler'    => 'Admin\LeadController@store',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/leads/:id',
+                'handler'    => 'Admin\LeadController@show',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/leads/:id',
+                'handler'    => 'Admin\LeadController@update',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/leads/:id',
+                'handler'    => 'Admin\LeadController@destroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+
+            // ── Admin — Service Categories / Subcategories / Engagement Types ──
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/service-categories',
+                'handler'    => 'Admin\ServiceCategoryController@index',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/service-categories',
+                'handler'    => 'Admin\ServiceCategoryController@store',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/service-categories/:id',
+                'handler'    => 'Admin\ServiceCategoryController@destroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/service-categories/:id/subcategories',
+                'handler'    => 'Admin\ServiceCategoryController@subcategoryIndex',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/service-categories/:id/subcategories',
+                'handler'    => 'Admin\ServiceCategoryController@subcategoryStore',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/service-subcategories/:id',
+                'handler'    => 'Admin\ServiceCategoryController@subcategoryDestroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/service-categories/:id/engagement-types',
+                'handler'    => 'Admin\ServiceCategoryController@engagementTypeIndex',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/service-categories/:id/engagement-types',
+                'handler'    => 'Admin\ServiceCategoryController@engagementTypeStore',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/engagement-types/:id',
+                'handler'    => 'Admin\ServiceCategoryController@engagementTypeDestroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
         ];
     }
 }

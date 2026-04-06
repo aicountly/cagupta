@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getContacts } from '../data/contactStore';
+import { getContacts } from '../services/contactService';
 import StatusBadge from '../components/common/StatusBadge';
 
 export default function Contacts() {
@@ -8,20 +8,30 @@ export default function Contacts() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
+  const [contacts, setContacts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
-  const contacts = getContacts();
+  useEffect(() => {
+    setLoading(true);
+    getContacts()
+      .then(data => { setContacts(data); setError(''); })
+      .catch(err => setError(err.message || 'Failed to load contacts.'))
+      .finally(() => setLoading(false));
+  }, []);
   const filtered = contacts.filter(c => {
     const matchSearch =
       c.displayName.toLowerCase().includes(search.toLowerCase()) ||
-      c.mobile.includes(search) ||
-      c.pan?.includes(search.toUpperCase()) ||
-      c.clientCode.toLowerCase().includes(search.toLowerCase());
+      (c.mobile || '').includes(search) ||
+      (c.pan || '').includes(search.toUpperCase()) ||
+      (c.clientCode || '').toLowerCase().includes(search.toLowerCase());
     const matchFilter = filter === 'all' || c.status === filter;
     return matchSearch && matchFilter;
   });
 
   return (
     <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
+      {error && <div style={{ color: '#dc2626', marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 8, fontSize: 13 }}>{error}</div>}
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center' }}>
         <input
@@ -50,7 +60,11 @@ export default function Contacts() {
             </tr>
           </thead>
           <tbody>
-            {filtered.map(c => (
+            {loading ? (
+              <tr><td colSpan={9} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>Loading contacts…</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={9} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No contacts found.</td></tr>
+            ) : filtered.map(c => (
               <tr key={c.id} style={trStyle}>
                 <td style={tdStyle}>
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{c.clientCode}</code>
