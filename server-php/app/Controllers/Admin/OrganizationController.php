@@ -83,6 +83,8 @@ class OrganizationController extends BaseController
             'pincode'    => $body['pincode']  ?? null,
             'website'    => $body['website']  ?? null,
             'notes'      => $body['notes']    ?? null,
+            'reference'  => $body['reference'] ?? null,
+            'group_id'   => $body['group_id']  ?? null,
             'is_active'  => $body['is_active'] ?? true,
             'created_by' => $actingUser ? (int)$actingUser['id'] : null,
         ]);
@@ -128,7 +130,7 @@ class OrganizationController extends BaseController
 
         $textFields = [
             'name', 'type', 'gstin', 'pan', 'email', 'phone',
-            'address', 'city', 'state', 'pincode', 'website', 'notes',
+            'address', 'city', 'state', 'pincode', 'website', 'notes', 'reference',
         ];
         foreach ($textFields as $field) {
             if (array_key_exists($field, $body)) {
@@ -137,6 +139,9 @@ class OrganizationController extends BaseController
         }
         if (isset($body['is_active'])) {
             $data['is_active'] = (bool)$body['is_active'];
+        }
+        if (array_key_exists('group_id', $body)) {
+            $data['group_id'] = $body['group_id'];
         }
 
         $this->orgs->update($id, $data);
