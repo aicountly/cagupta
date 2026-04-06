@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { mockLeads } from '../data/mockData';
+import { useState, useEffect } from 'react';
+import { getLeads, createLead, updateLead } from '../services/leadService';
 import StatusBadge from '../components/common/StatusBadge';
 import { useNotification } from '../context/NotificationContext';
 
@@ -10,11 +10,20 @@ const emptyLeadForm = { contactName:'', company:'', email:'', phone:'', source:'
 export default function Leads() {
   const [tab, setTab] = useState('pipeline');
   const [selected, setSelected] = useState(null);
-  const [leads, setLeads] = useState(mockLeads);
+  const [leads, setLeads] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
   const [editLeadId, setEditLeadId] = useState(null);
   const [form, setForm] = useState(emptyLeadForm);
   const { addNotification } = useNotification();
+
+  useEffect(() => {
+    setLoading(true);
+    getLeads()
+      .then(data => setLeads(data))
+      .catch(() => setLeads([]))
+      .finally(() => setLoading(false));
+  }, []);
 
   const byStage = stages.reduce((acc,s)=>({ ...acc,[s]:leads.filter(l=>l.stage===s) }), {});
   const stageColors = { new:'#f1f5f9', contacted:'#dbeafe', qualified:'#ede9fe', proposal_sent:'#fef3c7', negotiation:'#ffedd5', won:'#dcfce7', lost:'#fee2e2' };
@@ -34,11 +43,18 @@ export default function Leads() {
   function handleSubmit(e) {
     e.preventDefault();
     if (editLeadId) {
-      setLeads(prev => prev.map(l => l.id === editLeadId ? { ...l, ...form, estimatedValue: Number(form.estimatedValue)||0, probability: l.probability } : l));
+      updateLead(editLeadId, { ...form, estimatedValue: Number(form.estimatedValue)||0 })
+        .then(updated => {
+          setLeads(prev => prev.map(l => l.id === editLeadId ? updated : l));
+        })
+        .catch(() => {});
     } else {
-      const newLead = { id: 'l' + Date.now(), ...form, estimatedValue: Number(form.estimatedValue)||0, probability: 50 };
-      setLeads(prev => [...prev, newLead]);
-      addNotification('New lead: ' + form.contactName, 'lead');
+      createLead({ ...form, estimatedValue: Number(form.estimatedValue)||0, probability: 50 })
+        .then(newLead => {
+          setLeads(prev => [...prev, newLead]);
+          addNotification('New lead: ' + form.contactName, 'lead');
+        })
+        .catch(() => {});
     }
     setShowNewLeadModal(false);
   }

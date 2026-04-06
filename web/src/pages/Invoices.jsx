@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { mockInvoices, mockClients } from '../data/mockData';
+import { useState, useEffect } from 'react';
+import { getInvoices, createInvoice } from '../services/invoiceService';
+import { getContacts } from '../services/contactService';
 import StatusBadge from '../components/common/StatusBadge';
 import { BILLING_PROFILES, getBillingProfileByCode } from '../constants/billingProfiles';
 
@@ -150,18 +151,38 @@ export default function Invoices() {
   const [showRaiseInvoice, setShowRaiseInvoice] = useState(false);
   const [showRecordPayment, setShowRecordPayment] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [invoices, setInvoices] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = mockInvoices.filter(i => statusFilter==='all' || i.status===statusFilter);
-  const totalOutstanding = mockInvoices.filter(i=>i.status!=='paid'&&i.status!=='cancelled').reduce((a,i)=>a+(i.totalAmount-i.amountPaid),0);
-  const totalOverdue = mockInvoices.filter(i=>i.status==='overdue').reduce((a,i)=>a+(i.totalAmount-i.amountPaid),0);
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      getInvoices().catch(() => []),
+      getContacts().catch(() => []),
+    ]).then(([invs, cts]) => {
+      setInvoices(invs);
+      setClients(cts);
+    }).finally(() => setLoading(false));
+  }, []);
+
+  const filtered = invoices.filter(i => statusFilter==='all' || i.status===statusFilter);
+  const totalOutstanding = invoices.filter(i=>i.status!=='paid'&&i.status!=='cancelled').reduce((a,i)=>a+(i.totalAmount-i.amountPaid),0);
+  const totalOverdue = invoices.filter(i=>i.status==='overdue').reduce((a,i)=>a+(i.totalAmount-i.amountPaid),0);
+
+  function handleRaiseInvoice(data) {
+    createInvoice(data)
+      .then(newInvoice => setInvoices(prev => [newInvoice, ...prev]))
+      .catch(() => {});
+  }
 
   return (
     <div style={{ padding:24 }}>
       {showRaiseInvoice && (
         <RaiseInvoiceModal
-          clients={mockClients}
+          clients={clients}
           onClose={() => setShowRaiseInvoice(false)}
-          onSave={(data) => { console.log('New invoice:', data); }}
+          onSave={(data) => { handleRaiseInvoice(data); setShowRaiseInvoice(false); }}
         />
       )}
       {showRecordPayment && (
@@ -175,8 +196,8 @@ export default function Invoices() {
       {/* Summary cards */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:24 }}>
         {[
-          { label:'Total Billed (FY 24-25)', value:`₹${mockInvoices.reduce((a,i)=>a+i.totalAmount,0).toLocaleString('en-IN')}`, color:'#2563eb' },
-          { label:'Total Collected', value:`₹${mockInvoices.reduce((a,i)=>a+i.amountPaid,0).toLocaleString('en-IN')}`, color:'#16a34a' },
+          { label:'Total Billed', value:`₹${invoices.reduce((a,i)=>a+i.totalAmount,0).toLocaleString('en-IN')}`, color:'#2563eb' },
+          { label:'Total Collected', value:`₹${invoices.reduce((a,i)=>a+i.amountPaid,0).toLocaleString('en-IN')}`, color:'#16a34a' },
           { label:'Outstanding', value:`₹${totalOutstanding.toLocaleString('en-IN')}`, color:'#d97706' },
           { label:'Overdue', value:`₹${totalOverdue.toLocaleString('en-IN')}`, color:'#dc2626' },
         ].map(s=>(
@@ -238,7 +259,7 @@ export default function Invoices() {
           <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', gap:12, alignItems:'center' }}>
             <span style={{ fontSize:13, color:'#64748b' }}>Client:</span>
             <select style={{ padding:'6px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13 }}>
-              {mockClients.map(c=><option key={c.id}>{c.displayName}</option>)}
+              {clients.map(c=><option key={c.id}>{c.displayName}</option>)}
             </select>
           </div>
           <table style={tableStyle}>

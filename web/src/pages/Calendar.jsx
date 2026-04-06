@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { mockAppointments } from '../data/mockData';
+import { useState, useEffect } from 'react';
+import { getAppointments, createAppointment, updateAppointment, deleteAppointment } from '../services/appointmentService';
 import StatusBadge from '../components/common/StatusBadge';
 import { useNotification } from '../context/NotificationContext';
 
@@ -19,7 +19,16 @@ export default function Calendar() {
   const [tab, setTab] = useState('appointments');
   const [year, setYear] = useState(2025);
   const [month, setMonth] = useState(5); // June
-  const [appointments, setAppointments] = useState(mockAppointments);
+  const [appointments, setAppointments] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    getAppointments()
+      .then(data => setAppointments(data))
+      .catch(() => setAppointments([]))
+      .finally(() => setLoading(false));
+  }, []);
   const [showBookModal, setShowBookModal] = useState(false);
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(emptyForm);
@@ -60,18 +69,25 @@ export default function Calendar() {
   function handleSubmit(e) {
     e.preventDefault();
     if (editId) {
-      setAppointments(prev => prev.map(a => a.id === editId ? { ...a, ...form } : a));
+      updateAppointment(editId, form)
+        .then(updated => setAppointments(prev => prev.map(a => a.id === editId ? updated : a)))
+        .catch(() => {});
     } else {
-      const newAppt = { id: 'a' + Date.now(), ...form, status: 'scheduled' };
-      setAppointments(prev => [...prev, newAppt]);
-      addNotification('Appointment booked: ' + form.subject, 'appointment');
+      createAppointment({ ...form, status: 'scheduled' })
+        .then(newAppt => {
+          setAppointments(prev => [...prev, newAppt]);
+          addNotification('Appointment booked: ' + form.subject, 'appointment');
+        })
+        .catch(() => {});
     }
     setShowBookModal(false);
   }
 
   function handleCancel(id) {
     if (window.confirm('Cancel this appointment?')) {
-      setAppointments(prev => prev.filter(a => a.id !== id));
+      deleteAppointment(id)
+        .then(() => setAppointments(prev => prev.filter(a => a.id !== id)))
+        .catch(() => {});
     }
   }
 

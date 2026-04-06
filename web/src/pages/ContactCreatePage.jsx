@@ -1,8 +1,8 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
-import { addContact, generateContactCode, getContacts, updateContact } from '../data/contactStore';
-import { getOrganizations } from '../data/organizationStore';
+import { createContact, updateContact as updateContactApi, getContacts } from '../services/contactService';
+import { getOrganizations } from '../services/organizationService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 
 // ── Country / State data ──────────────────────────────────────────────────────
@@ -91,34 +91,13 @@ export default function ContactCreatePage() {
   const { id } = useParams();
   const isEdit = Boolean(id);
 
-  const existingContact = isEdit ? getContacts().find(c => String(c.id) === id) : null;
-
-  const [form, setForm] = useState(() => {
-    if (isEdit && existingContact) {
-      return {
-        displayName: existingContact.displayName || '',
-        mobile: existingContact.mobile || '',
-        email: existingContact.email || '',
-        pan: existingContact.pan || '',
-        city: existingContact.city || '',
-        country: existingContact.country || 'India',
-        state: existingContact.state || '',
-        landline: existingContact.landline || '',
-        secondaryMobile: existingContact.secondaryMobile || '',
-        waMobile: existingContact.waMobile || '',
-        status: existingContact.status || 'active',
-        assignedManager: existingContact.assignedManager || '',
-        linkedOrgIds: existingContact.linkedOrgIds || [],
-        notes: existingContact.notes || '',
-      };
-    }
-    return emptyForm();
-  });
+  const [form, setForm] = useState(() => emptyForm());
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null);
-  const [code] = useState(() => isEdit && existingContact ? existingContact.clientCode : generateContactCode());
-  const [contactId] = useState(() => isEdit && existingContact ? existingContact.id : null);
+  const [code, setCode] = useState('Auto-generated');
+  const [contactId, setContactId] = useState(null);
+  const [organizations, setOrganizations] = useState([]);
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -127,6 +106,41 @@ export default function ContactCreatePage() {
   const [dirty, setDirty] = useState(false);
   // Track WA Mobile "same as primary" sync
   const [waMobileSameAsPrimary, setWaMobileSameAsPrimary] = useState(false);
+
+  // Load organizations for the link panel
+  useEffect(() => {
+    getOrganizations().then(setOrganizations).catch(() => setOrganizations([]));
+  }, []);
+
+  // Load existing contact in edit mode
+  useEffect(() => {
+    if (!isEdit) return;
+    getContacts()
+      .then(list => {
+        const existing = list.find(c => String(c.id) === id);
+        if (existing) {
+          setCode(existing.clientCode || `CLT-${String(existing.id).padStart(4, '0')}`);
+          setContactId(existing.id);
+          setForm({
+            displayName:     existing.displayName     || '',
+            mobile:          existing.mobile          || '',
+            email:           existing.email           || '',
+            pan:             existing.pan             || '',
+            city:            existing.city            || '',
+            country:         existing.country         || 'India',
+            state:           existing.state           || '',
+            landline:        existing.landline         || '',
+            secondaryMobile: existing.secondaryMobile || '',
+            waMobile:        existing.waMobile         || '',
+            status:          existing.status          || 'active',
+            assignedManager: existing.assignedManager || '',
+            linkedOrgIds:    existing.linkedOrgIds    || [],
+            notes:           existing.notes           || '',
+          });
+        }
+      })
+      .catch(() => {});
+  }, [isEdit, id]);
 
   function update(field, value) {
     setForm(prev => {
@@ -201,58 +215,60 @@ export default function ContactCreatePage() {
       return null;
     }
 
-    const allOrgs = getOrganizations();
-    const linkedOrgs = allOrgs.filter(o => form.linkedOrgIds.includes(o.id));
     const contact = {
-      id: isEdit ? contactId : generateId(),
-      clientCode: code,
-      displayName: form.displayName.trim(),
-      mobile: form.mobile.trim() || undefined,
-      email: form.email.trim() || undefined,
-      pan: form.pan.trim().toUpperCase() || undefined,
-      city: form.city.trim() || undefined,
-      country: form.country || 'India',
-      state: form.state || undefined,
-      landline: form.landline.trim() || undefined,
-      secondaryMobile: form.secondaryMobile.trim() || undefined,
-      waMobile: form.waMobile.trim() || undefined,
-      status: form.status,
-      assignedManager: form.assignedManager || '',
-      linkedOrgIds: form.linkedOrgIds,
-      linkedOrgsCount: form.linkedOrgIds.length,
-      linkedOrgNames: linkedOrgs.map(o => o.displayName),
-      notes: form.notes.trim() || undefined,
+      displayName:     form.displayName.trim(),
+      mobile:          form.mobile.trim()          || undefined,
+      email:           form.email.trim()           || undefined,
+      pan:             form.pan.trim().toUpperCase() || undefined,
+      city:            form.city.trim()            || undefined,
+      country:         form.country                || 'India',
+      state:           form.state                  || undefined,
+      landline:        form.landline.trim()         || undefined,
+      secondaryMobile: form.secondaryMobile.trim()  || undefined,
+      waMobile:        form.waMobile.trim()          || undefined,
+      status:          form.status,
+      assignedManager: form.assignedManager        || '',
+      linkedOrgIds:    form.linkedOrgIds,
+      notes:           form.notes.trim()           || undefined,
     };
     return contact;
-  }, [form, code, isEdit, contactId]);
+  }, [form, isEdit]);
 
   async function handleSaveQuit() {
     const contact = doSave();
     if (!contact) return;
     setSaving(true);
-    await new Promise(r => setTimeout(r, 400)); // simulate async
-    if (isEdit) {
-      updateContact(contact);
-    } else {
-      addContact(contact);
+    try {
+      if (isEdit && contactId) {
+        await updateContactApi(contactId, contact);
+      } else {
+        await createContact(contact);
+      }
+      setDirty(false);
+      setToast(isEdit ? 'Contact updated successfully!' : 'Contact saved successfully!');
+      setTimeout(() => navigate('/clients/contacts'), 900);
+    } catch (err) {
+      setToast('Error: ' + (err.message || 'Failed to save contact.'));
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
-    setDirty(false);
-    setToast(isEdit ? 'Contact updated successfully!' : 'Contact saved successfully!');
-    setTimeout(() => navigate('/clients/contacts'), 900);
   }
 
   async function handleSaveAddNew() {
     const contact = doSave();
     if (!contact) return;
     setSaving(true);
-    await new Promise(r => setTimeout(r, 400));
-    addContact(contact);
-    setSaving(false);
-    setDirty(false);
-    setForm(emptyForm(form.assignedManager)); // keep manager prefilled
-    setErrors({});
-    setToast('Contact saved! Ready for another entry.');
+    try {
+      await createContact(contact);
+      setDirty(false);
+      setForm(emptyForm(form.assignedManager)); // keep manager prefilled
+      setErrors({});
+      setToast('Contact saved! Ready for another entry.');
+    } catch (err) {
+      setToast('Error: ' + (err.message || 'Failed to save contact.'));
+    } finally {
+      setSaving(false);
+    }
   }
 
   function handleCancel() {
@@ -439,7 +455,6 @@ export default function ContactCreatePage() {
         <SectionHeader title="Linked Organizations" style={{ marginTop: 24 }} />
         <div style={{ padding: '0 0 8px' }}>
           {(() => {
-            const organizations = getOrganizations();
             if (organizations.length === 0) {
               return <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>No organizations available yet.</p>;
             }

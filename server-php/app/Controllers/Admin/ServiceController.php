@@ -1,0 +1,156 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Controllers\Admin;
+
+use App\Controllers\BaseController;
+use App\Models\ServiceModel;
+
+/**
+ * ServiceController — CRUD for the `services` table (service engagements).
+ *
+ * All endpoints require Bearer token + role: super_admin or admin.
+ */
+class ServiceController extends BaseController
+{
+    private ServiceModel $services;
+
+    public function __construct()
+    {
+        $this->services = new ServiceModel();
+    }
+
+    // ── GET /api/admin/services ──────────────────────────────────────────────
+
+    /**
+     * Return a paginated list of service engagements.
+     *
+     * Query params: page, per_page, search, status
+     */
+    public function index(): never
+    {
+        $page    = max(1, (int)$this->query('page', 1));
+        $perPage = min(100, max(1, (int)$this->query('per_page', 20)));
+        $search  = trim((string)$this->query('search', ''));
+        $status  = trim((string)$this->query('status', ''));
+
+        $result = $this->services->paginate($page, $perPage, $search, $status);
+
+        $this->success($result['services'], 'Services retrieved', 200, [
+            'pagination' => [
+                'page'      => $page,
+                'per_page'  => $perPage,
+                'total'     => $result['total'],
+                'last_page' => (int)ceil($result['total'] / $perPage),
+            ],
+        ]);
+    }
+
+    // ── POST /api/admin/services ─────────────────────────────────────────────
+
+    /**
+     * Create a new service engagement.
+     *
+     * Body: { client_type?, client_id?, organization_id?, client_name?,
+     *         service_type, financial_year?, due_date?, status?, assigned_to?,
+     *         fees?, notes?, tasks?,
+     *         category_id?, category_name?, subcategory_id?, subcategory_name?,
+     *         engagement_type_id?, engagement_type_name? }
+     */
+    public function store(): never
+    {
+        $body        = $this->getJsonBody();
+        $serviceType = trim((string)($body['service_type'] ?? ''));
+
+        if ($serviceType === '') {
+            $this->error('service_type is required.', 422);
+        }
+
+        $actingUser = $this->authUser();
+
+        $newId = $this->services->create([
+            'client_type'          => $body['client_type']          ?? 'contact',
+            'client_id'            => isset($body['client_id'])    ? (int)$body['client_id']    : null,
+            'organization_id'      => isset($body['organization_id']) ? (int)$body['organization_id'] : null,
+            'client_name'          => $body['client_name']          ?? null,
+            'service_type'         => $serviceType,
+            'financial_year'       => $body['financial_year']       ?? null,
+            'due_date'             => $body['due_date']             ?? null,
+            'status'               => $body['status']               ?? 'not_started',
+            'assigned_to'          => $body['assigned_to']          ?? null,
+            'fees'                 => isset($body['fees'])          ? (float)$body['fees'] : null,
+            'notes'                => $body['notes']                ?? null,
+            'tasks'                => $body['tasks']                ?? [],
+            'created_by'           => $actingUser ? (int)$actingUser['id'] : null,
+            'category_id'          => $body['category_id']          ?? null,
+            'category_name'        => $body['category_name']        ?? null,
+            'subcategory_id'       => $body['subcategory_id']       ?? null,
+            'subcategory_name'     => $body['subcategory_name']     ?? null,
+            'engagement_type_id'   => $body['engagement_type_id']   ?? null,
+            'engagement_type_name' => $body['engagement_type_name'] ?? null,
+        ]);
+
+        $service = $this->services->find($newId);
+        $this->success($service, 'Service engagement created', 201);
+    }
+
+    // ── GET /api/admin/services/:id ──────────────────────────────────────────
+
+    /**
+     * Return a single service engagement.
+     */
+    public function show(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+        $this->success($service);
+    }
+
+    // ── PUT /api/admin/services/:id ──────────────────────────────────────────
+
+    /**
+     * Update a service engagement.
+     */
+    public function update(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $body = $this->getJsonBody();
+        $data = [];
+
+        $allowed = ['status', 'assigned_to', 'due_date', 'fees', 'notes', 'priority', 'service_type', 'financial_year'];
+        foreach ($allowed as $field) {
+            if (array_key_exists($field, $body)) {
+                $data[$field] = $body[$field];
+            }
+        }
+        if (array_key_exists('tasks', $body)) {
+            $data['tasks'] = $body['tasks'];
+        }
+
+        $this->services->update($id, $data);
+        $updated = $this->services->find($id);
+        $this->success($updated, 'Service updated');
+    }
+
+    // ── DELETE /api/admin/services/:id ───────────────────────────────────────
+
+    /**
+     * Delete a service engagement.
+     */
+    public function destroy(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $this->services->delete($id);
+        $this->success(null, 'Service deleted');
+    }
+}
