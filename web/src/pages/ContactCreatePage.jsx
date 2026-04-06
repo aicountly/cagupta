@@ -156,7 +156,7 @@ export default function ContactCreatePage() {
     setForm(prev => {
       const updated = { ...prev, [field]: formatted };
       if (field === 'mobile' && waMobileSameAsPrimary) {
-        updated.waMobile = formatted;
+        updated.waMobile = value;
       }
       return updated;
     });
