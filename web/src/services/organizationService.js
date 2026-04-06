@@ -49,6 +49,7 @@ function normalizeOrg(o) {
     assignedManager:  o.assigned_manager || o.created_by_name || '',
     status:           o.is_active === false ? 'inactive' : (o.is_active === true ? 'active' : (o.status || 'active')),
     createdAt:        o.created_at  || '',
+    groupId:          o.group_id ?? null,
   };
 }
 
@@ -90,6 +91,7 @@ export async function createOrganization(payload) {
     is_active:           payload.status !== 'inactive',
     primary_contact_id:  payload.primaryContactId  || null,
     assigned_manager:    payload.assignedManager   || null,
+    group_id:            payload.groupId ?? payload.group_id ?? null,
   };
 
   const res = await fetch(`${API_BASE}/admin/organizations`, {
@@ -124,6 +126,7 @@ export async function updateOrganization(id, payload) {
     is_active:          payload.status !== 'inactive',
     primary_contact_id: payload.primaryContactId || null,
     assigned_manager:   payload.assignedManager  || null,
+    group_id:           payload.groupId ?? payload.group_id ?? null,
   };
 
   const res = await fetch(`${API_BASE}/admin/organizations/${id}`, {

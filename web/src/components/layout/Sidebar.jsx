@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen,
   Target, Settings, ChevronRight, ChevronDown,
-  UserRound, Building2, ShieldCheck,
+  UserRound, Building2, ShieldCheck, Layers,
 } from 'lucide-react';
 
 const navSections = [
@@ -21,6 +21,7 @@ const navSections = [
         children: [
           { to: '/clients/contacts', label: 'Contacts', icon: UserRound },
           { to: '/clients/organizations', label: 'Organizations', icon: Building2 },
+          { to: '/clients/groups', label: 'Groups', icon: Layers },
         ],
       },
       { to: '/services', label: 'Services & Tasks', icon: ClipboardList },

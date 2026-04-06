@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import { getContacts, createContact } from '../services/contactService';
 import { createOrganization, updateOrganization as updateOrganizationApi, getOrganizations } from '../services/organizationService';
+import { getGroups } from '../services/clientGroupService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -90,6 +91,7 @@ function blankForm(defaultManager) {
     status: 'active',
     assignedManager: defaultManager || '',
     notes: '',
+    group_id: '',
   };
 }
 
@@ -108,6 +110,8 @@ export default function OrganizationCreatePage() {
 
   // Live contacts list
   const [contacts, setContacts] = useState([]);
+  // Groups list
+  const [groups, setGroups] = useState([]);
 
   // Inline "Create New Contact" modal state
   const [showNewContactModal, setShowNewContactModal] = useState(false);
@@ -121,6 +125,11 @@ export default function OrganizationCreatePage() {
   // Load contacts list
   useEffect(() => {
     getContacts().then(setContacts).catch(() => setContacts([]));
+  }, []);
+
+  // Load groups list
+  useEffect(() => {
+    getGroups().then(setGroups).catch(() => setGroups([]));
   }, []);
 
   // Load existing org in edit mode
@@ -150,6 +159,7 @@ export default function OrganizationCreatePage() {
             status:             existing.status             || 'active',
             assignedManager:    existing.assignedManager    || '',
             notes:              existing.notes              || '',
+            group_id:           existing.group_id           || '',
           });
         }
       })
@@ -207,6 +217,7 @@ export default function OrganizationCreatePage() {
       status:       f.status,
       assignedManager: f.assignedManager,
       notes:        f.notes              || null,
+      group_id:     f.group_id || null,
     };
   }
 
@@ -579,6 +590,18 @@ export default function OrganizationCreatePage() {
               rows={3}
               style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit' }}
             />
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <FieldLabel label="Group" />
+            <select
+              value={form.group_id || ''}
+              onChange={e => setField('group_id', e.target.value || null)}
+              style={selectStyle}
+            >
+              <option value="">— No Group (None) —</option>
+              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
           </div>
         </FormSection>
       </div>

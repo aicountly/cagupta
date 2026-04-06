@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import { createContact, updateContact as updateContactApi, getContacts } from '../services/contactService';
 import { getOrganizations } from '../services/organizationService';
+import { getGroups } from '../services/clientGroupService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 
 // ── Country / State data ──────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ function emptyForm(defaultManager = '') {
     assignedManager: defaultManager,
     linkedOrgIds: [],
     notes: '',
+    groupId: '',
   };
 }
 
@@ -104,6 +106,7 @@ export default function ContactCreatePage() {
   const [code, setCode] = useState('Auto-generated');
   const [contactId, setContactId] = useState(null);
   const [organizations, setOrganizations] = useState([]);
+  const [groups, setGroups] = useState([]);
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -116,6 +119,11 @@ export default function ContactCreatePage() {
   // Load organizations for the link panel
   useEffect(() => {
     getOrganizations().then(setOrganizations).catch(() => setOrganizations([]));
+  }, []);
+
+  // Load groups for the group selector
+  useEffect(() => {
+    getGroups().then(setGroups).catch(() => setGroups([]));
   }, []);
 
   // Load existing contact in edit mode
@@ -142,6 +150,7 @@ export default function ContactCreatePage() {
             assignedManager: existing.assignedManager || '',
             linkedOrgIds:    existing.linkedOrgIds    || [],
             notes:           existing.notes           || '',
+            groupId:         existing.groupId || existing.group_id || '',
           });
         }
       })
@@ -240,6 +249,7 @@ export default function ContactCreatePage() {
       assignedManager: form.assignedManager        || '',
       linkedOrgIds:    form.linkedOrgIds,
       notes:           form.notes.trim()           || undefined,
+      groupId:         form.groupId || null,
     };
     return contact;
   }, [form, isEdit]);
@@ -323,6 +333,20 @@ export default function ContactCreatePage() {
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
               <option value="prospect">Prospect</option>
+            </select>
+          </FormField>
+
+          {/* Group */}
+          <FormField label="Group">
+            <select
+              value={form.groupId || ''}
+              onChange={e => update('groupId', e.target.value || null)}
+              style={inputStyle}
+            >
+              <option value="">— No Group (None) —</option>
+              {groups.map(g => (
+                <option key={g.id} value={g.id}>{g.name}</option>
+              ))}
             </select>
           </FormField>
 
