@@ -52,6 +52,7 @@ function normalizeContact(c) {
     assignedManager: c.assigned_manager || c.created_by_name || '',
     status:        c.is_active === false ? 'inactive' : (c.is_active === true ? 'active' : (c.status || 'active')),
     createdAt:     c.created_at || '',
+    groupId:       c.group_id ?? null,
   };
 }
 
@@ -94,6 +95,7 @@ export async function createContact(payload) {
     is_active:         payload.status !== 'inactive',
     assigned_manager:  payload.assignedManager || null,
     linked_org_ids:    payload.linkedOrgIds    || [],
+    group_id:          payload.groupId ?? null,
   };
 
   const res = await fetch(`${API_BASE}/admin/contacts`, {
@@ -127,6 +129,7 @@ export async function updateContact(id, payload) {
     is_active:         payload.status !== 'inactive',
     assigned_manager:  payload.assignedManager || null,
     linked_org_ids:    payload.linkedOrgIds    || [],
+    group_id:          payload.groupId ?? payload.group_id ?? null,
   };
 
   const res = await fetch(`${API_BASE}/admin/contacts/${id}`, {

@@ -20,6 +20,7 @@ import Registers from './pages/Registers';
 import Leads from './pages/Leads';
 import Settings from './pages/Settings';
 import UserManagement from './pages/UserManagement';
+import ClientGroups from './pages/ClientGroups';
 
 const pageTitles = {
   '/':                          '🏠 Dashboard',
@@ -29,6 +30,7 @@ const pageTitles = {
   '/clients/organizations':     '🏢 Organizations',
   '/clients/organizations/new': '🏢 Add Organization',
   '/clients/organizations/edit':'🏢 Edit Organization',
+  '/clients/groups':            '🗂️ Groups',
   '/services':                  '📋 Services & Tasks',
   '/services/new':              '➕ New Service Engagement',
   '/documents':                 '📂 Document Management',
@@ -70,6 +72,7 @@ export default function App() {
           <Route path="/clients/organizations" element={<ProtectedRoute><Layout routePath="/clients/organizations"><Organizations /></Layout></ProtectedRoute>} />
           <Route path="/clients/organizations/new" element={<ProtectedRoute><Layout routePath="/clients/organizations/new"><OrganizationCreatePage /></Layout></ProtectedRoute>} />
           <Route path="/clients/organizations/:id/edit" element={<ProtectedRoute><Layout routePath="/clients/organizations/edit"><OrganizationCreatePage /></Layout></ProtectedRoute>} />
+          <Route path="/clients/groups" element={<ProtectedRoute><Layout routePath="/clients/groups"><ClientGroups /></Layout></ProtectedRoute>} />
           <Route path="/services" element={<ProtectedRoute><Layout routePath="/services"><Services /></Layout></ProtectedRoute>} />
           <Route path="/services/new" element={<ProtectedRoute><Layout routePath="/services/new"><NewServiceEngagement /></Layout></ProtectedRoute>} />
           <Route path="/documents" element={<ProtectedRoute><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
