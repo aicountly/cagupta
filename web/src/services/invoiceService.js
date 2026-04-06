@@ -109,3 +109,50 @@ export async function updateInvoice(id, payload) {
   const data = await parseResponse(res);
   return normalizeInvoice(data.data);
 }
+
+/**
+ * Record a payment against an invoice.
+ * @param {number|string} invoiceId
+ * @param {object} paymentData  { amount, paymentDate, method, reference, billingProfileCode }
+ * @returns {Promise<object>} Updated invoice after recording the payment.
+ */
+export async function recordPayment(invoiceId, paymentData) {
+  const body = {
+    amount:               parseFloat(paymentData.amount || 0),
+    paymentDate:          paymentData.paymentDate  || new Date().toISOString().slice(0, 10),
+    method:               paymentData.method       || null,
+    reference:            paymentData.reference    || null,
+    billingProfileCode:   paymentData.billingProfileCode || null,
+    notes:                paymentData.notes        || null,
+  };
+
+  const res = await fetch(`${API_BASE}/admin/invoices/${invoiceId}/payment`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify(body),
+  });
+  const data = await parseResponse(res);
+  return normalizeInvoice(data.data);
+}
+
+/**
+ * Fetch ledger entries (invoices + payments) for a given client.
+ * @param {number|string} clientId
+ * @returns {Promise<object[]>}
+ */
+export async function getLedger(clientId) {
+  const params = new URLSearchParams({ client_id: clientId });
+  const res = await fetch(`${API_BASE}/admin/invoices/ledger?${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return (data.data || []).map(e => ({
+    date:               e.date               || '',
+    narration:          e.narration          || '',
+    debit:              parseFloat(e.debit   || 0),
+    credit:             parseFloat(e.credit  || 0),
+    balance:            parseFloat(e.balance || 0),
+    billingProfileCode: e.billing_profile_code || '',
+    entryType:          e.entry_type         || '',
+  }));
+}

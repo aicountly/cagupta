@@ -137,4 +137,60 @@ class InvoiceController extends BaseController
         $this->invoices->delete($id);
         $this->success(null, 'Invoice deleted');
     }
+
+    // ── GET /api/admin/invoices/ledger ────────────────────────────────────────
+
+    /**
+     * Return ledger entries for a client.
+     *
+     * Query params: client_id (required)
+     */
+    public function ledger(): never
+    {
+        $clientId = (int)$this->query('client_id', 0);
+
+        if ($clientId <= 0) {
+            $this->success([], 'Ledger entries retrieved');
+        }
+
+        $entries = $this->invoices->getLedgerByClient($clientId);
+        $this->success($entries, 'Ledger entries retrieved');
+    }
+
+    // ── POST /api/admin/invoices/:id/payment ─────────────────────────────────
+
+    /**
+     * Record a payment against an invoice.
+     *
+     * Body: { amount, paymentDate?, method?, reference?, billingProfileCode? }
+     */
+    public function recordPayment(int $id): never
+    {
+        $invoice = $this->invoices->find($id);
+        if ($invoice === null) {
+            $this->error('Invoice not found.', 404);
+        }
+
+        $body   = $this->getJsonBody();
+        $amount = (float)($body['amount'] ?? 0);
+
+        if ($amount <= 0) {
+            $this->error('Payment amount must be greater than zero.', 422);
+        }
+
+        $actingUser = $this->authUser();
+
+        $this->invoices->addPayment($id, [
+            'amount'               => $amount,
+            'payment_date'         => $body['paymentDate']         ?? $body['payment_date'] ?? date('Y-m-d'),
+            'payment_method'       => $body['method']              ?? $body['payment_method'] ?? null,
+            'reference_number'     => $body['reference']           ?? $body['reference_number'] ?? null,
+            'billing_profile_code' => $body['billingProfileCode']  ?? $body['billing_profile_code'] ?? null,
+            'notes'                => $body['notes']               ?? null,
+            'created_by'           => $actingUser ? (int)$actingUser['id'] : null,
+        ]);
+
+        $updated = $this->invoices->find($id);
+        $this->success($updated, 'Payment recorded');
+    }
 }

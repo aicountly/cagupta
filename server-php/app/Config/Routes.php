@@ -218,6 +218,12 @@ class Routes
                 'handler'    => 'Admin\ServiceController@destroy',
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/services/:id/tasks',
+                'handler'    => 'Admin\ServiceController@addTask',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
 
             // ── Admin — Invoices ──────────────────────────────────────────────
             [
@@ -248,6 +254,18 @@ class Routes
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/invoices/:id',
                 'handler'    => 'Admin\InvoiceController@destroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/invoices/ledger',
+                'handler'    => 'Admin\InvoiceController@ledger',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/invoices/:id/payment',
+                'handler'    => 'Admin\InvoiceController@recordPayment',
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
 
@@ -344,6 +362,14 @@ class Routes
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/leads/:id',
                 'handler'    => 'Admin\LeadController@destroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+
+            // ── Admin — Dashboard ─────────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/dashboard/stats',
+                'handler'    => 'Admin\DashboardController@stats',
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
 

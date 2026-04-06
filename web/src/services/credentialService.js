@@ -92,3 +92,27 @@ export async function deleteCredential(id) {
   });
   await parseResponse(res);
 }
+
+/**
+ * Update an existing credential.
+ * @param {number|string} id
+ * @param {object} payload
+ * @returns {Promise<object>}
+ */
+export async function updateCredential(id, payload) {
+  const body = {
+    portal_name:        payload.portalName  || undefined,
+    url:                payload.portalUrl   || undefined,
+    username:           payload.username    || undefined,
+    password_encrypted: payload.password    || undefined,
+    notes:              payload.notes       || undefined,
+  };
+
+  const res = await fetch(`${API_BASE}/admin/credentials/${id}`, {
+    method:  'PUT',
+    headers: authHeaders(),
+    body:    JSON.stringify(body),
+  });
+  const data = await parseResponse(res);
+  return normalizeCredential(data.data);
+}

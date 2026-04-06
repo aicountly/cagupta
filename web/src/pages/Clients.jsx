@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { mockClients } from '../data/mockData';
+import { getContacts } from '../services/contactService';
 import StatusBadge from '../components/common/StatusBadge';
 
 const entityLabels = { individual:'Individual', pvt_ltd:'Pvt Ltd', llp:'LLP', partnership:'Partnership', trust:'Trust', huf:'HUF' };
@@ -10,9 +10,19 @@ export default function Clients() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
 
-  const filtered = mockClients.filter(c => {
-    const matchSearch = c.displayName.toLowerCase().includes(search.toLowerCase()) || c.pan?.includes(search.toUpperCase()) || c.clientCode.includes(search);
+  useEffect(() => {
+    setLoading(true);
+    getContacts()
+      .then(data => setClients(data))
+      .catch(() => setClients([]))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const filtered = clients.filter(c => {
+    const matchSearch = c.displayName.toLowerCase().includes(search.toLowerCase()) || (c.pan || '').includes(search.toUpperCase()) || (c.clientCode || '').includes(search);
     const matchFilter = filter === 'all' || c.status === filter;
     return matchSearch && matchFilter;
   });
@@ -38,15 +48,19 @@ export default function Clients() {
             <tr>{['Code','Name','Type','PAN','GSTIN','Manager','City','Status','Actions'].map(h => <th key={h} style={thStyle}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {filtered.map(c => (
+            {loading ? (
+              <tr><td colSpan={9} style={{ padding:24, textAlign:'center', color:'#94a3b8' }}>Loading clients…</td></tr>
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={9} style={{ padding:24, textAlign:'center', color:'#94a3b8' }}>No clients found.</td></tr>
+            ) : filtered.map(c => (
               <tr key={c.id} style={trStyle}>
                 <td style={tdStyle}><code style={{ fontSize:11, background:'#f1f5f9', padding:'2px 6px', borderRadius:4 }}>{c.clientCode}</code></td>
                 <td style={{ ...tdStyle, fontWeight:600, color:'#F37920', cursor:'pointer' }}>{c.displayName}</td>
-                <td style={tdStyle}>{entityLabels[c.entityType] || c.entityType}</td>
+                <td style={tdStyle}>{entityLabels[c.entityType || c.type] || c.entityType || c.type || '—'}</td>
                 <td style={{ ...tdStyle, fontFamily:'monospace', fontSize:12 }}>{c.pan || '—'}</td>
                 <td style={{ ...tdStyle, fontFamily:'monospace', fontSize:11 }}>{c.gstin || '—'}</td>
-                <td style={tdStyle}>{c.assignedManager}</td>
-                <td style={tdStyle}>{c.city}</td>
+                <td style={tdStyle}>{c.assignedManager || '—'}</td>
+                <td style={tdStyle}>{c.city || '—'}</td>
                 <td style={tdStyle}><StatusBadge status={c.status} /></td>
                 <td style={tdStyle}>
                   <button style={iconBtn} title="View" onClick={e => { e.stopPropagation(); setSelected(c); }}>👁️</button>
@@ -57,7 +71,7 @@ export default function Clients() {
           </tbody>
         </table>
         <div style={{ padding:'12px 16px', fontSize:12, color:'#64748b', borderTop:'1px solid #f1f5f9' }}>
-          Showing {filtered.length} of {mockClients.length} clients
+          Showing {filtered.length} of {clients.length} clients
         </div>
       </div>
 
@@ -70,15 +84,15 @@ export default function Clients() {
           </div>
           {[
             ['Client Code', selected.clientCode],
-            ['Entity Type', entityLabels[selected.entityType] || selected.entityType],
+            ['Entity Type', entityLabels[selected.entityType || selected.type] || selected.entityType || selected.type || '—'],
             ['PAN', selected.pan || '—'],
             ['GSTIN', selected.gstin || '—'],
-            ['Email', selected.primaryEmail],
-            ['Phone', selected.primaryPhone],
-            ['City', selected.city],
-            ['Assigned Manager', selected.assignedManager],
+            ['Email', selected.email || '—'],
+            ['Phone', selected.mobile || '—'],
+            ['City', selected.city || '—'],
+            ['Assigned Manager', selected.assignedManager || '—'],
             ['Status', <StatusBadge key="s" status={selected.status} />],
-            ['Onboarded', selected.onboardingDate],
+            ['Created', selected.createdAt || '—'],
           ].map(([k, v]) => (
             <div key={k} style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid #f1f5f9', fontSize:13 }}>
               <span style={{ color:'#64748b', fontWeight:600 }}>{k}</span>
@@ -107,3 +121,4 @@ const btnPrimary = { padding:'8px 16px', background:'#F37920', color:'#fff', bor
 const btnOutline = { padding:'8px 12px', background:'#fff', color:'#F37920', border:'1px solid #F37920', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
 const iconBtn = { background:'none', border:'none', cursor:'pointer', fontSize:15, padding:'2px 4px' };
 const panel = { position:'fixed', right:0, top:56, width:360, height:'calc(100vh - 56px)', background:'#fff', boxShadow:'-4px 0 20px rgba(0,0,0,.12)', padding:24, overflowY:'auto', zIndex:100 };
+

@@ -1,6 +1,73 @@
 import { useState, useEffect } from 'react';
-import { getCredentials, createCredential, deleteCredential } from '../services/credentialService';
+import { getCredentials, createCredential, updateCredential, deleteCredential } from '../services/credentialService';
 import { getContacts } from '../services/contactService';
+
+function CredentialModal({ onClose, onSave, clients, initial }) {
+  const isEdit = !!initial;
+  const [form, setForm] = useState({
+    clientId:   initial?.clientId   || (clients[0]?.id || ''),
+    portalName: initial?.portalName || '',
+    portalUrl:  initial?.portalUrl  || '',
+    username:   initial?.username   || '',
+    password:   '',
+    notes:      initial?.notes      || '',
+  });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleSave = () => {
+    if (!form.portalName.trim()) return;
+    const payload = { ...form };
+    if (isEdit && !payload.password) delete payload.password;
+    onSave(payload);
+    onClose();
+  };
+
+  return (
+    <div style={overlayStyle}>
+      <div style={modalStyle}>
+        <div style={modalHeaderStyle}>
+          <span style={{ fontSize:15, fontWeight:700 }}>{isEdit ? '✏️ Edit Credential' : '➕ Add Credential'}</span>
+          <button onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+          <label style={labelStyle}>
+            Client
+            <select style={inputStyle} value={form.clientId} onChange={e=>set('clientId',e.target.value)}>
+              <option value="">— Select Client —</option>
+              {clients.map(c=><option key={c.id} value={c.id}>{c.displayName}</option>)}
+            </select>
+          </label>
+          <label style={labelStyle}>
+            Portal Name *
+            <input type="text" style={inputStyle} placeholder="e.g. Income Tax e-Filing" value={form.portalName} onChange={e=>set('portalName',e.target.value)} />
+          </label>
+          <label style={labelStyle}>
+            Portal URL
+            <input type="url" style={inputStyle} placeholder="https://..." value={form.portalUrl} onChange={e=>set('portalUrl',e.target.value)} />
+          </label>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+            <label style={labelStyle}>
+              Username
+              <input type="text" style={inputStyle} placeholder="Username / PAN / Email" value={form.username} onChange={e=>set('username',e.target.value)} />
+            </label>
+            <label style={labelStyle}>
+              Password {isEdit && <span style={{ fontWeight:400, color:'#94a3b8' }}>(leave blank to keep)</span>}
+              <input type="password" style={inputStyle} placeholder="Password" value={form.password} onChange={e=>set('password',e.target.value)} />
+            </label>
+          </div>
+          <label style={labelStyle}>
+            Notes
+            <input type="text" style={inputStyle} placeholder="Optional notes" value={form.notes} onChange={e=>set('notes',e.target.value)} />
+          </label>
+        </div>
+        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }}>
+          <button onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button onClick={handleSave} style={btnPrimary}>{isEdit ? 'Save Changes' : 'Add Credential'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function Credentials() {
   const [clientFilter, setClientFilter] = useState('all');
@@ -8,6 +75,8 @@ export default function Credentials() {
   const [credentials, setCredentials] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [editCredential, setEditCredential] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -22,6 +91,19 @@ export default function Credentials() {
 
   const filtered = credentials.filter(c => clientFilter==='all' || String(c.clientId)===String(clientFilter));
 
+  function handleAdd(payload) {
+    createCredential(payload)
+      .then(newCred => setCredentials(prev => [newCred, ...prev]))
+      .catch(() => {});
+  }
+
+  function handleEdit(payload) {
+    if (!editCredential) return;
+    updateCredential(editCredential.id, payload)
+      .then(updated => setCredentials(prev => prev.map(c => c.id === updated.id ? updated : c)))
+      .catch(() => {});
+  }
+
   function handleDelete(id) {
     if (window.confirm('Delete this credential?')) {
       deleteCredential(id)
@@ -32,6 +114,22 @@ export default function Credentials() {
 
   return (
     <div style={{ padding:24 }}>
+      {showAddModal && (
+        <CredentialModal
+          clients={clients}
+          onClose={() => setShowAddModal(false)}
+          onSave={handleAdd}
+        />
+      )}
+      {editCredential && (
+        <CredentialModal
+          clients={clients}
+          initial={editCredential}
+          onClose={() => setEditCredential(null)}
+          onSave={handleEdit}
+        />
+      )}
+
       <div style={{ background:'#fef3c7', border:'1px solid #fde68a', borderRadius:8, padding:'12px 16px', marginBottom:20, fontSize:13, color:'#78350f' }}>
         🔒 <strong>Credentials Vault</strong> — All passwords are stored AES-256 encrypted. Access is logged. Handle with care.
       </div>
@@ -41,7 +139,7 @@ export default function Credentials() {
           <option value="all">All Clients</option>
           {clients.map(c=><option key={c.id} value={c.id}>{c.displayName}</option>)}
         </select>
-        <button style={btnPrimary}>➕ Add Credential</button>
+        <button style={btnPrimary} onClick={() => setShowAddModal(true)}>➕ Add Credential</button>
       </div>
 
       <div style={cardStyle}>
@@ -68,7 +166,7 @@ export default function Credentials() {
                 </td>
                 <td style={tdStyle}>{cr.lastChangedAt}</td>
                 <td style={tdStyle}>
-                  <button style={iconBtn} title="Edit">✏️</button>
+                  <button style={iconBtn} title="Edit" onClick={() => setEditCredential(cr)}>✏️</button>
                   <button style={iconBtn} title="Copy Username" onClick={() => navigator.clipboard?.writeText(cr.username || '')}>📋</button>
                   <button style={iconBtn} title="Delete" onClick={() => handleDelete(cr.id)}>🗑️</button>
                 </td>
@@ -88,4 +186,12 @@ const tdStyle = { padding:'10px 12px', color:'#334155', verticalAlign:'middle', 
 const trStyle = { borderBottom:'1px solid #f8fafc' };
 const selectStyle = { padding:'8px 12px', border:'1px solid #e2e8f0', borderRadius:8, fontSize:13, background:'#fff' };
 const btnPrimary = { padding:'8px 16px', background:'#2563eb', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
+const btnSecondary = { padding:'8px 16px', background:'#f8fafc', color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
 const iconBtn = { background:'none', border:'none', cursor:'pointer', fontSize:15, padding:'2px 4px' };
+const overlayStyle = { position:'fixed', inset:0, background:'rgba(15,23,42,0.35)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' };
+const modalStyle = { background:'#fff', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', minWidth:480, maxWidth:560, width:'100%' };
+const modalHeaderStyle = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom:'1px solid #f1f5f9' };
+const closeBtnStyle = { background:'none', border:'none', cursor:'pointer', fontSize:16, color:'#64748b', padding:'2px 6px', borderRadius:4 };
+const labelStyle = { display:'flex', flexDirection:'column', gap:4, fontSize:12, fontWeight:600, color:'#475569' };
+const inputStyle = { padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, color:'#334155', outline:'none' };
+

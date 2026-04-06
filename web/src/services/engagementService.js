@@ -128,3 +128,26 @@ export async function updateEngagement(id, payload) {
   const data = await parseResponse(res);
   return normalizeEngagement(data.data);
 }
+
+/**
+ * Add a task to an existing service engagement.
+ * @param {number|string} engagementId
+ * @param {object} taskData  { title, assignedTo?, dueDate?, priority? }
+ * @returns {Promise<object>} Updated engagement after adding the task.
+ */
+export async function createTask(engagementId, taskData) {
+  const body = {
+    title:      taskData.title      || '',
+    assignedTo: taskData.assignedTo || null,
+    dueDate:    taskData.dueDate    || null,
+    priority:   taskData.priority   || 'medium',
+  };
+
+  const res = await fetch(`${API_BASE}/admin/services/${engagementId}/tasks`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify(body),
+  });
+  const data = await parseResponse(res);
+  return normalizeEngagement(data.data);
+}

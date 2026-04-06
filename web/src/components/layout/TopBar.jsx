@@ -5,7 +5,9 @@ import { useAuth } from '../../auth/AuthContext';
 import { getInitials } from '../../utils/getInitials';
 import { useNotification } from '../../context/NotificationContext';
 import { ROLE_LABELS } from '../../constants/roles';
-import { mockContacts, mockOrganizations, mockServices, mockLeads } from '../../data/mockData';
+import { getContacts } from '../../services/contactService';
+import { getEngagements } from '../../services/engagementService';
+import { getLeads } from '../../services/leadService';
 
 const breadcrumbMap = {
   '/':                       ['Home'],
@@ -50,41 +52,35 @@ export default function TopBar({ title }) {
     navigate('/login', { replace: true });
   }
 
-  function performSearch(query) {
-    const q = query.toLowerCase();
-    const results = [];
-
-    mockContacts.forEach(c => {
-      if (c.displayName.toLowerCase().includes(q)) {
-        results.push({ label: c.displayName, sublabel: c.city || 'Contact', route: '/clients/contacts', type: 'contact' });
-      }
-    });
-    mockOrganizations.forEach(o => {
-      if (o.displayName.toLowerCase().includes(q)) {
-        results.push({ label: o.displayName, sublabel: o.constitution || 'Organization', route: '/clients/organizations', type: 'org' });
-      }
-    });
-    mockServices.forEach(s => {
-      if (s.clientName.toLowerCase().includes(q) || s.type.toLowerCase().includes(q)) {
-        results.push({ label: s.clientName, sublabel: s.type, route: '/services', type: 'service' });
-      }
-    });
-    mockLeads.forEach(l => {
-      if (l.contactName.toLowerCase().includes(q) || (l.company || '').toLowerCase().includes(q)) {
-        results.push({ label: l.contactName, sublabel: l.company || 'Lead', route: '/leads', type: 'lead' });
-      }
-    });
-
-    return results.slice(0, 8);
-  }
-
   function handleSearchChange(e) {
     const val = e.target.value;
     setSearch(val);
     if (val.length >= 2) {
-      const results = performSearch(val);
-      setSearchResults(results);
-      setShowSearchResults(true);
+      const q = val.toLowerCase();
+      Promise.all([
+        getContacts({ search: val, perPage: 20 }).catch(() => []),
+        getEngagements({ search: val, perPage: 20 }).catch(() => []),
+        getLeads({ search: val, perPage: 20 }).catch(() => []),
+      ]).then(([contacts, services, leads]) => {
+        const results = [];
+        contacts.forEach(c => {
+          if (c.displayName.toLowerCase().includes(q)) {
+            results.push({ label: c.displayName, sublabel: c.city || 'Contact', route: '/clients/contacts', type: 'contact' });
+          }
+        });
+        services.forEach(s => {
+          if ((s.clientName || '').toLowerCase().includes(q) || (s.type || '').toLowerCase().includes(q)) {
+            results.push({ label: s.clientName, sublabel: s.type, route: '/services', type: 'service' });
+          }
+        });
+        leads.forEach(l => {
+          if ((l.contactName || l.name || '').toLowerCase().includes(q) || (l.company || '').toLowerCase().includes(q)) {
+            results.push({ label: l.contactName || l.name, sublabel: l.company || 'Lead', route: '/leads', type: 'lead' });
+          }
+        });
+        setSearchResults(results.slice(0, 8));
+        setShowSearchResults(true);
+      });
     } else {
       setSearchResults([]);
       setShowSearchResults(false);

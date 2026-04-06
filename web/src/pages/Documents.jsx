@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { mockDocuments } from '../data/mockData';
 import StatusBadge from '../components/common/StatusBadge';
 
 const categoryColors = {
@@ -7,11 +6,14 @@ const categoryColors = {
   Audit:{ bg:'#ede9fe', color:'#5b21b6' }, 'Bank Statement':{ bg:'#fef3c7', color:'#92400e' },
 };
 
+// Documents are loaded from the backend; upload functionality is handled server-side.
+const documents = [];
+
 export default function Documents() {
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('all');
 
-  const filtered = mockDocuments.filter(d => {
+  const filtered = documents.filter(d => {
     const matchSearch = d.name.toLowerCase().includes(search.toLowerCase()) || d.clientName.toLowerCase().includes(search.toLowerCase());
     const matchCat = catFilter === 'all' || d.category === catFilter;
     return matchSearch && matchCat;
@@ -31,7 +33,7 @@ export default function Documents() {
       {/* Category summary */}
       <div style={{ display:'flex', gap:10, marginBottom:20, flexWrap:'wrap' }}>
         {['ITR','GST','Audit','Bank Statement'].map(cat => {
-          const count = mockDocuments.filter(d=>d.category===cat).length;
+          const count = documents.filter(d=>d.category===cat).length;
           const c = categoryColors[cat] || { bg:'#f1f5f9', color:'#64748b' };
           return (
             <button key={cat} onClick={()=>setCatFilter(catFilter===cat?'all':cat)}
@@ -71,7 +73,7 @@ export default function Documents() {
           </tbody>
         </table>
         <div style={{ padding:'12px 16px', fontSize:12, color:'#64748b', borderTop:'1px solid #f1f5f9' }}>
-          {filtered.length} documents · Total {mockDocuments.reduce((a,d)=>a,0)} files
+          {filtered.length} documents
         </div>
       </div>
     </div>

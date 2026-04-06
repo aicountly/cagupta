@@ -153,4 +153,51 @@ class ServiceController extends BaseController
         $this->services->delete($id);
         $this->success(null, 'Service deleted');
     }
+
+    // ── POST /api/admin/services/:id/tasks ───────────────────────────────────
+
+    /**
+     * Add a task to an existing service engagement.
+     *
+     * Body: { title, assignedTo?, dueDate?, priority? }
+     */
+    public function addTask(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $body  = $this->getJsonBody();
+        $title = trim((string)($body['title'] ?? ''));
+
+        if ($title === '') {
+            $this->error('title is required.', 422);
+        }
+
+        // Decode existing tasks
+        $tasks = [];
+        if (!empty($service['tasks'])) {
+            $decoded = json_decode((string)$service['tasks'], true);
+            if (is_array($decoded)) {
+                $tasks = $decoded;
+            }
+        }
+
+        // Build new task
+        $newTask = [
+            'id'         => uniqid('task_', true),
+            'title'      => $title,
+            'assignedTo' => $body['assignedTo'] ?? $body['assigned_to'] ?? null,
+            'dueDate'    => $body['dueDate']    ?? $body['due_date']    ?? null,
+            'priority'   => $body['priority']   ?? 'medium',
+            'status'     => 'pending',
+        ];
+
+        $tasks[] = $newTask;
+
+        $this->services->update($id, ['tasks' => $tasks]);
+        $updated = $this->services->find($id);
+        $this->success($updated, 'Task added');
+    }
 }
