@@ -69,7 +69,9 @@ export default function Contacts() {
                 <td style={tdStyle}>
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{c.clientCode}</code>
                 </td>
-                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920' }}>{c.displayName}</td>
+                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920' }}>
+                  {c.displayName}{c.reference && <sup style={{ fontSize: 10, color: '#64748b', marginLeft: 2 }}>{c.reference}</sup>}
+                </td>
                 <td style={tdStyle}>{c.mobile}</td>
                 <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{c.pan || '—'}</td>
                 <td style={tdStyle}>
@@ -103,6 +105,7 @@ export default function Contacts() {
           </div>
           {[
             ['Contact Code', selected.clientCode],
+            ['Reference', selected.reference || '—'],
             ['Mobile', selected.mobile],
             ['Email', selected.email || '—'],
             ['PAN', selected.pan || '—'],

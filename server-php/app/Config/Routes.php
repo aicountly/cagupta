@@ -475,6 +475,94 @@ class Routes
                 'middleware' => ['auth', 'permission:invoices.edit'],
             ],
 
+            // ── Admin — Unified Transactions (TXN) ───────────────────────────
+            // NOTE: Specific sub-routes must come BEFORE the generic :id routes
+            // so the router matches them first.
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/ledger',
+                'handler'    => 'Admin\TxnController@ledger',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/tds',
+                'handler'    => 'Admin\TxnController@tdsIndex',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/receipt',
+                'handler'    => 'Admin\TxnController@storeReceipt',
+                'middleware' => ['auth', 'permission:invoices.create'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/tds',
+                'handler'    => 'Admin\TxnController@storeTds',
+                'middleware' => ['auth', 'permission:invoices.create'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/txn/tds/:id/finalize',
+                'handler'    => 'Admin\TxnController@finalizeTds',
+                'middleware' => ['auth', 'permission:invoices.edit'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/rebate',
+                'handler'    => 'Admin\TxnController@storeRebate',
+                'middleware' => ['auth', 'permission:invoices.create'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/credit-note',
+                'handler'    => 'Admin\TxnController@storeCreditNote',
+                'middleware' => ['auth', 'permission:invoices.create'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/opening-balance',
+                'handler'    => 'Admin\TxnController@openingBalance',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/opening-balance',
+                'handler'    => 'Admin\TxnController@storeOpeningBalance',
+                'middleware' => ['auth', 'permission:invoices.create'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/txn',
+                'handler'    => 'Admin\TxnController@index',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn',
+                'handler'    => 'Admin\TxnController@store',
+                'middleware' => ['auth', 'permission:invoices.create'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/:id',
+                'handler'    => 'Admin\TxnController@show',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/txn/:id',
+                'handler'    => 'Admin\TxnController@update',
+                'middleware' => ['auth', 'permission:invoices.edit'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/txn/:id',
+                'handler'    => 'Admin\TxnController@destroy',
+                'middleware' => ['auth', 'permission:invoices.edit'],
+            ],
+
             // ── Admin — Client Groups ─────────────────────────────────────────
             [
                 'method'     => 'GET',

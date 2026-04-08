@@ -90,6 +90,7 @@ function emptyForm(defaultManager = '') {
     linkedOrgIds: [],
     notes: '',
     groupId: '',
+    reference: '',
   };
 }
 
@@ -151,6 +152,7 @@ export default function ContactCreatePage() {
             linkedOrgIds:    existing.linkedOrgIds    || [],
             notes:           existing.notes           || '',
             groupId:         existing.groupId || existing.group_id || '',
+            reference:       existing.reference || '',
           });
         }
       })
@@ -250,6 +252,7 @@ export default function ContactCreatePage() {
       linkedOrgIds:    form.linkedOrgIds,
       notes:           form.notes.trim()           || undefined,
       groupId:         form.groupId || null,
+      reference:       form.reference.trim()        || undefined,
     };
     return contact;
   }, [form, isEdit]);
@@ -348,6 +351,16 @@ export default function ContactCreatePage() {
                 <option key={g.id} value={g.id}>{g.name}</option>
               ))}
             </select>
+          </FormField>
+
+          {/* Reference */}
+          <FormField label="Reference">
+            <input
+              value={form.reference || ''}
+              onChange={e => update('reference', e.target.value)}
+              placeholder="e.g. REF-001, Client Code, Internal ID…"
+              style={inputStyle}
+            />
           </FormField>
 
           {/* Full Name */}
