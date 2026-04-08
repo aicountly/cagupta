@@ -215,7 +215,22 @@ CREATE TABLE IF NOT EXISTS credentials_vault (
 );
 
 -- -----------------------------------------------------------------------------
--- 12. registers
+-- 12. portal_types
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS portal_types (
+    id              SERIAL PRIMARY KEY,
+    organization_id INTEGER      REFERENCES organizations(id),
+    name            VARCHAR(150) NOT NULL,
+    url             TEXT,
+    created_by      INTEGER      REFERENCES users(id),
+    created_at      TIMESTAMPTZ  DEFAULT NOW(),
+    UNIQUE (organization_id, name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_portal_types_org ON portal_types(organization_id);
+
+-- -----------------------------------------------------------------------------
+-- 13. registers
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS registers (
     id               SERIAL PRIMARY KEY,
@@ -234,7 +249,7 @@ CREATE TABLE IF NOT EXISTS registers (
 );
 
 -- -----------------------------------------------------------------------------
--- 13. leads
+-- 14. leads
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS leads (
     id               SERIAL PRIMARY KEY,

@@ -339,6 +339,26 @@ class Routes
                 'middleware' => ['auth', 'permission:credentials.view'],
             ],
 
+            // ── Admin — Portal Types ──────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/portal-types',
+                'handler'    => 'Admin\PortalTypeController@index',
+                'middleware' => ['auth', 'permission:credentials.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/portal-types',
+                'handler'    => 'Admin\PortalTypeController@store',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/portal-types/:id',
+                'handler'    => 'Admin\PortalTypeController@destroy',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+
             // ── Admin — Leads ─────────────────────────────────────────────────
             [
                 'method'     => 'GET',
