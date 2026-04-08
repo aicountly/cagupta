@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getCredentials, createCredential, updateCredential, deleteCredential } from '../services/credentialService';
+import { fetchPortalTypes } from '../services/portalTypeService';
 import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
 
 function CredentialModal({ onClose, onSave, initial }) {
@@ -13,7 +14,17 @@ function CredentialModal({ onClose, onSave, initial }) {
     password:   '',
     notes:      initial?.notes      || '',
   });
+  const [portalTypes, setPortalTypes] = useState([]);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    fetchPortalTypes().then(setPortalTypes).catch(() => {});
+  }, []);
+
+  function handlePortalSelect(name) {
+    const portal = portalTypes.find(p => p.name === name);
+    setForm(f => ({ ...f, portalName: name, portalUrl: portal?.url || f.portalUrl }));
+  }
 
   const handleSave = () => {
     if (!form.portalName.trim()) return;
@@ -43,11 +54,26 @@ function CredentialModal({ onClose, onSave, initial }) {
           </label>
           <label style={labelStyle}>
             Portal Name *
-            <input type="text" style={inputStyle} placeholder="e.g. Income Tax e-Filing" value={form.portalName} onChange={e=>set('portalName',e.target.value)} />
+            <select
+              style={inputStyle}
+              value={form.portalName}
+              onChange={e => handlePortalSelect(e.target.value)}
+            >
+              <option value="">— Select Portal —</option>
+              {portalTypes.map(p => (
+                <option key={p.id} value={p.name}>{p.name}</option>
+              ))}
+            </select>
           </label>
           <label style={labelStyle}>
-            Portal URL
-            <input type="url" style={inputStyle} placeholder="https://..." value={form.portalUrl} onChange={e=>set('portalUrl',e.target.value)} />
+            Portal URL <span style={{ fontWeight:400, color:'#94a3b8', fontSize:11 }}>(auto-filled · editable)</span>
+            <input
+              type="url"
+              style={inputStyle}
+              placeholder="https://..."
+              value={form.portalUrl}
+              onChange={e => set('portalUrl', e.target.value)}
+            />
           </label>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>

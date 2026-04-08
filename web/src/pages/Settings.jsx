@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { getPortalTypes, savePortalTypes } from '../constants/portalTypes';
+import { getPortalTypes } from '../constants/portalTypes';
+import { fetchPortalTypes, createPortalType, deletePortalType } from '../services/portalTypeService';
 import { getRegisterTypes, saveRegisterTypes } from '../constants/registerTypes';
 import { BILLING_PROFILES } from '../constants/billingProfiles';
 import {
@@ -156,6 +157,8 @@ export default function Settings() {
   const [tab, setTab] = useState('firm');
   const [portalTypes, setPortalTypes] = useState(() => getPortalTypes());
   const [newPortal, setNewPortal] = useState('');
+  const [newPortalUrl, setNewPortalUrl] = useState('');
+  const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState('');
   const [registerTypes, setRegisterTypes] = useState(() => getRegisterTypes());
   const [newRegister, setNewRegister] = useState('');
@@ -179,6 +182,16 @@ export default function Settings() {
   const [roles, setRoles]                   = useState([]);
   const [rolesLoading, setRolesLoading]     = useState(false);
   const [configureRole, setConfigureRole]   = useState(null);
+
+  useEffect(() => {
+    if (tab === 'other') {
+      setPortalLoading(true);
+      fetchPortalTypes()
+        .then(list => setPortalTypes(list))
+        .catch(() => {})
+        .finally(() => setPortalLoading(false));
+    }
+  }, [tab]);
 
   useEffect(() => {
     if (tab === 'roles') {
@@ -261,37 +274,29 @@ export default function Settings() {
       .catch(() => setSvcCatError('Failed to delete engagement type.'));
   }
 
-  function handleAddPortal() {
+  async function handleAddPortal() {
     const val = newPortal.trim();
     if (!val) { setPortalError('Portal name cannot be empty.'); return; }
-    if (portalTypes.includes(val)) { setPortalError('This portal already exists.'); return; }
-    const updated = [...portalTypes, val];
-    setPortalTypes(updated);
-    savePortalTypes(updated);
-    setNewPortal('');
-    setPortalError('');
+    if (portalTypes.some(p => p.name === val)) { setPortalError('This portal already exists.'); return; }
+    try {
+      const item = await createPortalType({ name: val, url: newPortalUrl.trim() });
+      setPortalTypes(prev => [...prev, item]);
+      setNewPortal('');
+      setNewPortalUrl('');
+      setPortalError('');
+    } catch (e) {
+      setPortalError(e.message || 'Failed to add portal type.');
+    }
   }
 
-  function handleDeletePortal(name) {
-    // Check API credentials for usage (skip mock check)
-    const usedInMock = false;
-    // Check localStorage credentials
-    let usedInStorage = false;
+  async function handleDeletePortal(portal) {
     try {
-      const stored = localStorage.getItem('credentials');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) usedInStorage = parsed.some(c => c.portalName === name);
-      }
-    } catch { /* ignore */ }
-    if (usedInMock || usedInStorage) {
-      setPortalError(`Cannot delete "${name}" — it is used by existing credentials. Remove those credentials first.`);
-      return;
+      await deletePortalType(portal.id);
+      setPortalTypes(prev => prev.filter(p => p.id !== portal.id));
+      setPortalError('');
+    } catch (e) {
+      setPortalError(e.message || `Cannot delete "${portal.name}".`);
     }
-    const updated = portalTypes.filter(p => p !== name);
-    setPortalTypes(updated);
-    savePortalTypes(updated);
-    setPortalError('');
   }
 
   function handleAddRegister() {
@@ -512,19 +517,32 @@ export default function Settings() {
           <div style={cardStyle}>
             <h3 style={sectionTitle}>🔑 Portal Types</h3>
             <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>These portal names appear as a dropdown when adding credentials in the Credentials Vault.</p>
-            {portalTypes.map(name => (
-              <div key={name} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
-                <span style={{ fontSize:13, color:'#334155' }}>{name}</span>
-                <button onClick={() => handleDeletePortal(name)} style={iconBtn} title="Delete">🗑️</button>
+            {portalLoading && <div style={{ fontSize:13, color:'#64748b' }}>Loading…</div>}
+            {portalTypes.map(pt => (
+              <div key={pt.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
+                <div>
+                  <span style={{ fontSize:13, color:'#334155', fontWeight:600 }}>{pt.name}</span>
+                  {pt.url && (
+                    <a href={pt.url} target="_blank" rel="noreferrer" style={{ display:'block', fontSize:11, color:'#2563eb', marginTop:2 }}>{pt.url}</a>
+                  )}
+                </div>
+                <button onClick={() => handleDeletePortal(pt)} style={iconBtn} title="Delete">🗑️</button>
               </div>
             ))}
-            <div style={{ display:'flex', gap:8, marginTop:12 }}>
+            <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
               <input
                 value={newPortal}
                 onChange={e => { setNewPortal(e.target.value); setPortalError(''); }}
                 onKeyDown={e => e.key === 'Enter' && handleAddPortal()}
-                placeholder="e.g. NSDL e-Gov Portal"
-                style={{ ...inputStyle, flex:1 }}
+                placeholder="Portal name e.g. NSDL e-Gov Portal"
+                style={{ ...inputStyle, flex:'2 1 180px' }}
+              />
+              <input
+                type="url"
+                value={newPortalUrl}
+                onChange={e => setNewPortalUrl(e.target.value)}
+                placeholder="Portal URL e.g. https://portal.gov.in"
+                style={{ ...inputStyle, flex:'3 1 220px' }}
               />
               <button onClick={handleAddPortal} style={btnPrimary}>➕ Add</button>
             </div>
