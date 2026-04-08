@@ -125,7 +125,9 @@ export async function getEngagementTypes(categoryId) {
 }
 
 /**
- * Create an engagement type under a category, optionally linked to a subcategory.
+ * Create an engagement type under a category.
+ * Pass `subcategoryId` in the payload to link it to a specific subcategory;
+ * omit it to create a category-level engagement type.
  * @param {number|string} categoryId
  * @param {{ name: string, subcategoryId?: number|string }} payload
  * @returns {Promise<object>}
@@ -136,9 +138,9 @@ export async function createEngagementType(categoryId, payload) {
     body.subcategory_id = payload.subcategoryId;
   }
   const res = await fetch(`${API_BASE}/admin/service-categories/${categoryId}/engagement-types`, {
-    method:  'POST',
+    method: 'POST',
     headers: authHeaders(),
-    body:    JSON.stringify(body),
+    body: JSON.stringify(body),
   });
   const data = await parseResponse(res);
   return data.data;

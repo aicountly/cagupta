@@ -613,7 +613,11 @@ export default function Settings() {
           {svcCatError && <div style={{ color:'#dc2626', background:'#fef2f2', padding:'8px 12px', borderRadius:6, fontSize:13, marginBottom:12 }}>{svcCatError}</div>}
           {svcCatLoading && <div style={{ color:'#64748b', fontSize:13 }}>Loading…</div>}
 
-          {serviceCategories.map(cat => (
+          {serviceCategories.map(cat => {
+            const subs = cat.subcategories || [];
+            const totalEngagementTypes = subs.reduce((sum, s) => sum + (s.engagementTypes||[]).length, 0)
+              + (cat.engagementTypes||[]).length;
+            return (
             <div key={cat.id} style={{ border:'1px solid #e2e8f0', borderRadius:8, marginBottom:12, overflow:'hidden' }}>
               {/* Category header */}
               <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 14px', background:'#f8fafc', cursor:'pointer' }}
@@ -622,7 +626,7 @@ export default function Settings() {
                   {expandedCat[cat.id] ? '▾' : '▸'} {cat.name}
                 </span>
                 <span style={{ fontSize:11, color:'#64748b' }}>
-                  {(cat.subcategories||[]).length} subcats · {(cat.subcategories||[]).reduce((sum, s) => sum + (s.engagementTypes||[]).length, 0) + (cat.engagementTypes||[]).length} types
+                  {subs.length} subcats · {totalEngagementTypes} types
                 </span>
                 <button onClick={e => { e.stopPropagation(); handleDeleteCategory(cat.id); }} style={{ ...iconBtn, color:'#dc2626' }} title="Delete category">🗑️</button>
               </div>
@@ -680,7 +684,8 @@ export default function Settings() {
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
 
           {!svcCatLoading && serviceCategories.length === 0 && (
             <div style={{ color:'#94a3b8', fontSize:13, textAlign:'center', padding:'24px 0' }}>
