@@ -92,6 +92,7 @@ function blankForm(defaultManager) {
     assignedManager: defaultManager || '',
     notes: '',
     group_id: '',
+    reference: '',
   };
 }
 
@@ -160,6 +161,7 @@ export default function OrganizationCreatePage() {
             assignedManager:    existing.assignedManager    || '',
             notes:              existing.notes              || '',
             group_id:           existing.group_id           || '',
+            reference:          existing.reference          || '',
           });
         }
       })
@@ -218,6 +220,7 @@ export default function OrganizationCreatePage() {
       assignedManager: f.assignedManager,
       notes:        f.notes              || null,
       group_id:     f.group_id || null,
+      reference:    f.reference          || null,
     };
   }
 
@@ -602,6 +605,16 @@ export default function OrganizationCreatePage() {
               <option value="">— No Group (None) —</option>
               {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <FieldLabel label="Reference" />
+            <input
+              value={form.reference || ''}
+              onChange={e => setField('reference', e.target.value)}
+              placeholder="e.g. REF-001, Internal ID…"
+              style={inputStyle}
+            />
           </div>
         </FormSection>
       </div>
