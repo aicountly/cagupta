@@ -54,7 +54,7 @@ export default function Contacts() {
         <table style={tableStyle}>
           <thead>
             <tr>
-              {['Code', 'Name', 'Mobile', 'PAN', 'Linked Orgs', 'Manager', 'City', 'Status', 'Actions'].map(h => (
+              {['Code', 'Name', 'Organisation', 'Mobile', 'PAN', 'Manager', 'City', 'Status', 'Actions'].map(h => (
                 <th key={h} style={thStyle}>{h}</th>
               ))}
             </tr>
@@ -70,17 +70,17 @@ export default function Contacts() {
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{c.clientCode}</code>
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920' }}>
-                  {c.displayName}{c.reference && <sup style={{ fontSize: 10, color: '#64748b', marginLeft: 2 }}>{c.reference}</sup>}
+                  {c.displayName}{c.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4 }}>({c.reference})</span>}
                 </td>
-                <td style={tdStyle}>{c.mobile}</td>
-                <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{c.pan || '—'}</td>
                 <td style={tdStyle}>
-                  {c.linkedOrgsCount > 0 ? (
-                    <span style={orgChipStyle}>{c.linkedOrgsCount} {c.linkedOrgsCount === 1 ? 'Org' : 'Orgs'}</span>
+                  {c.organisation ? (
+                    <span style={orgChipStyle}>{c.organisation}</span>
                   ) : (
                     <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>
                   )}
                 </td>
+                <td style={tdStyle}>{c.mobile}</td>
+                <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{c.pan || '—'}</td>
                 <td style={tdStyle}>{c.assignedManager}</td>
                 <td style={tdStyle}>{c.city}</td>
                 <td style={tdStyle}><StatusBadge status={c.status} /></td>
@@ -106,11 +106,11 @@ export default function Contacts() {
           {[
             ['Contact Code', selected.clientCode],
             ['Reference', selected.reference || '—'],
+            ['Organisation', selected.organisation || (selected.linkedOrgsCount > 0 ? `${selected.linkedOrgsCount} organization${selected.linkedOrgsCount > 1 ? 's' : ''}` : '—')],
             ['Mobile', selected.mobile],
             ['Email', selected.email || '—'],
             ['PAN', selected.pan || '—'],
             ['City', selected.city || '—'],
-            ['Linked Orgs', selected.linkedOrgsCount > 0 ? `${selected.linkedOrgsCount} organization${selected.linkedOrgsCount > 1 ? 's' : ''}` : '—'],
             ['Assigned Manager', selected.assignedManager],
             ['Status', <StatusBadge key="s" status={selected.status} />],
           ].map(([k, v]) => (

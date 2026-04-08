@@ -46,14 +46,33 @@ class EngagementTypeModel
     }
 
     /**
-     * Create an engagement type.
+     * Return all engagement types for a subcategory.
+     *
+     * @return array<int, array<string, mixed>>
      */
-    public function create(int $categoryId, string $name): int
+    public function forSubcategory(int $subcategoryId): array
     {
         $stmt = $this->db->prepare(
-            'INSERT INTO engagement_types (category_id, name) VALUES (:cid, :name) RETURNING id'
+            'SELECT * FROM engagement_types WHERE subcategory_id = :sid ORDER BY name ASC'
         );
-        $stmt->execute([':cid' => $categoryId, ':name' => $name]);
+        $stmt->execute([':sid' => $subcategoryId]);
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Create an engagement type.
+     *
+     * @param int         $categoryId
+     * @param string      $name
+     * @param int|null    $subcategoryId  Optional subcategory to assign this type to.
+     */
+    public function create(int $categoryId, string $name, ?int $subcategoryId = null): int
+    {
+        $stmt = $this->db->prepare(
+            'INSERT INTO engagement_types (category_id, subcategory_id, name)
+             VALUES (:cid, :sid, :name) RETURNING id'
+        );
+        $stmt->execute([':cid' => $categoryId, ':sid' => $subcategoryId, ':name' => $name]);
         return (int)$stmt->fetchColumn();
     }
 

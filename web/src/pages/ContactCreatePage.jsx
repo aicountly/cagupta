@@ -72,6 +72,12 @@ function validatePAN(val) {
   return !val || /^[A-Z]{5}\d{4}[A-Z]$/.test(val.toUpperCase());
 }
 
+/** Return true if every word in val starts with an uppercase letter. */
+function isTitleCase(val) {
+  if (!val.trim()) return true;
+  return val.trim().split(/\s+/).every(word => /^[A-Z]/.test(word));
+}
+
 // ── Empty form state ──────────────────────────────────────────────────────────
 function emptyForm(defaultManager = '') {
   return {
@@ -357,10 +363,21 @@ export default function ContactCreatePage() {
           <FormField label="Reference">
             <input
               value={form.reference || ''}
-              onChange={e => update('reference', e.target.value)}
-              placeholder="e.g. REF-001, Client Code, Internal ID…"
-              style={inputStyle}
+              onChange={e => {
+                const val = toTitleCase(e.target.value);
+                update('reference', val);
+                if (errors.reference) setErrors(prev => ({ ...prev, reference: '' }));
+              }}
+              onBlur={e => {
+                const val = (e.target.value || '').trim();
+                if (val && !isTitleCase(val)) {
+                  setErrors(prev => ({ ...prev, reference: 'Reference must be in Title Case (e.g. Western India).' }));
+                }
+              }}
+              placeholder="e.g. Western India, REF-001…"
+              style={{ ...inputStyle, borderColor: errors.reference ? '#dc2626' : '#E6E8F0' }}
             />
+            <FieldError msg={errors.reference} />
           </FormField>
 
           {/* Full Name */}

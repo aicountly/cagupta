@@ -125,13 +125,33 @@ export async function getEngagementTypes(categoryId) {
 }
 
 /**
- * Create an engagement type under a category.
+ * Create an engagement type under a category, optionally linked to a subcategory.
  * @param {number|string} categoryId
- * @param {{ name: string }} payload
+ * @param {{ name: string, subcategoryId?: number|string }} payload
  * @returns {Promise<object>}
  */
 export async function createEngagementType(categoryId, payload) {
+  const body = { name: payload.name };
+  if (payload.subcategoryId) {
+    body.subcategory_id = payload.subcategoryId;
+  }
   const res = await fetch(`${API_BASE}/admin/service-categories/${categoryId}/engagement-types`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify(body),
+  });
+  const data = await parseResponse(res);
+  return data.data;
+}
+
+/**
+ * Create an engagement type directly under a subcategory.
+ * @param {number|string} subcategoryId
+ * @param {{ name: string }} payload
+ * @returns {Promise<object>}
+ */
+export async function createEngagementTypeForSubcategory(subcategoryId, payload) {
+  const res = await fetch(`${API_BASE}/admin/service-subcategories/${subcategoryId}/engagement-types`, {
     method:  'POST',
     headers: authHeaders(),
     body:    JSON.stringify({ name: payload.name }),

@@ -119,6 +119,11 @@ class ContactController extends BaseController
             'created_by'        => $actingUser ? (int)$actingUser['id'] : null,
         ]);
 
+        // Sync linked organizations if provided
+        if (isset($body['linked_org_ids']) && is_array($body['linked_org_ids'])) {
+            $this->clients->syncLinkedOrgs($newId, $body['linked_org_ids']);
+        }
+
         $contact = $this->clients->find($newId);
 
         // ── Superadmin alert (best-effort) ────────────────────────────────────
@@ -177,6 +182,12 @@ class ContactController extends BaseController
         }
 
         $this->clients->update($id, $data);
+
+        // Sync linked organizations if provided
+        if (isset($body['linked_org_ids']) && is_array($body['linked_org_ids'])) {
+            $this->clients->syncLinkedOrgs($id, $body['linked_org_ids']);
+        }
+
         $updated    = $this->clients->find($id);
         $actingUser = $this->authUser();
 

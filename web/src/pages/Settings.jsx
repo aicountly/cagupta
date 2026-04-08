@@ -7,7 +7,7 @@ import {
   getCategories,
   createCategory, deleteCategory,
   createSubcategory, deleteSubcategory,
-  createEngagementType, deleteEngagementType,
+  createEngagementTypeForSubcategory, deleteEngagementType,
 } from '../services/serviceCategoryService';
 import { API_BASE_URL } from '../constants/config';
 
@@ -176,6 +176,7 @@ export default function Settings() {
   const [newCatName, setNewCatName] = useState('');
   const [expandedCat, setExpandedCat] = useState({});
   const [newSubName, setNewSubName] = useState({});
+  // newEtName is keyed by subcategory id (since engagement types now live under subcategories)
   const [newEtName, setNewEtName] = useState({});
 
   // ── Roles & Permissions state ──────────────────────────────────────────────
@@ -253,24 +254,40 @@ export default function Settings() {
       .catch(() => setSvcCatError('Failed to delete subcategory.'));
   }
 
-  function handleAddEngagementType(categoryId) {
-    const name = (newEtName[categoryId] || '').trim();
+  function handleAddEngagementType(categoryId, subcategoryId) {
+    const name = (newEtName[subcategoryId] || '').trim();
     if (!name) return;
-    createEngagementType(categoryId, { name })
+    createEngagementTypeForSubcategory(subcategoryId, { name })
       .then(et => {
-        setServiceCategories(prev => prev.map(c =>
-          c.id === categoryId ? { ...c, engagementTypes: [...(c.engagementTypes || []), et] } : c
-        ));
-        setNewEtName(prev => ({ ...prev, [categoryId]: '' }));
+        setServiceCategories(prev => prev.map(c => {
+          if (c.id !== categoryId) return c;
+          return {
+            ...c,
+            subcategories: (c.subcategories || []).map(sub =>
+              sub.id === subcategoryId
+                ? { ...sub, engagementTypes: [...(sub.engagementTypes || []), et] }
+                : sub
+            ),
+          };
+        }));
+        setNewEtName(prev => ({ ...prev, [subcategoryId]: '' }));
       })
       .catch(() => setSvcCatError('Failed to add engagement type.'));
   }
 
-  function handleDeleteEngagementType(categoryId, etId) {
+  function handleDeleteEngagementType(categoryId, subcategoryId, etId) {
     deleteEngagementType(etId)
-      .then(() => setServiceCategories(prev => prev.map(c =>
-        c.id === categoryId ? { ...c, engagementTypes: (c.engagementTypes || []).filter(e => e.id !== etId) } : c
-      )))
+      .then(() => setServiceCategories(prev => prev.map(c => {
+        if (c.id !== categoryId) return c;
+        return {
+          ...c,
+          subcategories: (c.subcategories || []).map(sub =>
+            sub.id === subcategoryId
+              ? { ...sub, engagementTypes: (sub.engagementTypes || []).filter(e => e.id !== etId) }
+              : sub
+          ),
+        };
+      })))
       .catch(() => setSvcCatError('Failed to delete engagement type.'));
   }
 
@@ -605,23 +622,48 @@ export default function Settings() {
                   {expandedCat[cat.id] ? '▾' : '▸'} {cat.name}
                 </span>
                 <span style={{ fontSize:11, color:'#64748b' }}>
-                  {(cat.subcategories||[]).length} subcats · {(cat.engagementTypes||[]).length} types
+                  {(cat.subcategories||[]).length} subcats · {(cat.subcategories||[]).reduce((sum, s) => sum + (s.engagementTypes||[]).length, 0) + (cat.engagementTypes||[]).length} types
                 </span>
                 <button onClick={e => { e.stopPropagation(); handleDeleteCategory(cat.id); }} style={{ ...iconBtn, color:'#dc2626' }} title="Delete category">🗑️</button>
               </div>
 
               {expandedCat[cat.id] && (
                 <div style={{ padding:'12px 14px' }}>
-                  {/* Subcategories */}
+                  {/* Subcategories with nested engagement types */}
                   <div style={{ marginBottom:14 }}>
-                    <div style={{ fontSize:12, fontWeight:700, color:'#475569', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>Subcategories</div>
+                    <div style={{ fontSize:12, fontWeight:700, color:'#475569', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>Subcategories & Engagement Types</div>
                     {(cat.subcategories || []).length === 0 && (
                       <div style={{ fontSize:12, color:'#94a3b8', marginBottom:8 }}>No subcategories yet.</div>
                     )}
                     {(cat.subcategories || []).map(sub => (
-                      <div key={sub.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid #f1f5f9' }}>
-                        <span style={{ fontSize:13, color:'#334155', flex:1 }}>• {sub.name}</span>
-                        <button onClick={() => handleDeleteSubcategory(cat.id, sub.id)} style={{ ...iconBtn, color:'#dc2626' }}>🗑️</button>
+                      <div key={sub.id} style={{ border:'1px solid #e2e8f0', borderRadius:6, marginBottom:10, overflow:'hidden' }}>
+                        {/* Subcategory header */}
+                        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', background:'#f1f5f9' }}>
+                          <span style={{ fontSize:13, color:'#1e293b', fontWeight:600, flex:1 }}>📂 {sub.name}</span>
+                          <button onClick={() => handleDeleteSubcategory(cat.id, sub.id)} style={{ ...iconBtn, color:'#dc2626' }}>🗑️</button>
+                        </div>
+                        {/* Engagement types under this subcategory */}
+                        <div style={{ padding:'8px 12px' }}>
+                          {(sub.engagementTypes || []).length === 0 && (
+                            <div style={{ fontSize:12, color:'#94a3b8', marginBottom:6 }}>No engagement types yet.</div>
+                          )}
+                          {(sub.engagementTypes || []).map(et => (
+                            <div key={et.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0', borderBottom:'1px solid #f8fafc' }}>
+                              <span style={{ fontSize:12, color:'#334155', flex:1 }}>↳ {et.name}</span>
+                              <button onClick={() => handleDeleteEngagementType(cat.id, sub.id, et.id)} style={{ ...iconBtn, color:'#dc2626', fontSize:12 }}>🗑️</button>
+                            </div>
+                          ))}
+                          <div style={{ display:'flex', gap:6, marginTop:6 }}>
+                            <input
+                              value={newEtName[sub.id] || ''}
+                              onChange={e => setNewEtName(prev => ({ ...prev, [sub.id]: e.target.value }))}
+                              onKeyDown={e => e.key === 'Enter' && handleAddEngagementType(cat.id, sub.id)}
+                              placeholder="New engagement type…"
+                              style={{ ...inputStyle, flex:1, fontSize:11, padding:'4px 8px' }}
+                            />
+                            <button onClick={() => handleAddEngagementType(cat.id, sub.id)} style={{ ...btnPrimary, fontSize:11, padding:'4px 10px' }}>Add</button>
+                          </div>
+                        </div>
                       </div>
                     ))}
                     <div style={{ display:'flex', gap:8, marginTop:8 }}>
@@ -632,31 +674,7 @@ export default function Settings() {
                         placeholder="New subcategory name"
                         style={{ ...inputStyle, flex:1, fontSize:12, padding:'6px 8px' }}
                       />
-                      <button onClick={() => handleAddSubcategory(cat.id)} style={{ ...btnPrimary, fontSize:12, padding:'6px 12px' }}>Add</button>
-                    </div>
-                  </div>
-
-                  {/* Engagement Types */}
-                  <div>
-                    <div style={{ fontSize:12, fontWeight:700, color:'#475569', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>Engagement Types</div>
-                    {(cat.engagementTypes || []).length === 0 && (
-                      <div style={{ fontSize:12, color:'#94a3b8', marginBottom:8 }}>No engagement types yet.</div>
-                    )}
-                    {(cat.engagementTypes || []).map(et => (
-                      <div key={et.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 0', borderBottom:'1px solid #f1f5f9' }}>
-                        <span style={{ fontSize:13, color:'#334155', flex:1 }}>• {et.name}</span>
-                        <button onClick={() => handleDeleteEngagementType(cat.id, et.id)} style={{ ...iconBtn, color:'#dc2626' }}>🗑️</button>
-                      </div>
-                    ))}
-                    <div style={{ display:'flex', gap:8, marginTop:8 }}>
-                      <input
-                        value={newEtName[cat.id] || ''}
-                        onChange={e => setNewEtName(prev => ({ ...prev, [cat.id]: e.target.value }))}
-                        onKeyDown={e => e.key === 'Enter' && handleAddEngagementType(cat.id)}
-                        placeholder="New engagement type name"
-                        style={{ ...inputStyle, flex:1, fontSize:12, padding:'6px 8px' }}
-                      />
-                      <button onClick={() => handleAddEngagementType(cat.id)} style={{ ...btnPrimary, fontSize:12, padding:'6px 12px' }}>Add</button>
+                      <button onClick={() => handleAddSubcategory(cat.id)} style={{ ...btnPrimary, fontSize:12, padding:'6px 12px' }}>Add Subcategory</button>
                     </div>
                   </div>
                 </div>
