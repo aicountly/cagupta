@@ -40,14 +40,34 @@ class ServiceCategoryModel
                 'SELECT * FROM service_subcategories WHERE category_id = :cid ORDER BY name ASC'
             );
             $subStmt->execute([':cid' => $cat['id']]);
-            $cat['subcategories'] = $subStmt->fetchAll();
+            $subcategories = $subStmt->fetchAll();
 
-            // Engagement types
+            // Engagement types (all for this category, including those linked to subcategories)
             $etStmt = $this->db->prepare(
                 'SELECT * FROM engagement_types WHERE category_id = :cid ORDER BY name ASC'
             );
             $etStmt->execute([':cid' => $cat['id']]);
-            $cat['engagementTypes'] = $etStmt->fetchAll();
+            $allEngagementTypes = $etStmt->fetchAll();
+
+            // Nest engagement types under their subcategory when subcategory_id is set
+            $etBySubcat = [];
+            $catLevelEt  = [];
+            foreach ($allEngagementTypes as $et) {
+                if (!empty($et['subcategory_id'])) {
+                    $etBySubcat[(int)$et['subcategory_id']][] = $et;
+                } else {
+                    $catLevelEt[] = $et;
+                }
+            }
+
+            foreach ($subcategories as &$sub) {
+                $sub['engagementTypes'] = $etBySubcat[$sub['id']] ?? [];
+            }
+            unset($sub);
+
+            $cat['subcategories']   = $subcategories;
+            // Keep category-level engagement types (those without a subcategory) for backward compatibility
+            $cat['engagementTypes'] = $catLevelEt;
         }
         unset($cat);
 

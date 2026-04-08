@@ -21,6 +21,11 @@ function toTitleCase(str) {
   );
 }
 
+function isTitleCase(val) {
+  if (!val.trim()) return true;
+  return val.trim().split(/\s+/).every(word => /^[A-Z]/.test(word));
+}
+
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function Toast({ message, type, onClose }) {
   const bg = type === 'error' ? '#fee2e2' : '#e8f7e6';
@@ -611,10 +616,21 @@ export default function OrganizationCreatePage() {
             <FieldLabel label="Reference" />
             <input
               value={form.reference || ''}
-              onChange={e => setField('reference', e.target.value)}
-              placeholder="e.g. REF-001, Internal ID…"
-              style={inputStyle}
+              onChange={e => {
+                const val = toTitleCase(e.target.value);
+                setField('reference', val);
+                if (errors.reference) setErrors(prev => ({ ...prev, reference: '' }));
+              }}
+              onBlur={e => {
+                const val = (e.target.value || '').trim();
+                if (val && !isTitleCase(val)) {
+                  setErrors(prev => ({ ...prev, reference: 'Reference must be in Title Case (e.g. Western India).' }));
+                }
+              }}
+              placeholder="e.g. Western India, REF-001…"
+              style={{ ...inputStyle, borderColor: errors.reference ? '#ef4444' : undefined }}
             />
+            {errors.reference && <ErrorMsg msg={errors.reference} />}
           </div>
         </FormSection>
       </div>

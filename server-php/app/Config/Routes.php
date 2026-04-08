@@ -454,6 +454,12 @@ class Routes
                 'handler'    => 'Admin\ServiceCategoryController@engagementTypeDestroy',
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/service-subcategories/:id/engagement-types',
+                'handler'    => 'Admin\ServiceCategoryController@engagementTypeStoreForSubcategory',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
 
             // ── Admin — Opening Balances ──────────────────────────────────────
             [

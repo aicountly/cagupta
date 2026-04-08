@@ -70,7 +70,7 @@ export default function Organizations() {
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{o.clientCode}</code>
                 </td>
                 <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920' }}>
-                  {o.displayName}{o.reference && <sup style={{ fontSize: 10, color: '#64748b', marginLeft: 2 }}>{o.reference}</sup>}
+                  {o.displayName}{o.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4 }}>({o.reference})</span>}
                 </td>
                 <td style={tdStyle}>{o.constitution}</td>
                 <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{o.pan || '—'}</td>

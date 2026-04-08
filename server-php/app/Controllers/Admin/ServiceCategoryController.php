@@ -143,8 +143,9 @@ class ServiceCategoryController extends BaseController
 
     /**
      * Create an engagement type under a category.
+     * Optionally accepts subcategory_id in the body to link it to a subcategory.
      *
-     * Body: { name }
+     * Body: { name, subcategory_id? }
      */
     public function engagementTypeStore(int $categoryId): never
     {
@@ -160,8 +161,47 @@ class ServiceCategoryController extends BaseController
             $this->error('Engagement type name is required.', 422);
         }
 
-        $newId = $this->engagementTypes->create($categoryId, $name);
+        $subcategoryId = isset($body['subcategory_id']) && $body['subcategory_id'] !== ''
+            ? (int)$body['subcategory_id']
+            : null;
+
+        // Validate subcategory belongs to this category
+        if ($subcategoryId !== null) {
+            $sub = $this->subcategories->find($subcategoryId);
+            if ($sub === null || (int)$sub['category_id'] !== $categoryId) {
+                $this->error('Subcategory not found or does not belong to this category.', 422);
+            }
+        }
+
+        $newId = $this->engagementTypes->create($categoryId, $name, $subcategoryId);
         $et    = $this->engagementTypes->find($newId);
+        $this->success($et, 'Engagement type created', 201);
+    }
+
+    // ── POST /api/admin/service-subcategories/:id/engagement-types ────────────
+
+    /**
+     * Create an engagement type directly under a subcategory.
+     *
+     * Body: { name }
+     */
+    public function engagementTypeStoreForSubcategory(int $subcategoryId): never
+    {
+        $sub = $this->subcategories->find($subcategoryId);
+        if ($sub === null) {
+            $this->error('Subcategory not found.', 404);
+        }
+
+        $body = $this->getJsonBody();
+        $name = trim((string)($body['name'] ?? ''));
+
+        if ($name === '') {
+            $this->error('Engagement type name is required.', 422);
+        }
+
+        $categoryId = (int)$sub['category_id'];
+        $newId      = $this->engagementTypes->create($categoryId, $name, $subcategoryId);
+        $et         = $this->engagementTypes->find($newId);
         $this->success($et, 'Engagement type created', 201);
     }
 

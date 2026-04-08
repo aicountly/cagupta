@@ -80,7 +80,15 @@ class ClientModel
         );
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch();
-        return $row ?: null;
+        if (!$row) {
+            return null;
+        }
+
+        $linkedOrgs                = $this->getLinkedOrgs($row['id']);
+        $row['linked_org_ids']   = array_column($linkedOrgs, 'id');
+        $row['linked_org_names'] = array_column($linkedOrgs, 'name');
+
+        return $row;
     }
 
     /**
@@ -131,8 +139,36 @@ class ClientModel
         $stmt->bindValue(':limit',  $perPage, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset,  PDO::PARAM_INT);
         $stmt->execute();
+        $clients = $stmt->fetchAll();
 
-        return ['total' => $total, 'clients' => $stmt->fetchAll()];
+        // Batch-fetch linked organizations to avoid N+1 queries
+        if (!empty($clients)) {
+            $contactIds = array_map('intval', array_column($clients, 'id'));
+            $placeholders = implode(',', $contactIds);
+            $orgStmt = $this->db->query(
+                "SELECT co.contact_id, o.id AS org_id, o.name AS org_name
+                 FROM contact_organization co
+                 JOIN organizations o ON o.id = co.organization_id
+                 WHERE co.contact_id IN ({$placeholders})
+                 ORDER BY o.name ASC"
+            );
+            $allLinkedOrgs = $orgStmt->fetchAll();
+
+            // Group by contact_id
+            $orgsByContact = [];
+            foreach ($allLinkedOrgs as $row) {
+                $orgsByContact[(int)$row['contact_id']][] = $row;
+            }
+
+            foreach ($clients as &$client) {
+                $orgs                       = $orgsByContact[(int)$client['id']] ?? [];
+                $client['linked_org_ids']   = array_map(fn($o) => (int)$o['org_id'], $orgs);
+                $client['linked_org_names'] = array_column($orgs, 'org_name');
+            }
+            unset($client);
+        }
+
+        return ['total' => $total, 'clients' => $clients];
     }
 
     /**
@@ -240,6 +276,49 @@ class ClientModel
     {
         $stmt = $this->db->prepare('DELETE FROM clients WHERE id = :id');
         return $stmt->execute([':id' => $id]);
+    }
+
+    /**
+     * Sync the linked organizations for a contact.
+     * Replaces all existing links with the new set.
+     *
+     * @param array<int> $orgIds
+     */
+    public function syncLinkedOrgs(int $clientId, array $orgIds): void
+    {
+        // Remove all existing links
+        $stmt = $this->db->prepare('DELETE FROM contact_organization WHERE contact_id = :cid');
+        $stmt->execute([':cid' => $clientId]);
+
+        // Insert new links
+        if (!empty($orgIds)) {
+            $stmt = $this->db->prepare(
+                'INSERT INTO contact_organization (contact_id, organization_id)
+                 VALUES (:cid, :oid)
+                 ON CONFLICT (contact_id, organization_id) DO NOTHING'
+            );
+            foreach ($orgIds as $orgId) {
+                $stmt->execute([':cid' => $clientId, ':oid' => (int)$orgId]);
+            }
+        }
+    }
+
+    /**
+     * Get linked organizations for a single contact.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function getLinkedOrgs(int $clientId): array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT o.id, o.name
+             FROM contact_organization co
+             JOIN organizations o ON o.id = co.organization_id
+             WHERE co.contact_id = :cid
+             ORDER BY o.name ASC'
+        );
+        $stmt->execute([':cid' => $clientId]);
+        return $stmt->fetchAll();
     }
 
     /**

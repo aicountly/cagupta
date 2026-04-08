@@ -183,7 +183,8 @@ export default function NewServiceEngagement() {
   const subcategories = selectedCategory?.subcategories ?? [];
 
   const selectedSubcategory = subcategories.find(s => String(s.id) === String(subcategoryId));
-  const engagementTypes = selectedSubcategory?.engagementTypes ?? selectedCategory?.engagementTypes ?? [];
+  // Only show engagement types that belong to the selected subcategory
+  const engagementTypes = selectedSubcategory?.engagementTypes ?? [];
 
   const selectedEngagementType = engagementTypes.find(e => String(e.id) === String(engagementTypeId));
 

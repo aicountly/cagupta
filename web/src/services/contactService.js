@@ -32,6 +32,8 @@ async function parseResponse(res) {
 function normalizeContact(c) {
   const parts = [c.first_name, c.last_name].filter(Boolean);
   const displayName = c.organization_name || parts.join(' ') || 'Unknown';
+  const linkedOrgIds   = c.linked_org_ids   || [];
+  const linkedOrgNames = c.linked_org_names || [];
   return {
     id:            c.id,
     clientCode:    c.client_code || `CLT-${String(c.id).padStart(4, '0')}`,
@@ -48,8 +50,10 @@ function normalizeContact(c) {
     waMobile:      c.wa_mobile || '',
     notes:         c.notes  || '',
     reference:     c.reference || '',
-    linkedOrgIds:  c.linked_org_ids  || [],
-    linkedOrgsCount: c.linked_org_ids ? c.linked_org_ids.length : 0,
+    linkedOrgIds,
+    linkedOrgNames,
+    linkedOrgsCount: linkedOrgIds.length,
+    organisation:  linkedOrgNames[0] || '',
     assignedManager: c.assigned_manager || c.created_by_name || '',
     status:        c.is_active === false ? 'inactive' : (c.is_active === true ? 'active' : (c.status || 'active')),
     createdAt:     c.created_at || '',
