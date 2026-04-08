@@ -27,8 +27,8 @@ async function parseResponse(res) {
 function normalise(row) {
   return {
     id:   row.id,
-    name: row.name  || '',
-    url:  row.url   || '',
+    name: row.name || '',
+    url:  row.url || '',
   };
 }
 
