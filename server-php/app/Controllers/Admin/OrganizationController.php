@@ -71,22 +71,23 @@ class OrganizationController extends BaseController
         $actingUser = $this->authUser();
 
         $newId = $this->orgs->create([
-            'name'       => $name,
-            'type'       => $body['type']    ?? null,
-            'gstin'      => strtoupper(trim((string)($body['gstin'] ?? ''))) ?: null,
-            'pan'        => strtoupper(trim((string)($body['pan']   ?? ''))) ?: null,
-            'email'      => trim((string)($body['email']   ?? '')) ?: null,
-            'phone'      => trim((string)($body['phone']   ?? '')) ?: null,
-            'address'    => $body['address']  ?? null,
-            'city'       => $body['city']     ?? null,
-            'state'      => $body['state']    ?? null,
-            'pincode'    => $body['pincode']  ?? null,
-            'website'    => $body['website']  ?? null,
-            'notes'      => $body['notes']    ?? null,
-            'reference'  => $body['reference'] ?? null,
-            'group_id'   => $body['group_id']  ?? null,
-            'is_active'  => $body['is_active'] ?? true,
-            'created_by' => $actingUser ? (int)$actingUser['id'] : null,
+            'name'               => $name,
+            'type'               => $body['type']    ?? null,
+            'gstin'              => strtoupper(trim((string)($body['gstin'] ?? ''))) ?: null,
+            'pan'                => strtoupper(trim((string)($body['pan']   ?? ''))) ?: null,
+            'email'              => trim((string)($body['email']   ?? '')) ?: null,
+            'phone'              => trim((string)($body['phone']   ?? '')) ?: null,
+            'address'            => $body['address']  ?? null,
+            'city'               => $body['city']     ?? null,
+            'state'              => $body['state']    ?? null,
+            'pincode'            => $body['pincode']  ?? null,
+            'website'            => $body['website']  ?? null,
+            'notes'              => $body['notes']    ?? null,
+            'reference'          => $body['reference'] ?? null,
+            'group_id'           => $body['group_id']  ?? null,
+            'primary_contact_id' => $body['primary_contact_id'] ?? null,
+            'is_active'          => $body['is_active'] ?? true,
+            'created_by'         => $actingUser ? (int)$actingUser['id'] : null,
         ]);
 
         $org = $this->orgs->find($newId);
@@ -142,6 +143,9 @@ class OrganizationController extends BaseController
         }
         if (array_key_exists('group_id', $body)) {
             $data['group_id'] = $body['group_id'];
+        }
+        if (array_key_exists('primary_contact_id', $body)) {
+            $data['primary_contact_id'] = $body['primary_contact_id'] ? (int)$body['primary_contact_id'] : null;
         }
 
         $this->orgs->update($id, $data);
