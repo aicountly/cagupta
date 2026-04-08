@@ -69,7 +69,9 @@ export default function Organizations() {
                 <td style={tdStyle}>
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{o.clientCode}</code>
                 </td>
-                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920' }}>{o.displayName}</td>
+                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920' }}>
+                  {o.displayName}{o.reference && <sup style={{ fontSize: 10, color: '#64748b', marginLeft: 2 }}>{o.reference}</sup>}
+                </td>
                 <td style={tdStyle}>{o.constitution}</td>
                 <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{o.pan || '—'}</td>
                 <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 11 }}>{o.gstin || '—'}</td>
@@ -101,6 +103,7 @@ export default function Organizations() {
             ['Constitution', selected.constitution || '—'],
             ['PAN', selected.pan || '—'],
             ['GSTIN', selected.gstin || '—'],
+            ['Reference', selected.reference || '—'],
             ['Primary Contact', selected.primaryContact || '—'],
             ['Email', selected.email || '—'],
             ['Phone', selected.phone || '—'],

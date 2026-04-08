@@ -28,9 +28,13 @@ class OrganizationModel
     public function find(int $id): ?array
     {
         $stmt = $this->db->prepare(
-            'SELECT o.*, u.name AS created_by_name
+            'SELECT o.*, u.name AS created_by_name,
+                    COALESCE(pc.organization_name,
+                             TRIM(CONCAT(COALESCE(pc.first_name,\'\'),\' \',COALESCE(pc.last_name,\'\'))),
+                             NULL) AS primary_contact_name
              FROM organizations o
              LEFT JOIN users u ON u.id = o.created_by
+             LEFT JOIN clients pc ON pc.id = o.primary_contact_id
              WHERE o.id = :id
              LIMIT 1'
         );
@@ -73,9 +77,13 @@ class OrganizationModel
         $total = (int)$countStmt->fetchColumn();
 
         $stmt = $this->db->prepare(
-            "SELECT o.*, u.name AS created_by_name
+            "SELECT o.*, u.name AS created_by_name,
+                    COALESCE(pc.organization_name,
+                             TRIM(CONCAT(COALESCE(pc.first_name,''),' ',COALESCE(pc.last_name,''))),
+                             NULL) AS primary_contact_name
              FROM organizations o
              LEFT JOIN users u ON u.id = o.created_by
+             LEFT JOIN clients pc ON pc.id = o.primary_contact_id
              WHERE {$whereClause}
              ORDER BY o.created_at DESC
              LIMIT :limit OFFSET :offset"
@@ -102,30 +110,31 @@ class OrganizationModel
             'INSERT INTO organizations (
                 name, type, gstin, pan, email, phone,
                 address, city, state, pincode, website, notes,
-                reference, group_id, is_active, created_by
+                reference, group_id, primary_contact_id, is_active, created_by
              ) VALUES (
                 :name, :type, :gstin, :pan, :email, :phone,
                 :address, :city, :state, :pincode, :website, :notes,
-                :reference, :group_id, :is_active, :created_by
+                :reference, :group_id, :primary_contact_id, :is_active, :created_by
              ) RETURNING id'
         );
         $stmt->execute([
-            ':name'       => $data['name'],
-            ':type'       => $data['type']       ?? null,
-            ':gstin'      => $data['gstin']      ?? null,
-            ':pan'        => $data['pan']        ?? null,
-            ':email'      => $data['email']      ?? null,
-            ':phone'      => $data['phone']      ?? null,
-            ':address'    => $data['address']    ?? null,
-            ':city'       => $data['city']       ?? null,
-            ':state'      => $data['state']      ?? null,
-            ':pincode'    => $data['pincode']    ?? null,
-            ':website'    => $data['website']    ?? null,
-            ':notes'      => $data['notes']      ?? null,
-            ':reference'  => $data['reference']  ?? null,
-            ':group_id'   => isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null,
-            ':is_active'  => ((bool)($data['is_active'] ?? true)) ? 'true' : 'false',
-            ':created_by' => $data['created_by'] ?? null,
+            ':name'               => $data['name'],
+            ':type'               => $data['type']       ?? null,
+            ':gstin'              => $data['gstin']      ?? null,
+            ':pan'                => $data['pan']        ?? null,
+            ':email'              => $data['email']      ?? null,
+            ':phone'              => $data['phone']      ?? null,
+            ':address'            => $data['address']    ?? null,
+            ':city'               => $data['city']       ?? null,
+            ':state'              => $data['state']      ?? null,
+            ':pincode'            => $data['pincode']    ?? null,
+            ':website'            => $data['website']    ?? null,
+            ':notes'              => $data['notes']      ?? null,
+            ':reference'          => $data['reference']  ?? null,
+            ':group_id'           => isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null,
+            ':primary_contact_id' => isset($data['primary_contact_id']) && $data['primary_contact_id'] !== '' ? (int)$data['primary_contact_id'] : null,
+            ':is_active'          => ((bool)($data['is_active'] ?? true)) ? 'true' : 'false',
+            ':created_by'         => $data['created_by'] ?? null,
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -149,6 +158,10 @@ class OrganizationModel
                 $setClauses[]       = "{$field} = :{$field}";
                 $params[":{$field}"] = $data[$field];
             }
+        }
+        if (array_key_exists('primary_contact_id', $data)) {
+            $setClauses[]               = 'primary_contact_id = :primary_contact_id';
+            $params[':primary_contact_id'] = isset($data['primary_contact_id']) && $data['primary_contact_id'] !== '' ? (int)$data['primary_contact_id'] : null;
         }
         if (array_key_exists('is_active', $data)) {
             $setClauses[]       = 'is_active = :is_active';

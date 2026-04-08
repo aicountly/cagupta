@@ -45,7 +45,7 @@ function normalizeOrg(o) {
     address:          o.address     || '',
     notes:            o.notes       || '',
     reference:        o.reference   || '',
-    primaryContact:   o.primary_contact || '—',
+    primaryContact:   o.primary_contact_name || o.primary_contact || '—',
     primaryContactId: o.primary_contact_id || null,
     assignedManager:  o.assigned_manager || o.created_by_name || '',
     status:           o.is_active === false ? 'inactive' : (o.is_active === true ? 'active' : (o.status || 'active')),
