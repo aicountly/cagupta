@@ -106,7 +106,9 @@ export default function Contacts() {
           {[
             ['Contact Code', selected.clientCode],
             ['Reference', selected.reference || '—'],
-            ['Organisation', selected.organisation || (selected.linkedOrgsCount > 0 ? `${selected.linkedOrgsCount} organization${selected.linkedOrgsCount > 1 ? 's' : ''}` : '—')],
+            ['Organisation', selected.organisation || (selected.linkedOrgsCount > 0
+              ? `${selected.linkedOrgsCount} organization${selected.linkedOrgsCount > 1 ? 's' : ''}`
+              : '—')],
             ['Mobile', selected.mobile],
             ['Email', selected.email || '—'],
             ['PAN', selected.pan || '—'],
