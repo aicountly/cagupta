@@ -340,15 +340,18 @@ class TxnController extends BaseController
         }
 
         $actingUser = $this->authUser();
-        $id = $this->txn->setOpeningBalance([
-            'client_id'            => $clientId,
-            'billing_profile_code' => $profileCode,
-            'amount'               => $amount,
-            'type'                 => $type,
-            'created_by'           => $actingUser ? (int)$actingUser['id'] : null,
-        ]);
-
-        $row = $this->txn->find($id);
-        $this->success($row, 'Opening balance saved');
+        try {
+            $id = $this->txn->setOpeningBalance([
+                'client_id'            => $clientId,
+                'billing_profile_code' => $profileCode,
+                'amount'               => $amount,
+                'type'                 => $type,
+                'created_by'           => $actingUser ? (int)$actingUser['id'] : null,
+            ]);
+            $row = $this->txn->find($id);
+            $this->success($row, 'Opening balance saved');
+        } catch (\Throwable $e) {
+            $this->error('Failed to save opening balance: ' . $e->getMessage(), 500);
+        }
     }
 }
