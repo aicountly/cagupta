@@ -450,6 +450,7 @@ class TxnModel
             'txn_type'             => 'opening_balance',
             'txn_date'             => $data['txn_date'] ?? date('Y-m-d'),
             'narration'            => 'Opening Balance',
+            'invoice_number'       => 'OB-' . $clientId . '-' . $profileCode,
             'debit'                => $type === 'debit'  ? $amount : 0,
             'credit'               => $type === 'credit' ? $amount : 0,
             'amount'               => $amount,

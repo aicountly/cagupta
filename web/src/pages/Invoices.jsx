@@ -494,17 +494,25 @@ function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBa
     setSaving(true);
     setError('');
     try {
-      for (const b of balances) {
-        const amt = parseFloat(b.amount || '0');
-        await setOpeningBalance({
-          client_id:            clientId,
-          billing_profile_code: b.profileCode,
-          amount:               amt,
-          type:                 b.type,
-        });
+      const results = await Promise.allSettled(
+        balances
+          .filter(b => b.amount !== '' && parseFloat(b.amount) >= 0)
+          .map(b =>
+            setOpeningBalance({
+              client_id:            clientId,
+              billing_profile_code: b.profileCode,
+              amount:               parseFloat(b.amount || '0'),
+              type:                 b.type,
+            })
+          )
+      );
+      const failures = results.filter(r => r.status === 'rejected');
+      if (failures.length > 0) {
+        setError(failures.map(f => f.reason?.message || 'Unknown error').join('; '));
+      } else {
+        onSave();
+        onClose();
       }
-      onSave();
-      onClose();
     } catch (e) {
       setError(e.message || 'Failed to save opening balances.');
     } finally {
