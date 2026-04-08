@@ -1,21 +1,34 @@
 import { useState, useEffect } from 'react';
 import { getLeads, createLead, updateLead } from '../services/leadService';
+import { createContact } from '../services/contactService';
+import { getOrganizations } from '../services/organizationService';
+import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
+import { useStaffUsers } from '../hooks/useStaffUsers';
 import StatusBadge from '../components/common/StatusBadge';
 import { useNotification } from '../context/NotificationContext';
 
 const stages = ['new','contacted','qualified','proposal_sent','negotiation','won','lost'];
 
-const emptyLeadForm = { contactName:'', company:'', email:'', phone:'', source:'Referral', stage:'new', estimatedValue:'', assignedTo:'', nextFollowUp:'' };
+const emptyLeadForm = {
+  contactId: null, contactName: '', contactMode: 'existing',
+  newContactName: '', newContactEmail: '', newContactPhone: '',
+  organizationId: null, organizationName: '',
+  company: '', email: '', phone: '',
+  source: 'Referral', stage: 'new', estimatedValue: '',
+  assignedTo: '', nextFollowUp: '', notes: '',
+};
 
 export default function Leads() {
   const [tab, setTab] = useState('pipeline');
   const [selected, setSelected] = useState(null);
   const [leads, setLeads] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
   const [editLeadId, setEditLeadId] = useState(null);
   const [form, setForm] = useState(emptyLeadForm);
   const { addNotification } = useNotification();
+  const { staffUsers } = useStaffUsers();
 
   useEffect(() => {
     setLoading(true);
@@ -23,6 +36,9 @@ export default function Leads() {
       .then(data => setLeads(data))
       .catch(() => setLeads([]))
       .finally(() => setLoading(false));
+    getOrganizations()
+      .then(data => setOrganizations(data))
+      .catch(() => setOrganizations([]));
   }, []);
 
   const byStage = stages.reduce((acc,s)=>({ ...acc,[s]:leads.filter(l=>l.stage===s) }), {});
@@ -35,24 +51,59 @@ export default function Leads() {
   }
 
   function openEditModal(l) {
-    setForm({ contactName:l.contactName, company:l.company||'', email:l.email||'', phone:l.phone||'', source:l.source, stage:l.stage, estimatedValue:l.estimatedValue||'', assignedTo:l.assignedTo||'', nextFollowUp:l.nextFollowUp||'' });
+    setForm({
+      contactId: l.contactId || null,
+      contactName: l.contactName || '',
+      contactMode: 'existing',
+      newContactName: '', newContactEmail: '', newContactPhone: '',
+      organizationId: l.organizationId || null,
+      organizationName: '',
+      company: l.company || '', email: l.email || '', phone: l.phone || '',
+      source: l.source, stage: l.stage,
+      estimatedValue: l.estimatedValue || '',
+      assignedTo: l.assignedTo || '',
+      nextFollowUp: l.nextFollowUp || '',
+      notes: l.notes || '',
+    });
     setEditLeadId(l.id);
     setShowNewLeadModal(true);
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
+    let contactId = form.contactId || null;
+
+    if (form.contactMode === 'new' && form.newContactName.trim()) {
+      try {
+        const newContact = await createContact({
+          displayName: form.newContactName.trim(),
+          email: form.newContactEmail.trim() || undefined,
+          mobile: form.newContactPhone.trim() || undefined,
+          status: 'active',
+        });
+        contactId = newContact.id;
+      } catch {
+        addNotification('Contact creation failed — lead will be saved without a linked contact.', 'warning');
+      }
+    }
+
+    const payload = {
+      ...form,
+      contactId,
+      estimatedValue: Number(form.estimatedValue) || 0,
+    };
+
     if (editLeadId) {
-      updateLead(editLeadId, { ...form, estimatedValue: Number(form.estimatedValue)||0 })
+      updateLead(editLeadId, payload)
         .then(updated => {
           setLeads(prev => prev.map(l => l.id === editLeadId ? updated : l));
         })
         .catch(() => {});
     } else {
-      createLead({ ...form, estimatedValue: Number(form.estimatedValue)||0, probability: 50 })
+      createLead({ ...payload, probability: 50 })
         .then(newLead => {
           setLeads(prev => [...prev, newLead]);
-          addNotification('New lead: ' + form.contactName, 'lead');
+          addNotification('New lead: ' + (form.contactMode === 'new' ? form.newContactName : form.contactName), 'lead');
         })
         .catch(() => {});
     }
@@ -151,12 +202,62 @@ export default function Leads() {
             </div>
             <form onSubmit={handleSubmit}>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-                <div>
-                  <label style={labelStyle}>Contact Name <span style={{ color:'#ef4444' }}>*</span></label>
-                  <input required value={form.contactName} onChange={e=>setForm(v=>({...v,contactName:e.target.value}))} style={inputStyle} />
+                {/* ── Contact section ── */}
+                <div style={{ gridColumn:'1/-1' }}>
+                  <label style={labelStyle}>Contact</label>
+                  <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+                    <button type="button" onClick={() => setForm(v => ({ ...v, contactMode:'existing' }))}
+                      style={{ ...toggleBtn, ...(form.contactMode==='existing' ? toggleBtnActive : {}) }}>
+                      Select existing contact
+                    </button>
+                    <button type="button" onClick={() => setForm(v => ({ ...v, contactMode:'new' }))}
+                      style={{ ...toggleBtn, ...(form.contactMode==='new' ? toggleBtnActive : {}) }}>
+                      Create new contact
+                    </button>
+                  </div>
+                  {form.contactMode === 'existing' ? (
+                    <ClientSearchDropdown
+                      value={form.contactId}
+                      displayValue={form.contactName}
+                      placeholder="Search contact by name or email…"
+                      onChange={c => setForm(v => ({
+                        ...v,
+                        contactId: c.id,
+                        contactName: c.displayName,
+                        email: v.email || c.email || '',
+                        phone: v.phone || c.mobile || '',
+                      }))}
+                      style={{ width:'100%' }}
+                    />
+                  ) : (
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
+                      <div>
+                        <label style={labelStyle}>Full Name <span style={{ color:'#ef4444' }}>*</span></label>
+                        <input required value={form.newContactName} onChange={e => setForm(v => ({ ...v, newContactName:e.target.value }))} style={inputStyle} placeholder="Contact full name" />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Email</label>
+                        <input type="email" value={form.newContactEmail} onChange={e => setForm(v => ({ ...v, newContactEmail:e.target.value }))} style={inputStyle} placeholder="email@example.com" />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Phone</label>
+                        <input value={form.newContactPhone} onChange={e => setForm(v => ({ ...v, newContactPhone:e.target.value }))} style={inputStyle} placeholder="+91 …" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {/* ── Organization ── */}
+                <div style={{ gridColumn:'1/-1' }}>
+                  <label style={labelStyle}>Organization</label>
+                  <select value={form.organizationId || ''} onChange={e => setForm(v => ({ ...v, organizationId: e.target.value ? Number(e.target.value) : null }))} style={inputStyle}>
+                    <option value="">— None —</option>
+                    {organizations.map(o => (
+                      <option key={o.id} value={o.id}>{o.displayName}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
-                  <label style={labelStyle}>Company</label>
+                  <label style={labelStyle}>Company (free text)</label>
                   <input value={form.company} onChange={e=>setForm(v=>({...v,company:e.target.value}))} style={inputStyle} />
                 </div>
                 <div>
@@ -185,7 +286,12 @@ export default function Leads() {
                 </div>
                 <div>
                   <label style={labelStyle}>Assigned To</label>
-                  <input value={form.assignedTo} onChange={e=>setForm(v=>({...v,assignedTo:e.target.value}))} style={inputStyle} />
+                  <select value={form.assignedTo} onChange={e => setForm(v => ({ ...v, assignedTo: e.target.value }))} style={inputStyle}>
+                    <option value="">— Select staff —</option>
+                    {staffUsers.map(u => (
+                      <option key={u.id} value={u.id}>{u.name}</option>
+                    ))}
+                  </select>
                 </div>
                 <div style={{ gridColumn:'1/-1' }}>
                   <label style={labelStyle}>Next Follow-up</label>
@@ -214,6 +320,8 @@ const btnOutline = { padding:'8px 16px', background:'#fff', color:'#2563eb', bor
 const iconBtn = { background:'none', border:'none', cursor:'pointer', fontSize:13, padding:'2px 6px', color:'#2563eb' };
 const panel = { position:'fixed', right:0, top:56, width:340, height:'calc(100vh - 56px)', background:'#fff', boxShadow:'-4px 0 20px rgba(0,0,0,.12)', padding:24, overflowY:'auto', zIndex:100 };
 const modalOverlay = { position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:500, display:'flex', alignItems:'center', justifyContent:'center' };
-const modalBox = { background:'#fff', borderRadius:12, padding:28, width:520, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 16px 48px rgba(0,0,0,0.2)' };
+const modalBox = { background:'#fff', borderRadius:12, padding:28, width:600, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 16px 48px rgba(0,0,0,0.2)' };
 const labelStyle = { display:'block', fontSize:12, color:'#64748b', fontWeight:600, marginBottom:4 };
 const inputStyle = { width:'100%', padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, boxSizing:'border-box' };
+const toggleBtn = { padding:'6px 14px', background:'#f1f5f9', color:'#64748b', border:'1px solid #e2e8f0', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:600 };
+const toggleBtnActive = { background:'#2563eb', color:'#fff', border:'1px solid #2563eb' };

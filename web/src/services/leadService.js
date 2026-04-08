@@ -32,6 +32,8 @@ function normalizeLead(l) {
   return {
     id:              l.id,
     contactName:     l.name             || l.contact_name || 'Unknown',
+    contactId:       l.contact_id       || null,
+    organizationId:  l.organization_id  || null,
     company:         l.company          || '',
     email:           l.email            || '',
     phone:           l.phone            || '',
@@ -39,7 +41,7 @@ function normalizeLead(l) {
     stage:           l.status           || l.stage || 'new',
     probability:     l.probability      || 50,
     estimatedValue:  parseFloat(l.estimated_value || 0),
-    assignedTo:      l.assigned_to_name || l.assigned_to || '',
+    assignedTo:      l.assigned_to      || '',
     nextFollowUp:    l.follow_up_date   || l.next_follow_up || '',
     notes:           l.notes            || '',
     createdAt:       l.created_at       || '',
@@ -77,9 +79,11 @@ export async function createLead(payload) {
     status:          payload.stage          || 'new',
     probability:     payload.probability    || 50,
     estimated_value: parseFloat(payload.estimatedValue || 0) || null,
-    assigned_to:     payload.assignedTo     || null,
+    assigned_to:     payload.assignedTo     ? Number(payload.assignedTo)     : null,
     follow_up_date:  payload.nextFollowUp   || null,
     notes:           payload.notes          || null,
+    contact_id:      payload.contactId      ? Number(payload.contactId)      : null,
+    organization_id: payload.organizationId ? Number(payload.organizationId) : null,
   };
 
   const res = await fetch(`${API_BASE}/admin/leads`, {
@@ -107,9 +111,11 @@ export async function updateLead(id, payload) {
     status:          payload.stage         || null,
     probability:     payload.probability   || null,
     estimated_value: payload.estimatedValue != null ? parseFloat(payload.estimatedValue) : null,
-    assigned_to:     payload.assignedTo    || null,
+    assigned_to:     payload.assignedTo    ? Number(payload.assignedTo) : null,
     follow_up_date:  payload.nextFollowUp  || null,
     notes:           payload.notes         || null,
+    contact_id:      payload.contactId      !== undefined ? (Number(payload.contactId)      || null) : undefined,
+    organization_id: payload.organizationId !== undefined ? (Number(payload.organizationId) || null) : undefined,
   };
 
   const res = await fetch(`${API_BASE}/admin/leads/${id}`, {

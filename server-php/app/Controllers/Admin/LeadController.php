@@ -122,7 +122,6 @@ class LeadController extends BaseController
             'probability', 'assigned_to', 'notes', 'follow_up_date',
             'contact_id', 'organization_id',
         ];
-        ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $body)) {
                 $data[$field] = $body[$field];
