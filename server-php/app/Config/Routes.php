@@ -158,6 +158,12 @@ class Routes
             // ── Admin — Organizations ─────────────────────────────────────────
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/organizations/search',
+                'handler'    => 'Admin\OrganizationController@search',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/organizations',
                 'handler'    => 'Admin\OrganizationController@index',
                 'middleware' => ['auth', 'permission:clients.view'],

@@ -202,6 +202,47 @@ class TxnModel
         return $rows;
     }
 
+    /**
+     * Return ledger entries for an organization in chronological order with running balance.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getLedgerByOrganization(int $orgId): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT
+                t.id,
+                t.txn_date          AS date,
+                COALESCE(t.narration, t.invoice_number, t.txn_type) AS narration,
+                t.debit,
+                t.credit,
+                t.billing_profile_code,
+                t.txn_type          AS entry_type,
+                t.invoice_number,
+                t.invoice_status,
+                t.tds_status,
+                t.payment_method,
+                t.reference_number,
+                t.amount,
+                0.0                 AS balance
+             FROM txn t
+             WHERE t.organization_id = :org_id
+               AND t.status != 'cancelled'
+             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
+        );
+        $stmt->execute([':org_id' => $orgId]);
+        $rows = $stmt->fetchAll();
+
+        $balance = 0.0;
+        foreach ($rows as &$row) {
+            $balance += (float)$row['debit'] - (float)$row['credit'];
+            $row['balance'] = $balance;
+        }
+        unset($row);
+
+        return $rows;
+    }
+
     // ── Create helpers by type ────────────────────────────────────────────────
 
     /**

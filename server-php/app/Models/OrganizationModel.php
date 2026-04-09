@@ -195,6 +195,27 @@ class OrganizationModel
     }
 
     /**
+     * Fast type-ahead search for organizations.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function search(string $q, int $limit = 20): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT id, name, pan, gstin, email, phone
+             FROM organizations
+             WHERE is_active = TRUE
+               AND (name ILIKE :q OR pan ILIKE :q OR gstin ILIKE :q OR email ILIKE :q)
+             ORDER BY name ASC
+             LIMIT :limit"
+        );
+        $stmt->bindValue(':q',     "%{$q}%");
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+
+    /**
      * Delete an organization record permanently.
      */
     public function delete(int $id): bool

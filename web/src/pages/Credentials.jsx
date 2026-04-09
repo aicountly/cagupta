@@ -1,18 +1,19 @@
 import { useState, useEffect } from 'react';
 import { getCredentials, createCredential, updateCredential, deleteCredential } from '../services/credentialService';
 import { fetchPortalTypes } from '../services/portalTypeService';
-import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
+import EntitySearchDropdown from '../components/common/EntitySearchDropdown';
 
 function CredentialModal({ onClose, onSave, initial }) {
   const isEdit = !!initial;
   const [form, setForm] = useState({
-    clientId:   initial?.clientId   || '',
-    clientName: initial?.clientName || '',
-    portalName: initial?.portalName || '',
-    portalUrl:  initial?.portalUrl  || '',
-    username:   initial?.username   || '',
-    password:   '',
-    notes:      initial?.notes      || '',
+    clientId:      initial?.clientId      || '',
+    clientName:    initial?.clientName    || '',
+    entityType:    initial?.entityType    || 'contact',
+    portalName:    initial?.portalName    || '',
+    portalUrl:     initial?.portalUrl     || '',
+    username:      initial?.username      || '',
+    password:      '',
+    notes:         initial?.notes         || '',
   });
   const [portalTypes, setPortalTypes] = useState([]);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
@@ -44,11 +45,12 @@ function CredentialModal({ onClose, onSave, initial }) {
         <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
           <label style={labelStyle}>
             Client
-            <ClientSearchDropdown
+            <EntitySearchDropdown
               value={form.clientId}
               displayValue={form.clientName}
-              onChange={c => setForm(f => ({ ...f, clientId: c.id, clientName: c.displayName }))}
-              placeholder="Search client by name…"
+              entityType={form.entityType}
+              onChange={c => setForm(f => ({ ...f, clientId: c.id, clientName: c.displayName, entityType: c.entityType }))}
+              placeholder="Search contact or organization…"
               style={inputStyle}
             />
           </label>
@@ -100,8 +102,9 @@ function CredentialModal({ onClose, onSave, initial }) {
 }
 
 export default function Credentials() {
-  const [clientFilterId, setClientFilterId]     = useState('');
-  const [clientFilterName, setClientFilterName] = useState('');
+  const [clientFilterId, setClientFilterId]       = useState('');
+  const [clientFilterName, setClientFilterName]   = useState('');
+  const [clientFilterType, setClientFilterType]   = useState('contact');
   const [revealed, setRevealed]                 = useState({});
   const [credentials, setCredentials]           = useState([]);
   const [loading, setLoading]                   = useState(true);
@@ -115,9 +118,11 @@ export default function Credentials() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = credentials.filter(c =>
-    !clientFilterId || String(c.clientId) === String(clientFilterId)
-  );
+  const filtered = credentials.filter(c => {
+    if (!clientFilterId) return true;
+    if (clientFilterType === 'organization') return String(c.organizationId) === String(clientFilterId);
+    return String(c.clientId) === String(clientFilterId);
+  });
 
   function handleAdd(payload) {
     createCredential(payload)
@@ -162,20 +167,21 @@ export default function Credentials() {
 
       <div style={{ display:'flex', gap:12, marginBottom:20, alignItems:'center' }}>
         <div style={{ flex:'0 0 280px' }}>
-          <ClientSearchDropdown
+          <EntitySearchDropdown
             value={clientFilterId}
             displayValue={clientFilterName}
-            onChange={c => { setClientFilterId(String(c.id)); setClientFilterName(c.displayName); }}
-            onAllClients={() => { setClientFilterId(''); setClientFilterName(''); }}
+            entityType={clientFilterType}
+            onChange={c => { setClientFilterId(String(c.id)); setClientFilterName(c.displayName); setClientFilterType(c.entityType); }}
+            onAllClients={() => { setClientFilterId(''); setClientFilterName(''); setClientFilterType('contact'); }}
             allowAll
-            placeholder="Filter by client…"
+            placeholder="Filter by contact or organization…"
             style={{ ...selectStyle, width:'100%' }}
           />
         </div>
         {clientFilterId && (
           <button
             style={{ ...btnSecondary, fontSize:12, padding:'6px 10px' }}
-            onClick={() => { setClientFilterId(''); setClientFilterName(''); }}
+            onClick={() => { setClientFilterId(''); setClientFilterName(''); setClientFilterType('contact'); }}
           >
             ✕ Clear
           </button>

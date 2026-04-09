@@ -25,6 +25,26 @@ class OrganizationController extends BaseController
         $this->orgs = new OrganizationModel();
     }
 
+    // ── GET /api/admin/organizations/search ──────────────────────────────────
+
+    /**
+     * Fast type-ahead search for organizations.
+     *
+     * Query params: q, limit
+     */
+    public function search(): never
+    {
+        $q     = trim((string)$this->query('q', ''));
+        $limit = min(50, max(1, (int)$this->query('limit', 20)));
+
+        if ($q === '') {
+            $this->success([], 'No query provided');
+        }
+
+        $results = $this->orgs->search($q, $limit);
+        $this->success($results, 'Organizations found');
+    }
+
     // ── GET /api/admin/organizations ─────────────────────────────────────────
 
     /**

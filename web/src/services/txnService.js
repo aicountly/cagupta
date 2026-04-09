@@ -118,11 +118,18 @@ export async function deleteTxn(id) {
   await parseResponse(res);
 }
 
-/** GET /api/admin/txn/ledger?client_id=... */
-export async function getLedger(clientId) {
-  const params = new URLSearchParams({ client_id: clientId });
-  const res    = await fetch(`${API_BASE}/admin/txn/ledger?${params}`, { headers: authHeaders() });
-  const data   = await parseResponse(res);
+/** GET /api/admin/txn/ledger?client_id=... or ?organization_id=... */
+export async function getLedger(clientIdOrObj) {
+  const params = new URLSearchParams();
+  if (clientIdOrObj && typeof clientIdOrObj === 'object') {
+    if (clientIdOrObj.clientId)       params.set('client_id', clientIdOrObj.clientId);
+    if (clientIdOrObj.organizationId) params.set('organization_id', clientIdOrObj.organizationId);
+  } else if (clientIdOrObj) {
+    // backward-compatible: plain number/string treated as clientId
+    params.set('client_id', clientIdOrObj);
+  }
+  const res  = await fetch(`${API_BASE}/admin/txn/ledger?${params}`, { headers: authHeaders() });
+  const data = await parseResponse(res);
   return (data.data || []).map(normalizeTxn);
 }
 

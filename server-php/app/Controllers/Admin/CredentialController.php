@@ -64,7 +64,8 @@ class CredentialController extends BaseController
         $actingUser = $this->authUser();
 
         $newId = $this->credentials->create([
-            'client_id'          => isset($body['client_id']) ? (int)$body['client_id'] : null,
+            'client_id'          => isset($body['client_id'])       ? (int)$body['client_id']       : null,
+            'organization_id'    => isset($body['organization_id']) ? (int)$body['organization_id'] : null,
             'portal_name'        => $portalName,
             'username'           => $body['username']           ?? null,
             'password_encrypted' => $body['password_encrypted'] ?? $body['password'] ?? null,
@@ -106,7 +107,7 @@ class CredentialController extends BaseController
         $body = $this->getJsonBody();
         $data = [];
 
-        $allowed = ['portal_name', 'username', 'password_encrypted', 'url', 'notes'];
+        $allowed = ['client_id', 'organization_id', 'portal_name', 'username', 'password_encrypted', 'url', 'notes'];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $body)) {
                 $data[$field] = $body[$field];
