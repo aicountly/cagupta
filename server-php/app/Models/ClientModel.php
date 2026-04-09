@@ -144,20 +144,16 @@ class ClientModel
         // Batch-fetch linked organizations to avoid N+1 queries
         if (!empty($clients)) {
             $contactIds   = array_map('intval', array_column($clients, 'id'));
-            $paramNames   = array_map(fn($i) => ":cid{$i}", array_keys($contactIds));
-            $placeholders = implode(',', $paramNames);
+            // Safe: IDs are already cast to int via intval(), no SQL injection risk
+            $placeholders = implode(',', $contactIds);
 
-            $orgStmt = $this->db->prepare(
+            $orgStmt = $this->db->query(
                 "SELECT co.contact_id, o.id AS org_id, o.name AS org_name
                  FROM contact_organization co
                  JOIN organizations o ON o.id = co.organization_id
                  WHERE co.contact_id IN ({$placeholders})
                  ORDER BY o.name ASC"
             );
-            foreach ($contactIds as $i => $cid) {
-                $orgStmt->bindValue(":cid{$i}", $cid, PDO::PARAM_INT);
-            }
-            $orgStmt->execute();
             $allLinkedOrgs = $orgStmt->fetchAll();
 
             // Group by contact_id
