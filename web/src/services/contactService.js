@@ -78,6 +78,19 @@ export async function getContacts({ page = 1, perPage = 100, search = '', status
 }
 
 /**
+ * Fetch one contact by id (for edit screen; avoids list pagination gaps).
+ * @param {number|string} id
+ * @returns {Promise<object>}
+ */
+export async function getContact(id) {
+  const res = await fetch(`${API_BASE}/admin/contacts/${id}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return normalizeContact(data.data);
+}
+
+/**
  * Create a new contact.
  * @param {object} payload  Fields from ContactCreatePage form.
  * @returns {Promise<object>}  The created contact (normalised).
@@ -113,31 +126,51 @@ export async function createContact(payload) {
   return normalizeContact(data.data);
 }
 
+function hasOwn(payload, key) {
+  return Object.prototype.hasOwnProperty.call(payload, key);
+}
+
 /**
  * Update an existing contact.
+ * Only fields present on `payload` are sent, so partial updates (e.g. group_id only)
+ * do not wipe other columns or clear linked organizations unintentionally.
+ *
  * @param {number|string} id
  * @param {object} payload
  * @returns {Promise<object>}
  */
 export async function updateContact(id, payload) {
-  const body = {
-    first_name:        payload.displayName || payload.first_name || null,
-    last_name:         payload.last_name    || null,
-    organization_name: payload.organization_name || null,
-    email:             payload.email   || null,
-    phone:             payload.mobile  || payload.phone || null,
-    pan:               payload.pan     || null,
-    gstin:             payload.gstin   || null,
-    city:              payload.city    || null,
-    state:             payload.state   || null,
-    country:           payload.country || 'India',
-    notes:             payload.notes   || null,
-    reference:         payload.reference || null,
-    is_active:         payload.status !== 'inactive',
-    assigned_manager:  payload.assignedManager || null,
-    linked_org_ids:    payload.linkedOrgIds    || [],
-    group_id:          payload.groupId ?? payload.group_id ?? null,
-  };
+  const body = {};
+  if (hasOwn(payload, 'displayName') || hasOwn(payload, 'first_name')) {
+    body.first_name = payload.displayName ?? payload.first_name ?? null;
+  }
+  if (hasOwn(payload, 'last_name')) body.last_name = payload.last_name ?? null;
+  if (hasOwn(payload, 'organization_name')) body.organization_name = payload.organization_name ?? null;
+  if (hasOwn(payload, 'email')) body.email = payload.email ?? null;
+  if (hasOwn(payload, 'mobile') || hasOwn(payload, 'phone')) {
+    body.phone = payload.mobile ?? payload.phone ?? null;
+  }
+  if (hasOwn(payload, 'pan')) body.pan = payload.pan ?? null;
+  if (hasOwn(payload, 'gstin')) body.gstin = payload.gstin ?? null;
+  if (hasOwn(payload, 'city')) body.city = payload.city ?? null;
+  if (hasOwn(payload, 'state')) body.state = payload.state ?? null;
+  if (hasOwn(payload, 'country')) body.country = payload.country ?? 'India';
+  if (hasOwn(payload, 'notes')) body.notes = payload.notes ?? null;
+  if (hasOwn(payload, 'reference')) body.reference = payload.reference ?? null;
+  if (hasOwn(payload, 'status')) {
+    body.is_active = payload.status !== 'inactive';
+  } else if (hasOwn(payload, 'is_active')) {
+    body.is_active = Boolean(payload.is_active);
+  }
+  if (hasOwn(payload, 'assignedManager') || hasOwn(payload, 'assigned_manager')) {
+    body.assigned_manager = payload.assignedManager ?? payload.assigned_manager ?? null;
+  }
+  if (hasOwn(payload, 'linkedOrgIds')) {
+    body.linked_org_ids = payload.linkedOrgIds ?? [];
+  }
+  if (hasOwn(payload, 'groupId') || hasOwn(payload, 'group_id')) {
+    body.group_id = payload.groupId ?? payload.group_id ?? null;
+  }
 
   const res = await fetch(`${API_BASE}/admin/contacts/${id}`, {
     method:  'PUT',

@@ -124,12 +124,16 @@ class ContactController extends BaseController
             $this->error('Failed to create contact. Please try again.', 500);
         }
 
-        // Sync linked organizations if provided (best-effort)
-        if (isset($body['linked_org_ids']) && is_array($body['linked_org_ids'])) {
+        // Sync linked organizations when the client sends the key (including [] to clear)
+        if (array_key_exists('linked_org_ids', $body)) {
+            if (!is_array($body['linked_org_ids'])) {
+                $this->error('linked_org_ids must be an array.', 422);
+            }
             try {
                 $this->clients->syncLinkedOrgs($newId, $body['linked_org_ids']);
             } catch (\Throwable $e) {
                 error_log('[ContactController] syncLinkedOrgs failed for new contact ' . $newId . ': ' . $e->getMessage());
+                $this->error('Failed to save linked organizations for this contact. Please try again.', 500);
             }
         }
 
@@ -190,19 +194,24 @@ class ContactController extends BaseController
             $data['group_id'] = $body['group_id'];
         }
 
-        try {
-            $this->clients->update($id, $data);
-        } catch (\Throwable $e) {
-            error_log('[ContactController] Update failed for contact ' . $id . ': ' . $e->getMessage());
-            $this->error('Failed to update contact. Please try again.', 500);
+        if ($data !== []) {
+            try {
+                $this->clients->update($id, $data);
+            } catch (\Throwable $e) {
+                error_log('[ContactController] Update failed for contact ' . $id . ': ' . $e->getMessage());
+                $this->error('Failed to update contact. Please try again.', 500);
+            }
         }
 
-        // Sync linked organizations if provided (best-effort)
-        if (isset($body['linked_org_ids']) && is_array($body['linked_org_ids'])) {
+        if (array_key_exists('linked_org_ids', $body)) {
+            if (!is_array($body['linked_org_ids'])) {
+                $this->error('linked_org_ids must be an array.', 422);
+            }
             try {
                 $this->clients->syncLinkedOrgs($id, $body['linked_org_ids']);
             } catch (\Throwable $e) {
                 error_log('[ContactController] syncLinkedOrgs failed for contact ' . $id . ': ' . $e->getMessage());
+                $this->error('Failed to save linked organizations. Please try again.', 500);
             }
         }
 

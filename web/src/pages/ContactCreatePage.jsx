@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
-import { createContact, updateContact as updateContactApi, getContacts } from '../services/contactService';
+import { createContact, updateContact as updateContactApi, getContact } from '../services/contactService';
 import { getOrganizations } from '../services/organizationService';
 import { getGroups } from '../services/clientGroupService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
@@ -114,6 +114,8 @@ export default function ContactCreatePage() {
   const [contactId, setContactId] = useState(null);
   const [organizations, setOrganizations] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [contactLoading, setContactLoading] = useState(false);
+  const [loadError, setLoadError] = useState(null);
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -133,36 +135,45 @@ export default function ContactCreatePage() {
     getGroups().then(setGroups).catch(() => setGroups([]));
   }, []);
 
-  // Load existing contact in edit mode
+  // Load existing contact in edit mode (single GET — not limited to first page of list)
   useEffect(() => {
     if (!isEdit) return;
-    getContacts()
-      .then(list => {
-        const existing = list.find(c => String(c.id) === id);
-        if (existing) {
-          setCode(existing.clientCode || `CLT-${String(existing.id).padStart(4, '0')}`);
-          setContactId(existing.id);
-          setForm({
-            displayName:     existing.displayName     || '',
-            mobile:          existing.mobile          || '',
-            email:           existing.email           || '',
-            pan:             existing.pan             || '',
-            city:            existing.city            || '',
-            country:         existing.country         || 'India',
-            state:           existing.state           || '',
-            landline:        existing.landline         || '',
-            secondaryMobile: existing.secondaryMobile || '',
-            waMobile:        existing.waMobile         || '',
-            status:          existing.status          || 'active',
-            assignedManager: existing.assignedManager || '',
-            linkedOrgIds:    existing.linkedOrgIds    || [],
-            notes:           existing.notes           || '',
-            groupId:         existing.groupId || existing.group_id || '',
-            reference:       existing.reference || '',
-          });
-        }
+    let cancelled = false;
+    setContactLoading(true);
+    setLoadError(null);
+    getContact(id)
+      .then(existing => {
+        if (cancelled) return;
+        setCode(existing.clientCode || `CLT-${String(existing.id).padStart(4, '0')}`);
+        setContactId(existing.id);
+        setForm({
+          displayName:     existing.displayName     || '',
+          mobile:          existing.mobile          || '',
+          email:           existing.email           || '',
+          pan:             existing.pan             || '',
+          city:            existing.city            || '',
+          country:         existing.country         || 'India',
+          state:           existing.state           || '',
+          landline:        existing.landline         || '',
+          secondaryMobile: existing.secondaryMobile || '',
+          waMobile:        existing.waMobile         || '',
+          status:          existing.status          || 'active',
+          assignedManager: existing.assignedManager || '',
+          linkedOrgIds:    existing.linkedOrgIds    || [],
+          notes:           existing.notes           || '',
+          groupId:         existing.groupId || existing.group_id || '',
+          reference:       existing.reference || '',
+        });
       })
-      .catch(() => {});
+      .catch(err => {
+        if (cancelled) return;
+        setLoadError(err.message || 'Contact could not be loaded.');
+        setContactId(null);
+      })
+      .finally(() => {
+        if (!cancelled) setContactLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [isEdit, id]);
 
   function update(field, value) {
@@ -266,15 +277,20 @@ export default function ContactCreatePage() {
   async function handleSaveQuit() {
     const contact = doSave();
     if (!contact) return;
+    if (isEdit && !contactId) {
+      setToast('Error: Contact is not loaded. Refresh the page and try again.');
+      return;
+    }
     setSaving(true);
     try {
       if (isEdit && contactId) {
         await updateContactApi(contactId, contact);
+        setToast('Contact updated successfully!');
       } else {
         await createContact(contact);
+        setToast('Contact saved successfully!');
       }
       setDirty(false);
-      setToast(isEdit ? 'Contact updated successfully!' : 'Contact saved successfully!');
       setTimeout(() => navigate('/clients/contacts'), 900);
     } catch (err) {
       setToast('Error: ' + (err.message || 'Failed to save contact.'));
@@ -303,6 +319,31 @@ export default function ContactCreatePage() {
   function handleCancel() {
     if (dirty && !window.confirm('You have unsaved changes. Leave anyway?')) return;
     navigate('/clients/contacts');
+  }
+
+  if (isEdit && contactLoading) {
+    return (
+      <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%', color: '#64748b', fontSize: 14 }}>
+        Loading contact…
+      </div>
+    );
+  }
+
+  if (isEdit && loadError) {
+    return (
+      <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
+        <div style={{ padding: 16, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, color: '#991b1b', fontSize: 14, maxWidth: 480 }}>
+          {loadError}
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/clients/contacts')}
+          style={{ marginTop: 16, padding: '8px 16px', borderRadius: 8, border: '1px solid #E6E8F0', background: '#fff', cursor: 'pointer', fontWeight: 600 }}
+        >
+          Back to contacts
+        </button>
+      </div>
+    );
   }
 
   return (
