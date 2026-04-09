@@ -84,9 +84,15 @@ class ClientModel
             return null;
         }
 
-        $linkedOrgs                = $this->getLinkedOrgs($row['id']);
-        $row['linked_org_ids']   = array_column($linkedOrgs, 'id');
-        $row['linked_org_names'] = array_column($linkedOrgs, 'name');
+        try {
+            $linkedOrgs              = $this->getLinkedOrgs($row['id']);
+            $row['linked_org_ids']   = array_column($linkedOrgs, 'id');
+            $row['linked_org_names'] = array_column($linkedOrgs, 'name');
+        } catch (\Throwable $e) {
+            error_log('[ClientModel] Linked orgs fetch failed for client ' . $row['id'] . ': ' . $e->getMessage());
+            $row['linked_org_ids']   = [];
+            $row['linked_org_names'] = [];
+        }
 
         return $row;
     }
@@ -143,31 +149,40 @@ class ClientModel
 
         // Batch-fetch linked organizations to avoid N+1 queries
         if (!empty($clients)) {
-            $contactIds   = array_map('intval', array_column($clients, 'id'));
-            // Safe: IDs are already cast to int via intval(), no SQL injection risk
-            $placeholders = implode(',', $contactIds);
+            try {
+                $contactIds   = array_map('intval', array_column($clients, 'id'));
+                // Safe: IDs are already cast to int via intval(), no SQL injection risk
+                $placeholders = implode(',', $contactIds);
 
-            $orgStmt = $this->db->query(
-                "SELECT co.contact_id, o.id AS org_id, o.name AS org_name
-                 FROM contact_organization co
-                 JOIN organizations o ON o.id = co.organization_id
-                 WHERE co.contact_id IN ({$placeholders})
-                 ORDER BY o.name ASC"
-            );
-            $allLinkedOrgs = $orgStmt->fetchAll();
+                $orgStmt = $this->db->query(
+                    "SELECT co.contact_id, o.id AS org_id, o.name AS org_name
+                     FROM contact_organization co
+                     JOIN organizations o ON o.id = co.organization_id
+                     WHERE co.contact_id IN ({$placeholders})
+                     ORDER BY o.name ASC"
+                );
+                $allLinkedOrgs = $orgStmt->fetchAll();
 
-            // Group by contact_id
-            $orgsByContact = [];
-            foreach ($allLinkedOrgs as $row) {
-                $orgsByContact[(int)$row['contact_id']][] = $row;
+                // Group by contact_id
+                $orgsByContact = [];
+                foreach ($allLinkedOrgs as $row) {
+                    $orgsByContact[(int)$row['contact_id']][] = $row;
+                }
+
+                foreach ($clients as &$client) {
+                    $orgs                       = $orgsByContact[(int)$client['id']] ?? [];
+                    $client['linked_org_ids']   = array_map(fn($o) => (int)$o['org_id'], $orgs);
+                    $client['linked_org_names'] = array_column($orgs, 'org_name');
+                }
+                unset($client);
+            } catch (\Throwable $e) {
+                error_log('[ClientModel] Linked orgs batch-fetch failed: ' . $e->getMessage());
+                foreach ($clients as &$client) {
+                    $client['linked_org_ids']   = [];
+                    $client['linked_org_names'] = [];
+                }
+                unset($client);
             }
-
-            foreach ($clients as &$client) {
-                $orgs                       = $orgsByContact[(int)$client['id']] ?? [];
-                $client['linked_org_ids']   = array_map(fn($o) => (int)$o['org_id'], $orgs);
-                $client['linked_org_names'] = array_column($orgs, 'org_name');
-            }
-            unset($client);
         }
 
         return ['total' => $total, 'clients' => $clients];
