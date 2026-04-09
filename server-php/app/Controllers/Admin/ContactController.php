@@ -97,31 +97,40 @@ class ContactController extends BaseController
 
         $actingUser = $this->authUser();
 
-        $newId = $this->clients->create([
-            'type'              => $body['type']              ?? 'individual',
-            'first_name'        => $firstName  ?: null,
-            'last_name'         => $lastName   ?: null,
-            'organization_name' => $organizationName ?: null,
-            'email'             => trim((string)($body['email']         ?? '')) ?: null,
-            'phone'             => trim((string)($body['phone']         ?? '')) ?: null,
-            'pan'               => strtoupper(trim((string)($body['pan'] ?? ''))) ?: null,
-            'gstin'             => strtoupper(trim((string)($body['gstin'] ?? ''))) ?: null,
-            'address_line1'     => $body['address_line1'] ?? null,
-            'address_line2'     => $body['address_line2'] ?? null,
-            'city'              => $body['city']     ?? null,
-            'state'             => $body['state']    ?? null,
-            'pincode'           => $body['pincode']  ?? null,
-            'country'           => $body['country']  ?? 'India',
-            'notes'             => $body['notes']    ?? null,
-            'reference'         => $body['reference'] ?? null,
-            'group_id'          => $body['group_id']  ?? null,
-            'is_active'         => $body['is_active'] ?? true,
-            'created_by'        => $actingUser ? (int)$actingUser['id'] : null,
-        ]);
+        try {
+            $newId = $this->clients->create([
+                'type'              => $body['type']              ?? 'individual',
+                'first_name'        => $firstName  ?: null,
+                'last_name'         => $lastName   ?: null,
+                'organization_name' => $organizationName ?: null,
+                'email'             => trim((string)($body['email']         ?? '')) ?: null,
+                'phone'             => trim((string)($body['phone']         ?? '')) ?: null,
+                'pan'               => strtoupper(trim((string)($body['pan'] ?? ''))) ?: null,
+                'gstin'             => strtoupper(trim((string)($body['gstin'] ?? ''))) ?: null,
+                'address_line1'     => $body['address_line1'] ?? null,
+                'address_line2'     => $body['address_line2'] ?? null,
+                'city'              => $body['city']     ?? null,
+                'state'             => $body['state']    ?? null,
+                'pincode'           => $body['pincode']  ?? null,
+                'country'           => $body['country']  ?? 'India',
+                'notes'             => $body['notes']    ?? null,
+                'reference'         => $body['reference'] ?? null,
+                'group_id'          => $body['group_id']  ?? null,
+                'is_active'         => $body['is_active'] ?? true,
+                'created_by'        => $actingUser ? (int)$actingUser['id'] : null,
+            ]);
+        } catch (\Throwable $e) {
+            error_log('[ContactController] Create failed: ' . $e->getMessage());
+            $this->error('Failed to create contact. Please try again.', 500);
+        }
 
-        // Sync linked organizations if provided
+        // Sync linked organizations if provided (best-effort)
         if (isset($body['linked_org_ids']) && is_array($body['linked_org_ids'])) {
-            $this->clients->syncLinkedOrgs($newId, $body['linked_org_ids']);
+            try {
+                $this->clients->syncLinkedOrgs($newId, $body['linked_org_ids']);
+            } catch (\Throwable $e) {
+                error_log('[ContactController] syncLinkedOrgs failed for new contact ' . $newId . ': ' . $e->getMessage());
+            }
         }
 
         $contact = $this->clients->find($newId);
@@ -181,11 +190,20 @@ class ContactController extends BaseController
             $data['group_id'] = $body['group_id'];
         }
 
-        $this->clients->update($id, $data);
+        try {
+            $this->clients->update($id, $data);
+        } catch (\Throwable $e) {
+            error_log('[ContactController] Update failed for contact ' . $id . ': ' . $e->getMessage());
+            $this->error('Failed to update contact. Please try again.', 500);
+        }
 
-        // Sync linked organizations if provided
+        // Sync linked organizations if provided (best-effort)
         if (isset($body['linked_org_ids']) && is_array($body['linked_org_ids'])) {
-            $this->clients->syncLinkedOrgs($id, $body['linked_org_ids']);
+            try {
+                $this->clients->syncLinkedOrgs($id, $body['linked_org_ids']);
+            } catch (\Throwable $e) {
+                error_log('[ContactController] syncLinkedOrgs failed for contact ' . $id . ': ' . $e->getMessage());
+            }
         }
 
         $updated    = $this->clients->find($id);
@@ -214,7 +232,12 @@ class ContactController extends BaseController
         $body     = $this->getJsonBody();
         $isActive = isset($body['is_active']) ? (bool)$body['is_active'] : !(bool)$contact['is_active'];
 
-        $this->clients->updateStatus($id, $isActive);
+        try {
+            $this->clients->updateStatus($id, $isActive);
+        } catch (\Throwable $e) {
+            error_log('[ContactController] updateStatus failed for contact ' . $id . ': ' . $e->getMessage());
+            $this->error('Failed to update contact status. Please try again.', 500);
+        }
         $updated    = $this->clients->find($id);
         $actingUser = $this->authUser();
 
@@ -237,7 +260,12 @@ class ContactController extends BaseController
             $this->error('Contact not found.', 404);
         }
 
-        $this->clients->delete($id);
+        try {
+            $this->clients->delete($id);
+        } catch (\Throwable $e) {
+            error_log('[ContactController] Delete failed for contact ' . $id . ': ' . $e->getMessage());
+            $this->error('Failed to delete contact. Please try again.', 500);
+        }
         $this->success(null, 'Contact deleted');
     }
 
