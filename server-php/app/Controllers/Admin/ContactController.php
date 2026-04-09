@@ -133,7 +133,10 @@ class ContactController extends BaseController
                 $this->clients->syncLinkedOrgs($newId, $body['linked_org_ids']);
             } catch (\Throwable $e) {
                 error_log('[ContactController] syncLinkedOrgs failed for new contact ' . $newId . ': ' . $e->getMessage());
-                $this->error('Failed to save linked organizations for this contact. Please try again.', 500);
+                $this->error(
+                    'Failed to save linked organizations. On new servers, run database migration 012 (creates table contact_organization). Check the PHP error_log for the exact database error.',
+                    500
+                );
             }
         }
 
@@ -211,7 +214,10 @@ class ContactController extends BaseController
                 $this->clients->syncLinkedOrgs($id, $body['linked_org_ids']);
             } catch (\Throwable $e) {
                 error_log('[ContactController] syncLinkedOrgs failed for contact ' . $id . ': ' . $e->getMessage());
-                $this->error('Failed to save linked organizations. Please try again.', 500);
+                $this->error(
+                    'Failed to save linked organizations. On new servers, run database migration 012 (creates table contact_organization). Check the PHP error_log for the exact database error.',
+                    500
+                );
             }
         }
 

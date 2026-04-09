@@ -9,7 +9,7 @@ import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
 import EntitySearchDropdown from '../components/common/EntitySearchDropdown';
 import { BILLING_PROFILES, getBillingProfileByCode } from '../constants/billingProfiles';
 import {
-  collectIndianFYStartYears,
+  collectIndianFYStartYearsWithFallback,
   buildLedgerRowsForIndianFY,
   indianFYLabel,
   indianFYBounds,
@@ -693,7 +693,7 @@ export default function Invoices() {
       setLedger(entries);
       setOpeningBalances(obs);
       setLedgerFyStartYear((prev) => {
-        const fys = collectIndianFYStartYears(entries);
+        const fys = collectIndianFYStartYearsWithFallback(entries);
         if (fys.length === 0) return null;
         if (prev != null && fys.includes(prev)) return prev;
         return fys[fys.length - 1];
@@ -707,7 +707,7 @@ export default function Invoices() {
   }, [ledgerClientId]);
 
   const ledgerFyOptions = useMemo(
-    () => collectIndianFYStartYears(ledger),
+    () => collectIndianFYStartYearsWithFallback(ledger),
     [ledger]
   );
 
@@ -852,7 +852,7 @@ export default function Invoices() {
         setLedger(entries);
         setOpeningBalances(obs);
         setLedgerFyStartYear((prev) => {
-          const fys = collectIndianFYStartYears(entries);
+          const fys = collectIndianFYStartYearsWithFallback(entries);
           if (fys.length === 0) return null;
           if (prev != null && fys.includes(prev)) return prev;
           return fys[fys.length - 1];
@@ -1151,7 +1151,7 @@ export default function Invoices() {
                 placeholder="Search contact or organization…"
               />
             </div>
-            {ledgerClientId && ledgerFyOptions.length > 0 && (
+            {ledgerClientId && !ledgerLoading && ledger.length > 0 && ledgerFyOptions.length > 0 && (
               <>
                 <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Financial year:</span>
                 <select

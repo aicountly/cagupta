@@ -3,12 +3,20 @@
  * Example: dates in Apr 2025–Mar 2026 belong to FY 2025-26 (startYear 2025).
  */
 
+/** Extract YYYY-MM-DD from ISO timestamps and similar (ledger/API may return full ISO). */
+export function toYmdDateKey(dateStr) {
+  if (!dateStr || typeof dateStr !== 'string') return '';
+  const m = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : '';
+}
+
 export function indianFYStartYearFromDate(dateStr) {
-  if (!dateStr || typeof dateStr !== 'string') return null;
-  const y = parseInt(dateStr.slice(0, 4), 10);
-  const m = parseInt(dateStr.slice(5, 7), 10);
-  if (Number.isNaN(y) || Number.isNaN(m)) return null;
-  return m >= 4 ? y : y - 1;
+  const ymd = toYmdDateKey(dateStr);
+  if (!ymd) return null;
+  const y = parseInt(ymd.slice(0, 4), 10);
+  const mo = parseInt(ymd.slice(5, 7), 10);
+  if (Number.isNaN(y) || Number.isNaN(mo)) return null;
+  return mo >= 4 ? y : y - 1;
 }
 
 export function indianFYLabel(startYear) {
@@ -25,13 +33,36 @@ export function indianFYBounds(startYear) {
 /**
  * Distinct FY start years present in the ledger, ascending.
  */
-export function collectIndianFYStartYears(entries, getDate = (e) => e.txnDate || e.date || '') {
+export function ledgerEntryDate(e) {
+  return toYmdDateKey(e.txnDate || e.date || '');
+}
+
+export function collectIndianFYStartYears(entries, getDate = ledgerEntryDate) {
   const years = new Set();
   for (const e of entries) {
     const sy = indianFYStartYearFromDate(getDate(e));
     if (sy != null) years.add(sy);
   }
   return [...years].sort((a, b) => a - b);
+}
+
+/** Current Indian FY start year (based on local calendar date). */
+export function defaultIndianFYStartYearFromToday() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth() + 1;
+  return m >= 4 ? y : y - 1;
+}
+
+/**
+ * FY list from entry dates; if there are entries but no parseable dates, fall back to current FY
+ * so the UI can still show controls.
+ */
+export function collectIndianFYStartYearsWithFallback(entries, getDate = ledgerEntryDate) {
+  const fys = collectIndianFYStartYears(entries, getDate);
+  if (fys.length > 0) return fys;
+  if (!entries.length) return [];
+  return [defaultIndianFYStartYearFromToday()];
 }
 
 function clampDateToFY(dateStr, fyStart, fyEnd) {
@@ -50,7 +81,7 @@ export function buildLedgerRowsForIndianFY(
   fyStartYear,
   dateFrom,
   dateTo,
-  getDate = (e) => e.txnDate || e.date || ''
+  getDate = ledgerEntryDate
 ) {
   const { start: fyStart, end: fyEnd } = indianFYBounds(fyStartYear);
 

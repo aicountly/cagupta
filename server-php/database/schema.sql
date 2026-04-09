@@ -98,6 +98,20 @@ CREATE TABLE IF NOT EXISTS organizations (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS primary_contact_id INT REFERENCES clients(id) ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS contact_organization (
+    id              SERIAL PRIMARY KEY,
+    contact_id      INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    organization_id INT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    role            VARCHAR(50) DEFAULT 'member',
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(contact_id, organization_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_contact_org_contact ON contact_organization(contact_id);
+CREATE INDEX IF NOT EXISTS idx_contact_org_org ON contact_organization(organization_id);
+
 -- -----------------------------------------------------------------------------
 -- 6. services
 -- -----------------------------------------------------------------------------

@@ -303,20 +303,32 @@ class ClientModel
      */
     public function syncLinkedOrgs(int $clientId, array $orgIds): void
     {
-        // Remove all existing links
-        $stmt = $this->db->prepare('DELETE FROM contact_organization WHERE contact_id = :cid');
-        $stmt->execute([':cid' => $clientId]);
+        $ids = array_values(array_unique(array_filter(
+            array_map(static fn($x) => (int)$x, $orgIds),
+            static fn(int $id) => $id > 0
+        )));
 
-        // Insert new links
-        if (!empty($orgIds)) {
-            $stmt = $this->db->prepare(
-                'INSERT INTO contact_organization (contact_id, organization_id)
-                 VALUES (:cid, :oid)
-                 ON CONFLICT (contact_id, organization_id) DO NOTHING'
-            );
-            foreach ($orgIds as $orgId) {
-                $stmt->execute([':cid' => $clientId, ':oid' => (int)$orgId]);
+        $this->db->beginTransaction();
+        try {
+            $del = $this->db->prepare('DELETE FROM contact_organization WHERE contact_id = :cid');
+            $del->execute([':cid' => $clientId]);
+
+            if ($ids !== []) {
+                // Plain INSERT: after DELETE there are no rows for this contact, so no
+                // duplicate pairs. Avoids ON CONFLICT, which fails if UNIQUE is missing on prod.
+                $ins = $this->db->prepare(
+                    'INSERT INTO contact_organization (contact_id, organization_id) VALUES (:cid, :oid)'
+                );
+                foreach ($ids as $orgId) {
+                    $ins->execute([':cid' => $clientId, ':oid' => $orgId]);
+                }
             }
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
         }
     }
 
