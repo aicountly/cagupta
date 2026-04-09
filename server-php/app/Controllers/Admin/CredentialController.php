@@ -4,10 +4,14 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
+use App\Libraries\BrevoMailer;
 use App\Models\CredentialModel;
 
 /**
  * CredentialController — CRUD for the `credentials_vault` table.
+ *
+ * Sends an alert email to the Superadmin on create and on update when fields change
+ * (best-effort; failures do not block the response).
  *
  * All endpoints require Bearer token + role: super_admin or admin.
  */
@@ -75,6 +79,9 @@ class CredentialController extends BaseController
         ]);
 
         $credential = $this->credentials->find($newId);
+
+        $this->sendSuperadminAlert('Created', $credential, $actingUser);
+
         $this->success($credential, 'Credential created', 201);
     }
 
@@ -120,8 +127,17 @@ class CredentialController extends BaseController
             $data['url'] = $body['portal_url'];
         }
 
-        $this->credentials->update($id, $data);
-        $updated = $this->credentials->find($id);
+        if ($data !== []) {
+            $this->credentials->update($id, $data);
+        }
+
+        $updated    = $this->credentials->find($id);
+        $actingUser = $this->authUser();
+
+        if ($data !== []) {
+            $this->sendSuperadminAlert('Updated', $updated, $actingUser);
+        }
+
         $this->success($updated, 'Credential updated');
     }
 
@@ -139,5 +155,45 @@ class CredentialController extends BaseController
 
         $this->credentials->delete($id);
         $this->success(null, 'Credential deleted');
+    }
+
+    /**
+     * Send an alert email to the Superadmin (fire-and-forget).
+     *
+     * @param string                     $action      Human-readable action label.
+     * @param array<string, mixed>|null  $credential  The affected credential row.
+     * @param array<string, mixed>|null  $actingUser  The user who performed the action.
+     */
+    private function sendSuperadminAlert(string $action, ?array $credential, ?array $actingUser): void
+    {
+        try {
+            $superadminEmail = (string)(getenv('SUPERADMIN_NOTIFY_EMAIL') ?: 'office@carahulgupta.in');
+            $portalName      = $credential ? trim((string)($credential['portal_name'] ?? '')) : '';
+            $portalName      = $portalName !== '' ? $portalName : 'Unknown';
+            $linkedTo        = $credential ? trim((string)($credential['client_name'] ?? 'Unknown')) : 'Unknown';
+            $actorName       = (string)(($actingUser ?? [])['name']  ?? 'Unknown');
+            $actorEmail      = (string)(($actingUser ?? [])['email'] ?? 'Unknown');
+            $timestamp       = date('d M Y, h:i A T');
+
+            $htmlBody = BrevoMailer::renderTemplate('credential-activity', [
+                'action'     => $action,
+                'portalName' => $portalName,
+                'linkedTo'   => $linkedTo,
+                'actorName'  => $actorName,
+                'actorEmail' => $actorEmail,
+                'timestamp'  => $timestamp,
+            ]);
+
+            if ($htmlBody !== '') {
+                BrevoMailer::send(
+                    $superadminEmail,
+                    'CA Rahul Gupta',
+                    "Credential {$action} Alert - CA Rahul Gupta",
+                    $htmlBody
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[CredentialController] Superadmin alert failed: ' . $e->getMessage());
+        }
     }
 }
