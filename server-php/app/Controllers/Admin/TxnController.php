@@ -150,16 +150,23 @@ class TxnController extends BaseController
     // ── GET /api/admin/txn/ledger ────────────────────────────────────────────
 
     /**
-     * Return full ledger with running balance for a client.
-     * Query param: client_id (required)
+     * Return full ledger with running balance for a client or organization.
+     * Query params: client_id or organization_id (one is required)
      */
     public function ledger(): never
     {
         $clientId = (int)$this->query('client_id', 0);
-        if ($clientId <= 0) {
-            $this->error('client_id is required.', 422);
+        $orgId    = (int)$this->query('organization_id', 0);
+
+        if ($clientId <= 0 && $orgId <= 0) {
+            $this->error('client_id or organization_id is required.', 422);
         }
-        $entries = $this->txn->getLedgerByClient($clientId);
+
+        if ($orgId > 0) {
+            $entries = $this->txn->getLedgerByOrganization($orgId);
+        } else {
+            $entries = $this->txn->getLedgerByClient($clientId);
+        }
         $this->success($entries, 'Ledger retrieved');
     }
 

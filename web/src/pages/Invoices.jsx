@@ -6,6 +6,7 @@ import {
 } from '../services/txnService';
 import StatusBadge from '../components/common/StatusBadge';
 import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
+import EntitySearchDropdown from '../components/common/EntitySearchDropdown';
 import { BILLING_PROFILES, getBillingProfileByCode } from '../constants/billingProfiles';
 
 // ── Shared badge components ───────────────────────────────────────────────────
@@ -608,9 +609,10 @@ export default function Invoices() {
   const [showCnModal, setShowCnModal]     = useState(false);
 
   // ── Ledger tab state ────────────────────────────────────────────────────────
-  const [ledgerClientId, setLedgerClientId]     = useState('');
-  const [ledgerClientName, setLedgerClientName] = useState('');
-  const [ledger, setLedger]                     = useState([]);
+  const [ledgerClientId, setLedgerClientId]       = useState('');
+  const [ledgerClientName, setLedgerClientName]   = useState('');
+  const [ledgerEntityType, setLedgerEntityType]   = useState('contact');
+  const [ledger, setLedger]                       = useState([]);
   const [ledgerLoading, setLedgerLoading]       = useState(false);
   const [openingBalances, setOpeningBalances]   = useState([]);
   const [showOpeningModal, setShowOpeningModal] = useState(false);
@@ -669,14 +671,17 @@ export default function Invoices() {
   useEffect(() => {
     if (tab !== 'ledger' || !ledgerClientId) return;
     setLedgerLoading(true);
+    const ledgerParam = ledgerEntityType === 'organization'
+      ? { organizationId: ledgerClientId }
+      : { clientId: ledgerClientId };
     Promise.all([
-      getLedger(ledgerClientId).catch(() => []),
+      getLedger(ledgerParam).catch(() => []),
       getOpeningBalance(ledgerClientId).catch(() => []),
     ]).then(([entries, obs]) => {
       setLedger(entries);
       setOpeningBalances(obs);
     }).finally(() => setLedgerLoading(false));
-  }, [tab, ledgerClientId]);
+  }, [tab, ledgerClientId, ledgerEntityType]);
 
   // ── Summary cards ───────────────────────────────────────────────────────────
   const totalBilled    = invoices.reduce((a, i) => a + (i.amount || i.debit || 0), 0);
@@ -796,8 +801,11 @@ export default function Invoices() {
 
   function handleOpeningBalanceSaved() {
     if (ledgerClientId) {
+      const ledgerParam = ledgerEntityType === 'organization'
+        ? { organizationId: ledgerClientId }
+        : { clientId: ledgerClientId };
       Promise.all([
-        getLedger(ledgerClientId).catch(() => []),
+        getLedger(ledgerParam).catch(() => []),
         getOpeningBalance(ledgerClientId).catch(() => []),
       ]).then(([entries, obs]) => {
         setLedger(entries);
@@ -1084,14 +1092,16 @@ export default function Invoices() {
           <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
             <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Client:</span>
             <div style={{ flex:'0 0 280px' }}>
-              <ClientSearchDropdown
+              <EntitySearchDropdown
                 value={ledgerClientId}
                 displayValue={ledgerClientName}
+                entityType={ledgerEntityType}
                 onChange={c => {
                   setLedgerClientId(String(c.id));
                   setLedgerClientName(c.displayName);
+                  setLedgerEntityType(c.entityType);
                 }}
-                placeholder="Search client…"
+                placeholder="Search contact or organization…"
               />
             </div>
             {ledgerClientId && (

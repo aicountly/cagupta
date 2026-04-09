@@ -32,6 +32,8 @@ function normalizeCredential(c) {
   return {
     id:             c.id,
     clientId:       c.client_id       || null,
+    organizationId: c.organization_id || null,
+    entityType:     c.organization_id ? 'organization' : 'contact',
     clientName:     c.client_name     || 'Unknown',
     portalName:     c.portal_name     || '',
     portalUrl:      c.url             || c.portal_url || '',
@@ -64,13 +66,18 @@ export async function getCredentials({ page = 1, perPage = 100, clientId = '' } 
  */
 export async function createCredential(payload) {
   const body = {
-    client_id:          payload.clientId    || null,
     portal_name:        payload.portalName  || '',
     url:                payload.portalUrl   || null,
     username:           payload.username    || null,
     password_encrypted: payload.password    || null,
     notes:              payload.notes       || null,
   };
+
+  if (payload.entityType === 'organization') {
+    body.organization_id = payload.clientId || null;
+  } else {
+    body.client_id = payload.clientId || null;
+  }
 
   const res = await fetch(`${API_BASE}/admin/credentials`, {
     method:  'POST',
@@ -107,6 +114,14 @@ export async function updateCredential(id, payload) {
     password_encrypted: payload.password    || undefined,
     notes:              payload.notes       || undefined,
   };
+
+  if (payload.entityType === 'organization') {
+    body.organization_id = payload.clientId || null;
+    body.client_id       = null;
+  } else if (payload.entityType === 'contact') {
+    body.client_id       = payload.clientId || null;
+    body.organization_id = null;
+  }
 
   const res = await fetch(`${API_BASE}/admin/credentials/${id}`, {
     method:  'PUT',

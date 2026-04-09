@@ -27,11 +27,15 @@ class CredentialModel
     {
         $stmt = $this->db->prepare(
             "SELECT cv.*,
-                    COALESCE(c.organization_name,
-                             TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
-                             'Unknown') AS client_name
+                    COALESCE(
+                        o.name,
+                        c.organization_name,
+                        TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
+                        'Unknown'
+                    ) AS client_name
              FROM credentials_vault cv
              LEFT JOIN clients c ON c.id = cv.client_id
+             LEFT JOIN organizations o ON o.id = cv.organization_id
              WHERE cv.id = :id
              LIMIT 1"
         );
@@ -69,11 +73,15 @@ class CredentialModel
 
         $stmt = $this->db->prepare(
             "SELECT cv.*,
-                    COALESCE(c.organization_name,
-                             TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
-                             'Unknown') AS client_name
+                    COALESCE(
+                        o.name,
+                        c.organization_name,
+                        TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
+                        'Unknown'
+                    ) AS client_name
              FROM credentials_vault cv
              LEFT JOIN clients c ON c.id = cv.client_id
+             LEFT JOIN organizations o ON o.id = cv.organization_id
              WHERE {$whereClause}
              ORDER BY cv.created_at DESC
              LIMIT :limit OFFSET :offset"
@@ -128,7 +136,7 @@ class CredentialModel
         $setClauses = [];
         $params     = [':id' => $id];
 
-        $allowed = ['portal_name', 'username', 'password_encrypted', 'url', 'notes'];
+        $allowed = ['client_id', 'organization_id', 'portal_name', 'username', 'password_encrypted', 'url', 'notes'];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
                 $setClauses[]       = "{$field} = :{$field}";
