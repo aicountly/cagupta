@@ -694,7 +694,6 @@ export default function Invoices() {
       setOpeningBalances(obs);
       setLedgerFyStartYear((prev) => {
         const fys = collectIndianFYStartYearsWithFallback(entries);
-        if (fys.length === 0) return null;
         if (prev != null && fys.includes(prev)) return prev;
         return fys[fys.length - 1];
       });
@@ -853,7 +852,6 @@ export default function Invoices() {
         setOpeningBalances(obs);
         setLedgerFyStartYear((prev) => {
           const fys = collectIndianFYStartYearsWithFallback(entries);
-          if (fys.length === 0) return null;
           if (prev != null && fys.includes(prev)) return prev;
           return fys[fys.length - 1];
         });
@@ -1151,7 +1149,7 @@ export default function Invoices() {
                 placeholder="Search contact or organization…"
               />
             </div>
-            {ledgerClientId && !ledgerLoading && ledger.length > 0 && ledgerFyOptions.length > 0 && (
+            {ledgerClientId && !ledgerLoading && (
               <>
                 <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Financial year:</span>
                 <select

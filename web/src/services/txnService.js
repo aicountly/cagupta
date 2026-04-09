@@ -33,9 +33,9 @@ function normalizeTxn(t) {
     clientId:           t.client_id        || null,
     clientName:         t.client_name      || 'Unknown',
     organizationId:     t.organization_id  || null,
-    // Ledger API uses AS date / AS entry_type; list/detail APIs use txn_date / txn_type
-    txnType:            t.txn_type         || t.entry_type     || '',
-    txnDate:            t.txn_date         || t.date           || '',
+    // Ledger SQL uses AS date / AS entry_type; other payloads may use snake_case or camelCase
+    txnType:            t.txn_type         || t.entry_type     || t.txnType     || '',
+    txnDate:            t.txn_date         || t.date           || t.txnDate     || '',
     narration:          t.narration        || '',
     debit:              parseFloat(t.debit  || 0),
     credit:             parseFloat(t.credit || 0),

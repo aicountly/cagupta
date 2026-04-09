@@ -61,7 +61,7 @@ export function defaultIndianFYStartYearFromToday() {
 export function collectIndianFYStartYearsWithFallback(entries, getDate = ledgerEntryDate) {
   const fys = collectIndianFYStartYears(entries, getDate);
   if (fys.length > 0) return fys;
-  if (!entries.length) return [];
+  // No parseable dates (or empty ledger): still offer current FY so filters are always visible after client pick
   return [defaultIndianFYStartYearFromToday()];
 }
 
