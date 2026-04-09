@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   getTxns, createTxn, createReceipt, createTds, finalizeTds,
   getTdsEntries, createRebate, createCreditNote, getLedger,
@@ -8,6 +8,12 @@ import StatusBadge from '../components/common/StatusBadge';
 import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
 import EntitySearchDropdown from '../components/common/EntitySearchDropdown';
 import { BILLING_PROFILES, getBillingProfileByCode } from '../constants/billingProfiles';
+import {
+  collectIndianFYStartYears,
+  buildLedgerRowsForIndianFY,
+  indianFYLabel,
+  indianFYBounds,
+} from '../utils/indianFinancialYear';
 
 // ── Shared badge components ───────────────────────────────────────────────────
 
@@ -32,6 +38,7 @@ const TXN_TYPE_COLORS = {
   rebate:          { bg:'#fff1f2', color:'#be123c', border:'#fecdd3' },
   credit_note:     { bg:'#fef9c3', color:'#854d0e', border:'#fde68a' },
   opening_balance: { bg:'#fffbeb', color:'#92400e', border:'#fde68a' },
+  brought_forward: { bg:'#f8fafc', color:'#334155', border:'#e2e8f0' },
   payment_expense: { bg:'#f0f9ff', color:'#075985', border:'#bae6fd' },
 };
 
@@ -40,7 +47,9 @@ function TxnTypeBadge({ type }) {
   const labels = {
     invoice: 'Invoice', receipt: 'Receipt', tds_provisional: 'TDS (Prov.)',
     tds_final: 'TDS (Final)', rebate: 'Rebate', credit_note: 'Credit Note',
-    opening_balance: 'Opening Bal.', payment_expense: 'Payment Exp.',
+    opening_balance: 'Opening Bal.',
+    brought_forward: 'B/F',
+    payment_expense: 'Payment Exp.',
   };
   return (
     <span style={{ background:c.bg, color:c.color, border:`1px solid ${c.border}`, padding:'2px 8px', borderRadius:99, fontSize:11, fontWeight:700, whiteSpace:'nowrap', display:'inline-block' }}>
@@ -616,6 +625,9 @@ export default function Invoices() {
   const [ledgerLoading, setLedgerLoading]       = useState(false);
   const [openingBalances, setOpeningBalances]   = useState([]);
   const [showOpeningModal, setShowOpeningModal] = useState(false);
+  const [ledgerFyStartYear, setLedgerFyStartYear] = useState(null);
+  const [ledgerFilterDateFrom, setLedgerFilterDateFrom] = useState('');
+  const [ledgerFilterDateTo, setLedgerFilterDateTo]     = useState('');
 
   // ── Load invoices on mount ──────────────────────────────────────────────────
   useEffect(() => {
@@ -680,8 +692,37 @@ export default function Invoices() {
     ]).then(([entries, obs]) => {
       setLedger(entries);
       setOpeningBalances(obs);
+      setLedgerFyStartYear((prev) => {
+        const fys = collectIndianFYStartYears(entries);
+        if (fys.length === 0) return null;
+        if (prev != null && fys.includes(prev)) return prev;
+        return fys[fys.length - 1];
+      });
     }).finally(() => setLedgerLoading(false));
   }, [tab, ledgerClientId, ledgerEntityType]);
+
+  useEffect(() => {
+    setLedgerFilterDateFrom('');
+    setLedgerFilterDateTo('');
+  }, [ledgerClientId]);
+
+  const ledgerFyOptions = useMemo(
+    () => collectIndianFYStartYears(ledger),
+    [ledger]
+  );
+
+  const ledgerDisplayRows = useMemo(() => {
+    if (!ledger.length) return [];
+    if (!ledgerFyOptions.length || ledgerFyStartYear == null) {
+      return ledger.map((e) => ({ ...e }));
+    }
+    return buildLedgerRowsForIndianFY(
+      ledger,
+      ledgerFyStartYear,
+      ledgerFilterDateFrom,
+      ledgerFilterDateTo
+    );
+  }, [ledger, ledgerFyOptions, ledgerFyStartYear, ledgerFilterDateFrom, ledgerFilterDateTo]);
 
   // ── Summary cards ───────────────────────────────────────────────────────────
   const totalBilled    = invoices.reduce((a, i) => a + (i.amount || i.debit || 0), 0);
@@ -810,6 +851,12 @@ export default function Invoices() {
       ]).then(([entries, obs]) => {
         setLedger(entries);
         setOpeningBalances(obs);
+        setLedgerFyStartYear((prev) => {
+          const fys = collectIndianFYStartYears(entries);
+          if (fys.length === 0) return null;
+          if (prev != null && fys.includes(prev)) return prev;
+          return fys[fys.length - 1];
+        });
       });
     }
   }
@@ -1104,6 +1151,52 @@ export default function Invoices() {
                 placeholder="Search contact or organization…"
               />
             </div>
+            {ledgerClientId && ledgerFyOptions.length > 0 && (
+              <>
+                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Financial year:</span>
+                <select
+                  style={{ ...inputStyle, minWidth: 128, cursor:'pointer' }}
+                  value={ledgerFyStartYear ?? ledgerFyOptions[ledgerFyOptions.length - 1]}
+                  onChange={(e) => setLedgerFyStartYear(parseInt(e.target.value, 10))}
+                >
+                  {ledgerFyOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {indianFYLabel(y)}
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Date from:</span>
+                <input
+                  type="date"
+                  style={{ ...inputStyle, width: 'auto' }}
+                  min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
+                  max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
+                  value={ledgerFilterDateFrom}
+                  onChange={(e) => setLedgerFilterDateFrom(e.target.value)}
+                />
+                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>to:</span>
+                <input
+                  type="date"
+                  style={{ ...inputStyle, width: 'auto' }}
+                  min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
+                  max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
+                  value={ledgerFilterDateTo}
+                  onChange={(e) => setLedgerFilterDateTo(e.target.value)}
+                />
+                {(ledgerFilterDateFrom || ledgerFilterDateTo) && (
+                  <button
+                    type="button"
+                    style={{ ...btnSecondary, fontSize:12, padding:'6px 10px', whiteSpace:'nowrap' }}
+                    onClick={() => {
+                      setLedgerFilterDateFrom('');
+                      setLedgerFilterDateTo('');
+                    }}
+                  >
+                    Clear dates
+                  </button>
+                )}
+              </>
+            )}
             {ledgerClientId && (
               <button
                 style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap' }}
@@ -1131,11 +1224,18 @@ export default function Invoices() {
                   <tr><td colSpan={7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading ledger…</td></tr>
                 ) : ledger.length === 0 ? (
                   <tr><td colSpan={7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No ledger entries for this client.</td></tr>
-                ) : ledger.map((e,i)=>(
-                  <tr key={i} style={{ ...trStyle, ...(e.txnType==='opening_balance' ? { background:'#fffbeb' } : {}) }}>
+                ) : ledgerDisplayRows.map((e, i) => (
+                  <tr
+                    key={e.synthetic ? e.id : `${e.id ?? 'row'}-${i}`}
+                    style={{
+                      ...trStyle,
+                      ...(e.txnType === 'opening_balance' ? { background: '#fffbeb' } : {}),
+                      ...(e.txnType === 'brought_forward' ? { background: '#f1f5f9' } : {}),
+                    }}
+                  >
                     <td style={tdStyle}>{e.txnDate || e.date || '—'}</td>
                     <td style={tdStyle}><TxnTypeBadge type={e.txnType} /></td>
-                    <td style={{ ...tdStyle, fontStyle: e.txnType==='opening_balance' ? 'italic' : 'normal' }}>{e.narration || '—'}</td>
+                    <td style={{ ...tdStyle, fontStyle: e.txnType === 'opening_balance' || e.txnType === 'brought_forward' ? 'italic' : 'normal' }}>{e.narration || '—'}</td>
                     <td style={tdStyle}><BillingProfileBadge code={e.billingProfileCode} /></td>
                     <td style={{ ...tdStyle, color:'#dc2626', fontWeight: e.debit?600:400 }}>{e.debit ? `₹${parseFloat(e.debit).toLocaleString('en-IN')}` : '—'}</td>
                     <td style={{ ...tdStyle, color:'#16a34a', fontWeight: e.credit?600:400 }}>{e.credit ? `₹${parseFloat(e.credit).toLocaleString('en-IN')}` : '—'}</td>

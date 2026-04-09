@@ -14,6 +14,43 @@ const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 const CIN_REGEX = /^[A-Z]{1}[0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$/;
 
+// Same lists as ContactCreatePage (country + Indian states for address)
+const COUNTRIES = [
+  'India', 'United States', 'United Kingdom', 'Canada', 'Australia',
+  'Germany', 'France', 'Japan', 'China', 'Singapore', 'UAE',
+  'Saudi Arabia', 'Qatar', 'Bahrain', 'Kuwait', 'Oman',
+  'Nepal', 'Bangladesh', 'Sri Lanka', 'Malaysia', 'Thailand',
+  'Indonesia', 'South Africa', 'Brazil', 'Italy', 'Netherlands',
+  'Switzerland', 'New Zealand', 'Other',
+];
+
+const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',
+  'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand',
+  'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur',
+  'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab',
+  'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura',
+  'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
+  'Andaman & Nicobar Islands', 'Chandigarh',
+  'Dadra & Nagar Haveli and Daman & Diu', 'Delhi',
+  'Jammu & Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
+];
+
+function deriveCountryFromLegacyState(state) {
+  const s = (state || '').trim();
+  if (!s) return 'India';
+  if (s === 'Outside India') return 'Other';
+  if (INDIAN_STATES.includes(s)) return 'India';
+  return 'India';
+}
+
+function normalizeOrgStateForCountry(state, country) {
+  if (country !== 'India') return 'Outside India';
+  const st = (state || '').trim();
+  if (st === 'Outside India') return '';
+  return state || '';
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function toTitleCase(str) {
   return str.replace(/\w\S*/g, (word) =>
@@ -91,6 +128,7 @@ function blankForm(defaultManager) {
     addressLine1: '',
     addressLine2: '',
     city: '',
+    country: 'India',
     state: '',
     pin: '',
     status: 'active',
@@ -147,6 +185,9 @@ export default function OrganizationCreatePage() {
         if (existing) {
           setOrgCode(existing.clientCode || `ORG-${String(existing.id).padStart(4, '0')}`);
           setOrgId(existing.id);
+          const rawCountry = existing.country || deriveCountryFromLegacyState(existing.state);
+          const country = COUNTRIES.includes(rawCountry) ? rawCountry : 'India';
+          const state = normalizeOrgStateForCountry(existing.state || '', country);
           setForm({
             displayName:        existing.displayName        || '',
             constitution:       existing.constitution       || '',
@@ -160,8 +201,9 @@ export default function OrganizationCreatePage() {
             addressLine1:       existing.addressLine1        || '',
             addressLine2:       existing.addressLine2        || '',
             city:               existing.city               || '',
-            state:              existing.state              || '',
-            pin:                existing.pin                || '',
+            country,
+            state,
+            pin:                existing.pin ?? existing.pincode ?? '',
             status:             existing.status             || 'active',
             assignedManager:    existing.assignedManager    || '',
             notes:              existing.notes              || '',
@@ -181,9 +223,19 @@ export default function OrganizationCreatePage() {
   }, [toast]);
 
   function setField(field, value) {
-    const formatted = field === 'displayName' ? toTitleCase(value) : value;
+    const formatted = (field === 'displayName' || field === 'city') ? toTitleCase(value) : value;
     setForm(prev => ({ ...prev, [field]: formatted }));
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }));
+  }
+
+  function handleCountryChange(country) {
+    setForm(prev => ({
+      ...prev,
+      country,
+      state: country !== 'India' ? 'Outside India' : (prev.state === 'Outside India' ? '' : prev.state),
+    }));
+    if (errors.country) setErrors(prev => ({ ...prev, country: '' }));
+    if (errors.state) setErrors(prev => ({ ...prev, state: '' }));
   }
 
   // ── Validation ──────────────────────────────────────────────────────────────
@@ -219,6 +271,7 @@ export default function OrganizationCreatePage() {
       addressLine1: f.addressLine1        || null,
       addressLine2: f.addressLine2        || null,
       city:         f.city               || null,
+      country:      f.country            || 'India',
       state:        f.state              || null,
       pin:          f.pin                || null,
       status:       f.status,
@@ -549,13 +602,25 @@ export default function OrganizationCreatePage() {
               />
             </div>
             <div style={fieldWrap}>
+              <FieldLabel label="Country" />
+              <select value={form.country} onChange={e => handleCountryChange(e.target.value)} style={selectStyle}>
+                {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div style={fieldWrap}>
               <FieldLabel label="State" />
-              <input
-                value={form.state}
-                onChange={e => setField('state', e.target.value)}
-                placeholder="State"
-                style={inputStyle}
-              />
+              {form.country === 'India' ? (
+                <select value={form.state} onChange={e => setField('state', e.target.value)} style={selectStyle}>
+                  <option value="">— Select State —</option>
+                  {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              ) : (
+                <input
+                  value="Outside India"
+                  readOnly
+                  style={{ ...inputStyle, background: '#F8FAFC', color: '#64748b', cursor: 'not-allowed' }}
+                />
+              )}
             </div>
             <div style={{ flex: '0 0 120px' }}>
               <FieldLabel label="PIN Code" />

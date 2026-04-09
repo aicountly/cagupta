@@ -100,6 +100,7 @@ class OrganizationController extends BaseController
             'address'            => $body['address']  ?? null,
             'city'               => $body['city']     ?? null,
             'state'              => $body['state']    ?? null,
+            'country'            => trim((string)($body['country'] ?? '')) ?: 'India',
             'pincode'            => $body['pincode']  ?? null,
             'website'            => $body['website']  ?? null,
             'notes'              => $body['notes']    ?? null,
@@ -151,12 +152,15 @@ class OrganizationController extends BaseController
 
         $textFields = [
             'name', 'type', 'gstin', 'pan', 'email', 'phone',
-            'address', 'city', 'state', 'pincode', 'website', 'notes', 'reference',
+            'address', 'city', 'state', 'country', 'pincode', 'website', 'notes', 'reference',
         ];
         foreach ($textFields as $field) {
             if (array_key_exists($field, $body)) {
                 $data[$field] = $body[$field];
             }
+        }
+        if (array_key_exists('country', $data)) {
+            $data['country'] = trim((string)$data['country']) ?: 'India';
         }
         if (isset($body['is_active'])) {
             $data['is_active'] = (bool)$body['is_active'];

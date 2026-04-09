@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     address    TEXT,
     city       VARCHAR(100),
     state      VARCHAR(100),
+    country    VARCHAR(100) DEFAULT 'India',
     pincode    VARCHAR(10),
     website    VARCHAR(255),
     notes      TEXT,

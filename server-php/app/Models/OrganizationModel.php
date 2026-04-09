@@ -109,11 +109,11 @@ class OrganizationModel
         $stmt = $this->db->prepare(
             'INSERT INTO organizations (
                 name, type, gstin, pan, email, phone,
-                address, city, state, pincode, website, notes,
+                address, city, state, country, pincode, website, notes,
                 reference, group_id, primary_contact_id, is_active, created_by
              ) VALUES (
                 :name, :type, :gstin, :pan, :email, :phone,
-                :address, :city, :state, :pincode, :website, :notes,
+                :address, :city, :state, :country, :pincode, :website, :notes,
                 :reference, :group_id, :primary_contact_id, :is_active, :created_by
              ) RETURNING id'
         );
@@ -127,6 +127,7 @@ class OrganizationModel
             ':address'            => $data['address']    ?? null,
             ':city'               => $data['city']       ?? null,
             ':state'              => $data['state']      ?? null,
+            ':country'            => $data['country']    ?? 'India',
             ':pincode'            => $data['pincode']    ?? null,
             ':website'            => $data['website']    ?? null,
             ':notes'              => $data['notes']      ?? null,
@@ -151,7 +152,7 @@ class OrganizationModel
 
         $allowed = [
             'name', 'type', 'gstin', 'pan', 'email', 'phone',
-            'address', 'city', 'state', 'pincode', 'website', 'notes', 'reference',
+            'address', 'city', 'state', 'country', 'pincode', 'website', 'notes', 'reference',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
