@@ -30,7 +30,7 @@ async function parseResponse(res) {
  */
 function normalizeOrg(o) {
   return {
-    id:               o.id,
+    id:               Number(o.id),
     clientCode:       o.client_code || `ORG-${String(o.id).padStart(4, '0')}`,
     displayName:      o.name || 'Unknown',
     constitution:     o.type        || '',

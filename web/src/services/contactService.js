@@ -32,7 +32,7 @@ async function parseResponse(res) {
 function normalizeContact(c) {
   const parts = [c.first_name, c.last_name].filter(Boolean);
   const displayName = c.organization_name || parts.join(' ') || 'Unknown';
-  const linkedOrgIds   = c.linked_org_ids   || [];
+  const linkedOrgIds   = (c.linked_org_ids   || []).map(Number);
   const linkedOrgNames = c.linked_org_names || [];
   return {
     id:            c.id,
