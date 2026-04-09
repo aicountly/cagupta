@@ -142,16 +142,8 @@ const firmData = {
   website: 'www.carahulgupta.in',
 };
 
-const teamMembers = [
-  { id: 'u1', name: 'CA Rahul Gupta', email: 'rahul@carahulgupta.in', role: 'admin', status: 'active' },
-  { id: 'u2', name: 'CA Priya Sharma', email: 'priya@carahulgupta.in', role: 'partner', status: 'active' },
-  { id: 'u3', name: 'Amit Patil', email: 'amit@carahulgupta.in', role: 'staff', status: 'active' },
-  { id: 'u4', name: 'Sneha Joshi', email: 'sneha@carahulgupta.in', role: 'staff', status: 'active' },
-  { id: 'u5', name: 'Rohan Mehta', email: 'rohan@carahulgupta.in', role: 'manager', status: 'inactive' },
-];
-
-const roleColors = { admin:'#ede9fe', partner:'#dbeafe', manager:'#dcfce7', staff:'#f1f5f9' };
-const roleTextColors = { admin:'#5b21b6', partner:'#1d4ed8', manager:'#166534', staff:'#475569' };
+const roleColors = { super_admin:'#fce7f3', admin:'#ede9fe', partner:'#dbeafe', manager:'#dcfce7', staff:'#f1f5f9' };
+const roleTextColors = { super_admin:'#9d174d', admin:'#5b21b6', partner:'#1d4ed8', manager:'#166534', staff:'#475569' };
 
 export default function Settings() {
   const [tab, setTab] = useState('firm');
@@ -179,6 +171,11 @@ export default function Settings() {
   // newEtName is keyed by subcategory id (since engagement types now live under subcategories)
   const [newEtName, setNewEtName] = useState({});
 
+  // ── Team & Users state ─────────────────────────────────────────────────────
+  const [teamUsers, setTeamUsers]       = useState([]);
+  const [teamLoading, setTeamLoading]   = useState(false);
+  const [teamError, setTeamError]       = useState('');
+
   // ── Roles & Permissions state ──────────────────────────────────────────────
   const [roles, setRoles]                   = useState([]);
   const [rolesLoading, setRolesLoading]     = useState(false);
@@ -202,6 +199,18 @@ export default function Settings() {
         .then(data => setRoles(data.data || []))
         .catch(() => {})
         .finally(() => setRolesLoading(false));
+    }
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab === 'team') {
+      setTeamLoading(true);
+      setTeamError('');
+      fetch(`${API_BASE_URL}/admin/users?per_page=100`, { headers: authHeaders() })
+        .then(r => r.json())
+        .then(data => setTeamUsers(data.data || []))
+        .catch(() => setTeamError('Failed to load team members.'))
+        .finally(() => setTeamLoading(false));
     }
   }, [tab]);
 
@@ -379,38 +388,50 @@ export default function Settings() {
             <button style={btnPrimary}>➕ Invite Team Member</button>
           </div>
           <div style={cardStyle}>
-            <table style={tableStyle}>
-              <thead>
-                <tr>{['Name','Email','Role','Status','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
-              </thead>
-              <tbody>
-                {teamMembers.map(m=>(
-                  <tr key={m.id} style={trStyle}>
-                    <td style={{ ...tdStyle, fontWeight:600 }}>
-                      <span style={{ width:32, height:32, borderRadius:'50%', background:roleColors[m.role]||'#e2e8f0', color:roleTextColors[m.role]||'#475569', display:'inline-flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:12, marginRight:10 }}>
-                        {m.name.split(' ').map(n=>n[0]).join('').slice(0,2)}
-                      </span>
-                      {m.name}
-                    </td>
-                    <td style={tdStyle}>{m.email}</td>
-                    <td style={tdStyle}>
-                      <span style={{ background:roleColors[m.role]||'#f1f5f9', color:roleTextColors[m.role]||'#475569', padding:'2px 10px', borderRadius:12, fontSize:12, fontWeight:600, textTransform:'capitalize' }}>
-                        {m.role}
-                      </span>
-                    </td>
-                    <td style={tdStyle}>
-                      <span style={{ color: m.status==='active'?'#16a34a':'#dc2626', fontWeight:600, fontSize:12 }}>
-                        {m.status==='active'?'● Active':'● Inactive'}
-                      </span>
-                    </td>
-                    <td style={tdStyle}>
-                      <button style={iconBtn}>✏️</button>
-                      <button style={iconBtn}>🔑 Reset Password</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            {teamLoading && <div style={{ padding:24, textAlign:'center', color:'#64748b', fontSize:14 }}>Loading team members…</div>}
+            {teamError && <div style={{ padding:12, color:'#dc2626', fontSize:13 }}>{teamError}</div>}
+            {!teamLoading && !teamError && teamUsers.length === 0 && (
+              <div style={{ padding:24, textAlign:'center', color:'#64748b', fontSize:14 }}>No team members found.</div>
+            )}
+            {!teamLoading && teamUsers.length > 0 && (
+              <table style={tableStyle}>
+                <thead>
+                  <tr>{['Name','Email','Role','Status','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {teamUsers.map(u=>{
+                    const roleName = u.role_name || u.role || 'unknown';
+                    const isActive = u.is_active;
+                    const displayName = u.name || '';
+                    return (
+                      <tr key={u.id} style={trStyle}>
+                        <td style={{ ...tdStyle, fontWeight:600 }}>
+                          <span style={{ width:32, height:32, borderRadius:'50%', background:roleColors[roleName]||'#e2e8f0', color:roleTextColors[roleName]||'#475569', display:'inline-flex', alignItems:'center', justifyContent:'center', fontWeight:700, fontSize:12, marginRight:10 }}>
+                            {displayName.split(' ').map(n=>n[0]).join('').slice(0,2)}
+                          </span>
+                          {displayName}
+                        </td>
+                        <td style={tdStyle}>{u.email}</td>
+                        <td style={tdStyle}>
+                          <span style={{ background:roleColors[roleName]||'#f1f5f9', color:roleTextColors[roleName]||'#475569', padding:'2px 10px', borderRadius:12, fontSize:12, fontWeight:600, textTransform:'capitalize' }}>
+                            {roleName.replace(/_/g, ' ')}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>
+                          <span style={{ color: isActive?'#16a34a':'#dc2626', fontWeight:600, fontSize:12 }}>
+                            {isActive?'● Active':'● Inactive'}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>
+                          <button style={iconBtn}>✏️</button>
+                          <button style={iconBtn}>🔑 Reset Password</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
           </div>
         </div>
       )}
