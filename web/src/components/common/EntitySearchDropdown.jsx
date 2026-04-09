@@ -206,7 +206,6 @@ export default function EntitySearchDropdown({
     textAlign: 'center',
     cursor: 'pointer',
     color: active ? '#2563eb' : '#64748b',
-    borderBottom: active ? '2px solid #2563eb' : '2px solid transparent',
     background: 'none',
     border: 'none',
     borderBottom: active ? '2px solid #2563eb' : '2px solid transparent',
