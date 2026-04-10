@@ -47,6 +47,18 @@ class Routes
                 'middleware' => ['auth'],
             ],
             [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/auth/me',
+                'handler'    => 'Auth\AuthController@updateMe',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/auth/change-password',
+                'handler'    => 'Auth\AuthController@changePassword',
+                'middleware' => ['auth'],
+            ],
+            [
                 'method'     => 'POST',
                 'pattern'    => '/api/auth/refresh',
                 'handler'    => 'Auth\AuthController@refresh',

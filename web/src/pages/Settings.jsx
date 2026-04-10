@@ -132,7 +132,9 @@ function ConfigureRoleModal({ role, onClose, onSaved }) {
   );
 }
 
-const firmData = {
+const FIRM_PROFILE_STORAGE_KEY = 'firm_profile';
+
+const DEFAULT_FIRM_PROFILE = {
   name: 'CA Rahul Gupta & Associates',
   gstin: '27ABCDE1234F1Z5',
   pan: 'ABCDE1234F',
@@ -141,6 +143,20 @@ const firmData = {
   email: 'office@carahulgupta.in',
   website: 'www.carahulgupta.in',
 };
+
+const FIRM_PROFILE_FIELD_KEYS = Object.keys(DEFAULT_FIRM_PROFILE);
+
+function loadFirmProfile() {
+  try {
+    const raw = localStorage.getItem(FIRM_PROFILE_STORAGE_KEY);
+    if (!raw) return { ...DEFAULT_FIRM_PROFILE };
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== 'object' || parsed === null) return { ...DEFAULT_FIRM_PROFILE };
+    return { ...DEFAULT_FIRM_PROFILE, ...parsed };
+  } catch {
+    return { ...DEFAULT_FIRM_PROFILE };
+  }
+}
 
 const roleColors = { super_admin:'#fce7f3', admin:'#ede9fe', partner:'#dbeafe', manager:'#dcfce7', staff:'#f1f5f9' };
 const roleTextColors = { super_admin:'#9d174d', admin:'#5b21b6', partner:'#1d4ed8', manager:'#166534', staff:'#475569' };
@@ -180,6 +196,33 @@ export default function Settings() {
   const [roles, setRoles]                   = useState([]);
   const [rolesLoading, setRolesLoading]     = useState(false);
   const [configureRole, setConfigureRole]   = useState(null);
+
+  const [firmProfile, setFirmProfile]     = useState(loadFirmProfile);
+  const [firmSaving, setFirmSaving]       = useState(false);
+  const [firmMessage, setFirmMessage]     = useState({ type: '', text: '' });
+
+  function setFirmField(key, value) {
+    setFirmProfile(prev => ({ ...prev, [key]: value }));
+    setFirmMessage({ type: '', text: '' });
+  }
+
+  async function handleSaveFirmProfile() {
+    setFirmSaving(true);
+    setFirmMessage({ type: '', text: '' });
+    try {
+      const payload = {};
+      for (const key of FIRM_PROFILE_FIELD_KEYS) {
+        payload[key] = typeof firmProfile[key] === 'string' ? firmProfile[key] : String(firmProfile[key] ?? '');
+      }
+      localStorage.setItem(FIRM_PROFILE_STORAGE_KEY, JSON.stringify(payload));
+      setFirmProfile({ ...payload });
+      setFirmMessage({ type: 'ok', text: 'Firm profile saved.' });
+    } catch (e) {
+      setFirmMessage({ type: 'err', text: e.message || 'Could not save firm profile.' });
+    } finally {
+      setFirmSaving(false);
+    }
+  }
 
   useEffect(() => {
     if (tab === 'other') {
@@ -236,10 +279,10 @@ export default function Settings() {
   }
 
   function handleDeleteCategory(id) {
-    if (!window.confirm('Delete this category and all its subcategories and engagement types?')) return;
+    if (!window.confirm('Delete this category and all its subcategories and engagement types? You cannot delete it if any service engagements still reference this category.')) return;
     deleteCategory(id)
       .then(() => setServiceCategories(prev => prev.filter(c => c.id !== id)))
-      .catch(() => setSvcCatError('Failed to delete category.'));
+      .catch((e) => setSvcCatError(e.message || 'Failed to delete category.'));
   }
 
   function handleAddSubcategory(categoryId) {
@@ -260,7 +303,7 @@ export default function Settings() {
       .then(() => setServiceCategories(prev => prev.map(c =>
         c.id === categoryId ? { ...c, subcategories: (c.subcategories || []).filter(s => s.id !== subId) } : c
       )))
-      .catch(() => setSvcCatError('Failed to delete subcategory.'));
+      .catch((e) => setSvcCatError(e.message || 'Failed to delete subcategory.'));
   }
 
   function handleAddEngagementType(categoryId, subcategoryId) {
@@ -297,7 +340,7 @@ export default function Settings() {
           ),
         };
       })))
-      .catch(() => setSvcCatError('Failed to delete engagement type.'));
+      .catch((e) => setSvcCatError(e.message || 'Failed to delete engagement type.'));
   }
 
   async function handleAddPortal() {
@@ -369,15 +412,37 @@ export default function Settings() {
         <div style={{ maxWidth:640 }}>
           <div style={cardStyle}>
             <h3 style={sectionTitle}>🏢 Firm Profile</h3>
+            <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>
+              These details are stored in this browser and used for your reference across the portal.
+            </p>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-              {Object.entries(firmData).map(([k,v])=>(
+              {FIRM_PROFILE_FIELD_KEYS.map((k) => (
                 <div key={k}>
                   <label style={labelStyle}>{k.replace(/([A-Z])/g,' $1').replace(/^./,s=>s.toUpperCase())}</label>
-                  <input defaultValue={v} style={inputStyle} />
+                  <input
+                    value={firmProfile[k] ?? ''}
+                    onChange={e => setFirmField(k, e.target.value)}
+                    style={inputStyle}
+                    autoComplete={k === 'email' ? 'email' : k === 'phone' ? 'tel' : 'off'}
+                  />
                 </div>
               ))}
             </div>
-            <button style={{ ...btnPrimary, marginTop:20 }}>💾 Save Changes</button>
+            {firmMessage.text && (
+              <div style={{
+                marginTop:12,
+                fontSize:13,
+                color: firmMessage.type === 'ok' ? '#15803d' : '#dc2626',
+              }}>{firmMessage.text}</div>
+            )}
+            <button
+              type="button"
+              style={{ ...btnPrimary, marginTop:20, opacity: firmSaving ? 0.7 : 1 }}
+              disabled={firmSaving}
+              onClick={handleSaveFirmProfile}
+            >
+              {firmSaving ? 'Saving…' : '💾 Save Changes'}
+            </button>
           </div>
         </div>
       )}
@@ -665,7 +730,19 @@ export default function Settings() {
                         {/* Subcategory header */}
                         <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', background:'#f1f5f9' }}>
                           <span style={{ fontSize:13, color:'#1e293b', fontWeight:600, flex:1 }}>📂 {sub.name}</span>
-                          <button onClick={() => handleDeleteSubcategory(cat.id, sub.id)} style={{ ...iconBtn, color:'#dc2626' }}>🗑️</button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteSubcategory(cat.id, sub.id)}
+                            disabled={(sub.engagementTypes || []).length > 0}
+                            title={(sub.engagementTypes || []).length > 0
+                              ? 'Remove all engagement types under this subcategory before deleting it.'
+                              : 'Delete subcategory'}
+                            style={{
+                              ...iconBtn,
+                              color: (sub.engagementTypes || []).length > 0 ? '#cbd5e1' : '#dc2626',
+                              cursor: (sub.engagementTypes || []).length > 0 ? 'not-allowed' : 'pointer',
+                            }}
+                          >🗑️</button>
                         </div>
                         {/* Engagement types under this subcategory */}
                         <div style={{ padding:'8px 12px' }}>

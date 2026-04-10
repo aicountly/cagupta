@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Search, Bell, ChevronRight } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -6,8 +6,11 @@ import { getInitials } from '../../utils/getInitials';
 import { useNotification } from '../../context/NotificationContext';
 import { ROLE_LABELS } from '../../constants/roles';
 import { getContacts } from '../../services/contactService';
+import { getOrganizations } from '../../services/organizationService';
 import { getEngagements } from '../../services/engagementService';
 import { getLeads } from '../../services/leadService';
+import { getTxns } from '../../services/txnService';
+import { getAppointments } from '../../services/appointmentService';
 
 const breadcrumbMap = {
   '/':                       ['Home'],
@@ -23,7 +26,9 @@ const breadcrumbMap = {
   '/credentials':            ['Home', 'Credentials Vault'],
   '/registers':              ['Home', 'Registers'],
   '/leads':                  ['Home', 'Leads & Quotations'],
+  '/search':                 ['Home', 'Search'],
   '/settings':               ['Home', 'Settings'],
+  '/profile':                ['Home', 'My Profile'],
 };
 
 export default function TopBar({ title }) {
@@ -35,6 +40,7 @@ export default function TopBar({ title }) {
   const dropdownRef = useRef(null);
   const notifRef = useRef(null);
   const searchRef = useRef(null);
+  const searchDebounceRef = useRef(null);
   const loc = useLocation();
   const navigate = useNavigate();
   const { session, logout } = useAuth();
@@ -52,49 +58,117 @@ export default function TopBar({ title }) {
     navigate('/login', { replace: true });
   }
 
+  const runTopbarSearch = useCallback((val) => {
+    if (val.length < 2) {
+      setSearchResults([]);
+      setShowSearchResults(false);
+      return;
+    }
+    Promise.all([
+      getContacts({ search: val, perPage: 15 }).catch(() => []),
+      getOrganizations({ search: val, perPage: 15 }).catch(() => []),
+      getEngagements({ search: val, perPage: 15 }).catch(() => []),
+      getLeads({ search: val, perPage: 15 }).catch(() => []),
+      getTxns({ txnType: 'invoice', search: val, perPage: 10 }).then(r => r.txns).catch(() => []),
+      getAppointments({ search: val, perPage: 10 }).catch(() => []),
+    ]).then(([contacts, orgs, services, leads, invoiceTxns, appts]) => {
+      const results = [];
+      (contacts || []).slice(0, 3).forEach(c => {
+        results.push({
+          type: 'contact',
+          id: c.id,
+          label: c.displayName,
+          sublabel: c.city || c.clientCode || 'Contact',
+        });
+      });
+      (orgs || []).slice(0, 3).forEach(o => {
+        results.push({
+          type: 'organization',
+          id: o.id,
+          label: o.displayName,
+          sublabel: o.city || o.clientCode || 'Organization',
+        });
+      });
+      (services || []).slice(0, 2).forEach(s => {
+        results.push({
+          type: 'service',
+          id: s.id,
+          label: s.clientName || 'Service',
+          sublabel: s.type || 'Engagement',
+        });
+      });
+      (leads || []).slice(0, 2).forEach(l => {
+        results.push({
+          type: 'lead',
+          id: l.id,
+          label: l.contactName || 'Lead',
+          sublabel: l.company || l.stage || 'Lead',
+        });
+      });
+      (invoiceTxns || []).slice(0, 2).forEach(inv => {
+        results.push({
+          type: 'invoice',
+          id: inv.id,
+          label: inv.invoiceNumber || `Invoice #${inv.id}`,
+          sublabel: inv.clientName || 'Invoice',
+        });
+      });
+      (appts || []).slice(0, 2).forEach(a => {
+        results.push({
+          type: 'appointment',
+          id: a.id,
+          label: a.subject || a.clientName || 'Appointment',
+          sublabel: [a.date, a.startTime].filter(Boolean).join(' ') || 'Calendar',
+        });
+      });
+      setSearchResults(results.slice(0, 8));
+      setShowSearchResults(true);
+    });
+  }, []);
+
   function handleSearchChange(e) {
     const val = e.target.value;
     setSearch(val);
-    if (val.length >= 2) {
-      const q = val.toLowerCase();
-      Promise.all([
-        getContacts({ search: val, perPage: 20 }).catch(() => []),
-        getEngagements({ search: val, perPage: 20 }).catch(() => []),
-        getLeads({ search: val, perPage: 20 }).catch(() => []),
-      ]).then(([contacts, services, leads]) => {
-        const results = [];
-        contacts.forEach(c => {
-          if (c.displayName.toLowerCase().includes(q)) {
-            results.push({ label: c.displayName, sublabel: c.city || 'Contact', route: '/clients/contacts', type: 'contact' });
-          }
-        });
-        services.forEach(s => {
-          if ((s.clientName || '').toLowerCase().includes(q) || (s.type || '').toLowerCase().includes(q)) {
-            results.push({ label: s.clientName, sublabel: s.type, route: '/services', type: 'service' });
-          }
-        });
-        leads.forEach(l => {
-          if ((l.contactName || l.name || '').toLowerCase().includes(q) || (l.company || '').toLowerCase().includes(q)) {
-            results.push({ label: l.contactName || l.name, sublabel: l.company || 'Lead', route: '/leads', type: 'lead' });
-          }
-        });
-        setSearchResults(results.slice(0, 8));
-        setShowSearchResults(true);
-      });
-    } else {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (val.length < 2) {
       setSearchResults([]);
       setShowSearchResults(false);
+      return;
+    }
+    searchDebounceRef.current = setTimeout(() => runTopbarSearch(val), 280);
+  }
+
+  function handleSearchKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const v = search.trim();
+      if (v.length >= 2) {
+        navigate(`/search?q=${encodeURIComponent(v)}`);
+        setShowSearchResults(false);
+      }
     }
   }
 
-  function handleResultClick(route) {
-    navigate(route);
+  function handleResultClick(r) {
+    const q = search.trim();
+    if (q.length >= 2) {
+      navigate(`/search?q=${encodeURIComponent(q)}&highlight=${r.type}:${r.id}`);
+    } else {
+      navigate('/search');
+    }
     setSearch('');
     setSearchResults([]);
     setShowSearchResults(false);
   }
 
-  const typeIcons = { contact: '👤', org: '🏢', service: '📋', lead: '🎯' };
+  const typeIcons = {
+    contact: '👤',
+    organization: '🏢',
+    service: '📋',
+    lead: '🎯',
+    invoice: '🧾',
+    appointment: '📅',
+  };
 
   function formatTimestamp(ts) {
     const d = new Date(ts);
@@ -122,6 +196,10 @@ export default function TopBar({ title }) {
     };
   }, []);
 
+  useEffect(() => () => {
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+  }, []);
+
   return (
     <header style={styles.bar}>
       {/* Left: breadcrumb + title */}
@@ -145,8 +223,11 @@ export default function TopBar({ title }) {
             <input
               value={search}
               onChange={handleSearchChange}
-              placeholder="Search client / service…"
+              onKeyDown={handleSearchKeyDown}
+              placeholder="Search everywhere…"
               style={styles.searchInput}
+              aria-autocomplete="list"
+              aria-expanded={showSearchResults}
             />
           </div>
           {showSearchResults && (
@@ -160,9 +241,9 @@ export default function TopBar({ title }) {
                     style={{ ...styles.searchItem, cursor: 'pointer' }}
                     role="option"
                     tabIndex={0}
-                    onMouseDown={e => { e.preventDefault(); handleResultClick(r.route); }}
-                    onClick={() => handleResultClick(r.route)}
-                    onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && handleResultClick(r.route)}
+                    onMouseDown={e => { e.preventDefault(); handleResultClick(r); }}
+                    onClick={() => handleResultClick(r)}
+                    onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && handleResultClick(r)}
                   >
                     <span style={{ fontSize: 15, flexShrink: 0 }}>{typeIcons[r.type]}</span>
                     <div style={{ minWidth: 0 }}>
@@ -222,8 +303,36 @@ export default function TopBar({ title }) {
           </button>
           {avatarOpen && (
             <div style={styles.dropMenu}>
-              <div style={styles.dropItem} onClick={() => setAvatarOpen(false)}>My Profile</div>
-              <div style={styles.dropItem} onClick={() => setAvatarOpen(false)}>Change Password</div>
+              <div
+                role="button"
+                tabIndex={0}
+                style={styles.dropItem}
+                onClick={() => { setAvatarOpen(false); navigate('/profile'); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setAvatarOpen(false);
+                    navigate('/profile');
+                  }
+                }}
+              >
+                My Profile
+              </div>
+              <div
+                role="button"
+                tabIndex={0}
+                style={styles.dropItem}
+                onClick={() => { setAvatarOpen(false); navigate({ pathname: '/profile', hash: 'password' }); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    setAvatarOpen(false);
+                    navigate({ pathname: '/profile', hash: 'password' });
+                  }
+                }}
+              >
+                Change Password
+              </div>
               <div
                 style={{ ...styles.dropItem, borderTop: '1px solid #f1f5f9', color: '#ef4444', marginTop: 4, paddingTop: 8 }}
                 onClick={handleSignOut}

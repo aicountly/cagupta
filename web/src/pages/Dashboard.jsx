@@ -69,7 +69,7 @@ export default function Dashboard() {
         <StatCard icon="👥" label="Active Clients"        value={loading ? '…' : stats.activeClients}      color="#2563eb" bg="#EFF6FF" />
         <StatCard icon="📋" label="Active Services"       value={loading ? '…' : stats.activeServices}     color="#7c3aed" bg="#F5F3FF" />
         <StatCard icon="✅" label="Pending Tasks"         value={loading ? '…' : stats.pendingTasks}       sub="across all engagements" color="#d97706" bg="#FFFBEB" />
-        <StatCard icon="💰" label="Outstanding Amount"    value={loading ? '…' : outstandingFmt}           sub="pending invoices" color="#dc2626" bg="#FEF2F2" />
+        <StatCard icon="💰" label="Outstanding Amount"    value={loading ? '…' : outstandingFmt}           sub="total receivable (txn ledger)" color="#dc2626" bg="#FEF2F2" />
         <StatCard icon="📂" label="Documents This Month"  value={loading ? '…' : stats.documentsThisMonth} color="#0891b2" bg="#ECFEFF" />
         <StatCard icon="📅" label="Appointments Today"    value={loading ? '…' : stats.appointmentsToday}  color="#16a34a" bg="#F0FDF4" />
       </div>

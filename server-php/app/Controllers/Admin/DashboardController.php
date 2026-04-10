@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Config\Database;
+use App\Models\TxnModel;
 use PDO;
 
 /**
@@ -46,13 +47,9 @@ class DashboardController extends BaseController
         );
         $pendingTasks = (int)$stmt->fetchColumn();
 
-        // Total outstanding — sum of (total - amount_paid) for non-paid invoices
-        $stmt = $db->query(
-            "SELECT COALESCE(SUM(total - amount_paid), 0)
-             FROM invoices
-             WHERE status NOT IN ('paid','cancelled')"
-        );
-        $totalOutstanding = (float)$stmt->fetchColumn();
+        // Total outstanding — receivable from unified txn ledger (same source as Invoices → Ledger tab).
+        // Legacy `invoices` table is not updated for txn-only flows, so invoice-table sums were often zero.
+        $totalOutstanding = (new TxnModel())->getTotalReceivable();
 
         // Documents uploaded this month
         $stmt = $db->query(

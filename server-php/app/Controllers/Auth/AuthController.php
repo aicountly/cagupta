@@ -265,6 +265,107 @@ class AuthController extends BaseController
         $this->success($this->formatUser($user));
     }
 
+    // ── PATCH /api/auth/me ─────────────────────────────────────────────────
+
+    /**
+     * Update the authenticated user's own profile (name, avatar URL).
+     *
+     * Body: { name?, avatar_url? } — at least one field required.
+     * Requires: Bearer token (enforced by AuthFilter).
+     */
+    public function updateMe(): never
+    {
+        $user = $this->authUser();
+        $body = $this->getJsonBody();
+        $updates = [];
+
+        if (array_key_exists('name', $body)) {
+            $name = trim((string)$body['name']);
+            if ($name === '') {
+                $this->error('Name cannot be empty.', 422);
+            }
+            if (strlen($name) > 120) {
+                $this->error('Name is too long (max 120 characters).', 422);
+            }
+            $updates['name'] = $name;
+        }
+
+        if (array_key_exists('avatar_url', $body)) {
+            $url = trim((string)$body['avatar_url']);
+            if ($url === '') {
+                $updates['avatar_url'] = null;
+            } else {
+                if (strlen($url) > 2048) {
+                    $this->error('Avatar URL is too long.', 422);
+                }
+                if (!preg_match('#^https?://#i', $url)) {
+                    $this->error('Avatar URL must start with http:// or https://', 422);
+                }
+                $updates['avatar_url'] = $url;
+            }
+        }
+
+        if ($updates === []) {
+            $this->error('No valid fields to update. Send name and/or avatar_url.', 422);
+        }
+
+        $this->users->update((int)$user['id'], $updates);
+        $fresh = $this->users->find((int)$user['id']);
+        if ($fresh === null) {
+            $this->error('Could not reload profile.', 500);
+        }
+
+        $this->success($this->formatUser($fresh), 'Profile updated');
+    }
+
+    // ── POST /api/auth/change-password ─────────────────────────────────────
+
+    /**
+     * Change password for accounts that use local (email + password) login.
+     *
+     * Body: { current_password, new_password }
+     * Requires: Bearer token (enforced by AuthFilter).
+     */
+    public function changePassword(): never
+    {
+        $user    = $this->authUser();
+        $body    = $this->getJsonBody();
+        $current = (string)($body['current_password'] ?? '');
+        $new     = (string)($body['new_password'] ?? '');
+
+        if ($current === '' || $new === '') {
+            $this->error('Current password and new password are required.', 422);
+        }
+
+        $full = $this->users->find((int)$user['id']);
+        if ($full === null) {
+            $this->error('User not found.', 404);
+        }
+
+        $hash = $full['password_hash'] ?? null;
+        if ($hash === null || $hash === '') {
+            $this->error(
+                'Password change is not available for this account. Sign in with your SSO provider to manage security.',
+                403
+            );
+        }
+
+        if (!PasswordHasher::verify($current, $hash)) {
+            $this->error('Current password is incorrect.', 401);
+        }
+
+        if (strlen($new) < 8) {
+            $this->error('New password must be at least 8 characters.', 422);
+        }
+
+        if (PasswordHasher::verify($new, $hash)) {
+            $this->error('New password must be different from your current password.', 422);
+        }
+
+        $this->users->update((int)$user['id'], ['password' => $new]);
+        $this->success(null, 'Password updated successfully');
+    }
+
     // ── POST /api/auth/refresh ───────────────────────────────────────────────
 
     /**
@@ -375,15 +476,18 @@ class AuthController extends BaseController
         $role        = $roleOverride ?? ($user['role_name'] ?? 'viewer');
         $permissions = $permissionsOverride ?? $this->resolvePermissions($user);
 
+        $pwd = $user['password_hash'] ?? null;
+
         return [
-            'id'          => (int)$user['id'],
-            'name'        => $user['name'],
-            'email'       => $user['email'],
-            'role'        => $role,
-            'permissions' => $permissions,
-            'avatar_url'  => $user['avatar_url'] ?? null,
-            'is_active'   => (bool)$user['is_active'],
-            'last_login_at' => $user['last_login_at'] ?? null,
+            'id'                   => (int)$user['id'],
+            'name'                 => $user['name'],
+            'email'                => $user['email'],
+            'role'                 => $role,
+            'permissions'          => $permissions,
+            'avatar_url'           => $user['avatar_url'] ?? null,
+            'is_active'            => (bool)$user['is_active'],
+            'last_login_at'        => $user['last_login_at'] ?? null,
+            'can_change_password'  => ($pwd !== null && $pwd !== ''),
         ];
     }
 

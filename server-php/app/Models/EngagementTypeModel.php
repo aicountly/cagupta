@@ -60,6 +60,18 @@ class EngagementTypeModel
     }
 
     /**
+     * Count engagement types linked to a subcategory.
+     */
+    public function countBySubcategoryId(int $subcategoryId): int
+    {
+        $stmt = $this->db->prepare(
+            'SELECT COUNT(*) FROM engagement_types WHERE subcategory_id = :sid'
+        );
+        $stmt->execute([':sid' => $subcategoryId]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
      * Create an engagement type.
      *
      * @param int         $categoryId

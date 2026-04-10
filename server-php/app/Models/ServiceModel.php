@@ -203,4 +203,47 @@ class ServiceModel
         $stmt = $this->db->prepare('DELETE FROM services WHERE id = :id');
         return $stmt->execute([':id' => $id]);
     }
+
+    /**
+     * Count service engagements that reference an engagement type.
+     */
+    public function countByEngagementTypeId(int $engagementTypeId): int
+    {
+        $stmt = $this->db->prepare(
+            'SELECT COUNT(*) FROM services WHERE engagement_type_id = :eid'
+        );
+        $stmt->execute([':eid' => $engagementTypeId]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * Count service engagements that reference a subcategory.
+     */
+    public function countBySubcategoryId(int $subcategoryId): int
+    {
+        $stmt = $this->db->prepare(
+            'SELECT COUNT(*) FROM services WHERE subcategory_id = :sid'
+        );
+        $stmt->execute([':sid' => $subcategoryId]);
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * Count service engagements tied to a category (directly, via subcategory, or engagement type).
+     */
+    public function countReferencingCategoryTree(int $categoryId): int
+    {
+        $stmt = $this->db->prepare(
+            'SELECT COUNT(*) FROM services s
+             WHERE (s.category_id IS NOT NULL AND s.category_id = :cid)
+                OR (s.subcategory_id IS NOT NULL AND s.subcategory_id IN (
+                        SELECT id FROM service_subcategories WHERE category_id = :cid
+                    ))
+                OR (s.engagement_type_id IS NOT NULL AND s.engagement_type_id IN (
+                        SELECT id FROM engagement_types WHERE category_id = :cid
+                    ))'
+        );
+        $stmt->execute([':cid' => $categoryId]);
+        return (int)$stmt->fetchColumn();
+    }
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   getTxns, createTxn, createReceipt, createTds, finalizeTds,
   getTdsEntries, createRebate, createCreditNote, getLedger,
@@ -14,6 +15,8 @@ import {
   indianFYLabel,
   indianFYBounds,
 } from '../utils/indianFinancialYear';
+import { exportLedgerExcel, exportLedgerPdf } from '../utils/ledgerExport';
+import ledgerLogoUrl from '../assets/cropped_logo.png';
 
 // ── Shared badge components ───────────────────────────────────────────────────
 
@@ -582,6 +585,7 @@ function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBa
 // ── Main Invoices page ────────────────────────────────────────────────────────
 
 export default function Invoices() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState('invoices');
 
   // ── Invoice tab state ───────────────────────────────────────────────────────
@@ -637,6 +641,23 @@ export default function Invoices() {
       .catch(() => {})
       .finally(() => setInvLoading(false));
   }, []);
+
+  useEffect(() => {
+    const raw = searchParams.get('openTxn');
+    if (raw == null || invLoading) return;
+    const txn = invoices.find(i => String(i.id) === String(raw));
+    if (txn) {
+      setTab('invoices');
+      setStatusFilter('all');
+      setSelectedInvoice(txn);
+      requestAnimationFrame(() => {
+        document.getElementById(`txn-row-${txn.id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('openTxn');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, invLoading, invoices, setSearchParams]);
 
   // ── Load receipts when receipts tab first opened ────────────────────────────
   useEffect(() => {
@@ -985,7 +1006,7 @@ export default function Invoices() {
               ) : filteredInvoices.length === 0 ? (
                 <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices found.</td></tr>
               ) : filteredInvoices.map(i=>(
-                <tr key={i.id} style={trStyle}>
+                <tr key={i.id} id={`txn-row-${i.id}`} style={trStyle}>
                   <td style={{ ...tdStyle, fontWeight:600, fontFamily:'monospace', fontSize:12 }}>{i.invoiceNumber || `INV-${i.id}`}</td>
                   <td style={tdStyle}>{i.clientName}</td>
                   <td style={tdStyle}>{i.txnDate || i.invoiceDate}</td>
@@ -1193,6 +1214,53 @@ export default function Invoices() {
                     Clear dates
                   </button>
                 )}
+              </>
+            )}
+            {ledgerClientId && !ledgerLoading && ledgerDisplayRows.length > 0 && (
+              <>
+                <button
+                  type="button"
+                  style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap' }}
+                  onClick={() => {
+                    const fy =
+                      ledgerFyStartYear != null
+                        ? indianFYLabel(ledgerFyStartYear)
+                        : (ledgerFyOptions.length
+                            ? indianFYLabel(ledgerFyOptions[ledgerFyOptions.length - 1])
+                            : '');
+                    exportLedgerExcel({
+                      rows: ledgerDisplayRows,
+                      clientName: ledgerClientName,
+                      fyLabel: fy,
+                      dateFrom: ledgerFilterDateFrom,
+                      dateTo: ledgerFilterDateTo,
+                    });
+                  }}
+                >
+                  ⬇ Excel
+                </button>
+                <button
+                  type="button"
+                  style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap' }}
+                  onClick={() => {
+                    const fy =
+                      ledgerFyStartYear != null
+                        ? indianFYLabel(ledgerFyStartYear)
+                        : (ledgerFyOptions.length
+                            ? indianFYLabel(ledgerFyOptions[ledgerFyOptions.length - 1])
+                            : '');
+                    exportLedgerPdf({
+                      rows: ledgerDisplayRows,
+                      clientName: ledgerClientName,
+                      fyLabel: fy,
+                      dateFrom: ledgerFilterDateFrom,
+                      dateTo: ledgerFilterDateTo,
+                      logoSrc: ledgerLogoUrl,
+                    }).catch(() => {});
+                  }}
+                >
+                  ⬇ PDF
+                </button>
               </>
             )}
             {ledgerClientId && (

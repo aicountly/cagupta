@@ -8,6 +8,7 @@ export default function Contacts() {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const [selected, setSelected] = useState(null);
+  const [orgModalContact, setOrgModalContact] = useState(null);
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -19,6 +20,16 @@ export default function Contacts() {
       .catch(err => setError(err.message || 'Failed to load contacts.'))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (!orgModalContact) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setOrgModalContact(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [orgModalContact]);
+
   const filtered = contacts.filter(c => {
     const matchSearch =
       c.displayName.toLowerCase().includes(search.toLowerCase()) ||
@@ -73,7 +84,20 @@ export default function Contacts() {
                   {c.displayName}{c.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4 }}>({c.reference})</span>}
                 </td>
                 <td style={tdStyle}>
-                  {c.organisation ? (
+                  {(c.linkedOrgNames || []).length > 1 ? (
+                    <button
+                      type="button"
+                      style={orgEyeBtnStyle}
+                      title={`View ${c.linkedOrgNames.length} linked organizations`}
+                      aria-label={`View ${c.linkedOrgNames.length} linked organizations`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOrgModalContact(c);
+                      }}
+                    >
+                      👁️
+                    </button>
+                  ) : c.organisation ? (
                     <span style={orgChipStyle}>{c.organisation}</span>
                   ) : (
                     <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>
@@ -96,6 +120,45 @@ export default function Contacts() {
           Showing {filtered.length} of {contacts.length} contacts
         </div>
       </div>
+      {orgModalContact && (
+        <div
+          style={modalOverlayStyle}
+          role="presentation"
+          onClick={() => setOrgModalContact(null)}
+        >
+          <div
+            style={modalBoxStyle}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="org-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 id="org-modal-title" style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#1e293b' }}>
+                Linked organizations
+              </h3>
+              <button
+                type="button"
+                onClick={() => setOrgModalContact(null)}
+                style={modalCloseBtnStyle}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: '#64748b' }}>
+              {orgModalContact.displayName}
+            </p>
+            <ul style={modalListStyle}>
+              {(orgModalContact.linkedOrgNames || []).map((name, i) => (
+                <li key={`${name}-${i}`} style={modalListItemStyle}>
+                  <span style={orgChipStyle}>{name}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      )}
       {/* Side panel */}
       {selected && (
         <div style={panel}>
@@ -142,4 +205,29 @@ const btnPrimary = { padding: '8px 16px', background: '#F37920', color: '#fff', 
 const btnOutline = { padding: '8px 12px', background: '#fff', color: '#F37920', border: '1px solid #F37920', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
 const iconBtn = { background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: '2px 4px' };
 const orgChipStyle = { display: 'inline-block', background: '#EFF6FF', color: '#3B82F6', borderRadius: 12, padding: '2px 8px', fontSize: 11, fontWeight: 600 };
+const orgEyeBtnStyle = { ...iconBtn, verticalAlign: 'middle' };
+const modalOverlayStyle = {
+  position: 'fixed',
+  inset: 0,
+  background: 'rgba(15, 23, 42, 0.45)',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  zIndex: 200,
+  padding: 16,
+};
+const modalBoxStyle = {
+  background: '#fff',
+  borderRadius: 14,
+  boxShadow: '0 20px 50px rgba(0,0,0,.15)',
+  border: '1px solid #E6E8F0',
+  padding: 24,
+  maxWidth: 420,
+  width: '100%',
+  maxHeight: 'min(70vh, 480px)',
+  overflowY: 'auto',
+};
+const modalCloseBtnStyle = { background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b', lineHeight: 1, padding: 4 };
+const modalListStyle = { margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 };
+const modalListItemStyle = { margin: 0 };
 const panel = { position:'fixed', right:0, top:56, width:360, height:'calc(100vh - 56px)', background:'#fff', boxShadow:'-4px 0 20px rgba(0,0,0,.12)', padding:24, overflowY:'auto', zIndex:100 };

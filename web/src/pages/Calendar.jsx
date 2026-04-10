@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { getAppointments, createAppointment, updateAppointment, deleteAppointment } from '../services/appointmentService';
 import StatusBadge from '../components/common/StatusBadge';
 import { useNotification } from '../context/NotificationContext';
@@ -16,6 +17,7 @@ function getFirstDayOfMonth(year, month) {
 const emptyForm = { clientName:'', staffName:'', date:'', startTime:'', endTime:'', mode:'in_person', subject:'' };
 
 export default function Calendar() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState('appointments');
   const [year, setYear] = useState(2025);
   const [month, setMonth] = useState(5); // June
@@ -65,6 +67,21 @@ export default function Calendar() {
     setEditId(a.id);
     setShowBookModal(true);
   }
+
+  useEffect(() => {
+    const raw = searchParams.get('openAppointment');
+    if (raw == null || !appointments.length) return;
+    const a = appointments.find(x => String(x.id) === String(raw));
+    if (a) {
+      setTab('appointments');
+      setForm({ clientName: a.clientName, staffName: a.staffName, date: a.date, startTime: a.startTime, endTime: a.endTime, mode: a.mode, subject: a.subject });
+      setEditId(a.id);
+      setShowBookModal(true);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('openAppointment');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, appointments, setSearchParams]);
 
   function handleSubmit(e) {
     e.preventDefault();

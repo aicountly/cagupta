@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { getLeads, createLead, updateLead } from '../services/leadService';
 import { createContact } from '../services/contactService';
 import { getOrganizations } from '../services/organizationService';
@@ -10,6 +11,7 @@ import { useNotification } from '../context/NotificationContext';
 const stages = ['new','contacted','qualified','proposal_sent','negotiation','won','lost'];
 
 const emptyLeadForm = {
+  clientType: 'contact', // 'contact' | 'organization' — mutually exclusive client
   contactId: null, contactName: '', contactMode: 'existing',
   newContactName: '', newContactEmail: '', newContactPhone: '',
   organizationId: null, organizationName: '',
@@ -18,7 +20,14 @@ const emptyLeadForm = {
   assignedTo: '', nextFollowUp: '', notes: '',
 };
 
+function leadClientTypeFromRow(l) {
+  if (l.contactId) return 'contact';
+  if (l.organizationId) return 'organization';
+  return 'contact';
+}
+
 export default function Leads() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState('pipeline');
   const [selected, setSelected] = useState(null);
   const [leads, setLeads] = useState([]);
@@ -51,13 +60,19 @@ export default function Leads() {
   }
 
   function openEditModal(l) {
+    const ct = leadClientTypeFromRow(l);
+    const orgName =
+      ct === 'organization' && l.organizationId
+        ? organizations.find(o => o.id === l.organizationId)?.displayName || ''
+        : '';
     setForm({
-      contactId: l.contactId || null,
-      contactName: l.contactName || '',
+      clientType: ct,
+      contactId: ct === 'contact' ? l.contactId || null : null,
+      contactName: ct === 'contact' ? l.contactName || '' : '',
       contactMode: 'existing',
       newContactName: '', newContactEmail: '', newContactPhone: '',
-      organizationId: l.organizationId || null,
-      organizationName: '',
+      organizationId: ct === 'organization' ? l.organizationId || null : null,
+      organizationName: orgName,
       company: l.company || '', email: l.email || '', phone: l.phone || '',
       source: l.source, stage: l.stage,
       estimatedValue: l.estimatedValue || '',
@@ -69,27 +84,116 @@ export default function Leads() {
     setShowNewLeadModal(true);
   }
 
+  useEffect(() => {
+    const raw = searchParams.get('openLead');
+    if (raw == null || !leads.length) return;
+    const l = leads.find(x => String(x.id) === String(raw));
+    if (l) {
+      const ct = leadClientTypeFromRow(l);
+      const orgName =
+        ct === 'organization' && l.organizationId
+          ? organizations.find(o => o.id === l.organizationId)?.displayName || ''
+          : '';
+      setForm({
+        clientType: ct,
+        contactId: ct === 'contact' ? l.contactId || null : null,
+        contactName: ct === 'contact' ? l.contactName || '' : '',
+        contactMode: 'existing',
+        newContactName: '', newContactEmail: '', newContactPhone: '',
+        organizationId: ct === 'organization' ? l.organizationId || null : null,
+        organizationName: orgName,
+        company: l.company || '', email: l.email || '', phone: l.phone || '',
+        source: l.source, stage: l.stage,
+        estimatedValue: l.estimatedValue || '',
+        assignedTo: l.assignedTo || '',
+        nextFollowUp: l.nextFollowUp || '',
+        notes: l.notes || '',
+      });
+      setEditLeadId(l.id);
+      setShowNewLeadModal(true);
+    }
+    const next = new URLSearchParams(searchParams);
+    next.delete('openLead');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, leads, organizations, setSearchParams]);
+
+  function setLeadClientType(next) {
+    setForm(v => {
+      if (next === 'contact') {
+        return {
+          ...v,
+          clientType: 'contact',
+          organizationId: null,
+          organizationName: '',
+        };
+      }
+      return {
+        ...v,
+        clientType: 'organization',
+        contactId: null,
+        contactName: '',
+        contactMode: 'existing',
+        newContactName: '',
+        newContactEmail: '',
+        newContactPhone: '',
+      };
+    });
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
-    let contactId = form.contactId || null;
 
-    if (form.contactMode === 'new' && form.newContactName.trim()) {
-      try {
-        const newContact = await createContact({
-          displayName: form.newContactName.trim(),
-          email: form.newContactEmail.trim() || undefined,
-          mobile: form.newContactPhone.trim() || undefined,
-          status: 'active',
-        });
-        contactId = newContact.id;
-      } catch {
-        addNotification('Contact creation failed — lead will be saved without a linked contact.', 'warning');
+    if (form.clientType === 'organization') {
+      if (!form.organizationId) {
+        addNotification('Select an organization, or switch to Person (contact) to link a contact.', 'warning');
+        return;
+      }
+    } else if (form.contactMode === 'existing' && !form.contactId) {
+      addNotification('Select a contact, or switch to Organization to link a company.', 'warning');
+      return;
+    } else if (form.contactMode === 'new' && !form.newContactName.trim()) {
+      addNotification('Enter the new contact’s name.', 'warning');
+      return;
+    }
+
+    let contactId = null;
+    let organizationId = null;
+    let contactNameForApi = '';
+
+    if (form.clientType === 'organization') {
+      organizationId = form.organizationId;
+      contactNameForApi =
+        form.organizationName ||
+        organizations.find(o => o.id === form.organizationId)?.displayName ||
+        '';
+    } else {
+      contactId = form.contactId || null;
+      contactNameForApi =
+        form.contactMode === 'existing'
+          ? form.contactName
+          : form.newContactName.trim();
+
+      if (form.contactMode === 'new' && form.newContactName.trim()) {
+        try {
+          const newContact = await createContact({
+            displayName: form.newContactName.trim(),
+            email: form.newContactEmail.trim() || undefined,
+            mobile: form.newContactPhone.trim() || undefined,
+            status: 'active',
+          });
+          contactId = newContact.id;
+          contactNameForApi = form.newContactName.trim();
+        } catch {
+          addNotification('Contact creation failed — lead will be saved without a linked contact.', 'warning');
+        }
       }
     }
 
     const payload = {
       ...form,
       contactId,
+      organizationId,
+      contactName: contactNameForApi,
       estimatedValue: Number(form.estimatedValue) || 0,
     };
 
@@ -103,7 +207,7 @@ export default function Leads() {
       createLead({ ...payload, probability: 50 })
         .then(newLead => {
           setLeads(prev => [...prev, newLead]);
-          addNotification('New lead: ' + (form.contactMode === 'new' ? form.newContactName : form.contactName), 'lead');
+          addNotification('New lead: ' + contactNameForApi, 'lead');
         })
         .catch(() => {});
     }
@@ -202,7 +306,21 @@ export default function Leads() {
             </div>
             <form onSubmit={handleSubmit}>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-                {/* ── Contact section ── */}
+                <div style={{ gridColumn:'1/-1' }}>
+                  <label style={labelStyle}>Lead is for</label>
+                  <p style={{ margin:'0 0 8px', fontSize:12, color:'#64748b' }}>Link this lead to either a person (contact) or an organization — not both.</p>
+                  <div style={{ display:'flex', gap:8, marginBottom:8 }}>
+                    <button type="button" onClick={() => setLeadClientType('contact')}
+                      style={{ ...toggleBtn, ...(form.clientType==='contact' ? toggleBtnActive : {}) }}>
+                      Person (contact)
+                    </button>
+                    <button type="button" onClick={() => setLeadClientType('organization')}
+                      style={{ ...toggleBtn, ...(form.clientType==='organization' ? toggleBtnActive : {}) }}>
+                      Organization
+                    </button>
+                  </div>
+                </div>
+                {form.clientType === 'contact' && (
                 <div style={{ gridColumn:'1/-1' }}>
                   <label style={labelStyle}>Contact</label>
                   <div style={{ display:'flex', gap:8, marginBottom:8 }}>
@@ -246,16 +364,30 @@ export default function Leads() {
                     </div>
                   )}
                 </div>
-                {/* ── Organization ── */}
+                )}
+                {form.clientType === 'organization' && (
                 <div style={{ gridColumn:'1/-1' }}>
                   <label style={labelStyle}>Organization</label>
-                  <select value={form.organizationId || ''} onChange={e => setForm(v => ({ ...v, organizationId: e.target.value ? Number(e.target.value) : null }))} style={inputStyle}>
-                    <option value="">— None —</option>
+                  <select
+                    value={form.organizationId || ''}
+                    onChange={e => {
+                      const id = e.target.value ? Number(e.target.value) : null;
+                      const org = id ? organizations.find(o => o.id === id) : null;
+                      setForm(v => ({
+                        ...v,
+                        organizationId: id,
+                        organizationName: org?.displayName || '',
+                      }));
+                    }}
+                    style={inputStyle}
+                  >
+                    <option value="">— Select organization —</option>
                     {organizations.map(o => (
                       <option key={o.id} value={o.id}>{o.displayName}</option>
                     ))}
                   </select>
                 </div>
+                )}
                 <div>
                   <label style={labelStyle}>Company (free text)</label>
                   <input value={form.company} onChange={e=>setForm(v=>({...v,company:e.target.value}))} style={inputStyle} />

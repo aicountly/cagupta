@@ -27,7 +27,7 @@ async function parseResponse(res) {
 
 /**
  * Fetch aggregate stats for the dashboard stat cards.
- * @returns {Promise<{activeClients: number, activeServices: number, pendingTasks: number, totalOutstanding: number, documentsThisMonth: number, appointmentsToday: number}>}
+ * @returns {Promise<{activeClients: number, activeServices: number, pendingTasks: number, totalOutstanding: number, documentsThisMonth: number, appointmentsToday: number}>} totalOutstanding = sum of positive txn ledger balances (contact + org), not legacy invoices only
  */
 export async function getDashboardStats() {
   const res = await fetch(`${API_BASE}/admin/dashboard/stats`, {

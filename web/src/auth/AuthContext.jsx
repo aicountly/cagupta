@@ -5,6 +5,7 @@ import {
   getStoredSession,
   fetchCurrentUser,
 } from '../services/authService';
+import { getInitials } from '../utils/getInitials';
 import { hasPermission } from '../constants/roles';
 import { API_BASE_URL } from '../constants/config';
 
@@ -72,6 +73,20 @@ export function AuthProvider({ children }) {
     return hasPermission(session?.user?.permissions, permission);
   }, [session]);
 
+  /** Merge fields into the stored user (e.g. after profile save). */
+  const updateSessionUser = useCallback((user) => {
+    setSession((prev) => {
+      if (!prev) return prev;
+      const merged = {
+        ...prev.user,
+        ...user,
+        initials: user?.initials ?? getInitials(user?.name || prev.user?.name || ''),
+      };
+      localStorage.setItem('auth_user', JSON.stringify(merged));
+      return { ...prev, user: merged };
+    });
+  }, []);
+
   return (
     <AuthContext.Provider value={{
       session,
@@ -79,6 +94,7 @@ export function AuthProvider({ children }) {
       loading,
       login,
       logout,
+      updateSessionUser,
       hasPermission: checkPermission,
     }}>
       {children}

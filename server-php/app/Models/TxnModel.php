@@ -243,6 +243,36 @@ class TxnModel
         return $rows;
     }
 
+    /**
+     * Total receivable across all contact and organization ledgers.
+     *
+     * For each ledger entity, closing balance is SUM(debit − credit) on non-cancelled
+     * rows, same as {@see getLedgerByClient()} / {@see getLedgerByOrganization()}.
+     * Only positive balances (client owes the firm) are summed. Each txn row is
+     * attributed to a single bucket: client_id when set, otherwise organization_id,
+     * so rows with both IDs are not double-counted.
+     */
+    public function getTotalReceivable(): float
+    {
+        $stmt = $this->db->query(
+            "SELECT COALESCE(SUM(GREATEST(per.balance, 0)), 0)
+             FROM (
+                 SELECT SUM(t.debit - t.credit) AS balance
+                 FROM txn t
+                 WHERE t.status != 'cancelled'
+                   AND (t.client_id IS NOT NULL OR t.organization_id IS NOT NULL)
+                 GROUP BY (
+                     CASE
+                         WHEN t.client_id IS NOT NULL THEN 'c:' || t.client_id::TEXT
+                         ELSE 'o:' || t.organization_id::TEXT
+                     END
+                 )
+             ) per"
+        );
+
+        return (float)$stmt->fetchColumn();
+    }
+
     // ── Create helpers by type ────────────────────────────────────────────────
 
     /**

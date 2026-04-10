@@ -21,6 +21,8 @@ import Leads from './pages/Leads';
 import Settings from './pages/Settings';
 import UserManagement from './pages/UserManagement';
 import ClientGroups from './pages/ClientGroups';
+import GlobalSearchPage from './pages/GlobalSearchPage';
+import Profile from './pages/Profile';
 
 const pageTitles = {
   '/':                          '🏠 Dashboard',
@@ -41,6 +43,8 @@ const pageTitles = {
   '/leads':                     '🎯 Leads & Quotations',
   '/settings':                  '⚙️ Settings',
   '/admin/users':               '👥 User Management',
+  '/search':                    '🔍 Search',
+  '/profile':                   '👤 My Profile',
 };
 
 function Layout({ routePath, children }) {
@@ -81,7 +85,9 @@ export default function App() {
           <Route path="/credentials" element={<ProtectedRoute><Layout routePath="/credentials"><Credentials /></Layout></ProtectedRoute>} />
           <Route path="/registers" element={<ProtectedRoute><Layout routePath="/registers"><Registers /></Layout></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute><Layout routePath="/leads"><Leads /></Layout></ProtectedRoute>} />
+          <Route path="/search" element={<ProtectedRoute><Layout routePath="/search"><GlobalSearchPage /></Layout></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Layout routePath="/settings"><Settings /></Layout></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><Layout routePath="/profile"><Profile /></Layout></ProtectedRoute>} />
           <Route path="/admin/users" element={
             <ProtectedRoute requiredPermission="users.manage">
               <Layout routePath="/admin/users">

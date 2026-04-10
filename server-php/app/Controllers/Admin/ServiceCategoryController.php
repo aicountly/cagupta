@@ -7,6 +7,7 @@ use App\Controllers\BaseController;
 use App\Models\ServiceCategoryModel;
 use App\Models\ServiceSubcategoryModel;
 use App\Models\EngagementTypeModel;
+use App\Models\ServiceModel;
 
 /**
  * ServiceCategoryController — CRUD for service categories, subcategories,
@@ -19,12 +20,14 @@ class ServiceCategoryController extends BaseController
     private ServiceCategoryModel    $categories;
     private ServiceSubcategoryModel $subcategories;
     private EngagementTypeModel     $engagementTypes;
+    private ServiceModel            $services;
 
     public function __construct()
     {
         $this->categories      = new ServiceCategoryModel();
         $this->subcategories   = new ServiceSubcategoryModel();
         $this->engagementTypes = new EngagementTypeModel();
+        $this->services        = new ServiceModel();
     }
 
     // ── GET /api/admin/service-categories ────────────────────────────────────
@@ -69,6 +72,13 @@ class ServiceCategoryController extends BaseController
         $cat = $this->categories->find($id);
         if ($cat === null) {
             $this->error('Category not found.', 404);
+        }
+
+        if ($this->services->countReferencingCategoryTree($id) > 0) {
+            $this->error(
+                'This category cannot be deleted because one or more service engagements still reference it, its subcategories, or its engagement types.',
+                409
+            );
         }
 
         $this->categories->delete($id);
@@ -122,6 +132,20 @@ class ServiceCategoryController extends BaseController
         $sub = $this->subcategories->find($id);
         if ($sub === null) {
             $this->error('Subcategory not found.', 404);
+        }
+
+        if ($this->engagementTypes->countBySubcategoryId($id) > 0) {
+            $this->error(
+                'This subcategory cannot be deleted while it has engagement types. Remove those engagement types first.',
+                409
+            );
+        }
+
+        if ($this->services->countBySubcategoryId($id) > 0) {
+            $this->error(
+                'This subcategory cannot be deleted because one or more service engagements still reference it.',
+                409
+            );
         }
 
         $this->subcategories->delete($id);
@@ -215,6 +239,13 @@ class ServiceCategoryController extends BaseController
         $et = $this->engagementTypes->find($id);
         if ($et === null) {
             $this->error('Engagement type not found.', 404);
+        }
+
+        if ($this->services->countByEngagementTypeId($id) > 0) {
+            $this->error(
+                'This engagement type cannot be deleted because one or more service engagements still use it.',
+                409
+            );
         }
 
         $this->engagementTypes->delete($id);

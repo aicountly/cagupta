@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getEngagements, createTask } from '../services/engagementService';
 import StatusBadge from '../components/common/StatusBadge';
 import {
@@ -131,6 +131,7 @@ function KpiCard({ item }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Services() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [selectedService, setSelectedService] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
@@ -146,6 +147,17 @@ export default function Services() {
       .catch(() => setAllServices([]))
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => {
+    const raw = searchParams.get('openService');
+    if (raw == null) return;
+    if (!allServices.length) return;
+    const found = allServices.find(s => String(s.id) === String(raw));
+    if (found) setSelectedService(found);
+    const next = new URLSearchParams(searchParams);
+    next.delete('openService');
+    setSearchParams(next, { replace: true });
+  }, [searchParams, allServices, setSearchParams]);
 
   function handleAddTask(taskData) {
     if (!selectedService) return;

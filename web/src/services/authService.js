@@ -46,13 +46,14 @@ async function parseResponse(res) {
 function buildMockUser(name, email, role = null) {
   const effectiveRole = email === SUPER_ADMIN_EMAIL ? 'super_admin' : (role || 'viewer');
   return {
-    id:          0,
+    id:                   0,
     name,
     email,
-    role:        effectiveRole,
-    permissions: PERMISSIONS[effectiveRole] || [],
-    initials:    getInitials(name),
-    is_active:   true,
+    role:                 effectiveRole,
+    permissions:          PERMISSIONS[effectiveRole] || [],
+    initials:             getInitials(name),
+    is_active:            true,
+    can_change_password:  true,
   };
 }
 
@@ -209,6 +210,76 @@ export async function fetchCurrentUser(token) {
     return data?.data ?? null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Update the signed-in user's display name and/or avatar URL.
+ *
+ * @param {string} token
+ * @param {{ name?: string, avatar_url?: string|null }} fields
+ * @returns {Promise<object>} Updated user object from API (or merged mock user).
+ */
+export async function updateCurrentUserProfile(token, fields) {
+  const body = {};
+  if (fields.name !== undefined) body.name = fields.name;
+  if (fields.avatar_url !== undefined) body.avatar_url = fields.avatar_url;
+
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/auth/me`, {
+      method:  'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+    const data = await parseResponse(res);
+    return data.data;
+  }
+
+  if (!IS_DEV) throw new Error('Authentication service is not configured.');
+  const s = getStoredSession();
+  if (!s?.user) throw new Error('Not logged in');
+  const next = { ...s.user };
+  if (fields.name !== undefined) {
+    const n = String(fields.name).trim();
+    if (!n) throw new Error('Name cannot be empty.');
+    next.name = n;
+  }
+  if (fields.avatar_url !== undefined) {
+    next.avatar_url = fields.avatar_url === '' || fields.avatar_url == null ? null : fields.avatar_url;
+  }
+  localStorage.setItem('auth_user', JSON.stringify(next));
+  return next;
+}
+
+/**
+ * Change password for local-login accounts.
+ *
+ * @param {string} token
+ * @param {{ currentPassword: string, newPassword: string }} creds
+ */
+export async function changePassword(token, { currentPassword, newPassword }) {
+  if (API_BASE) {
+    const res = await fetch(`${API_BASE}/auth/change-password`, {
+      method:  'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        current_password: currentPassword,
+        new_password:     newPassword,
+      }),
+    });
+    await parseResponse(res);
+    return;
+  }
+
+  if (!IS_DEV) throw new Error('Authentication service is not configured.');
+  if ((newPassword || '').length < 8) {
+    throw new Error('New password must be at least 8 characters.');
   }
 }
 
