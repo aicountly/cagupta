@@ -6,7 +6,7 @@ import { getInitials } from '../../utils/getInitials';
 import { useNotification } from '../../context/NotificationContext';
 import { ROLE_LABELS } from '../../constants/roles';
 import { getContacts } from '../../services/contactService';
-import { getOrganizations } from '../../services/organizationService';
+import { getOrganizationsForSearch } from '../../services/organizationService';
 import { getEngagements } from '../../services/engagementService';
 import { getLeads } from '../../services/leadService';
 import { getTxns } from '../../services/txnService';
@@ -66,7 +66,7 @@ export default function TopBar({ title }) {
     }
     Promise.all([
       getContacts({ search: val, perPage: 15 }).catch(() => []),
-      getOrganizations({ search: val, perPage: 15 }).catch(() => []),
+      getOrganizationsForSearch(val, 15).catch(() => []),
       getEngagements({ search: val, perPage: 15 }).catch(() => []),
       getLeads({ search: val, perPage: 15 }).catch(() => []),
       getTxns({ txnType: 'invoice', search: val, perPage: 10 }).then(r => r.txns).catch(() => []),

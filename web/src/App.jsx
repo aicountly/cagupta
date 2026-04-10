@@ -24,6 +24,12 @@ import ClientGroups from './pages/ClientGroups';
 import GlobalSearchPage from './pages/GlobalSearchPage';
 import Profile from './pages/Profile';
 
+/** Subpath deployments (e.g. `npm run build:github` → base `/cagupta/`) need this or /search opens the wrong URL. */
+const ROUTER_BASENAME =
+  import.meta.env.BASE_URL && import.meta.env.BASE_URL !== '/'
+    ? import.meta.env.BASE_URL.replace(/\/$/, '')
+    : undefined;
+
 const pageTitles = {
   '/':                          '🏠 Dashboard',
   '/clients/contacts':          '👤 Contacts',
@@ -63,7 +69,7 @@ function Layout({ routePath, children }) {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={ROUTER_BASENAME}>
       <AuthProvider>
         <NotificationProvider>
         <Routes>

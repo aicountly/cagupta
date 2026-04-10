@@ -25,6 +25,56 @@ async function parseResponse(res) {
   return json;
 }
 
+/** @param {unknown} val */
+function coerceIdArray(val) {
+  if (val == null) return [];
+  if (Array.isArray(val)) {
+    return val
+      .map((x) => Number(x))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  }
+  if (typeof val === 'string') {
+    try {
+      const p = JSON.parse(val);
+      if (Array.isArray(p)) return coerceIdArray(p);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (typeof val === 'object') {
+    return Object.values(/** @type {object} */ (val))
+      .map((x) => Number(x))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  }
+  return [];
+}
+
+/** @param {unknown} val */
+function coerceNameArray(val) {
+  if (val == null) return [];
+  if (Array.isArray(val)) {
+    return val.map((s) => (s == null ? '' : String(s))).filter(Boolean);
+  }
+  if (typeof val === 'string') {
+    try {
+      const p = JSON.parse(val);
+      if (Array.isArray(p)) return coerceNameArray(p);
+    } catch {
+      /* ignore */
+    }
+    return val
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  if (typeof val === 'object') {
+    return Object.values(/** @type {object} */ (val))
+      .map((s) => String(s))
+      .filter(Boolean);
+  }
+  return [];
+}
+
 /**
  * Map an API contact row to the shape expected by the UI.
  * @param {object} c  Raw row from the backend.
@@ -32,8 +82,18 @@ async function parseResponse(res) {
 function normalizeContact(c) {
   const parts = [c.first_name, c.last_name].filter(Boolean);
   const displayName = c.organization_name || parts.join(' ') || 'Unknown';
-  const linkedOrgIds   = (c.linked_org_ids   || []).map(Number);
-  const linkedOrgNames = c.linked_org_names || [];
+  const linkedOrgIds = coerceIdArray(c.linked_org_ids);
+  let linkedOrgNames = coerceNameArray(c.linked_org_names);
+  if (linkedOrgIds.length > linkedOrgNames.length) {
+    linkedOrgNames = linkedOrgIds.map(
+      (id, i) => linkedOrgNames[i] || `Organization #${id}`,
+    );
+  } else if (linkedOrgNames.length > linkedOrgIds.length) {
+    linkedOrgNames = linkedOrgNames.slice(0, linkedOrgIds.length);
+  }
+  const linkedOrgsCount = linkedOrgIds.length;
+  const organisation =
+    linkedOrgsCount === 1 ? linkedOrgNames[0] || '' : '';
   return {
     id:            c.id,
     clientCode:    c.client_code || `CLT-${String(c.id).padStart(4, '0')}`,
@@ -52,8 +112,8 @@ function normalizeContact(c) {
     reference:     c.reference || '',
     linkedOrgIds,
     linkedOrgNames,
-    linkedOrgsCount: linkedOrgIds.length,
-    organisation:  linkedOrgNames[0] || '',
+    linkedOrgsCount,
+    organisation,
     assignedManager: c.assigned_manager || c.created_by_name || '',
     status:        c.is_active === false ? 'inactive' : (c.is_active === true ? 'active' : (c.status || 'active')),
     createdAt:     c.created_at || '',

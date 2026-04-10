@@ -72,6 +72,39 @@ export async function getOrganizations({ page = 1, perPage = 100, search = '', s
 }
 
 /**
+ * Type-ahead organization search (GET /admin/organizations/search?q=&limit=).
+ * Same API as EntitySearchDropdown; useful when the paginated list endpoint
+ * returns nothing or errors in some environments.
+ */
+export async function searchOrganizationsQuick(q, limit = 20) {
+  const trimmed = (q || '').trim();
+  if (!trimmed) return [];
+  const params = new URLSearchParams({ q: trimmed, limit: String(limit) });
+  const res = await fetch(`${API_BASE}/admin/organizations/search?${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return (data.data || []).map(normalizeOrg);
+}
+
+/**
+ * Merge paginated list + quick search, deduped by id (for global search UIs).
+ */
+export async function getOrganizationsForSearch(q, perPage = 50) {
+  const trimmed = (q || '').trim();
+  if (trimmed.length < 2) return [];
+  const [fromList, fromQuick] = await Promise.all([
+    getOrganizations({ search: trimmed, perPage }).catch(() => []),
+    searchOrganizationsQuick(trimmed, perPage).catch(() => []),
+  ]);
+  const map = new Map();
+  for (const o of [...fromList, ...fromQuick]) {
+    if (o && o.id != null) map.set(Number(o.id), o);
+  }
+  return [...map.values()];
+}
+
+/**
  * Create a new organization.
  * @param {object} payload  Fields from OrganizationCreatePage form.
  * @returns {Promise<object>}  The created org (normalised).

@@ -84,12 +84,12 @@ export default function Contacts() {
                   {c.displayName}{c.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4 }}>({c.reference})</span>}
                 </td>
                 <td style={tdStyle}>
-                  {(c.linkedOrgNames || []).length > 1 ? (
+                  {c.linkedOrgsCount > 1 ? (
                     <button
                       type="button"
                       style={orgEyeBtnStyle}
-                      title={`View ${c.linkedOrgNames.length} linked organizations`}
-                      aria-label={`View ${c.linkedOrgNames.length} linked organizations`}
+                      title={`View ${c.linkedOrgsCount} linked organizations`}
+                      aria-label={`View ${c.linkedOrgsCount} linked organizations`}
                       onClick={(e) => {
                         e.stopPropagation();
                         setOrgModalContact(c);

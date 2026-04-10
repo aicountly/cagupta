@@ -23,7 +23,7 @@ const QUICK_ACTIONS = [
   { label: '📄 Upload Document',   path: '/documents' },
   { label: '🧾 Raise Invoice',     path: '/invoices' },
   { label: '📅 Book Appointment',  path: '/calendar' },
-  { label: '🔍 Search Clients',    path: '/clients/contacts' },
+  { label: '🔍 Search',            path: '/search' },
 ];
 
 export default function Dashboard() {

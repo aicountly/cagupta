@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getContacts } from '../services/contactService';
-import { getOrganizations } from '../services/organizationService';
+import { getOrganizationsForSearch } from '../services/organizationService';
 import { getEngagements } from '../services/engagementService';
 import { getLeads } from '../services/leadService';
 import { getTxns } from '../services/txnService';
@@ -92,7 +92,7 @@ export default function GlobalSearchPage() {
     try {
       const [c, o, s, l, inv, appt] = await Promise.all([
         getContacts({ search: q, perPage: 50 }).catch(() => []),
-        getOrganizations({ search: q, perPage: 50 }).catch(() => []),
+        getOrganizationsForSearch(q, 50).catch(() => []),
         getEngagements({ search: q, perPage: 50 }).catch(() => []),
         getLeads({ search: q, perPage: 50 }).catch(() => []),
         getTxns({ txnType: 'invoice', search: q, perPage: 50 }).then(r => r.txns).catch(() => []),
@@ -146,7 +146,15 @@ export default function GlobalSearchPage() {
     if (q.length < 2) return [];
     const out = [];
     const cFiltered = contacts.filter(c =>
-      matchesQuery(q, [c.displayName, c.city, c.clientCode, c.pan, c.mobile, c.organisation]),
+      matchesQuery(q, [
+        c.displayName,
+        c.city,
+        c.clientCode,
+        c.pan,
+        c.mobile,
+        c.organisation,
+        ...(c.linkedOrgNames || []),
+      ]),
     );
     if (cFiltered.length) out.push({ type: 'contact', label: SECTION_LABELS.contact, rows: cFiltered });
 
