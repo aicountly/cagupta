@@ -66,10 +66,19 @@ const TDS_SECTIONS = ['194J','194C','194H','194I','194A','194Q','Other'];
 // ── RaiseInvoiceModal ─────────────────────────────────────────────────────────
 
 function RaiseInvoiceModal({ onClose, onSave }) {
-  const [form, setForm] = useState({ clientId: '', clientName: '', invoiceDate: new Date().toISOString().slice(0,10), dueDate: '', totalAmount: '', notes: '', billingProfileCode: '' });
+  const [form, setForm] = useState({
+    entityId: '',
+    entityName: '',
+    entityType: 'contact',
+    invoiceDate: new Date().toISOString().slice(0, 10),
+    dueDate: '',
+    totalAmount: '',
+    notes: '',
+    billingProfileCode: '',
+  });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const handleSave = () => {
-    if (!form.clientId || !form.invoiceDate || !form.totalAmount) return;
+    if (!form.entityId || !form.invoiceDate || !form.totalAmount) return;
     onSave(form);
     onClose();
   };
@@ -82,12 +91,18 @@ function RaiseInvoiceModal({ onClose, onSave }) {
         </div>
         <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
           <label style={labelStyle}>
-            Client
-            <ClientSearchDropdown
-              value={form.clientId}
-              displayValue={form.clientName}
-              onChange={c => setForm(f => ({ ...f, clientId: c.id, clientName: c.displayName }))}
-              placeholder="Search client by name…"
+            Bill to (contact or organization)
+            <EntitySearchDropdown
+              value={form.entityId}
+              displayValue={form.entityName}
+              entityType={form.entityType}
+              onChange={c => setForm(f => ({
+                ...f,
+                entityId: String(c.id),
+                entityName: c.displayName,
+                entityType: c.entityType,
+              }))}
+              placeholder="Search contact or organization…"
               style={inputStyle}
             />
           </label>
@@ -756,30 +771,42 @@ export default function Invoices() {
 
   // ── Invoice handlers ────────────────────────────────────────────────────────
   function handleRaiseInvoice(data) {
-    createTxn({
+    const idNum = parseInt(data.entityId, 10);
+    if (Number.isNaN(idNum) || idNum <= 0) return;
+    const payload = {
       txn_type:             'invoice',
-      client_id:            data.clientId,
       txn_date:             data.invoiceDate,
       due_date:             data.dueDate,
       amount:               parseFloat(data.totalAmount),
       billing_profile_code: data.billingProfileCode,
       notes:                data.notes,
-    })
+    };
+    if (data.entityType === 'organization') {
+      payload.organization_id = idNum;
+    } else {
+      payload.client_id = idNum;
+    }
+    createTxn(payload)
       .then(newInv => setInvoices(prev => [newInv, ...prev]))
       .catch(() => {});
   }
 
   function handleRecordPayment(data) {
     if (!selectedInvoice) return;
-    createReceipt({
-      client_id:            selectedInvoice.clientId,
+    const receiptBody = {
       amount:               parseFloat(data.amount),
       txn_date:             data.paymentDate,
       payment_method:       data.method,
       reference_number:     data.reference,
       billing_profile_code: data.billingProfileCode,
       linked_txn_id:        selectedInvoice.id,
-    })
+    };
+    if (selectedInvoice.organizationId) {
+      receiptBody.organization_id = selectedInvoice.organizationId;
+    } else {
+      receiptBody.client_id = selectedInvoice.clientId;
+    }
+    createReceipt(receiptBody)
       .then(rec => {
         setReceipts(prev => [rec, ...prev]);
         setSelectedInvoice(null);

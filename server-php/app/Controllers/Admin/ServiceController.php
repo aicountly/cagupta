@@ -125,6 +125,7 @@ class ServiceController extends BaseController
             dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-634b1d.log',
             json_encode([
                 'sessionId'    => '634b1d',
+                'runId'        => 'post-fix',
                 'hypothesisId' => 'A',
                 'location'     => 'ServiceController.php:store:afterFind',
                 'message'      => 'find() row client_name vs ids',

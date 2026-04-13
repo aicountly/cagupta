@@ -81,9 +81,25 @@ class TxnController extends BaseController
 
         switch ($txnType) {
             case 'invoice':
+                $cid = (int)($body['client_id'] ?? 0);
+                $oid = (int)($body['organization_id'] ?? 0);
+                if ($cid <= 0 && $oid <= 0) {
+                    $this->error('client_id or organization_id is required for an invoice.', 422);
+                }
+                if ($cid > 0 && $oid > 0) {
+                    $this->error('Provide only one of client_id or organization_id for an invoice.', 422);
+                }
                 $id = $this->txn->createInvoice($body);
                 break;
             case 'receipt':
+                $rcid = (int)($body['client_id'] ?? 0);
+                $roid = (int)($body['organization_id'] ?? 0);
+                if ($rcid <= 0 && $roid <= 0) {
+                    $this->error('client_id or organization_id is required for a receipt.', 422);
+                }
+                if ($rcid > 0 && $roid > 0) {
+                    $this->error('Provide only one of client_id or organization_id for a receipt.', 422);
+                }
                 $id = $this->txn->createReceipt($body);
                 break;
             case 'payment_expense':
@@ -182,8 +198,13 @@ class TxnController extends BaseController
         if ($amount <= 0) {
             $this->error('amount must be greater than zero.', 422);
         }
-        if (empty($body['client_id'])) {
-            $this->error('client_id is required.', 422);
+        $clientId = (int)($body['client_id'] ?? 0);
+        $orgId    = (int)($body['organization_id'] ?? 0);
+        if ($clientId <= 0 && $orgId <= 0) {
+            $this->error('client_id or organization_id is required.', 422);
+        }
+        if ($clientId > 0 && $orgId > 0) {
+            $this->error('Provide only one of client_id or organization_id.', 422);
         }
 
         $actingUser    = $this->authUser();

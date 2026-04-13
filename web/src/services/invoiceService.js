@@ -33,6 +33,7 @@ function normalizeInvoice(inv) {
     id:                 inv.id,
     invoiceNumber:      inv.invoice_number   || '',
     clientId:           inv.client_id        || null,
+    organizationId:     inv.organization_id  || null,
     clientName:         inv.client_name      || 'Unknown',
     invoiceDate:        inv.invoice_date     || '',
     dueDate:            inv.due_date         || '',
@@ -69,6 +70,7 @@ export async function getInvoices({ page = 1, perPage = 100, search = '', status
 export async function createInvoice(payload) {
   const body = {
     client_id:            payload.clientId            || null,
+    organization_id:      payload.organizationId      || null,
     invoice_date:         payload.invoiceDate         || new Date().toISOString().slice(0, 10),
     due_date:             payload.dueDate             || null,
     total:                parseFloat(payload.totalAmount || 0),

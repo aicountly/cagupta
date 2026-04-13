@@ -29,14 +29,17 @@ class ServiceModel
             "SELECT s.*,
                     c.first_name, c.last_name, c.organization_name,
                     COALESCE(c.organization_name,
-                             TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
+                             NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                             o.name,
+                             s.client_name,
                              'Unknown') AS client_name,
                     u.name AS assigned_to_name,
                     cb.name AS created_by_name
              FROM services s
-             LEFT JOIN clients c      ON c.id = s.client_id
-             LEFT JOIN users   u      ON u.id = s.assigned_to
-             LEFT JOIN users   cb     ON cb.id = s.created_by
+             LEFT JOIN clients c         ON c.id = s.client_id
+             LEFT JOIN organizations o ON o.id = s.organization_id
+             LEFT JOIN users   u       ON u.id = s.assigned_to
+             LEFT JOIN users   cb      ON cb.id = s.created_by
              WHERE s.id = :id
              LIMIT 1"
         );
@@ -63,7 +66,9 @@ class ServiceModel
             $where[]           = "(s.service_type ILIKE :search
                                    OR c.first_name ILIKE :search
                                    OR c.last_name  ILIKE :search
-                                   OR c.organization_name ILIKE :search)";
+                                   OR c.organization_name ILIKE :search
+                                   OR o.name ILIKE :search
+                                   OR s.client_name ILIKE :search)";
             $params[':search'] = "%{$search}%";
         }
         if ($status !== '') {
@@ -77,7 +82,8 @@ class ServiceModel
         $countStmt = $this->db->prepare(
             "SELECT COUNT(*)
              FROM services s
-             LEFT JOIN clients c ON c.id = s.client_id
+             LEFT JOIN clients c         ON c.id = s.client_id
+             LEFT JOIN organizations o ON o.id = s.organization_id
              WHERE {$whereClause}"
         );
         $countStmt->execute($params);
@@ -86,13 +92,15 @@ class ServiceModel
         $stmt = $this->db->prepare(
             "SELECT s.*,
                     COALESCE(c.organization_name,
-                             TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
+                             NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                             o.name,
                              s.client_name,
                              'Unknown') AS client_name,
                     u.name AS assigned_to_name
              FROM services s
-             LEFT JOIN clients c ON c.id = s.client_id
-             LEFT JOIN users   u ON u.id = s.assigned_to
+             LEFT JOIN clients c         ON c.id = s.client_id
+             LEFT JOIN organizations o ON o.id = s.organization_id
+             LEFT JOIN users   u       ON u.id = s.assigned_to
              WHERE {$whereClause}
              ORDER BY s.created_at DESC
              LIMIT :limit OFFSET :offset"

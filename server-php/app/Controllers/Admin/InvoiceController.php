@@ -65,8 +65,18 @@ class InvoiceController extends BaseController
 
         $actingUser = $this->authUser();
 
+        $cid = (int)($body['client_id'] ?? 0);
+        $oid = (int)($body['organization_id'] ?? 0);
+        if ($cid <= 0 && $oid <= 0) {
+            $this->error('client_id or organization_id is required.', 422);
+        }
+        if ($cid > 0 && $oid > 0) {
+            $this->error('Provide only one of client_id or organization_id.', 422);
+        }
+
         $newId = $this->invoices->create([
-            'client_id'            => isset($body['client_id']) ? (int)$body['client_id'] : null,
+            'client_id'            => $cid > 0 ? $cid : null,
+            'organization_id'      => $oid > 0 ? $oid : null,
             'invoice_date'         => $body['invoice_date']         ?? date('Y-m-d'),
             'due_date'             => $body['due_date']             ?? null,
             'total'                => $total,

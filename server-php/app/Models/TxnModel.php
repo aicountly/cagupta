@@ -36,11 +36,15 @@ class TxnModel
     {
         $stmt = $this->db->prepare(
             "SELECT t.*,
-                    COALESCE(c.organization_name,
-                             TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
-                             'Unknown') AS client_name
+                    COALESCE(
+                        o.name,
+                        c.organization_name,
+                        TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
+                        'Unknown'
+                    ) AS client_name
              FROM txn t
              LEFT JOIN clients c ON c.id = t.client_id
+             LEFT JOIN organizations o ON o.id = t.organization_id
              WHERE t.id = :id
              LIMIT 1"
         );
@@ -73,7 +77,8 @@ class TxnModel
                                    OR t.invoice_number ILIKE :search
                                    OR c.first_name ILIKE :search
                                    OR c.last_name  ILIKE :search
-                                   OR c.organization_name ILIKE :search)";
+                                   OR c.organization_name ILIKE :search
+                                   OR o.name ILIKE :search)";
             $params[':search'] = "%{$search}%";
         }
         if ($txnType !== '') {
@@ -107,6 +112,7 @@ class TxnModel
         $countStmt = $this->db->prepare(
             "SELECT COUNT(*) FROM txn t
              LEFT JOIN clients c ON c.id = t.client_id
+             LEFT JOIN organizations o ON o.id = t.organization_id
              WHERE {$whereClause}"
         );
         $countStmt->execute($params);
@@ -114,11 +120,15 @@ class TxnModel
 
         $stmt = $this->db->prepare(
             "SELECT t.*,
-                    COALESCE(c.organization_name,
-                             TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
-                             'Unknown') AS client_name
+                    COALESCE(
+                        o.name,
+                        c.organization_name,
+                        TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
+                        'Unknown'
+                    ) AS client_name
              FROM txn t
              LEFT JOIN clients c ON c.id = t.client_id
+             LEFT JOIN organizations o ON o.id = t.organization_id
              WHERE {$whereClause}
              ORDER BY t.txn_date DESC, t.id DESC
              LIMIT :limit OFFSET :offset"

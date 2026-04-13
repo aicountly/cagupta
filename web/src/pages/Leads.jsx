@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { getLeads, createLead, updateLead } from '../services/leadService';
 import { createContact } from '../services/contactService';
-import { getOrganizations } from '../services/organizationService';
+import { getOrganizations, createOrganization } from '../services/organizationService';
 import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import StatusBadge from '../components/common/StatusBadge';
@@ -14,7 +14,8 @@ const emptyLeadForm = {
   clientType: 'contact', // 'contact' | 'organization' — mutually exclusive client
   contactId: null, contactName: '', contactMode: 'existing',
   newContactName: '', newContactEmail: '', newContactPhone: '',
-  organizationId: null, organizationName: '',
+  organizationId: null, organizationName: '', organizationMode: 'existing',
+  newOrgName: '', newOrgEmail: '', newOrgPhone: '',
   company: '', email: '', phone: '',
   source: 'Referral', stage: 'new', estimatedValue: '',
   assignedTo: '', nextFollowUp: '', notes: '',
@@ -71,6 +72,8 @@ export default function Leads() {
       contactName: ct === 'contact' ? l.contactName || '' : '',
       contactMode: 'existing',
       newContactName: '', newContactEmail: '', newContactPhone: '',
+      organizationMode: 'existing',
+      newOrgName: '', newOrgEmail: '', newOrgPhone: '',
       organizationId: ct === 'organization' ? l.organizationId || null : null,
       organizationName: orgName,
       company: l.company || '', email: l.email || '', phone: l.phone || '',
@@ -100,6 +103,8 @@ export default function Leads() {
         contactName: ct === 'contact' ? l.contactName || '' : '',
         contactMode: 'existing',
         newContactName: '', newContactEmail: '', newContactPhone: '',
+        organizationMode: 'existing',
+        newOrgName: '', newOrgEmail: '', newOrgPhone: '',
         organizationId: ct === 'organization' ? l.organizationId || null : null,
         organizationName: orgName,
         company: l.company || '', email: l.email || '', phone: l.phone || '',
@@ -125,6 +130,10 @@ export default function Leads() {
           clientType: 'contact',
           organizationId: null,
           organizationName: '',
+          organizationMode: 'existing',
+          newOrgName: '',
+          newOrgEmail: '',
+          newOrgPhone: '',
         };
       }
       return {
@@ -136,6 +145,10 @@ export default function Leads() {
         newContactName: '',
         newContactEmail: '',
         newContactPhone: '',
+        organizationMode: 'existing',
+        newOrgName: '',
+        newOrgEmail: '',
+        newOrgPhone: '',
       };
     });
   }
@@ -144,8 +157,12 @@ export default function Leads() {
     e.preventDefault();
 
     if (form.clientType === 'organization') {
-      if (!form.organizationId) {
-        addNotification('Select an organization, or switch to Person (contact) to link a contact.', 'warning');
+      if (form.organizationMode === 'existing' && !form.organizationId) {
+        addNotification('Select an organization, or create a new one, or switch to Person (contact).', 'warning');
+        return;
+      }
+      if (form.organizationMode === 'new' && !form.newOrgName.trim()) {
+        addNotification('Enter the new organization’s name.', 'warning');
         return;
       }
     } else if (form.contactMode === 'existing' && !form.contactId) {
@@ -161,11 +178,30 @@ export default function Leads() {
     let contactNameForApi = '';
 
     if (form.clientType === 'organization') {
-      organizationId = form.organizationId;
-      contactNameForApi =
-        form.organizationName ||
-        organizations.find(o => o.id === form.organizationId)?.displayName ||
-        '';
+      if (form.organizationMode === 'new' && form.newOrgName.trim()) {
+        try {
+          const newOrg = await createOrganization({
+            displayName: form.newOrgName.trim(),
+            email: form.newOrgEmail.trim() || undefined,
+            phone: form.newOrgPhone.trim() || undefined,
+            status: 'active',
+          });
+          organizationId = newOrg.id;
+          contactNameForApi = newOrg.displayName;
+          setOrganizations(prev =>
+            prev.some(o => o.id === newOrg.id) ? prev : [...prev, newOrg],
+          );
+        } catch {
+          addNotification('Could not create the organization. Fix any errors and try again.', 'warning');
+          return;
+        }
+      } else {
+        organizationId = form.organizationId;
+        contactNameForApi =
+          form.organizationName ||
+          organizations.find(o => o.id === form.organizationId)?.displayName ||
+          '';
+      }
     } else {
       contactId = form.contactId || null;
       contactNameForApi =
@@ -300,11 +336,18 @@ export default function Leads() {
       {showNewLeadModal && (
         <div style={modalOverlay}>
           <div style={modalBox}>
-            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
-              <h3 style={{ margin:0, fontSize:16, fontWeight:700 }}>{editLeadId ? 'Edit Lead' : 'New Lead'}</h3>
-              <button onClick={() => setShowNewLeadModal(false)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer' }}>✕</button>
+            <div style={modalHeader}>
+              <div>
+                <h3 style={modalTitle}>{editLeadId ? 'Edit Lead' : 'New Lead'}</h3>
+                <p style={modalSubtitle}>Link a person or organization, then save pipeline details.</p>
+              </div>
+              <div style={modalHeaderActions}>
+                <button type="button" onClick={() => setShowNewLeadModal(false)} style={btnModalSecondary}>Cancel</button>
+                <button type="submit" form="lead-modal-form" style={btnPrimary}>{editLeadId ? 'Save changes' : 'Add lead'}</button>
+                <button type="button" onClick={() => setShowNewLeadModal(false)} style={btnModalClose} aria-label="Close">✕</button>
+              </div>
             </div>
-            <form onSubmit={handleSubmit}>
+            <form id="lead-modal-form" onSubmit={handleSubmit} style={modalFormBody}>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
                 <div style={{ gridColumn:'1/-1' }}>
                   <label style={labelStyle}>Lead is for</label>
@@ -368,24 +411,57 @@ export default function Leads() {
                 {form.clientType === 'organization' && (
                 <div style={{ gridColumn:'1/-1' }}>
                   <label style={labelStyle}>Organization</label>
-                  <select
-                    value={form.organizationId || ''}
-                    onChange={e => {
-                      const id = e.target.value ? Number(e.target.value) : null;
-                      const org = id ? organizations.find(o => o.id === id) : null;
-                      setForm(v => ({
-                        ...v,
-                        organizationId: id,
-                        organizationName: org?.displayName || '',
-                      }));
-                    }}
-                    style={inputStyle}
-                  >
-                    <option value="">— Select organization —</option>
-                    {organizations.map(o => (
-                      <option key={o.id} value={o.id}>{o.displayName}</option>
-                    ))}
-                  </select>
+                  <div style={{ display:'flex', gap:8, marginBottom:8, flexWrap:'wrap' }}>
+                    <button type="button" onClick={() => setForm(v => ({
+                      ...v,
+                      organizationMode: 'existing',
+                      newOrgName: '',
+                      newOrgEmail: '',
+                      newOrgPhone: '',
+                    }))}
+                      style={{ ...toggleBtn, ...(form.organizationMode==='existing' ? toggleBtnActive : {}) }}>
+                      Select existing
+                    </button>
+                    <button type="button" onClick={() => setForm(v => ({ ...v, organizationMode:'new', organizationId:null, organizationName:'' }))}
+                      style={{ ...toggleBtn, ...(form.organizationMode==='new' ? toggleBtnActive : {}) }}>
+                      Create new organization
+                    </button>
+                  </div>
+                  {form.organizationMode === 'existing' ? (
+                    <select
+                      value={form.organizationId || ''}
+                      onChange={e => {
+                        const id = e.target.value ? Number(e.target.value) : null;
+                        const org = id ? organizations.find(o => o.id === id) : null;
+                        setForm(v => ({
+                          ...v,
+                          organizationId: id,
+                          organizationName: org?.displayName || '',
+                        }));
+                      }}
+                      style={inputStyle}
+                    >
+                      <option value="">— Select organization —</option>
+                      {organizations.map(o => (
+                        <option key={o.id} value={o.id}>{o.displayName}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:8 }}>
+                      <div>
+                        <label style={labelStyle}>Organization name <span style={{ color:'#ef4444' }}>*</span></label>
+                        <input value={form.newOrgName} onChange={e => setForm(v => ({ ...v, newOrgName:e.target.value }))} style={inputStyle} placeholder="Legal or trading name" />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Email</label>
+                        <input type="email" value={form.newOrgEmail} onChange={e => setForm(v => ({ ...v, newOrgEmail:e.target.value }))} style={inputStyle} placeholder="billing@company.com" />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>Phone</label>
+                        <input value={form.newOrgPhone} onChange={e => setForm(v => ({ ...v, newOrgPhone:e.target.value }))} style={inputStyle} placeholder="+91 …" />
+                      </div>
+                    </div>
+                  )}
                 </div>
                 )}
                 <div>
@@ -430,10 +506,6 @@ export default function Leads() {
                   <input type="date" value={form.nextFollowUp} onChange={e=>setForm(v=>({...v,nextFollowUp:e.target.value}))} style={inputStyle} />
                 </div>
               </div>
-              <div style={{ display:'flex', gap:8, justifyContent:'flex-end', marginTop:16 }}>
-                <button type="button" onClick={() => setShowNewLeadModal(false)} style={btnOutline}>Cancel</button>
-                <button type="submit" style={btnPrimary}>{editLeadId ? 'Save Changes' : 'Add Lead'}</button>
-              </div>
             </form>
           </div>
         </div>
@@ -448,11 +520,17 @@ const thStyle = { textAlign:'left', padding:'10px 12px', color:'#64748b', fontWe
 const tdStyle = { padding:'10px 12px', color:'#334155', verticalAlign:'middle', whiteSpace:'nowrap' };
 const trStyle = { borderBottom:'1px solid #f8fafc' };
 const btnPrimary = { padding:'8px 16px', background:'#2563eb', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
-const btnOutline = { padding:'8px 16px', background:'#fff', color:'#2563eb', border:'1px solid #2563eb', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
 const iconBtn = { background:'none', border:'none', cursor:'pointer', fontSize:13, padding:'2px 6px', color:'#2563eb' };
 const panel = { position:'fixed', right:0, top:56, width:340, height:'calc(100vh - 56px)', background:'#fff', boxShadow:'-4px 0 20px rgba(0,0,0,.12)', padding:24, overflowY:'auto', zIndex:100 };
-const modalOverlay = { position:'fixed', inset:0, background:'rgba(0,0,0,0.4)', zIndex:500, display:'flex', alignItems:'center', justifyContent:'center' };
-const modalBox = { background:'#fff', borderRadius:12, padding:28, width:600, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 16px 48px rgba(0,0,0,0.2)' };
+const modalOverlay = { position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:500, display:'flex', alignItems:'center', justifyContent:'center', padding:16 };
+const modalBox = { background:'#fff', borderRadius:14, width:'min(720px, 100%)', maxHeight:'90vh', overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 25px 50px -12px rgba(15,23,42,0.25)', border:'1px solid #e2e8f0' };
+const modalHeader = { display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, padding:'18px 22px', background:'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)', borderBottom:'1px solid #e2e8f0', flexShrink:0, flexWrap:'wrap' };
+const modalTitle = { margin:0, fontSize:17, fontWeight:700, color:'#0f172a', letterSpacing:'-0.02em' };
+const modalSubtitle = { margin:'4px 0 0', fontSize:12, color:'#64748b', lineHeight:1.4, maxWidth:320 };
+const modalHeaderActions = { display:'flex', alignItems:'center', gap:8, flexShrink:0, flexWrap:'wrap', marginLeft:'auto' };
+const btnModalSecondary = { padding:'8px 14px', background:'#fff', color:'#475569', border:'1px solid #cbd5e1', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
+const btnModalClose = { width:36, height:36, padding:0, background:'#fff', color:'#64748b', border:'1px solid #e2e8f0', borderRadius:8, cursor:'pointer', fontSize:16, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' };
+const modalFormBody = { padding:'20px 22px 22px', overflowY:'auto', flex:1 };
 const labelStyle = { display:'block', fontSize:12, color:'#64748b', fontWeight:600, marginBottom:4 };
 const inputStyle = { width:'100%', padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, boxSizing:'border-box' };
 const toggleBtn = { padding:'6px 14px', background:'#f1f5f9', color:'#64748b', border:'1px solid #e2e8f0', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:600 };

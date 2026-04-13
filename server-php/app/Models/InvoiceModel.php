@@ -27,11 +27,15 @@ class InvoiceModel
     {
         $stmt = $this->db->prepare(
             "SELECT i.*,
-                    COALESCE(c.organization_name,
-                             TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
-                             'Unknown') AS client_name
+                    COALESCE(
+                        o.name,
+                        c.organization_name,
+                        TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
+                        'Unknown'
+                    ) AS client_name
              FROM invoices i
              LEFT JOIN clients c ON c.id = i.client_id
+             LEFT JOIN organizations o ON o.id = i.organization_id
              WHERE i.id = :id
              LIMIT 1"
         );
@@ -58,7 +62,8 @@ class InvoiceModel
             $where[]           = "(i.invoice_number ILIKE :search
                                    OR c.first_name ILIKE :search
                                    OR c.last_name  ILIKE :search
-                                   OR c.organization_name ILIKE :search)";
+                                   OR c.organization_name ILIKE :search
+                                   OR o.name ILIKE :search)";
             $params[':search'] = "%{$search}%";
         }
         if ($status !== '') {
@@ -70,18 +75,25 @@ class InvoiceModel
         $offset      = ($page - 1) * $perPage;
 
         $countStmt = $this->db->prepare(
-            "SELECT COUNT(*) FROM invoices i LEFT JOIN clients c ON c.id = i.client_id WHERE {$whereClause}"
+            "SELECT COUNT(*) FROM invoices i
+             LEFT JOIN clients c ON c.id = i.client_id
+             LEFT JOIN organizations o ON o.id = i.organization_id
+             WHERE {$whereClause}"
         );
         $countStmt->execute($params);
         $total = (int)$countStmt->fetchColumn();
 
         $stmt = $this->db->prepare(
             "SELECT i.*,
-                    COALESCE(c.organization_name,
-                             TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
-                             'Unknown') AS client_name
+                    COALESCE(
+                        o.name,
+                        c.organization_name,
+                        TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
+                        'Unknown'
+                    ) AS client_name
              FROM invoices i
              LEFT JOIN clients c ON c.id = i.client_id
+             LEFT JOIN organizations o ON o.id = i.organization_id
              WHERE {$whereClause}
              ORDER BY i.created_at DESC
              LIMIT :limit OFFSET :offset"
