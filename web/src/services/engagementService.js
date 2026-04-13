@@ -101,16 +101,18 @@ export async function createEngagement(payload) {
     tasks:                payload.tasks               || [],
   };
 
-  // #region agent log
-  fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '634b1d' }, body: JSON.stringify({ sessionId: '634b1d', location: 'engagementService.js:createEngagement', message: 'POST /admin/services body snapshot', data: { assigned_to: body.assigned_to, client_id: body.client_id, organization_id: body.organization_id }, timestamp: Date.now(), hypothesisId: 'A' }) }).catch(() => {});
-  // #endregion
-
   const res = await fetch(`${API_BASE}/admin/services`, {
     method:  'POST',
     headers: authHeaders(),
     body:    JSON.stringify(body),
   });
   const data = await parseResponse(res);
+
+  // #region agent log
+  const _raw = data.data;
+  fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '634b1d' }, body: JSON.stringify({ sessionId: '634b1d', hypothesisId: 'C', location: 'engagementService.js:createEngagement:afterAPI', message: 'API row before normalize', data: { client_type: _raw?.client_type, client_id: _raw?.client_id, organization_id: _raw?.organization_id, client_name: _raw?.client_name }, timestamp: Date.now() }) }).catch(() => {});
+  // #endregion
+
   return normalizeEngagement(data.data);
 }
 

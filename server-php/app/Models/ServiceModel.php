@@ -159,30 +159,7 @@ class ServiceModel
             ':engagement_type_name'=> $data['engagement_type_name'] ?? null,
             ':tasks'               => isset($data['tasks']) ? json_encode($data['tasks']) : '[]',
         ];
-        // #region agent log
-        try {
-            $stmt->execute($params);
-        } catch (\PDOException $e) {
-            file_put_contents(
-                dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'debug-634b1d.log',
-                json_encode([
-                    'sessionId'    => '634b1d',
-                    'runId'        => 'post-fix',
-                    'hypothesisId' => 'C',
-                    'location'     => 'ServiceModel.php:create',
-                    'message'      => 'PDOException on INSERT services',
-                    'data'         => [
-                        'code'    => $e->getCode(),
-                        'message' => $e->getMessage(),
-                        'assigned_to_bound' => $data['assigned_to'] ?? null,
-                    ],
-                    'timestamp'    => (int) round(microtime(true) * 1000),
-                ], JSON_UNESCAPED_UNICODE) . "\n",
-                FILE_APPEND | LOCK_EX
-            );
-            throw $e;
-        }
-        // #endregion
+        $stmt->execute($params);
         return (int)$stmt->fetchColumn();
     }
 

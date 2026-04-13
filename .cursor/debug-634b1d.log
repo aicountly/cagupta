@@ -1,0 +1,3 @@
+{"sessionId":"634b1d","location":"engagementService.js:createEngagement","message":"POST /admin/services body snapshot","data":{"assigned_to":1,"client_id":2,"organization_id":null},"timestamp":1776072715057,"hypothesisId":"A"}
+{"sessionId":"634b1d","location":"engagementService.js:createEngagement","message":"POST /admin/services body snapshot","data":{"assigned_to":4,"client_id":null,"organization_id":4},"timestamp":1776072736542,"hypothesisId":"A"}
+{"sessionId":"634b1d","location":"engagementService.js:createEngagement","message":"POST /admin/services body snapshot","data":{"assigned_to":6,"client_id":null,"organization_id":4},"timestamp":1776072772143,"hypothesisId":"A"}
