@@ -4,9 +4,19 @@ import { getLeads, createLead, updateLead } from '../services/leadService';
 import { createContact } from '../services/contactService';
 import { getOrganizations, createOrganization } from '../services/organizationService';
 import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
+import DateInput from '../components/common/DateInput';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import StatusBadge from '../components/common/StatusBadge';
 import { useNotification } from '../context/NotificationContext';
+import { useAuth } from '../auth/AuthContext';
+import {
+  getQuotationDefaults,
+  getQuotationDefaultByEngagementType,
+  getQuotationPendingSummary,
+  getLeadQuotations,
+  createLeadQuotation,
+  updateLeadQuotation,
+} from '../services/quotationService';
 
 const stages = ['new','contacted','qualified','proposal_sent','negotiation','won','lost'];
 
@@ -19,6 +29,7 @@ const emptyLeadForm = {
   company: '', email: '', phone: '',
   source: 'Referral', stage: 'new', estimatedValue: '',
   assignedTo: '', nextFollowUp: '', notes: '',
+  engagementTypeId: null, engagementTypeName: '',
 };
 
 function leadClientTypeFromRow(l) {
@@ -39,6 +50,20 @@ export default function Leads() {
   const [form, setForm] = useState(emptyLeadForm);
   const { addNotification } = useNotification();
   const { staffUsers } = useStaffUsers();
+  const { hasPermission } = useAuth();
+
+  const [engTypes, setEngTypes] = useState([]);
+  const [pendingSummary, setPendingSummary] = useState(null);
+
+  const [quoteModal, setQuoteModal] = useState(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quotePrice, setQuotePrice] = useState('');
+  const [quoteDocs, setQuoteDocs] = useState('');
+  const [quoteStatus, setQuoteStatus] = useState('draft');
+  const [quoteEngId, setQuoteEngId] = useState(null);
+  const [quoteEditId, setQuoteEditId] = useState(null);
+  const [quoteSaving, setQuoteSaving] = useState(false);
+  const [quoteMsg, setQuoteMsg] = useState('');
 
   useEffect(() => {
     setLoading(true);
@@ -49,7 +74,101 @@ export default function Leads() {
     getOrganizations()
       .then(data => setOrganizations(data))
       .catch(() => setOrganizations([]));
+    getQuotationDefaults()
+      .then(rows => setEngTypes([...rows].sort((a, b) =>
+        `${a.category_name} ${a.engagement_type_name}`.localeCompare(`${b.category_name} ${b.engagement_type_name}`),
+      )))
+      .catch(() => setEngTypes([]));
+    getQuotationPendingSummary()
+      .then(setPendingSummary)
+      .catch(() => setPendingSummary(null));
   }, []);
+
+  const needingQuotationIds = new Set(pendingSummary?.lead_ids_needing_quotation || pendingSummary?.sample_lead_ids_needing_quotation || []);
+
+  async function refreshPendingSummary() {
+    try {
+      setPendingSummary(await getQuotationPendingSummary());
+    } catch { /* ignore */ }
+  }
+
+  async function openQuotationModal(lead) {
+    setQuoteModal(lead);
+    setQuoteLoading(true);
+    setQuoteMsg('');
+    try {
+      const qs = await getLeadQuotations(lead.id);
+      let engId = lead.engagementTypeId || null;
+      const draft = qs.find(q => q.status === 'draft');
+      if (draft) {
+        setQuoteEditId(draft.id);
+        setQuotePrice(draft.price != null ? String(draft.price) : '');
+        setQuoteDocs(Array.isArray(draft.documents_required) ? draft.documents_required.join('\n') : '');
+        setQuoteStatus(draft.status);
+        setQuoteEngId(draft.engagement_type_id || engId);
+      } else {
+        setQuoteEditId(null);
+        setQuoteEngId(engId);
+        if (engId) {
+          const def = await getQuotationDefaultByEngagementType(engId);
+          setQuotePrice(def?.default_price != null ? String(def.default_price) : '');
+          setQuoteDocs(Array.isArray(def?.documents_required) ? def.documents_required.join('\n') : '');
+        } else {
+          setQuotePrice('');
+          setQuoteDocs('');
+        }
+        setQuoteStatus('draft');
+      }
+    } catch (e) {
+      setQuoteMsg(e.message || 'Could not load quotation data.');
+    } finally {
+      setQuoteLoading(false);
+    }
+  }
+
+  async function handleSaveQuotation() {
+    if (!quoteModal || !hasPermission('quotations.manage')) return;
+    setQuoteSaving(true);
+    setQuoteMsg('');
+    try {
+      const docs = quoteDocs.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+      const payload = {
+        engagement_type_id: quoteEngId || null,
+        price: quotePrice === '' || quotePrice == null ? null : Number(quotePrice),
+        documents_required: docs,
+        status: quoteStatus,
+      };
+      if (quoteEditId) {
+        await updateLeadQuotation(quoteModal.id, quoteEditId, payload);
+      } else {
+        await createLeadQuotation(quoteModal.id, payload);
+      }
+      addNotification('Quotation saved', 'lead');
+      await refreshPendingSummary();
+      setQuoteModal(null);
+    } catch (e) {
+      setQuoteMsg(e.message || 'Save failed.');
+    } finally {
+      setQuoteSaving(false);
+    }
+  }
+
+  function handleShareQuotation() {
+    if (!quoteModal) return;
+    const lines = [
+      `Quotation for ${quoteModal.contactName}`,
+      quoteEngId ? `Engagement type ID: ${quoteEngId}` : '',
+      `Price: ${quotePrice ? `₹${Number(quotePrice).toLocaleString('en-IN')}` : '—'}`,
+      'Documents required:',
+      ...quoteDocs.split(/\r?\n/).filter(s => s.trim()),
+    ].filter(Boolean);
+    const text = lines.join('\n');
+    navigator.clipboard.writeText(text).then(() => {
+      addNotification('Quotation copied to clipboard', 'lead');
+    }).catch(() => {
+      addNotification('Could not copy — select and copy manually.', 'warning');
+    });
+  }
 
   const byStage = stages.reduce((acc,s)=>({ ...acc,[s]:leads.filter(l=>l.stage===s) }), {});
   const stageColors = { new:'#f1f5f9', contacted:'#dbeafe', qualified:'#ede9fe', proposal_sent:'#fef3c7', negotiation:'#ffedd5', won:'#dcfce7', lost:'#fee2e2' };
@@ -82,6 +201,8 @@ export default function Leads() {
       assignedTo: l.assignedTo || '',
       nextFollowUp: l.nextFollowUp || '',
       notes: l.notes || '',
+      engagementTypeId: l.engagementTypeId || null,
+      engagementTypeName: l.engagementTypeName || '',
     });
     setEditLeadId(l.id);
     setShowNewLeadModal(true);
@@ -113,6 +234,8 @@ export default function Leads() {
         assignedTo: l.assignedTo || '',
         nextFollowUp: l.nextFollowUp || '',
         notes: l.notes || '',
+        engagementTypeId: l.engagementTypeId || null,
+        engagementTypeName: l.engagementTypeName || '',
       });
       setEditLeadId(l.id);
       setShowNewLeadModal(true);
@@ -253,7 +376,7 @@ export default function Leads() {
   return (
     <div style={{ padding:24 }}>
       <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid #e2e8f0' }}>
-        {[['pipeline','Kanban Pipeline'],['list','List View']].map(([t,l])=>(
+        {[['pipeline','Kanban Pipeline'],['list','List View'],['pending','Pending & setup']].map(([t,l])=>(
           <button key={t} onClick={()=>setTab(t)} style={{ padding:'8px 20px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600, color:tab===t?'#2563eb':'#64748b', borderBottom:tab===t?'2px solid #2563eb':'2px solid transparent', marginBottom:-2 }}>
             🎯 {l}
           </button>
@@ -271,7 +394,12 @@ export default function Leads() {
               </div>
               {byStage[stage].map(l=>(
                 <div key={l.id} onClick={()=>setSelected(l)} style={{ background:'#fff', borderRadius:8, padding:'12px', marginBottom:8, boxShadow:'0 1px 2px rgba(0,0,0,.07)', cursor:'pointer', borderLeft:`3px solid ${stageColors[stage]}` }}>
-                  <div style={{ fontWeight:600, fontSize:13, color:'#1e293b' }}>{l.contactName}</div>
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:6 }}>
+                    <div style={{ fontWeight:600, fontSize:13, color:'#1e293b' }}>{l.contactName}</div>
+                    {needingQuotationIds.has(l.id) && (
+                      <span title="No final quotation yet" style={{ fontSize:10, fontWeight:700, background:'#fef3c7', color:'#92400e', padding:'2px 6px', borderRadius:4, flexShrink:0 }}>QUOTE</span>
+                    )}
+                  </div>
                   {l.company && <div style={{ fontSize:12, color:'#64748b' }}>{l.company}</div>}
                   <div style={{ fontSize:12, color:'#2563eb', marginTop:4 }}>₹{l.estimatedValue?.toLocaleString('en-IN')}</div>
                   <div style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>Follow-up: {l.nextFollowUp}</div>
@@ -279,6 +407,47 @@ export default function Leads() {
               ))}
             </div>
           ))}
+        </div>
+      )}
+
+      {tab==='pending' && (
+        <div style={cardStyle}>
+          {loading && <div style={{ padding:16, color:'#64748b' }}>Loading…</div>}
+          {!loading && pendingSummary && (
+            <div style={{ padding:8 }}>
+              <h3 style={{ margin:'0 0 12px', fontSize:15, fontWeight:700 }}>Quotation &amp; setup status</h3>
+              <ul style={{ margin:0, paddingLeft:20, fontSize:14, color:'#334155', lineHeight:1.7 }}>
+                <li><strong>{pendingSummary.engagement_types_incomplete}</strong> engagement type(s) still need a default price or document list (configure under Settings → Service Configuration).</li>
+                <li><strong>{pendingSummary.leads_needing_final_quotation}</strong> lead(s) in <em>Qualified</em> or <em>Proposal sent</em> have no final quotation saved yet.</li>
+              </ul>
+              {pendingSummary.lead_ids_needing_quotation?.length > 0 && (
+                <div style={{ marginTop:16 }}>
+                  <div style={{ fontSize:12, fontWeight:600, color:'#64748b', marginBottom:8 }}>Open a lead</div>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+                    {pendingSummary.lead_ids_needing_quotation.slice(0, 24).map(id => {
+                      const lead = leads.find(x => x.id === id);
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          style={{ ...btnModalSecondary, fontSize:12 }}
+                          onClick={() => {
+                            const l = leads.find(x => x.id === id);
+                            if (l) setSelected(l);
+                          }}
+                        >
+                          {lead ? lead.contactName : `Lead #${id}`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {pendingSummary.leads_needing_final_quotation > 24 && (
+                    <p style={{ fontSize:12, color:'#94a3b8', marginTop:8 }}>Showing first 24; filter the list by stage for the rest.</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -308,7 +477,13 @@ export default function Leads() {
                   <td style={tdStyle}>{l.nextFollowUp}</td>
                   <td style={tdStyle}>
                     <button style={iconBtn} onClick={() => openEditModal(l)}>✏️</button>
-                    <button style={iconBtn}>📄 Quotation</button>
+                    <button
+                      type="button"
+                      style={iconBtn}
+                      onClick={(e) => { e.stopPropagation(); openQuotationModal(l); }}
+                    >
+                      📄 Quotation
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -323,13 +498,84 @@ export default function Leads() {
             <h3 style={{ margin:0, fontSize:15, fontWeight:700 }}>{selected.contactName}</h3>
             <button onClick={()=>setSelected(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer' }}>✕</button>
           </div>
-          {[['Company',selected.company||'—'],['Email',selected.email],['Phone',selected.phone],['Source',selected.source],['Stage',<StatusBadge key="s" status={selected.stage} />],['Probability',`${selected.probability}%`],['Est. Value',`₹${selected.estimatedValue?.toLocaleString('en-IN')}`],['Assigned To',selected.assignedTo],['Follow-up',selected.nextFollowUp]].map(([k,v])=>(
+          {[['Company',selected.company||'—'],['Email',selected.email],['Phone',selected.phone],['Source',selected.source],['Stage',<StatusBadge key="s" status={selected.stage} />],['Probability',`${selected.probability}%`],['Est. Value',`₹${selected.estimatedValue?.toLocaleString('en-IN')}`],['Assigned To',selected.assignedTo],['Follow-up',selected.nextFollowUp],['Engagement', selected.engagementTypeName || '—']].map(([k,v])=>(
             <div key={k} style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid #f1f5f9', fontSize:13 }}>
               <span style={{ color:'#64748b', fontWeight:600 }}>{k}</span>
               <span>{v}</span>
             </div>
           ))}
-          <button style={{ ...btnPrimary, width:'100%', marginTop:16 }}>📄 Create Quotation</button>
+          <button
+            type="button"
+            style={{ ...btnPrimary, width:'100%', marginTop:16 }}
+            onClick={() => openQuotationModal(selected)}
+          >
+            📄 Create / edit quotation
+          </button>
+        </div>
+      )}
+
+      {quoteModal && (
+        <div style={{ ...modalOverlay, zIndex: 600 }}>
+          <div style={{ ...modalBox, maxWidth: 520 }}>
+            <div style={modalHeader}>
+              <div>
+                <h3 style={modalTitle}>Quotation — {quoteModal.contactName}</h3>
+                <p style={modalSubtitle}>Pre-filled from setup defaults when an engagement type is set; adjust per lead.</p>
+              </div>
+              <button type="button" onClick={() => setQuoteModal(null)} style={btnModalClose} aria-label="Close">✕</button>
+            </div>
+            <div style={{ ...modalFormBody, paddingBottom: 16 }}>
+              {quoteLoading && <div style={{ color:'#64748b', fontSize:13 }}>Loading…</div>}
+              {!quoteLoading && (
+                <>
+                  <label style={labelStyle}>Engagement type</label>
+                  <select
+                    value={quoteEngId || ''}
+                    onChange={async (e) => {
+                      const v = e.target.value;
+                      const id = v ? Number(v) : null;
+                      setQuoteEngId(id);
+                      if (id) {
+                        try {
+                          const def = await getQuotationDefaultByEngagementType(id);
+                          setQuotePrice(def?.default_price != null ? String(def.default_price) : '');
+                          setQuoteDocs(Array.isArray(def?.documents_required) ? def.documents_required.join('\n') : '');
+                        } catch { /* ignore */ }
+                      }
+                    }}
+                    style={{ ...inputStyle, marginBottom:12 }}
+                  >
+                    <option value="">— Select —</option>
+                    {engTypes.map(t => (
+                      <option key={t.engagement_type_id} value={t.engagement_type_id}>
+                        {t.category_name}{t.subcategory_name ? ` / ${t.subcategory_name}` : ''} — {t.engagement_type_name}
+                      </option>
+                    ))}
+                  </select>
+                  <label style={labelStyle}>Price (₹)</label>
+                  <input type="number" value={quotePrice} onChange={e => setQuotePrice(e.target.value)} style={{ ...inputStyle, marginBottom:12 }} />
+                  <label style={labelStyle}>Documents required (one per line)</label>
+                  <textarea value={quoteDocs} onChange={e => setQuoteDocs(e.target.value)} style={{ ...inputStyle, minHeight:100, marginBottom:12 }} />
+                  <label style={labelStyle}>Status</label>
+                  <select value={quoteStatus} onChange={e => setQuoteStatus(e.target.value)} style={{ ...inputStyle, marginBottom:12 }}>
+                    <option value="draft">Draft</option>
+                    <option value="final">Final</option>
+                    <option value="sent">Sent</option>
+                  </select>
+                  {quoteMsg && <div style={{ fontSize:12, color:'#dc2626', marginBottom:8 }}>{quoteMsg}</div>}
+                </>
+              )}
+            </div>
+            <div style={modalFooter}>
+              <button type="button" style={btnModalSecondary} onClick={handleShareQuotation}>Copy text</button>
+              <button type="button" style={btnModalSecondary} onClick={() => setQuoteModal(null)}>Close</button>
+              {hasPermission('quotations.manage') && (
+                <button type="button" style={btnPrimary} disabled={quoteSaving || quoteLoading} onClick={handleSaveQuotation}>
+                  {quoteSaving ? 'Saving…' : 'Save quotation'}
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -337,17 +583,14 @@ export default function Leads() {
         <div style={modalOverlay}>
           <div style={modalBox}>
             <div style={modalHeader}>
-              <div>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <h3 style={modalTitle}>{editLeadId ? 'Edit Lead' : 'New Lead'}</h3>
                 <p style={modalSubtitle}>Link a person or organization, then save pipeline details.</p>
               </div>
-              <div style={modalHeaderActions}>
-                <button type="button" onClick={() => setShowNewLeadModal(false)} style={btnModalSecondary}>Cancel</button>
-                <button type="submit" form="lead-modal-form" style={btnPrimary}>{editLeadId ? 'Save changes' : 'Add lead'}</button>
-                <button type="button" onClick={() => setShowNewLeadModal(false)} style={btnModalClose} aria-label="Close">✕</button>
-              </div>
+              <button type="button" onClick={() => setShowNewLeadModal(false)} style={btnModalClose} aria-label="Close">✕</button>
             </div>
             <form id="lead-modal-form" onSubmit={handleSubmit} style={modalFormBody}>
+              <div style={{ overflowY:'auto', flex:1, minHeight:0, paddingBottom:4 }}>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
                 <div style={{ gridColumn:'1/-1' }}>
                   <label style={labelStyle}>Lead is for</label>
@@ -488,6 +731,30 @@ export default function Leads() {
                     {stages.map(s=><option key={s} value={s}>{s.replace(/_/g,' ')}</option>)}
                   </select>
                 </div>
+                <div style={{ gridColumn:'1/-1' }}>
+                  <label style={labelStyle}>Engagement type (for quotations)</label>
+                  <select
+                    value={form.engagementTypeId || ''}
+                    onChange={e => {
+                      const v = e.target.value;
+                      const id = v ? Number(v) : null;
+                      const row = id ? engTypes.find(t => t.engagement_type_id === id) : null;
+                      setForm(prev => ({
+                        ...prev,
+                        engagementTypeId: id,
+                        engagementTypeName: row?.engagement_type_name || '',
+                      }));
+                    }}
+                    style={inputStyle}
+                  >
+                    <option value="">— Optional —</option>
+                    {engTypes.map(t => (
+                      <option key={t.engagement_type_id} value={t.engagement_type_id}>
+                        {t.category_name}{t.subcategory_name ? ` / ${t.subcategory_name}` : ''} — {t.engagement_type_name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <div>
                   <label style={labelStyle}>Estimated Value (₹)</label>
                   <input type="number" value={form.estimatedValue} onChange={e=>setForm(v=>({...v,estimatedValue:e.target.value}))} style={inputStyle} />
@@ -503,8 +770,13 @@ export default function Leads() {
                 </div>
                 <div style={{ gridColumn:'1/-1' }}>
                   <label style={labelStyle}>Next Follow-up</label>
-                  <input type="date" value={form.nextFollowUp} onChange={e=>setForm(v=>({...v,nextFollowUp:e.target.value}))} style={inputStyle} />
+                  <DateInput value={form.nextFollowUp} onChange={e=>setForm(v=>({...v,nextFollowUp:e.target.value}))} style={inputStyle} />
                 </div>
+              </div>
+              </div>
+              <div style={modalFooter}>
+                <button type="button" onClick={() => setShowNewLeadModal(false)} style={btnModalSecondary}>Cancel</button>
+                <button type="submit" style={btnPrimary}>{editLeadId ? 'Save changes' : 'Add lead'}</button>
               </div>
             </form>
           </div>
@@ -524,13 +796,13 @@ const iconBtn = { background:'none', border:'none', cursor:'pointer', fontSize:1
 const panel = { position:'fixed', right:0, top:56, width:340, height:'calc(100vh - 56px)', background:'#fff', boxShadow:'-4px 0 20px rgba(0,0,0,.12)', padding:24, overflowY:'auto', zIndex:100 };
 const modalOverlay = { position:'fixed', inset:0, background:'rgba(15,23,42,0.45)', zIndex:500, display:'flex', alignItems:'center', justifyContent:'center', padding:16 };
 const modalBox = { background:'#fff', borderRadius:14, width:'min(720px, 100%)', maxHeight:'90vh', overflow:'hidden', display:'flex', flexDirection:'column', boxShadow:'0 25px 50px -12px rgba(15,23,42,0.25)', border:'1px solid #e2e8f0' };
-const modalHeader = { display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, padding:'18px 22px', background:'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)', borderBottom:'1px solid #e2e8f0', flexShrink:0, flexWrap:'wrap' };
+const modalHeader = { display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:16, padding:'18px 22px', background:'linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%)', borderBottom:'1px solid #e2e8f0', flexShrink:0 };
 const modalTitle = { margin:0, fontSize:17, fontWeight:700, color:'#0f172a', letterSpacing:'-0.02em' };
 const modalSubtitle = { margin:'4px 0 0', fontSize:12, color:'#64748b', lineHeight:1.4, maxWidth:320 };
-const modalHeaderActions = { display:'flex', alignItems:'center', gap:8, flexShrink:0, flexWrap:'wrap', marginLeft:'auto' };
 const btnModalSecondary = { padding:'8px 14px', background:'#fff', color:'#475569', border:'1px solid #cbd5e1', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
-const btnModalClose = { width:36, height:36, padding:0, background:'#fff', color:'#64748b', border:'1px solid #e2e8f0', borderRadius:8, cursor:'pointer', fontSize:16, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' };
-const modalFormBody = { padding:'20px 22px 22px', overflowY:'auto', flex:1 };
+const btnModalClose = { flexShrink:0, width:36, height:36, padding:0, background:'#fff', color:'#64748b', border:'1px solid #e2e8f0', borderRadius:8, cursor:'pointer', fontSize:16, lineHeight:1, display:'flex', alignItems:'center', justifyContent:'center' };
+const modalFormBody = { padding:'20px 22px 0', overflowY:'auto', flex:1, display:'flex', flexDirection:'column', minHeight:0 };
+const modalFooter = { display:'flex', justifyContent:'flex-end', alignItems:'center', gap:8, flexShrink:0, marginTop:'auto', padding:'16px 22px 22px', borderTop:'1px solid #e2e8f0', background:'#fafbfc' };
 const labelStyle = { display:'block', fontSize:12, color:'#64748b', fontWeight:600, marginBottom:4 };
 const inputStyle = { width:'100%', padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, boxSizing:'border-box' };
 const toggleBtn = { padding:'6px 14px', background:'#f1f5f9', color:'#64748b', border:'1px solid #e2e8f0', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:600 };

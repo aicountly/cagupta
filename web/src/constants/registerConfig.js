@@ -1,8 +1,15 @@
+import { EXPENSE_PURPOSE_OPTIONS } from './expensePurposes';
+
 const STATUS_OPTIONS = [
   { value: '__all__', label: 'All' },
   { value: 'filed',   label: '✅ Filed' },
   { value: 'pending', label: '⏳ Pending' },
   { value: 'late',    label: '🔴 Overdue' },
+];
+
+const PAYMENT_METHOD_FILTER_OPTIONS = [
+  { value: '__all__', label: 'All' },
+  ...['NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'IMPS'].map((m) => ({ value: m, label: m })),
 ];
 
 export const REGISTER_CONFIG = {
@@ -175,6 +182,35 @@ export const REGISTER_CONFIG = {
         label: 'Status',
         type: 'pills',
         options: STATUS_OPTIONS,
+      },
+    ],
+  },
+  payments: {
+    label: 'Payment Register',
+    icon: '💳',
+    columns: ['Date', 'Client', 'Amount (₹)', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Notes'],
+    subFilters: [
+      {
+        key: 'expense_purpose',
+        label: 'Purpose',
+        type: 'pills',
+        options: [
+          { value: '__all__', label: 'All' },
+          ...EXPENSE_PURPOSE_OPTIONS.map((o) => ({ value: o.value, label: o.label })),
+        ],
+      },
+      {
+        key: 'payment_method',
+        label: 'Paid via',
+        type: 'pills',
+        options: PAYMENT_METHOD_FILTER_OPTIONS,
+      },
+      {
+        key: 'paid_from',
+        label: 'Paid from',
+        type: 'dropdown',
+        options: 'dynamic',
+        dataKey: 'paid_from',
       },
     ],
   },

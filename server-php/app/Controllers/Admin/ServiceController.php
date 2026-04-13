@@ -76,26 +76,6 @@ class ServiceController extends BaseController
 
         $actingUser = $this->authUser();
 
-        // #region agent log
-        file_put_contents(
-            dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-634b1d.log',
-            json_encode([
-                'sessionId'    => '634b1d',
-                'hypothesisId' => 'B',
-                'location'     => 'ServiceController.php:store:beforeCreate',
-                'message'      => 'incoming org/contact fields',
-                'data'         => [
-                    'client_type'       => $body['client_type']       ?? null,
-                    'client_id'         => $body['client_id']         ?? null,
-                    'organization_id'   => $body['organization_id']   ?? null,
-                    'client_name_body'  => $body['client_name']       ?? null,
-                ],
-                'timestamp'    => (int) round(microtime(true) * 1000),
-            ], JSON_UNESCAPED_UNICODE) . "\n",
-            FILE_APPEND | LOCK_EX
-        );
-        // #endregion
-
         $newId = $this->services->create([
             'client_type'          => $body['client_type']          ?? 'contact',
             'client_id'            => isset($body['client_id'])    ? (int)$body['client_id']    : null,
@@ -119,28 +99,6 @@ class ServiceController extends BaseController
         ]);
 
         $service = $this->services->find($newId);
-
-        // #region agent log
-        file_put_contents(
-            dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-634b1d.log',
-            json_encode([
-                'sessionId'    => '634b1d',
-                'runId'        => 'post-fix',
-                'hypothesisId' => 'A',
-                'location'     => 'ServiceController.php:store:afterFind',
-                'message'      => 'find() row client_name vs ids',
-                'data'         => [
-                    'client_type'     => $service['client_type']     ?? null,
-                    'client_id'       => $service['client_id']       ?? null,
-                    'organization_id' => $service['organization_id'] ?? null,
-                    'client_name'     => $service['client_name']     ?? null,
-                ],
-                'timestamp'    => (int) round(microtime(true) * 1000),
-            ], JSON_UNESCAPED_UNICODE) . "\n",
-            FILE_APPEND | LOCK_EX
-        );
-        // #endregion
-
         $this->success($service, 'Service engagement created', 201);
     }
 

@@ -7,6 +7,7 @@ import { getContacts } from '../services/contactService';
 import { getOrganizations } from '../services/organizationService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useNotification } from '../context/NotificationContext';
+import DateInput from '../components/common/DateInput';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -428,8 +429,7 @@ export default function NewServiceEngagement() {
               </div>
               <div>
                 <FieldLabel label="Due Date" required />
-                <input
-                  type="date"
+                <DateInput
                   value={dueDate}
                   onChange={e => { setDueDate(e.target.value); setErrors(prev => ({ ...prev, dueDate: '' })); }}
                   style={{ ...inputStyle, borderColor: errors.dueDate ? '#ef4444' : '#E6E8F0' }}

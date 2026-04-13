@@ -45,6 +45,8 @@ function normalizeLead(l) {
     nextFollowUp:    l.follow_up_date   || l.next_follow_up || '',
     notes:           l.notes            || '',
     createdAt:       l.created_at       || '',
+    engagementTypeId:   l.engagement_type_id != null ? Number(l.engagement_type_id) : null,
+    engagementTypeName: l.engagement_type_name || '',
   };
 }
 
@@ -84,6 +86,9 @@ export async function createLead(payload) {
     notes:           payload.notes          || null,
     contact_id:      payload.contactId      ? Number(payload.contactId)      : null,
     organization_id: payload.organizationId ? Number(payload.organizationId) : null,
+    engagement_type_id:   payload.engagementTypeId != null && payload.engagementTypeId !== ''
+      ? Number(payload.engagementTypeId) : null,
+    engagement_type_name: payload.engagementTypeName || null,
   };
 
   const res = await fetch(`${API_BASE}/admin/leads`, {
@@ -116,6 +121,10 @@ export async function updateLead(id, payload) {
     notes:           payload.notes         || null,
     contact_id:      payload.contactId      !== undefined ? (Number(payload.contactId)      || null) : undefined,
     organization_id: payload.organizationId !== undefined ? (Number(payload.organizationId) || null) : undefined,
+    engagement_type_id: payload.engagementTypeId !== undefined
+      ? (payload.engagementTypeId != null && payload.engagementTypeId !== '' ? Number(payload.engagementTypeId) : null)
+      : undefined,
+    engagement_type_name: payload.engagementTypeName !== undefined ? (payload.engagementTypeName || null) : undefined,
   };
 
   const res = await fetch(`${API_BASE}/admin/leads/${id}`, {

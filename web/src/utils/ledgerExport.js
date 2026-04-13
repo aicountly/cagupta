@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { buildLedgerDetailLine } from './ledgerTxnDetails';
 
 const TXN_TYPE_LABELS = {
   invoice: 'Invoice',
@@ -30,7 +31,9 @@ function safeFilePart(s) {
 function formatInrPdf(n) {
   const x = Number(n);
   if (Number.isNaN(x)) return '—';
-  return `₹${x.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  // ASCII "Rs." — jsPDF Helvetica cannot render U+20B9 (₹).
+  const amt = x.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return `Rs.\u00A0${amt}`;
 }
 
 function ledgerRowDate(e) {
@@ -83,28 +86,30 @@ export function exportLedgerExcel({
   r += 2;
 
   const headerRow = r;
-  const headers = ['Date', 'Entry type', 'Narration', 'Billing profile', 'Debit (₹)', 'Credit (₹)', 'Balance (₹)'];
+  const headers = ['Date', 'Entry type', 'Narration', 'Details', 'Billing profile', 'Debit (₹)', 'Credit (₹)', 'Balance (₹)'];
   headers.forEach((h, c) => set(headerRow, c, { t: 's', v: h }));
 
   const numFmt = '#,##0.00';
   let dataRow = headerRow + 1;
   for (const e of rows) {
     const c0 = 0;
+    const detail = buildLedgerDetailLine(e);
     set(dataRow, c0 + 0, { t: 's', v: ledgerRowDate(e) });
     set(dataRow, c0 + 1, { t: 's', v: txnTypeLabel(e.txnType) });
     set(dataRow, c0 + 2, { t: 's', v: String(e.narration ?? '').slice(0, 500) || '—' });
-    set(dataRow, c0 + 3, { t: 's', v: String(e.billingProfileCode || '').trim() || '—' });
+    set(dataRow, c0 + 3, { t: 's', v: String(detail || '').slice(0, 500) || '—' });
+    set(dataRow, c0 + 4, { t: 's', v: String(e.billingProfileCode || '').trim() || '—' });
 
     const dr = numOrEmpty(e.debit);
     const cr = numOrEmpty(e.credit);
     if (dr != null) {
-      set(dataRow, c0 + 4, { t: 'n', v: dr, z: numFmt });
+      set(dataRow, c0 + 5, { t: 'n', v: dr, z: numFmt });
     }
     if (cr != null) {
-      set(dataRow, c0 + 5, { t: 'n', v: cr, z: numFmt });
+      set(dataRow, c0 + 6, { t: 'n', v: cr, z: numFmt });
     }
     const bal = Number(e.balance);
-    set(dataRow, c0 + 6, {
+    set(dataRow, c0 + 7, {
       t: 'n',
       v: Number.isNaN(bal) ? 0 : bal,
       z: numFmt,
@@ -116,12 +121,13 @@ export function exportLedgerExcel({
   const lastRow = dataRow - 1;
   ws['!ref'] = XLSX.utils.encode_range({
     s: { r: 0, c: 0 },
-    e: { r: lastRow, c: 6 },
+    e: { r: lastRow, c: 7 },
   });
   ws['!cols'] = [
     { wch: 12 },
     { wch: 14 },
-    { wch: 36 },
+    { wch: 28 },
+    { wch: 40 },
     { wch: 16 },
     { wch: 14 },
     { wch: 14 },
@@ -190,12 +196,14 @@ export async function exportLedgerPdf({
     }
   }
 
+  const titleStr = 'Account ledger statement';
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(15);
   doc.setTextColor(15, 23, 42);
   const titleX = logoPlaced ? margin + imgW + 6 : margin;
-  const titleY = logoPlaced ? y0 + imgH * 0.72 : y0 + 5;
-  doc.text('Account ledger statement', titleX, titleY);
+  const titleH = doc.getTextDimensions(titleStr).h;
+  const titleY = logoPlaced ? y0 + (imgH + titleH) / 2 - titleH * 0.2 : y0 + 5;
+  doc.text(titleStr, titleX, titleY);
   y = y0 + (logoPlaced ? imgH : 8) + 8;
 
   doc.setFont('helvetica', 'normal');
@@ -219,6 +227,7 @@ export async function exportLedgerPdf({
     ledgerRowDate(e),
     txnTypeLabel(e.txnType),
     String(e.narration ?? '').slice(0, 120) || '—',
+    String(buildLedgerDetailLine(e) || '').slice(0, 160) || '—',
     String(e.billingProfileCode || '').trim() || '—',
     e.debit ? formatInrPdf(e.debit) : '—',
     e.credit ? formatInrPdf(e.credit) : '—',
@@ -227,7 +236,7 @@ export async function exportLedgerPdf({
 
   autoTable(doc, {
     startY: y,
-    head: [['Date', 'Entry type', 'Narration', 'Billing profile', 'Debit (Dr)', 'Credit (Cr)', 'Balance']],
+    head: [['Date', 'Entry type', 'Narration', 'Details', 'Billing profile', 'Debit (Rs.)', 'Credit (Rs.)', 'Balance (Rs.)']],
     body,
     theme: 'striped',
     styles: {
@@ -245,13 +254,27 @@ export async function exportLedgerPdf({
       halign: 'left',
     },
     columnStyles: {
-      0: { cellWidth: 24 },
-      1: { cellWidth: 26 },
-      2: { cellWidth: 'auto' },
-      3: { cellWidth: 28 },
-      4: { halign: 'right', cellWidth: 30 },
-      5: { halign: 'right', cellWidth: 30 },
-      6: { halign: 'right', cellWidth: 32, fontStyle: 'bold' },
+      0: { cellWidth: 22 },
+      1: { cellWidth: 24 },
+      2: { cellWidth: 42 },
+      3: { cellWidth: 48 },
+      4: { cellWidth: 26 },
+      5: {
+        halign: 'right',
+        cellWidth: 28,
+        cellPadding: { left: 2.5, right: 4.5, top: 2.5, bottom: 2.5 },
+      },
+      6: {
+        halign: 'right',
+        cellWidth: 28,
+        cellPadding: { left: 2.5, right: 4.5, top: 2.5, bottom: 2.5 },
+      },
+      7: {
+        halign: 'right',
+        cellWidth: 30,
+        fontStyle: 'bold',
+        cellPadding: { left: 2.5, right: 4.5, top: 2.5, bottom: 2.5 },
+      },
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     margin: { left: margin, right: margin },

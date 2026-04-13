@@ -72,6 +72,19 @@ export async function getOrganizations({ page = 1, perPage = 100, search = '', s
 }
 
 /**
+ * Fetch one organization by id.
+ * @param {number|string} id
+ * @returns {Promise<object>}
+ */
+export async function getOrganization(id) {
+  const res = await fetch(`${API_BASE}/admin/organizations/${id}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return normalizeOrg(data.data);
+}
+
+/**
  * Type-ahead organization search (GET /admin/organizations/search?q=&limit=).
  * Same API as EntitySearchDropdown; useful when the paginated list endpoint
  * returns nothing or errors in some environments.

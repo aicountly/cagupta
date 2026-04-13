@@ -49,6 +49,7 @@ export const PERMISSIONS = {
     'credentials.view',
     'registers.view',
     'leads.view', 'leads.create', 'leads.edit',
+    'quotations.setup', 'quotations.manage',
     'settings.view',
     'users.manage',
   ],
@@ -61,6 +62,7 @@ export const PERMISSIONS = {
     'calendar.view', 'calendar.create',
     'registers.view',
     'leads.view', 'leads.create',
+    'quotations.manage',
   ],
   staff: [
     'dashboard.view',

@@ -25,6 +25,27 @@ async function parseResponse(res) {
   return json;
 }
 
+function positiveIntOrNull(v) {
+  if (v === '' || v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+/** API stores `tasks` as JSON text; coerce to an array for the UI. */
+function parseTasks(raw) {
+  if (raw == null || raw === '') return [];
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw);
+      return Array.isArray(p) ? p : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
 /**
  * Map an API service row to the shape expected by the Services/Engagements UI.
  */
@@ -43,11 +64,12 @@ function normalizeEngagement(s) {
     type:               s.service_type        || s.type || '',
     financialYear:      s.financial_year      || '',
     assignedTo:         s.assigned_to_name    || s.assigned_to || '',
+    assignedToUserId:   positiveIntOrNull(s.assigned_to),
     dueDate:            s.due_date            || '',
     status:             s.status              || 'not_started',
-    feeAgreed:          s.fees                || s.fee_agreed || null,
+    feeAgreed:          s.fees                != null ? Number(s.fees) : (s.fee_agreed != null ? Number(s.fee_agreed) : null),
     notes:              s.notes               || '',
-    tasks:              s.tasks               || [],
+    tasks:              parseTasks(s.tasks),
     createdAt:          s.created_at          || '',
   };
 }
@@ -69,15 +91,23 @@ export async function getEngagements({ page = 1, perPage = 100, search = '', sta
 }
 
 /**
+ * Fetch one service engagement by id.
+ * @param {number|string} id
+ * @returns {Promise<object>}
+ */
+export async function getEngagement(id) {
+  const res = await fetch(`${API_BASE}/admin/services/${id}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return normalizeEngagement(data.data);
+}
+
+/**
  * Create a new service engagement.
  * @param {object} payload
  * @returns {Promise<object>}
  */
-function positiveIntOrNull(v) {
-  if (v === '' || v === null || v === undefined) return null;
-  const n = Number(v);
-  return Number.isInteger(n) && n > 0 ? n : null;
-}
 
 export async function createEngagement(payload) {
   const body = {
@@ -107,12 +137,6 @@ export async function createEngagement(payload) {
     body:    JSON.stringify(body),
   });
   const data = await parseResponse(res);
-
-  // #region agent log
-  const _raw = data.data;
-  fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '634b1d' }, body: JSON.stringify({ sessionId: '634b1d', hypothesisId: 'C', location: 'engagementService.js:createEngagement:afterAPI', message: 'API row before normalize', data: { client_type: _raw?.client_type, client_id: _raw?.client_id, organization_id: _raw?.organization_id, client_name: _raw?.client_name }, timestamp: Date.now() }) }).catch(() => {});
-  // #endregion
-
   return normalizeEngagement(data.data);
 }
 
@@ -123,14 +147,18 @@ export async function createEngagement(payload) {
  * @returns {Promise<object>}
  */
 export async function updateEngagement(id, payload) {
-  const body = {
-    status:        payload.status        || null,
-    assigned_to:   positiveIntOrNull(payload.assignedTo),
-    due_date:      payload.dueDate       || null,
-    fees:          payload.feeAgreed     || null,
-    notes:         payload.notes         || null,
-    tasks:         payload.tasks         || [],
-  };
+  const body = {};
+  if ('status' in payload) body.status = payload.status;
+  if ('assignedTo' in payload) body.assigned_to = positiveIntOrNull(payload.assignedTo);
+  if ('dueDate' in payload) body.due_date = payload.dueDate || null;
+  if ('feeAgreed' in payload) {
+    const v = payload.feeAgreed;
+    body.fees = v === '' || v === null ? null : Number(v);
+  }
+  if ('notes' in payload) body.notes = payload.notes ?? null;
+  if ('tasks' in payload) body.tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
+  if ('type' in payload) body.service_type = payload.type || null;
+  if ('financialYear' in payload) body.financial_year = payload.financialYear || null;
 
   const res = await fetch(`${API_BASE}/admin/services/${id}`, {
     method:  'PUT',

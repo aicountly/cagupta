@@ -408,6 +408,55 @@ class Routes
                 'handler'    => 'Admin\LeadController@destroy',
                 'middleware' => ['auth', 'permission:leads.edit'],
             ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/leads/:id/quotations',
+                'handler'    => 'Admin\LeadQuotationController@index',
+                'middleware' => ['auth', 'permission:leads.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/leads/:id/quotations',
+                'handler'    => 'Admin\LeadQuotationController@store',
+                'middleware' => ['auth', 'permission:quotations.manage'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/leads/:id/quotations/:id',
+                'handler'    => 'Admin\LeadQuotationController@update',
+                'middleware' => ['auth', 'permission:quotations.manage'],
+            ],
+
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/quotation-defaults/pending-summary',
+                'handler'    => 'Admin\QuotationDefaultController@pendingSummary',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/quotation-defaults/request-change-otp',
+                'handler'    => 'Admin\QuotationDefaultController@requestChangeOtp',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/quotation-defaults/by-engagement-type/:id',
+                'handler'    => 'Admin\QuotationDefaultController@showByEngagementType',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/quotation-defaults/by-engagement-type/:id',
+                'handler'    => 'Admin\QuotationDefaultController@updateByEngagementType',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/quotation-defaults',
+                'handler'    => 'Admin\QuotationDefaultController@index',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
 
             // ── Admin — Dashboard ─────────────────────────────────────────────
             [

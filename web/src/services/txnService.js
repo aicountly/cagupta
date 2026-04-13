@@ -24,6 +24,23 @@ async function parseResponse(res) {
   return json;
 }
 
+function normalizeLineItems(raw) {
+  let arr = raw;
+  if (raw == null) return [];
+  if (typeof raw === 'string') {
+    try {
+      arr = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+  }
+  if (!Array.isArray(arr)) return [];
+  return arr.map((row) => ({
+    description: String(row?.description ?? '').trim(),
+    amount:      parseFloat(row?.amount ?? 0) || 0,
+  })).filter((row) => row.description && row.amount > 0);
+}
+
 /**
  * Normalize a raw txn row from the backend.
  */
@@ -50,6 +67,8 @@ function normalizeTxn(t) {
     taxAmount:          parseFloat(t.tax_amount  || 0),
     paymentMethod:      t.payment_method   || '',
     referenceNumber:    t.reference_number || '',
+    expensePurpose:     t.expense_purpose  || '',
+    paidFrom:           t.paid_from        || '',
     tdsStatus:          t.tds_status       || '',
     tdsSection:         t.tds_section      || '',
     tdsRate:            parseFloat(t.tds_rate || 0),
@@ -57,6 +76,7 @@ function normalizeTxn(t) {
     notes:              t.notes            || '',
     status:             t.status           || 'active',
     createdAt:          t.created_at       || '',
+    lineItems:          normalizeLineItems(t.line_items),
   };
 }
 
@@ -68,6 +88,9 @@ export async function getTxns(params = {}) {
   if (params.search)    query.set('search', params.search);
   if (params.txnType)   query.set('txn_type', params.txnType);
   if (params.clientId)  query.set('client_id', params.clientId);
+  if (params.organizationId) query.set('organization_id', params.organizationId);
+  if (params.expensePurpose) query.set('expense_purpose', params.expensePurpose);
+  if (params.paymentMethod) query.set('payment_method', params.paymentMethod);
   if (params.tdsStatus) query.set('tds_status', params.tdsStatus);
   if (params.status)    query.set('status', params.status);
   if (params.dateFrom)  query.set('date_from', params.dateFrom);
@@ -132,6 +155,12 @@ export async function getLedger(clientIdOrObj) {
   const res  = await fetch(`${API_BASE}/admin/txn/ledger?${params}`, { headers: authHeaders() });
   const data = await parseResponse(res);
   return (data.data || []).map(normalizeTxn);
+}
+
+/** POST /api/admin/txn with txn_type payment_expense */
+export async function createPaymentExpense(payload) {
+  const body = { txn_type: 'payment_expense', ...payload };
+  return createTxn(body);
 }
 
 /** POST /api/admin/txn/receipt */

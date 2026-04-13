@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getEngagements, createTask } from '../services/engagementService';
 import StatusBadge from '../components/common/StatusBadge';
+import DateInput from '../components/common/DateInput';
 import {
   Plus, Search, SlidersHorizontal,
   Pencil, FolderOpen, Clock, AlertTriangle,
@@ -37,7 +38,7 @@ function AddTaskModal({ onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <label style={taskLabelStyle}>
               Due Date
-              <input type="date" style={taskInputStyle} value={form.dueDate} onChange={e => set('dueDate', e.target.value)} />
+              <DateInput style={taskInputStyle} value={form.dueDate} onChange={e => set('dueDate', e.target.value)} />
             </label>
             <label style={taskLabelStyle}>
               Priority
@@ -177,7 +178,7 @@ export default function Services() {
   });
 
   const serviceTasks = selectedService
-    ? (selectedService.tasks || [])
+    ? (Array.isArray(selectedService.tasks) ? selectedService.tasks : [])
     : [];
   const completedTasks = serviceTasks.filter(t => t.status === 'done').length;
   const progress = serviceTasks.length ? Math.round((completedTasks / serviceTasks.length) * 100) : 0;
@@ -266,7 +267,11 @@ export default function Services() {
                       <td style={{ ...tdStyle, color: isOverdue ? '#ef4444' : '#334155', fontWeight: isOverdue ? 600 : 400 }}>
                         {s.dueDate}
                       </td>
-                      <td style={{ ...tdStyle, fontWeight: 600, color: '#0B1F3B' }}>₹{s.feeAgreed?.toLocaleString('en-IN')}</td>
+                      <td style={{ ...tdStyle, fontWeight: 600, color: '#0B1F3B' }}>
+                        {s.feeAgreed != null && !Number.isNaN(Number(s.feeAgreed))
+                          ? `₹${Number(s.feeAgreed).toLocaleString('en-IN')}`
+                          : '—'}
+                      </td>
                       <td style={tdStyle}><StatusBadge status={s.status} /></td>
                       <td style={tdStyle} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 4 }}>

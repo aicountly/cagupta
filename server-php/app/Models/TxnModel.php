@@ -37,9 +37,9 @@ class TxnModel
         $stmt = $this->db->prepare(
             "SELECT t.*,
                     COALESCE(
-                        o.name,
-                        c.organization_name,
-                        TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
+                        NULLIF(TRIM(o.name), ''),
+                        NULLIF(TRIM(c.organization_name), ''),
+                        NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
                         'Unknown'
                     ) AS client_name
              FROM txn t
@@ -50,6 +50,9 @@ class TxnModel
         );
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch();
+        if ($row) {
+            $this->decodeLineItemsOnRow($row);
+        }
         return $row ?: null;
     }
 
@@ -64,10 +67,13 @@ class TxnModel
         string $search    = '',
         string $txnType   = '',
         int    $clientId  = 0,
+        int    $orgId     = 0,
         string $tdsStatus = '',
         string $status    = '',
         string $dateFrom  = '',
-        string $dateTo    = ''
+        string $dateTo    = '',
+        string $expensePurpose = '',
+        string $paymentMethod = ''
     ): array {
         $where  = ['1=1'];
         $params = [];
@@ -75,6 +81,9 @@ class TxnModel
         if ($search !== '') {
             $where[]           = "(t.narration ILIKE :search
                                    OR t.invoice_number ILIKE :search
+                                   OR t.notes ILIKE :search
+                                   OR t.reference_number ILIKE :search
+                                   OR t.paid_from ILIKE :search
                                    OR c.first_name ILIKE :search
                                    OR c.last_name  ILIKE :search
                                    OR c.organization_name ILIKE :search
@@ -88,6 +97,18 @@ class TxnModel
         if ($clientId > 0) {
             $where[]              = 't.client_id = :client_id';
             $params[':client_id'] = $clientId;
+        }
+        if ($orgId > 0) {
+            $where[]             = 't.organization_id = :organization_id';
+            $params[':organization_id'] = $orgId;
+        }
+        if ($expensePurpose !== '') {
+            $where[]                    = 't.expense_purpose = :expense_purpose';
+            $params[':expense_purpose'] = $expensePurpose;
+        }
+        if ($paymentMethod !== '') {
+            $where[]                 = 't.payment_method = :payment_method_filter';
+            $params[':payment_method_filter'] = $paymentMethod;
         }
         if ($tdsStatus !== '') {
             $where[]               = 't.tds_status = :tds_status';
@@ -121,9 +142,9 @@ class TxnModel
         $stmt = $this->db->prepare(
             "SELECT t.*,
                     COALESCE(
-                        o.name,
-                        c.organization_name,
-                        TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
+                        NULLIF(TRIM(o.name), ''),
+                        NULLIF(TRIM(c.organization_name), ''),
+                        NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
                         'Unknown'
                     ) AS client_name
              FROM txn t
@@ -140,7 +161,13 @@ class TxnModel
         $stmt->bindValue(':offset', $offset,  PDO::PARAM_INT);
         $stmt->execute();
 
-        return ['total' => $total, 'txns' => $stmt->fetchAll()];
+        $txns = $stmt->fetchAll();
+        foreach ($txns as &$trow) {
+            $this->decodeLineItemsOnRow($trow);
+        }
+        unset($trow);
+
+        return ['total' => $total, 'txns' => $txns];
     }
 
     /**
@@ -193,6 +220,9 @@ class TxnModel
                 t.payment_method,
                 t.reference_number,
                 t.amount,
+                t.notes,
+                t.expense_purpose,
+                t.paid_from,
                 0.0                 AS balance
              FROM txn t
              WHERE t.client_id = :client_id
@@ -234,6 +264,9 @@ class TxnModel
                 t.payment_method,
                 t.reference_number,
                 t.amount,
+                t.notes,
+                t.expense_purpose,
+                t.paid_from,
                 0.0                 AS balance
              FROM txn t
              WHERE t.organization_id = :org_id
@@ -293,6 +326,8 @@ class TxnModel
      */
     public function create(array $data): int
     {
+        $lineItemsJson = $this->normalizeLineItemsForStorage($data['line_items'] ?? null);
+
         $stmt = $this->db->prepare(
             'INSERT INTO txn (
                 client_id, organization_id, txn_type, txn_date, narration,
@@ -300,16 +335,18 @@ class TxnModel
                 invoice_number, service_id, due_date, subtotal,
                 tax_percent, tax_amount, invoice_status,
                 payment_method, reference_number,
+                expense_purpose, paid_from,
                 tds_status, tds_section, tds_rate,
-                linked_txn_id, notes, status, created_by
+                linked_txn_id, notes, status, created_by, line_items
              ) VALUES (
                 :client_id, :organization_id, :txn_type, :txn_date, :narration,
                 :debit, :credit, :amount, :billing_profile_code,
                 :invoice_number, :service_id, :due_date, :subtotal,
                 :tax_percent, :tax_amount, :invoice_status,
                 :payment_method, :reference_number,
+                :expense_purpose, :paid_from,
                 :tds_status, :tds_section, :tds_rate,
-                :linked_txn_id, :notes, :status, :created_by
+                :linked_txn_id, :notes, :status, :created_by, CAST(:line_items AS jsonb)
              ) RETURNING id'
         );
         $stmt->execute([
@@ -331,6 +368,8 @@ class TxnModel
             ':invoice_status'      => $data['invoice_status']      ?? null,
             ':payment_method'      => $data['payment_method']      ?? null,
             ':reference_number'    => $data['reference_number']    ?? null,
+            ':expense_purpose'     => $data['expense_purpose']     ?? null,
+            ':paid_from'           => $data['paid_from']           ?? null,
             ':tds_status'          => $data['tds_status']          ?? null,
             ':tds_section'         => $data['tds_section']         ?? null,
             ':tds_rate'            => isset($data['tds_rate'])     ? (float)$data['tds_rate'] : null,
@@ -338,6 +377,7 @@ class TxnModel
             ':notes'               => $data['notes']               ?? null,
             ':status'              => $data['status']              ?? 'active',
             ':created_by'          => $data['created_by']          ?? null,
+            ':line_items'          => $lineItemsJson,
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -355,6 +395,12 @@ class TxnModel
         $total         = (float)($data['amount'] ?? $data['total'] ?? 0);
         $subtotal      = (float)($data['subtotal'] ?? $total);
 
+        if ($total <= 0) {
+            throw new \InvalidArgumentException('Invoice total must be greater than zero.');
+        }
+
+        $normalizedLines = $this->validateAndNormalizeInvoiceLineItems($data['line_items'] ?? null, $total);
+
         return $this->create(array_merge($data, [
             'txn_type'       => 'invoice',
             'invoice_number' => $invoiceNumber,
@@ -365,6 +411,7 @@ class TxnModel
             'subtotal'       => $subtotal,
             'invoice_status' => $data['invoice_status'] ?? $data['status_val'] ?? 'draft',
             'status'         => 'active',
+            'line_items'     => $normalizedLines,
         ]));
     }
 
@@ -580,16 +627,26 @@ class TxnModel
         $whereClause = implode(' AND ', $where);
         $stmt = $this->db->prepare(
             "SELECT t.*,
-                    COALESCE(c.organization_name,
-                             TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))),
-                             'Unknown') AS client_name
+                    COALESCE(
+                        NULLIF(TRIM(o.name), ''),
+                        NULLIF(TRIM(c.organization_name), ''),
+                        NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                        'Unknown'
+                    ) AS client_name
              FROM txn t
              LEFT JOIN clients c ON c.id = t.client_id
+             LEFT JOIN organizations o ON o.id = t.organization_id
              WHERE {$whereClause}
              ORDER BY t.txn_date DESC"
         );
         $stmt->execute($params);
-        return $stmt->fetchAll();
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$r) {
+            $this->decodeLineItemsOnRow($r);
+        }
+        unset($r);
+
+        return $rows;
     }
 
     /**
@@ -607,14 +664,28 @@ class TxnModel
             'billing_profile_code', 'invoice_number', 'due_date',
             'subtotal', 'tax_percent', 'tax_amount', 'invoice_status',
             'payment_method', 'reference_number',
+            'expense_purpose', 'paid_from',
             'tds_status', 'tds_section', 'tds_rate',
-            'linked_txn_id', 'notes', 'status',
+            'linked_txn_id', 'notes', 'status', 'line_items',
         ];
         foreach ($allowed as $field) {
-            if (array_key_exists($field, $data)) {
-                $setClauses[]       = "{$field} = :{$field}";
-                $params[":{$field}"] = $data[$field];
+            if (!array_key_exists($field, $data)) {
+                continue;
             }
+            if ($field === 'line_items') {
+                $setClauses[] = 'line_items = CAST(:line_items AS jsonb)';
+                $lv           = $data['line_items'];
+                if ($lv === null || (is_array($lv) && count($lv) === 0)) {
+                    $params[':line_items'] = null;
+                } elseif (is_array($lv)) {
+                    $params[':line_items'] = json_encode(array_values($lv), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+                } else {
+                    $params[':line_items'] = (string)$lv;
+                }
+                continue;
+            }
+            $setClauses[]       = "{$field} = :{$field}";
+            $params[":{$field}"] = $data[$field];
         }
 
         if (empty($setClauses)) {
@@ -638,6 +709,76 @@ class TxnModel
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Decode JSONB line_items for API responses (PDO returns a string).
+     *
+     * @param array<string, mixed> $row
+     */
+    private function decodeLineItemsOnRow(array &$row): void
+    {
+        if (!array_key_exists('line_items', $row) || $row['line_items'] === null) {
+            return;
+        }
+        if (is_string($row['line_items'])) {
+            $decoded = json_decode($row['line_items'], true);
+            $row['line_items'] = is_array($decoded) ? $decoded : null;
+        }
+    }
+
+    /**
+     * @return string|null JSON string for CAST(:x AS jsonb), or null
+     */
+    private function normalizeLineItemsForStorage(mixed $raw): ?string
+    {
+        if ($raw === null || $raw === '' || $raw === []) {
+            return null;
+        }
+        if (!is_array($raw)) {
+            return null;
+        }
+        if (count($raw) === 0) {
+            return null;
+        }
+
+        return json_encode(array_values($raw), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * @param mixed $raw
+     * @return array<int, array{description: string, amount: float}>|null
+     */
+    private function validateAndNormalizeInvoiceLineItems(mixed $raw, float $total): ?array
+    {
+        if ($raw === null || $raw === '' || !is_array($raw) || count($raw) === 0) {
+            return null;
+        }
+
+        $normalized = [];
+        $sum        = 0.0;
+
+        foreach ($raw as $line) {
+            if (!is_array($line)) {
+                throw new \InvalidArgumentException('Each line item must be an object with description and amount.');
+            }
+            $desc = trim((string)($line['description'] ?? ''));
+            $amt  = (float)($line['amount'] ?? 0);
+            if ($desc === '') {
+                throw new \InvalidArgumentException('Each line item requires a description.');
+            }
+            if ($amt <= 0) {
+                throw new \InvalidArgumentException('Each line item amount must be greater than zero.');
+            }
+            $normalized[] = ['description' => $desc, 'amount' => round($amt, 2)];
+            $sum += $amt;
+        }
+
+        if (abs($sum - $total) > 0.02) {
+            throw new \InvalidArgumentException('Line items must sum to the invoice total.');
+        }
+
+        return $normalized;
+    }
 
     /**
      * Generate a sequential invoice number (e.g. INV-2025-001).

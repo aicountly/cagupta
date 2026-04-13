@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '../auth/AuthContext';
 import { getPortalTypes } from '../constants/portalTypes';
 import { fetchPortalTypes, createPortalType, deletePortalType } from '../services/portalTypeService';
 import { getRegisterTypes, saveRegisterTypes } from '../constants/registerTypes';
@@ -9,6 +10,12 @@ import {
   createSubcategory, deleteSubcategory,
   createEngagementTypeForSubcategory, deleteEngagementType,
 } from '../services/serviceCategoryService';
+import {
+  getQuotationDefaults,
+  getQuotationPendingSummary,
+  requestQuotationSetupOtp,
+  saveQuotationDefault,
+} from '../services/quotationService';
 import { API_BASE_URL } from '../constants/config';
 
 // ── Available permission modules ─────────────────────────────────────────────
@@ -21,7 +28,8 @@ const PERMISSION_GROUPS = [
   { group: 'Calendar',  keys: ['calendar.view', 'calendar.create'] },
   { group: 'Credentials', keys: ['credentials.view'] },
   { group: 'Registers', keys: ['registers.view'] },
-  { group: 'Leads',     keys: ['leads.view', 'leads.create', 'leads.edit'] },
+  { group: 'Leads',       keys: ['leads.view', 'leads.create', 'leads.edit'] },
+  { group: 'Quotations',  keys: ['quotations.setup', 'quotations.manage'] },
   { group: 'Settings',  keys: ['settings.view'] },
   { group: 'Users',     keys: ['users.manage'] },
 ];
@@ -162,6 +170,7 @@ const roleColors = { super_admin:'#fce7f3', admin:'#ede9fe', partner:'#dbeafe', 
 const roleTextColors = { super_admin:'#9d174d', admin:'#5b21b6', partner:'#1d4ed8', manager:'#166534', staff:'#475569' };
 
 export default function Settings() {
+  const { hasPermission } = useAuth();
   const [tab, setTab] = useState('firm');
   const [portalTypes, setPortalTypes] = useState(() => getPortalTypes());
   const [newPortal, setNewPortal] = useState('');
@@ -186,6 +195,33 @@ export default function Settings() {
   const [newSubName, setNewSubName] = useState({});
   // newEtName is keyed by subcategory id (since engagement types now live under subcategories)
   const [newEtName, setNewEtName] = useState({});
+
+  const [quotationRows, setQuotationRows] = useState([]);
+  const [quotationLoading, setQuotationLoading] = useState(false);
+  const [quotationError, setQuotationError] = useState('');
+  const [quotationPending, setQuotationPending] = useState(null);
+  const [quoteOtpModal, setQuoteOtpModal] = useState(null);
+  const [quoteOtpPass, setQuoteOtpPass] = useState('');
+  const [quoteOtpCode, setQuoteOtpCode] = useState('');
+  const [quoteOtpRecipient, setQuoteOtpRecipient] = useState('super_admin');
+  const [quoteOtpBusy, setQuoteOtpBusy] = useState(false);
+  const [quoteOtpMsg, setQuoteOtpMsg] = useState('');
+  const [quoteRowDrafts, setQuoteRowDrafts] = useState({});
+
+  useEffect(() => {
+    if (!quotationRows.length) {
+      setQuoteRowDrafts({});
+      return;
+    }
+    const next = {};
+    quotationRows.forEach((r) => {
+      next[r.engagement_type_id] = {
+        price: r.default_price != null ? String(r.default_price) : '',
+        documentsText: Array.isArray(r.documents_required) ? r.documents_required.join('\n') : '',
+      };
+    });
+    setQuoteRowDrafts(next);
+  }, [quotationRows]);
 
   // ── Team & Users state ─────────────────────────────────────────────────────
   const [teamUsers, setTeamUsers]       = useState([]);
@@ -265,8 +301,71 @@ export default function Settings() {
         .then(setServiceCategories)
         .catch(() => setSvcCatError('Failed to load service categories.'))
         .finally(() => setSvcCatLoading(false));
+
+      setQuotationLoading(true);
+      setQuotationError('');
+      Promise.all([getQuotationDefaults(), getQuotationPendingSummary()])
+        .then(([rows, pending]) => {
+          setQuotationRows(rows);
+          setQuotationPending(pending);
+        })
+        .catch(() => setQuotationError('Failed to load quotation defaults.'))
+        .finally(() => setQuotationLoading(false));
     }
   }, [tab]);
+
+  function openQuoteSaveModal(row, draft) {
+    setQuoteOtpMsg('');
+    setQuoteOtpPass('');
+    setQuoteOtpCode('');
+    setQuoteOtpRecipient('super_admin');
+    setQuoteOtpModal({ row, draft });
+  }
+
+  async function handleSendQuoteOtp() {
+    if (!quoteOtpModal) return;
+    setQuoteOtpBusy(true);
+    setQuoteOtpMsg('');
+    try {
+      await requestQuotationSetupOtp({
+        passphrase: quoteOtpPass,
+        otpRecipient: quoteOtpRecipient,
+      });
+      setQuoteOtpMsg('OTP sent. Check the recipient inbox and enter the code below.');
+    } catch (e) {
+      setQuoteOtpMsg(e.message || 'Failed to send OTP.');
+    } finally {
+      setQuoteOtpBusy(false);
+    }
+  }
+
+  async function handleConfirmQuoteSave() {
+    if (!quoteOtpModal) return;
+    const { row, draft } = quoteOtpModal;
+    setQuoteOtpBusy(true);
+    setQuoteOtpMsg('');
+    try {
+      const docs = (draft.documentsText || '')
+        .split(/\r?\n/)
+        .map(s => s.trim())
+        .filter(Boolean);
+      await saveQuotationDefault(row.engagement_type_id, {
+        otp: quoteOtpCode,
+        otpRecipient: quoteOtpRecipient,
+        defaultPrice: draft.price,
+        documentsRequired: docs,
+      });
+      const refreshed = await getQuotationDefaults();
+      setQuotationRows(refreshed);
+      const pending = await getQuotationPendingSummary();
+      setQuotationPending(pending);
+      setQuoteOtpModal(null);
+    } catch (e) {
+      setQuoteOtpMsg(e.message || 'Save failed.');
+    } finally {
+      setQuoteOtpBusy(false);
+    }
+  }
 
   function handleAddCategory() {
     if (!newCatName.trim()) return;
@@ -678,6 +777,7 @@ export default function Settings() {
       )}
 
       {tab==='service_config' && (
+        <>
         <div style={cardStyle}>
           <h3 style={sectionTitle}>⚙️ Service Configuration</h3>
           <p style={{ fontSize:13, color:'#64748b', marginBottom:20 }}>
@@ -791,6 +891,165 @@ export default function Settings() {
             </div>
           )}
         </div>
+
+        <div style={{ ...cardStyle, marginTop: 20 }}>
+          <h3 style={sectionTitle}>📋 Quotation defaults</h3>
+          <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>
+            Default price and required documents per engagement type. Used to pre-fill lead quotations. Saving changes requires the setup passphrase and an email OTP (usually to the super admin).
+          </p>
+          {quotationPending && (
+            <div style={{ background:'#f0f9ff', border:'1px solid #bae6fd', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#0369a1', marginBottom:14 }}>
+              <strong>Pending:</strong>{' '}
+              {quotationPending.engagement_types_incomplete} of {quotationPending.engagement_types_total} engagement type(s) lack a complete quotation setup (price or document list).{' '}
+              {quotationPending.leads_needing_final_quotation > 0 && (
+                <span>
+                  {quotationPending.leads_needing_final_quotation} lead(s) in Qualified / Proposal sent have no final quotation yet.
+                </span>
+              )}
+            </div>
+          )}
+          {quotationError && (
+            <div style={{ color:'#dc2626', background:'#fef2f2', padding:'8px 12px', borderRadius:6, fontSize:13, marginBottom:12 }}>{quotationError}</div>
+          )}
+          {quotationLoading && <div style={{ color:'#64748b', fontSize:13 }}>Loading quotation defaults…</div>}
+          {!quotationLoading && quotationRows.length > 0 && (
+            <div style={{ overflowX:'auto' }}>
+              <table style={{ ...tableStyle, minWidth: 640 }}>
+                <thead>
+                  <tr>
+                    <th style={thStyle}>Engagement type</th>
+                    <th style={thStyle}>Category</th>
+                    <th style={thStyle}>Default price (₹)</th>
+                    <th style={thStyle}>Documents (one per line)</th>
+                    <th style={thStyle}>Status</th>
+                    <th style={thStyle}> </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {quotationRows.map((r) => {
+                    const draft = quoteRowDrafts[r.engagement_type_id] || { price: '', documentsText: '' };
+                    const canSetup = hasPermission('quotations.setup');
+                    return (
+                      <tr key={r.engagement_type_id} style={trStyle}>
+                        <td style={{ ...tdStyle, fontWeight:600, maxWidth:200 }}>
+                          {r.engagement_type_name}
+                          {r.subcategory_name && (
+                            <div style={{ fontSize:11, color:'#94a3b8', fontWeight:400 }}>{r.subcategory_name}</div>
+                          )}
+                        </td>
+                        <td style={tdStyle}>{r.category_name}</td>
+                        <td style={tdStyle}>
+                          <input
+                            type="number"
+                            disabled={!canSetup}
+                            value={draft.price}
+                            onChange={e => setQuoteRowDrafts(prev => ({
+                              ...prev,
+                              [r.engagement_type_id]: { ...draft, price: e.target.value },
+                            }))}
+                            style={{ ...inputStyle, width:120 }}
+                            placeholder="—"
+                          />
+                        </td>
+                        <td style={{ ...tdStyle, minWidth:220 }}>
+                          <textarea
+                            disabled={!canSetup}
+                            value={draft.documentsText}
+                            onChange={e => setQuoteRowDrafts(prev => ({
+                              ...prev,
+                              [r.engagement_type_id]: { ...draft, documentsText: e.target.value },
+                            }))}
+                            style={{ ...inputStyle, minHeight:72, resize:'vertical' }}
+                            placeholder="e.g. PAN, Aadhaar, bank statement…"
+                          />
+                        </td>
+                        <td style={tdStyle}>
+                          <span style={{
+                            fontSize:11,
+                            fontWeight:600,
+                            padding:'2px 8px',
+                            borderRadius:6,
+                            background: r.setup_complete ? '#dcfce7' : '#fef3c7',
+                            color: r.setup_complete ? '#166534' : '#92400e',
+                          }}>
+                            {r.setup_complete ? 'Complete' : 'Incomplete'}
+                          </span>
+                        </td>
+                        <td style={tdStyle}>
+                          {canSetup ? (
+                            <button
+                              type="button"
+                              style={btnPrimary}
+                              onClick={() => openQuoteSaveModal(r, quoteRowDrafts[r.engagement_type_id] || draft)}
+                            >
+                              Save…
+                            </button>
+                          ) : (
+                            <span style={{ fontSize:12, color:'#94a3b8' }}>View only</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {!quotationLoading && quotationRows.length === 0 && (
+            <div style={{ color:'#94a3b8', fontSize:13 }}>No engagement types yet. Add categories and types above first.</div>
+          )}
+        </div>
+
+        {quoteOtpModal && (
+          <div style={overlayStyle}>
+            <div style={{ background:'#fff', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', width:'100%', maxWidth:440, padding:24 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:12 }}>
+                <span style={{ fontSize:15, fontWeight:700 }}>Confirm quotation setup</span>
+                <button type="button" onClick={() => !quoteOtpBusy && setQuoteOtpModal(null)} style={closeBtnStyle}>✕</button>
+              </div>
+              <p style={{ fontSize:12, color:'#64748b', margin:'0 0 12px' }}>
+                {quoteOtpModal.row.engagement_type_name} — enter the setup passphrase, send OTP, then enter the code to save.
+              </p>
+              <label style={labelStyle}>Setup passphrase</label>
+              <input
+                type="password"
+                value={quoteOtpPass}
+                onChange={e => setQuoteOtpPass(e.target.value)}
+                style={{ ...inputStyle, marginBottom:10 }}
+                autoComplete="off"
+              />
+              <label style={labelStyle}>OTP recipient</label>
+              <select
+                value={quoteOtpRecipient}
+                onChange={e => setQuoteOtpRecipient(e.target.value)}
+                style={{ ...inputStyle, marginBottom:10 }}
+              >
+                <option value="super_admin">Super admin email</option>
+                <option value="acting_admin">My email (admin role only)</option>
+              </select>
+              <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+                <button type="button" style={btnSecondary} disabled={quoteOtpBusy} onClick={handleSendQuoteOtp}>Send OTP</button>
+              </div>
+              <label style={labelStyle}>OTP code</label>
+              <input
+                value={quoteOtpCode}
+                onChange={e => setQuoteOtpCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                style={{ ...inputStyle, marginBottom:12 }}
+                placeholder="6 digits"
+              />
+              {quoteOtpMsg && (
+                <div style={{ fontSize:12, color: quoteOtpMsg.startsWith('OTP sent') ? '#15803d' : '#dc2626', marginBottom:10 }}>{quoteOtpMsg}</div>
+              )}
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+                <button type="button" style={btnSecondary} disabled={quoteOtpBusy} onClick={() => setQuoteOtpModal(null)}>Cancel</button>
+                <button type="button" style={btnPrimary} disabled={quoteOtpBusy || quoteOtpCode.length < 6} onClick={handleConfirmQuoteSave}>
+                  {quoteOtpBusy ? 'Saving…' : 'Save with OTP'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        </>
       )}
     </div>
   );

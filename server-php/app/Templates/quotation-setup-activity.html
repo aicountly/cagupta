@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quotation default updated – CA Rahul Gupta</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .header { background: #1a3c6e; padding: 32px 40px; text-align: center; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 24px; }
+    .header p { color: #aac4e8; margin: 8px 0 0; font-size: 14px; }
+    .body { padding: 32px 40px; color: #333333; line-height: 1.6; }
+    .detail-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #f0f2f8; font-size: 14px; }
+    .detail-label { color: #64748b; font-weight: 600; }
+    .detail-value { color: #1e293b; max-width: 60%; text-align: right; word-break: break-word; }
+    .mono { font-family: 'Courier New', monospace; font-size: 12px; }
+    .footer { background: #f4f6f8; padding: 20px 40px; text-align: center; font-size: 12px; color: #888888; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>CA Rahul Gupta</h1>
+      <p>Office Portal – Quotation setup notification</p>
+    </div>
+    <div class="body">
+      <p>Quotation default settings were <strong>saved</strong> for engagement type ID <strong>{{engagementTypeId}}</strong>.</p>
+      <div style="margin: 20px 0;">
+        <div class="detail-row">
+          <span class="detail-label">Performed by</span>
+          <span class="detail-value">{{actorName}} &lt;{{actorEmail}}&gt;</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Time</span>
+          <span class="detail-value">{{timestamp}}</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Price (before → after)</span>
+          <span class="detail-value">{{beforePrice}} → {{afterPrice}}</span>
+        </div>
+        <div class="detail-row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+          <span class="detail-label">Documents (before)</span>
+          <span class="detail-value mono" style="max-width: 100%; text-align: left;">{{beforeDocs}}</span>
+        </div>
+        <div class="detail-row" style="flex-direction: column; align-items: stretch; gap: 8px;">
+          <span class="detail-label">Documents (after)</span>
+          <span class="detail-value mono" style="max-width: 100%; text-align: left;">{{afterDocs}}</span>
+        </div>
+      </div>
+    </div>
+    <div class="footer">
+      <p>© CA Rahul Gupta Office Portal &nbsp;|&nbsp; office@carahulgupta.in</p>
+    </div>
+  </div>
+</body>
+</html>

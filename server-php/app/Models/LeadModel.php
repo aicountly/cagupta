@@ -109,11 +109,13 @@ class LeadModel
             'INSERT INTO leads (
                 name, company, email, phone, source, service_interest,
                 estimated_value, status, probability, assigned_to,
-                notes, follow_up_date, contact_id, organization_id, created_by
+                notes, follow_up_date, contact_id, organization_id, created_by,
+                engagement_type_id, engagement_type_name
              ) VALUES (
                 :name, :company, :email, :phone, :source, :service_interest,
                 :estimated_value, :status, :probability, :assigned_to,
-                :notes, :follow_up_date, :contact_id, :organization_id, :created_by
+                :notes, :follow_up_date, :contact_id, :organization_id, :created_by,
+                :engagement_type_id, :engagement_type_name
              ) RETURNING id'
         );
         $stmt->execute([
@@ -132,6 +134,8 @@ class LeadModel
             ':contact_id'       => isset($data['contact_id'])      && $data['contact_id']      !== '' ? (int)$data['contact_id']      : null,
             ':organization_id'  => isset($data['organization_id']) && $data['organization_id'] !== '' ? (int)$data['organization_id'] : null,
             ':created_by'       => $data['created_by']       ?? null,
+            ':engagement_type_id' => isset($data['engagement_type_id']) && $data['engagement_type_id'] !== '' ? (int)$data['engagement_type_id'] : null,
+            ':engagement_type_name' => $data['engagement_type_name'] ?? null,
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -150,6 +154,7 @@ class LeadModel
             'name', 'company', 'email', 'phone', 'source',
             'service_interest', 'estimated_value', 'status',
             'probability', 'assigned_to', 'notes', 'follow_up_date',
+            'engagement_type_name',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
@@ -164,6 +169,10 @@ class LeadModel
         if (array_key_exists('organization_id', $data)) {
             $setClauses[]              = 'organization_id = :organization_id';
             $params[':organization_id'] = isset($data['organization_id']) && $data['organization_id'] !== '' ? (int)$data['organization_id'] : null;
+        }
+        if (array_key_exists('engagement_type_id', $data)) {
+            $setClauses[]                 = 'engagement_type_id = :engagement_type_id';
+            $params[':engagement_type_id'] = isset($data['engagement_type_id']) && $data['engagement_type_id'] !== '' ? (int)$data['engagement_type_id'] : null;
         }
 
         if (empty($setClauses)) {

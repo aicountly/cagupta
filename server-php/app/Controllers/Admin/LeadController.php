@@ -81,6 +81,8 @@ class LeadController extends BaseController
             'contact_id'       => $body['contact_id']       ?? null,
             'organization_id'  => $body['organization_id']  ?? null,
             'created_by'       => $actingUser ? (int)$actingUser['id'] : null,
+            'engagement_type_id'   => $body['engagement_type_id']   ?? null,
+            'engagement_type_name' => $body['engagement_type_name'] ?? null,
         ]);
 
         $lead = $this->leads->find($newId);
@@ -121,6 +123,7 @@ class LeadController extends BaseController
             'service_interest', 'estimated_value', 'status',
             'probability', 'assigned_to', 'notes', 'follow_up_date',
             'contact_id', 'organization_id',
+            'engagement_type_id', 'engagement_type_name',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $body)) {

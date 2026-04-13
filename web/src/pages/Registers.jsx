@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import StatusBadge from '../components/common/StatusBadge';
+import DateInput from '../components/common/DateInput';
 import { getRegisterTypes } from '../constants/registerTypes';
 import { REGISTER_CONFIG, DEFAULT_REGISTER_CONFIG } from '../constants/registerConfig';
+import { expensePurposeLabel } from '../constants/expensePurposes';
 import RegisterSubFilters from '../components/common/RegisterSubFilters';
+import { getTxns } from '../services/txnService';
 
 const gstRegister = [
   { client:'Sunita Enterprises Pvt Ltd', gstin:'27AACCS5678D1Z3', returnType:'GSTR-3B', period:'Mar 2025', dueDate:'2025-04-20', filedDate:'2025-04-18', status:'filed', lateFee:0 },
@@ -176,6 +179,31 @@ function RegisterTable({ tabKey, data }) {
     );
   }
 
+  if (tabKey === 'payments') {
+    return (
+      <table style={tableStyle}>
+        <thead>
+          <tr>{config.columns.map((h) => <th key={h} style={thStyle}>{h}</th>)}</tr>
+        </thead>
+        <tbody>
+          {data.map((r) => (
+            <tr key={r.id} style={trStyle}>
+              <td style={tdStyle}>{r.date || '—'}</td>
+              <td style={{ ...tdStyle, fontWeight: 600 }}>{r.client}</td>
+              <td style={{ ...tdStyle, fontWeight: 600, color: '#0369a1' }}>₹{Number(r.amount || 0).toLocaleString('en-IN')}</td>
+              <td style={tdStyle}>{r.purposeLabel || expensePurposeLabel(r.expense_purpose)}</td>
+              <td style={tdStyle}>{r.payment_method || '—'}</td>
+              <td style={{ ...tdStyle, maxWidth: 160, whiteSpace: 'normal' }}>{r.paid_from || '—'}</td>
+              <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{r.reference_number || '—'}</td>
+              <td style={{ ...tdStyle, maxWidth: 220, whiteSpace: 'normal' }}>{r.narration || '—'}</td>
+              <td style={{ ...tdStyle, maxWidth: 200, whiteSpace: 'normal' }}>{r.notes || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  }
+
   // Generic fallback table for custom register types — uses row keys directly
   return (
     <table style={tableStyle}>
@@ -195,10 +223,57 @@ function RegisterTable({ tabKey, data }) {
   );
 }
 
+const dateInputRegStyle = { padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, color: '#334155' };
+
 export default function Registers() {
   const [registerTypes] = useState(() => getRegisterTypes());
   const [tab, setTab] = useState(() => getRegisterTypes()[0]?.key || 'gst');
   const [filters, setFilters] = useState({});
+
+  const [paymentRows, setPaymentRows] = useState([]);
+  const [payRegLoading, setPayRegLoading] = useState(false);
+  const [payRegPage, setPayRegPage] = useState(1);
+  const [payRegLastPage, setPayRegLastPage] = useState(1);
+  const [payDateFrom, setPayDateFrom] = useState('');
+  const [payDateTo, setPayDateTo] = useState('');
+
+  useEffect(() => {
+    if (tab !== 'payments') return;
+    let cancelled = false;
+    setPayRegLoading(true);
+    getTxns({
+      txnType: 'payment_expense',
+      perPage: 100,
+      page: payRegPage,
+      dateFrom: payDateFrom || undefined,
+      dateTo: payDateTo || undefined,
+    })
+      .then(({ txns, pagination }) => {
+        if (cancelled) return;
+        const mapped = txns.map((t) => ({
+          id: t.id,
+          date: t.txnDate || '',
+          client: t.clientName || '—',
+          amount: t.amount,
+          expense_purpose: t.expensePurpose || '',
+          purposeLabel: expensePurposeLabel(t.expensePurpose),
+          payment_method: t.paymentMethod || '',
+          paid_from: t.paidFrom || '',
+          reference_number: t.referenceNumber || '',
+          narration: t.narration || '',
+          notes: t.notes || '',
+        }));
+        setPaymentRows((prev) => (payRegPage === 1 ? mapped : [...prev, ...mapped]));
+        setPayRegLastPage(pagination.last_page || 1);
+      })
+      .catch(() => {
+        if (!cancelled) setPaymentRows([]);
+      })
+      .finally(() => {
+        if (!cancelled) setPayRegLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [tab, payRegPage, payDateFrom, payDateTo]);
 
   function getFilterState(tabKey) {
     return filters[tabKey] || {};
@@ -212,18 +287,70 @@ export default function Registers() {
   }
 
   const config = REGISTER_CONFIG[tab] || DEFAULT_REGISTER_CONFIG;
-  const rawData = registerData[tab] || [];
-  const filteredData = applyFilters(rawData, getFilterState(tab));
+  const rawData = tab === 'payments' ? paymentRows : (registerData[tab] || []);
+  const filteredData = tab === 'payments'
+    ? applyFilters(rawData, getFilterState('payments'))
+    : applyFilters(rawData, getFilterState(tab));
 
   return (
     <div style={{ padding:24 }}>
       <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid #e2e8f0' }}>
         {registerTypes.map(rt => (
-          <button key={rt.key} onClick={() => setTab(rt.key)} style={{ padding:'8px 20px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600, color:tab===rt.key?'#2563eb':'#64748b', borderBottom:tab===rt.key?'2px solid #2563eb':'2px solid transparent', marginBottom:-2 }}>
+          <button
+            key={rt.key}
+            type="button"
+            onClick={() => {
+              setTab(rt.key);
+              if (rt.key === 'payments') {
+                setPayRegPage(1);
+                setPaymentRows([]);
+              }
+            }}
+            style={{ padding:'8px 20px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600, color:tab===rt.key?'#2563eb':'#64748b', borderBottom:tab===rt.key?'2px solid #2563eb':'2px solid transparent', marginBottom:-2 }}
+          >
             {rt.icon} {rt.label}
           </button>
         ))}
       </div>
+
+      {tab === 'payments' && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', marginBottom: 16 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>Date from:</span>
+          <DateInput
+            style={dateInputRegStyle}
+            value={payDateFrom}
+            onChange={(e) => {
+              setPayDateFrom(e.target.value);
+              setPayRegPage(1);
+              setPaymentRows([]);
+            }}
+          />
+          <span style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>to</span>
+          <DateInput
+            style={dateInputRegStyle}
+            value={payDateTo}
+            onChange={(e) => {
+              setPayDateTo(e.target.value);
+              setPayRegPage(1);
+              setPaymentRows([]);
+            }}
+          />
+          {(payDateFrom || payDateTo) && (
+            <button
+              type="button"
+              onClick={() => {
+                setPayDateFrom('');
+                setPayDateTo('');
+                setPayRegPage(1);
+                setPaymentRows([]);
+              }}
+              style={{ padding: '6px 12px', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#475569', cursor: 'pointer' }}
+            >
+              Clear dates
+            </button>
+          )}
+        </div>
+      )}
 
       <RegisterSubFilters
         subFilters={config.subFilters}
@@ -233,7 +360,25 @@ export default function Registers() {
       />
 
       <div style={cardStyle}>
-        <RegisterTable tabKey={tab} data={filteredData} />
+        {tab === 'payments' && payRegLoading && paymentRows.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>Loading payment register…</div>
+        ) : (
+          <>
+            <RegisterTable tabKey={tab} data={filteredData} />
+            {tab === 'payments' && payRegPage < payRegLastPage && (
+              <div style={{ padding: 16, textAlign: 'center', borderTop: '1px solid #f1f5f9' }}>
+                <button
+                  type="button"
+                  disabled={payRegLoading}
+                  onClick={() => setPayRegPage((p) => p + 1)}
+                  style={{ padding: '8px 20px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: payRegLoading ? 'wait' : 'pointer' }}
+                >
+                  {payRegLoading ? 'Loading…' : 'Load more'}
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );

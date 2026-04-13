@@ -16,13 +16,13 @@ INSERT INTO roles (name, display_name, permissions, is_system) VALUES
 (
     'admin',
     'Administrator',
-    '{"permissions": ["dashboard.view","clients.view","clients.create","clients.edit","clients.delete","services.view","services.create","services.edit","services.delete","documents.view","documents.upload","invoices.view","invoices.create","invoices.edit","calendar.view","calendar.create","credentials.view","registers.view","leads.view","leads.create","leads.edit","settings.view"]}',
+    '{"permissions": ["dashboard.view","clients.view","clients.create","clients.edit","clients.delete","services.view","services.create","services.edit","services.delete","documents.view","documents.upload","invoices.view","invoices.create","invoices.edit","calendar.view","calendar.create","credentials.view","registers.view","leads.view","leads.create","leads.edit","quotations.setup","quotations.manage","settings.view"]}',
     TRUE
 ),
 (
     'manager',
     'Manager',
-    '{"permissions": ["dashboard.view","clients.view","clients.create","clients.edit","services.view","services.create","services.edit","documents.view","documents.upload","invoices.view","invoices.create","calendar.view","calendar.create","registers.view","leads.view","leads.create"]}',
+    '{"permissions": ["dashboard.view","clients.view","clients.create","clients.edit","services.view","services.create","services.edit","documents.view","documents.upload","invoices.view","invoices.create","calendar.view","calendar.create","registers.view","leads.view","leads.create","quotations.manage"]}',
     TRUE
 ),
 (

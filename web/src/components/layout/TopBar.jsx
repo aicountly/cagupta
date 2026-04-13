@@ -20,6 +20,8 @@ const breadcrumbMap = {
   '/clients/organizations/new': ['Home', 'Clients', 'Organizations', 'Add Organization'],
   '/services':               ['Home', 'Services & Tasks'],
   '/services/new':           ['Home', 'Services & Tasks', 'New Service Engagement'],
+  '/services/edit':          ['Home', 'Services & Tasks', 'Edit engagement'],
+  '/services/files':         ['Home', 'Services & Tasks', 'Engagement files'],
   '/documents':              ['Home', 'Documents'],
   '/invoices':               ['Home', 'Invoices & Ledger'],
   '/calendar':               ['Home', 'Calendar'],
@@ -45,7 +47,13 @@ export default function TopBar({ title }) {
   const navigate = useNavigate();
   const { session, logout } = useAuth();
   const { notifications, clearNotification } = useNotification();
-  const crumbs = breadcrumbMap[loc.pathname] || ['Home'];
+  const crumbs = (() => {
+    const p = loc.pathname;
+    if (breadcrumbMap[p]) return breadcrumbMap[p];
+    if (/^\/services\/[^/]+\/edit$/.test(p)) return ['Home', 'Services & Tasks', 'Edit engagement'];
+    if (/^\/services\/[^/]+\/files$/.test(p)) return ['Home', 'Services & Tasks', 'Engagement files'];
+    return ['Home'];
+  })();
   const pageTitle = crumbs[crumbs.length - 1];
 
   const user = session?.user;

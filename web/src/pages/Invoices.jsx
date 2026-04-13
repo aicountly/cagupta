@@ -1,13 +1,18 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  getTxns, createTxn, createReceipt, createTds, finalizeTds,
+  getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createTds, finalizeTds,
   getTdsEntries, createRebate, createCreditNote, getLedger,
   getOpeningBalance, setOpeningBalance,
 } from '../services/txnService';
+import { getContact } from '../services/contactService';
+import { getOrganization } from '../services/organizationService';
+import { EXPENSE_PURPOSE_OPTIONS, expensePurposeLabel } from '../constants/expensePurposes';
+import { buildLedgerDetailLine } from '../utils/ledgerTxnDetails';
 import StatusBadge from '../components/common/StatusBadge';
 import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
 import EntitySearchDropdown from '../components/common/EntitySearchDropdown';
+import DateInput from '../components/common/DateInput';
 import { BILLING_PROFILES, getBillingProfileByCode } from '../constants/billingProfiles';
 import {
   collectIndianFYStartYearsWithFallback,
@@ -63,7 +68,11 @@ function TxnTypeBadge({ type }) {
 
 const TDS_SECTIONS = ['194J','194C','194H','194I','194A','194Q','Other'];
 
+const PAYMENT_METHOD_OPTIONS = ['NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'IMPS'];
+
 // ── RaiseInvoiceModal ─────────────────────────────────────────────────────────
+
+const emptyInvoiceLine = () => ({ description: '', amount: '' });
 
 function RaiseInvoiceModal({ onClose, onSave }) {
   const [form, setForm] = useState({
@@ -72,22 +81,52 @@ function RaiseInvoiceModal({ onClose, onSave }) {
     entityType: 'contact',
     invoiceDate: new Date().toISOString().slice(0, 10),
     dueDate: '',
-    totalAmount: '',
     notes: '',
     billingProfileCode: '',
+    lines: [emptyInvoiceLine(), emptyInvoiceLine()],
   });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const setLine = (idx, field, value) => {
+    setForm(f => ({
+      ...f,
+      lines: f.lines.map((row, i) => (i === idx ? { ...row, [field]: value } : row)),
+    }));
+  };
+  const addLine = () => setForm(f => ({ ...f, lines: [...f.lines, emptyInvoiceLine()] }));
+  const removeLine = (idx) => {
+    setForm(f => ({
+      ...f,
+      lines: f.lines.length <= 1 ? f.lines : f.lines.filter((_, i) => i !== idx),
+    }));
+  };
+  const lineTotal = useMemo(() => {
+    return form.lines.reduce((sum, row) => {
+      const n = parseFloat(row.amount, 10);
+      return sum + (Number.isFinite(n) && n > 0 ? n : 0);
+    }, 0);
+  }, [form.lines]);
   const handleSave = () => {
-    if (!form.entityId || !form.invoiceDate || !form.totalAmount) return;
-    onSave(form);
+    if (!form.entityId || !form.invoiceDate) return;
+    const parsed = form.lines
+      .map(l => ({
+        description: String(l.description || '').trim(),
+        amount: parseFloat(l.amount, 10),
+      }))
+      .filter(l => l.description && Number.isFinite(l.amount) && l.amount > 0);
+    if (parsed.length === 0) return;
+    onSave({
+      ...form,
+      lineItems: parsed,
+      totalAmount: parsed.reduce((a, l) => a + l.amount, 0),
+    });
     onClose();
   };
   return (
     <div style={overlayStyle}>
-      <div style={modalStyle}>
+      <div style={{ ...modalStyle, maxWidth: 640 }}>
         <div style={modalHeaderStyle}>
           <span style={{ fontSize:15, fontWeight:700 }}>🧾 Raise Invoice</span>
-          <button onClick={onClose} style={closeBtnStyle}>✕</button>
+          <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
         </div>
         <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
           <label style={labelStyle}>
@@ -109,17 +148,45 @@ function RaiseInvoiceModal({ onClose, onSave }) {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Invoice Date
-              <input type="date" style={inputStyle} value={form.invoiceDate} onChange={e=>set('invoiceDate',e.target.value)} />
+              <DateInput style={inputStyle} value={form.invoiceDate} onChange={e=>set('invoiceDate',e.target.value)} />
             </label>
             <label style={labelStyle}>
               Due Date
-              <input type="date" style={inputStyle} value={form.dueDate} onChange={e=>set('dueDate',e.target.value)} />
+              <DateInput style={inputStyle} value={form.dueDate} onChange={e=>set('dueDate',e.target.value)} />
             </label>
           </div>
-          <label style={labelStyle}>
-            Amount (₹)
-            <input type="number" style={inputStyle} placeholder="e.g. 5900" value={form.totalAmount} onChange={e=>set('totalAmount',e.target.value)} />
-          </label>
+          <div style={labelStyle}>
+            <span>Line items (fees / charges — not inventory)</span>
+            <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:4 }}>
+              {form.lines.map((row, idx) => (
+                <div key={idx} style={{ display:'grid', gridTemplateColumns:'1fr 120px 36px', gap:8, alignItems:'center' }}>
+                  <input
+                    type="text"
+                    style={inputStyle}
+                    placeholder="e.g. Professional consultancy"
+                    value={row.description}
+                    onChange={e => setLine(idx, 'description', e.target.value)}
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    style={{ ...inputStyle, textAlign:'right' }}
+                    placeholder="₹"
+                    value={row.amount}
+                    onChange={e => setLine(idx, 'amount', e.target.value)}
+                  />
+                  <button type="button" onClick={() => removeLine(idx)} style={{ ...btnSecondary, padding:'6px', fontSize:12 }} title="Remove line">✕</button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={addLine} style={{ ...btnSecondary, marginTop:6, alignSelf:'flex-start', fontSize:12, padding:'6px 12px' }}>
+              + Add line
+            </button>
+            <div style={{ marginTop:8, fontSize:13, fontWeight:700, color:'#0f172a' }}>
+              Total (₹): {lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+          </div>
           <label style={labelStyle}>
             Billing Profile
             <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
@@ -135,8 +202,172 @@ function RaiseInvoiceModal({ onClose, onSave }) {
           </label>
         </div>
         <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }}>
-          <button onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button onClick={handleSave} style={btnPrimary}>Save Invoice</button>
+          <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button type="button" onClick={handleSave} style={btnPrimary}>Save Invoice</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── InvoiceViewModal ───────────────────────────────────────────────────────────
+
+function formatBillToAddressFromContact(c) {
+  if (!c) return [];
+  const lines = [];
+  const a1 = [c.addressLine1, c.addressLine2].filter(Boolean).join(', ');
+  if (a1) lines.push(a1);
+  const cityLine = [c.city, c.state].filter(Boolean).join(', ');
+  if (cityLine) lines.push(cityLine);
+  if (c.pincode) {
+    lines.push(c.country && c.country !== 'India' ? `${c.pincode} · ${c.country}` : String(c.pincode));
+  } else if (c.country && c.country !== 'India') {
+    lines.push(c.country);
+  }
+  return lines;
+}
+
+function formatBillToAddressFromOrg(o) {
+  if (!o) return [];
+  const lines = [];
+  if (o.address) lines.push(o.address);
+  const cityLine = [o.city, o.state].filter(Boolean).join(', ');
+  if (cityLine) lines.push(cityLine);
+  const tail = [o.pincode, o.country && o.country !== 'India' ? o.country : ''].filter(Boolean);
+  if (tail.length) lines.push(tail.join(' · '));
+  else if (o.pincode) lines.push(o.pincode);
+  return lines;
+}
+
+function InvoiceViewModal({ txn, onClose }) {
+  const [detail, setDetail] = useState(null);
+  const [entity, setEntity] = useState(null);
+  const [loadErr, setLoadErr] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!txn?.id) return undefined;
+    let cancelled = false;
+    setLoading(true);
+    setLoadErr('');
+    setDetail(null);
+    setEntity(null);
+    (async () => {
+      try {
+        const row = await getTxn(txn.id);
+        if (cancelled) return;
+        setDetail(row);
+        if (row.clientId) {
+          const contact = await getContact(row.clientId).catch(() => null);
+          if (!cancelled) setEntity(contact ? { type: 'contact', data: contact } : null);
+        } else if (row.organizationId) {
+          const org = await getOrganization(row.organizationId).catch(() => null);
+          if (!cancelled) setEntity(org ? { type: 'organization', data: org } : null);
+        }
+      } catch (e) {
+        if (!cancelled) setLoadErr(e.message || 'Failed to load invoice.');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [txn?.id]);
+
+  if (!txn) return null;
+
+  const inv = detail || txn;
+  const profile = getBillingProfileByCode(inv.billingProfileCode);
+  const displayName = entity?.type === 'contact'
+    ? entity.data.displayName
+    : entity?.type === 'organization'
+      ? entity.data.displayName
+      : inv.clientName;
+  const addrLines = entity?.type === 'contact'
+    ? formatBillToAddressFromContact(entity.data)
+    : entity?.type === 'organization'
+      ? formatBillToAddressFromOrg(entity.data)
+      : [];
+  const gstin = entity?.type === 'contact' ? entity.data.gstin : entity?.type === 'organization' ? entity.data.gstin : '';
+  const lines = inv.lineItems && inv.lineItems.length > 0 ? inv.lineItems : [];
+
+  return (
+    <div style={overlayStyle} className="invoice-view-overlay">
+      <div style={{ ...modalStyle, maxWidth: 560 }} className="invoice-view-modal-print-root">
+        <div style={modalHeaderStyle} className="no-print">
+          <span style={{ fontSize:15, fontWeight:700 }}>🧾 Invoice</span>
+          <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:16 }}>
+          {loading && <div style={{ color:'#64748b', fontSize:13 }}>Loading…</div>}
+          {loadErr && <div style={{ color:'#dc2626', fontSize:13 }}>{loadErr}</div>}
+          {!loading && !loadErr && (
+            <>
+              {inv.billingProfileCode && (
+                <div style={{ fontSize:12, color:'#475569' }}>
+                  <div style={{ fontWeight:700, color:'#0f172a' }}>{profile?.name || inv.billingProfileCode}</div>
+                  <div style={{ fontFamily:'monospace' }}>{inv.billingProfileCode}</div>
+                </div>
+              )}
+              <div>
+                <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.04em' }}>Bill to</div>
+                <div style={{ fontWeight:700, fontSize:15, color:'#0f172a', marginTop:4 }}>{displayName || '—'}</div>
+                {addrLines.length > 0 && (
+                  <div style={{ marginTop:6, fontSize:13, color:'#334155', lineHeight:1.45 }}>
+                    {addrLines.map((line, i) => <div key={i}>{line}</div>)}
+                  </div>
+                )}
+                {gstin ? <div style={{ marginTop:6, fontSize:12, color:'#475569' }}>GSTIN: {gstin}</div> : null}
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, fontSize:13 }}>
+                <div><span style={{ color:'#64748b' }}>Invoice #</span><br /><strong style={{ fontFamily:'monospace' }}>{inv.invoiceNumber || `INV-${inv.id}`}</strong></div>
+                <div><span style={{ color:'#64748b' }}>Status</span><br /><StatusBadge status={inv.invoiceStatus || inv.status} /></div>
+                <div><span style={{ color:'#64748b' }}>Invoice date</span><br /><strong>{inv.txnDate || '—'}</strong></div>
+                <div><span style={{ color:'#64748b' }}>Due date</span><br /><strong>{inv.dueDate || '—'}</strong></div>
+              </div>
+              <div>
+                <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.04em', marginBottom:8 }}>Amount</div>
+                {lines.length > 0 ? (
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:13 }}>
+                    <thead>
+                      <tr style={{ borderBottom:'1px solid #e2e8f0' }}>
+                        <th style={{ textAlign:'left', padding:'8px 0', color:'#64748b' }}>Description</th>
+                        <th style={{ textAlign:'right', padding:'8px 0', color:'#64748b' }}>Amount (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lines.map((row, i) => (
+                        <tr key={i} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                          <td style={{ padding:'8px 0', verticalAlign:'top' }}>{row.description}</td>
+                          <td style={{ padding:'8px 0', textAlign:'right', fontWeight:600 }}>{row.amount.toLocaleString('en-IN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td style={{ paddingTop:12, fontWeight:700 }}>Total</td>
+                        <td style={{ paddingTop:12, textAlign:'right', fontWeight:700 }}>₹{(inv.amount || inv.debit || 0).toLocaleString('en-IN')}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                ) : (
+                  <div style={{ fontSize:14, fontWeight:600 }}>₹{(inv.amount || inv.debit || 0).toLocaleString('en-IN')}</div>
+                )}
+                {lines.length === 0 && (
+                  <div style={{ fontSize:12, color:'#94a3b8', marginTop:6 }}>No line breakdown on file (older invoice).</div>
+                )}
+              </div>
+              {inv.notes ? (
+                <div>
+                  <div style={{ fontSize:11, fontWeight:700, color:'#64748b' }}>Notes</div>
+                  <div style={{ fontSize:13, color:'#334155', marginTop:4 }}>{inv.notes}</div>
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }} className="no-print">
+          <button type="button" onClick={() => window.print()} style={btnSecondary}>Print</button>
+          <button type="button" onClick={onClose} style={btnPrimary}>Close</button>
         </div>
       </div>
     </div>
@@ -173,14 +404,14 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
             </label>
             <label style={labelStyle}>
               Payment Date
-              <input type="date" style={inputStyle} value={form.paymentDate} onChange={e=>set('paymentDate',e.target.value)} />
+              <DateInput style={inputStyle} value={form.paymentDate} onChange={e=>set('paymentDate',e.target.value)} />
             </label>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Payment Method
               <select style={inputStyle} value={form.method} onChange={e=>set('method',e.target.value)}>
-                {['NEFT','RTGS','UPI','Cheque','Cash','IMPS'].map(m=><option key={m}>{m}</option>)}
+                {PAYMENT_METHOD_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </label>
             <label style={labelStyle}>
@@ -201,6 +432,114 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
         <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }}>
           <button onClick={onClose} style={btnSecondary}>Cancel</button>
           <button onClick={handleSave} style={btnPrimary}>Save Payment</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── PaymentExpenseModal (firm paid on behalf of client) ─────────────────────
+
+function PaymentExpenseModal({ onClose, onSave }) {
+  const [form, setForm] = useState({
+    entityId: '',
+    entityName: '',
+    entityType: 'contact',
+    amount: '',
+    txnDate: new Date().toISOString().slice(0, 10),
+    expensePurpose: 'challan',
+    method: 'NEFT',
+    paidFrom: '',
+    referenceNumber: '',
+    billingProfileCode: '',
+    description: '',
+    notes: '',
+  });
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const handleSave = () => {
+    if (!form.entityId || !form.amount || !form.txnDate || !form.description.trim()) return;
+    onSave(form);
+    onClose();
+  };
+  return (
+    <div style={overlayStyle}>
+      <div style={{ ...modalStyle, maxWidth: 580 }}>
+        <div style={modalHeaderStyle}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>💳 Payment on behalf of client</span>
+          <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <label style={labelStyle}>
+            Client (contact or organization)
+            <EntitySearchDropdown
+              value={form.entityId}
+              displayValue={form.entityName}
+              entityType={form.entityType}
+              onChange={(c) => setForm((f) => ({
+                ...f,
+                entityId: String(c.id),
+                entityName: c.displayName,
+                entityType: c.entityType,
+              }))}
+              placeholder="Search contact or organization…"
+              style={inputStyle}
+            />
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Amount (₹)
+              <input type="number" style={inputStyle} placeholder="e.g. 2500" value={form.amount} onChange={(e) => set('amount', e.target.value)} />
+            </label>
+            <label style={labelStyle}>
+              Payment date
+              <DateInput style={inputStyle} value={form.txnDate} onChange={(e) => set('txnDate', e.target.value)} />
+            </label>
+          </div>
+          <label style={labelStyle}>
+            Purpose
+            <select style={inputStyle} value={form.expensePurpose} onChange={(e) => set('expensePurpose', e.target.value)}>
+              {EXPENSE_PURPOSE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </label>
+          <label style={labelStyle}>
+            Description (shown on ledger)
+            <input type="text" style={inputStyle} placeholder="What was paid and why" value={form.description} onChange={(e) => set('description', e.target.value)} />
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Paid via
+              <select style={inputStyle} value={form.method} onChange={(e) => set('method', e.target.value)}>
+                {PAYMENT_METHOD_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Paid from (cash / bank account)
+              <input type="text" style={inputStyle} placeholder="e.g. Cash, HDFC ****1234" value={form.paidFrom} onChange={(e) => set('paidFrom', e.target.value)} />
+            </label>
+          </div>
+          <label style={labelStyle}>
+            Reference no. (UTR / challan / cheque)
+            <input type="text" style={inputStyle} placeholder="Optional" value={form.referenceNumber} onChange={(e) => set('referenceNumber', e.target.value)} />
+          </label>
+          <label style={labelStyle}>
+            Billing profile
+            <select style={inputStyle} value={form.billingProfileCode} onChange={(e) => set('billingProfileCode', e.target.value)}>
+              <option value="">— Select billing profile —</option>
+              {BILLING_PROFILES.map((p) => (
+                <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
+              ))}
+            </select>
+          </label>
+          <label style={labelStyle}>
+            Internal notes
+            <input type="text" style={inputStyle} placeholder="Optional" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
+          </label>
+        </div>
+        <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button type="button" onClick={handleSave} style={btnPrimary}>Save payment</button>
         </div>
       </div>
     </div>
@@ -241,14 +580,14 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
             </label>
             <label style={labelStyle}>
               Receipt Date
-              <input type="date" style={inputStyle} value={form.txnDate} onChange={e=>set('txnDate',e.target.value)} />
+              <DateInput style={inputStyle} value={form.txnDate} onChange={e=>set('txnDate',e.target.value)} />
             </label>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Payment Method
               <select style={inputStyle} value={form.method} onChange={e=>set('method',e.target.value)}>
-                {['NEFT','RTGS','UPI','Cheque','Cash','IMPS'].map(m=><option key={m}>{m}</option>)}
+                {PAYMENT_METHOD_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </label>
             <label style={labelStyle}>
@@ -322,7 +661,7 @@ function TdsModal({ onClose, onSave }) {
             </label>
             <label style={labelStyle}>
               TDS Date
-              <input type="date" style={inputStyle} value={form.txnDate} onChange={e=>set('txnDate',e.target.value)} />
+              <DateInput style={inputStyle} value={form.txnDate} onChange={e=>set('txnDate',e.target.value)} />
             </label>
           </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
@@ -394,7 +733,7 @@ function RebateModal({ onClose, onSave }) {
             </label>
             <label style={labelStyle}>
               Date
-              <input type="date" style={inputStyle} value={form.txnDate} onChange={e=>set('txnDate',e.target.value)} />
+              <DateInput style={inputStyle} value={form.txnDate} onChange={e=>set('txnDate',e.target.value)} />
             </label>
           </div>
           <label style={labelStyle}>
@@ -467,7 +806,7 @@ function CreditNoteModal({ onClose, onSave, openInvoices }) {
             </label>
             <label style={labelStyle}>
               Date
-              <input type="date" style={inputStyle} value={form.txnDate} onChange={e=>set('txnDate',e.target.value)} />
+              <DateInput style={inputStyle} value={form.txnDate} onChange={e=>set('txnDate',e.target.value)} />
             </label>
           </div>
           <label style={labelStyle}>
@@ -608,6 +947,7 @@ export default function Invoices() {
   const [showRaiseInvoice, setShowRaiseInvoice] = useState(false);
   const [showRecordPayment, setShowRecordPayment] = useState(false);
   const [selectedInvoice, setSelectedInvoice]   = useState(null);
+  const [viewInvoiceTxn, setViewInvoiceTxn]     = useState(null);
   const [invoices, setInvoices]                 = useState([]);
   const [invLoading, setInvLoading]             = useState(true);
 
@@ -616,6 +956,12 @@ export default function Invoices() {
   const [recLoading, setRecLoading]     = useState(false);
   const [recLoaded, setRecLoaded]       = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
+
+  // ── Payments (on behalf) tab state ─────────────────────────────────────────
+  const [paymentExpenses, setPaymentExpenses] = useState([]);
+  const [payLoading, setPayLoading] = useState(false);
+  const [payLoaded, setPayLoaded] = useState(false);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
 
   // ── TDS tab state ───────────────────────────────────────────────────────────
   const [tdsFilter, setTdsFilter]       = useState('all');
@@ -665,6 +1011,7 @@ export default function Invoices() {
       setTab('invoices');
       setStatusFilter('all');
       setSelectedInvoice(txn);
+      setViewInvoiceTxn(txn);
       requestAnimationFrame(() => {
         document.getElementById(`txn-row-${txn.id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       });
@@ -683,6 +1030,16 @@ export default function Invoices() {
       .catch(() => {})
       .finally(() => setRecLoading(false));
   }, [tab, recLoaded]);
+
+  // ── Load payment expenses when payments tab first opened ───────────────────
+  useEffect(() => {
+    if (tab !== 'payments' || payLoaded) return;
+    setPayLoading(true);
+    getTxns({ txnType: 'payment_expense', perPage: 100 })
+      .then(({ txns }) => { setPaymentExpenses(txns); setPayLoaded(true); })
+      .catch(() => {})
+      .finally(() => setPayLoading(false));
+  }, [tab, payLoaded]);
 
   // ── Load TDS when tds tab opened or filter changes ──────────────────────────
   useEffect(() => {
@@ -773,13 +1130,22 @@ export default function Invoices() {
   function handleRaiseInvoice(data) {
     const idNum = parseInt(data.entityId, 10);
     if (Number.isNaN(idNum) || idNum <= 0) return;
+    const lineItems = (data.lineItems || [])
+      .map((l) => ({
+        description: String(l.description || '').trim(),
+        amount: typeof l.amount === 'number' ? l.amount : parseFloat(l.amount, 10),
+      }))
+      .filter((l) => l.description && Number.isFinite(l.amount) && l.amount > 0);
+    if (lineItems.length === 0) return;
+    const total = lineItems.reduce((a, l) => a + l.amount, 0);
     const payload = {
       txn_type:             'invoice',
       txn_date:             data.invoiceDate,
-      due_date:             data.dueDate,
-      amount:               parseFloat(data.totalAmount),
+      due_date:             data.dueDate || null,
+      amount:               total,
       billing_profile_code: data.billingProfileCode,
       notes:                data.notes,
+      line_items:           lineItems,
     };
     if (data.entityType === 'organization') {
       payload.organization_id = idNum;
@@ -816,6 +1182,34 @@ export default function Invoices() {
         setSelectedInvoice(null);
         setShowRecordPayment(false);
       });
+  }
+
+  function handleSavePaymentExpense(data) {
+    const idNum = parseInt(data.entityId, 10);
+    if (Number.isNaN(idNum) || idNum <= 0) return;
+    const purposeLabel = expensePurposeLabel(data.expensePurpose);
+    const narration = data.description.trim()
+      ? `${purposeLabel} — ${data.description.trim()}`
+      : purposeLabel;
+    const payload = {
+      amount: parseFloat(data.amount),
+      txn_date: data.txnDate,
+      payment_method: data.method,
+      reference_number: data.referenceNumber || null,
+      billing_profile_code: data.billingProfileCode || null,
+      expense_purpose: data.expensePurpose || null,
+      paid_from: data.paidFrom || null,
+      narration,
+      notes: data.notes || null,
+    };
+    if (data.entityType === 'organization') {
+      payload.organization_id = idNum;
+    } else {
+      payload.client_id = idNum;
+    }
+    createPaymentExpense(payload)
+      .then((row) => setPaymentExpenses((prev) => [row, ...prev]))
+      .catch(() => {});
   }
 
   function handleSaveReceipt(data) {
@@ -916,6 +1310,7 @@ export default function Invoices() {
   const TABS = [
     { key:'invoices',    label:'🧾 Invoices' },
     { key:'receipts',    label:'💵 Receipts' },
+    { key:'payments',    label:'💳 Payments (on behalf)' },
     { key:'tds',         label:'📋 TDS' },
     { key:'rebate',      label:'💸 Rebate/Discount' },
     { key:'credit_note', label:'📝 Credit Notes' },
@@ -931,6 +1326,9 @@ export default function Invoices() {
           onSave={(data) => { handleRaiseInvoice(data); setShowRaiseInvoice(false); }}
         />
       )}
+      {viewInvoiceTxn && (
+        <InvoiceViewModal txn={viewInvoiceTxn} onClose={() => setViewInvoiceTxn(null)} />
+      )}
       {showRecordPayment && (
         <RecordPaymentModal
           invoice={selectedInvoice}
@@ -943,6 +1341,12 @@ export default function Invoices() {
           openInvoices={invoices}
           onClose={() => setShowReceiptModal(false)}
           onSave={(data) => { handleSaveReceipt(data); setShowReceiptModal(false); }}
+        />
+      )}
+      {showPaymentModal && (
+        <PaymentExpenseModal
+          onClose={() => setShowPaymentModal(false)}
+          onSave={(data) => { handleSavePaymentExpense(data); setShowPaymentModal(false); }}
         />
       )}
       {showTdsModal && (
@@ -1002,6 +1406,9 @@ export default function Invoices() {
         {tab==='receipts' && (
           <button onClick={() => setShowReceiptModal(true)} style={{ ...btnPrimary, marginLeft:'auto' }}>+ Receipt</button>
         )}
+        {tab==='payments' && (
+          <button onClick={() => setShowPaymentModal(true)} style={{ ...btnPrimary, marginLeft:'auto' }}>+ Payment</button>
+        )}
         {tab==='tds' && (
           <button onClick={() => setShowTdsModal(true)} style={{ ...btnPrimary, marginLeft:'auto' }}>+ Book TDS</button>
         )}
@@ -1033,7 +1440,12 @@ export default function Invoices() {
               ) : filteredInvoices.length === 0 ? (
                 <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices found.</td></tr>
               ) : filteredInvoices.map(i=>(
-                <tr key={i.id} id={`txn-row-${i.id}`} style={trStyle}>
+                <tr
+                  key={i.id}
+                  id={`txn-row-${i.id}`}
+                  style={{ ...trStyle, cursor: 'pointer' }}
+                  onClick={() => setViewInvoiceTxn(i)}
+                >
                   <td style={{ ...tdStyle, fontWeight:600, fontFamily:'monospace', fontSize:12 }}>{i.invoiceNumber || `INV-${i.id}`}</td>
                   <td style={tdStyle}>{i.clientName}</td>
                   <td style={tdStyle}>{i.txnDate || i.invoiceDate}</td>
@@ -1041,8 +1453,9 @@ export default function Invoices() {
                   <td style={{ ...tdStyle, fontWeight:600 }}>₹{(i.amount || i.debit || 0).toLocaleString('en-IN')}</td>
                   <td style={tdStyle}><BillingProfileBadge code={i.billingProfileCode} /></td>
                   <td style={tdStyle}><StatusBadge status={i.invoiceStatus || i.status} /></td>
-                  <td style={tdStyle}>
-                    <button style={iconBtn} onClick={() => { setSelectedInvoice(i); setShowRecordPayment(true); }}>💳 Record Payment</button>
+                  <td style={tdStyle} onClick={e => e.stopPropagation()}>
+                    <button type="button" style={iconBtn} onClick={() => setViewInvoiceTxn(i)}>👁 View</button>
+                    <button type="button" style={iconBtn} onClick={() => { setSelectedInvoice(i); setShowRecordPayment(true); }}>💳 Pay</button>
                   </td>
                 </tr>
               ))}
@@ -1073,6 +1486,41 @@ export default function Invoices() {
                   <td style={tdStyle}><BillingProfileBadge code={r.billingProfileCode} /></td>
                   <td style={tdStyle}>{r.linkedTxnId ? `#${r.linkedTxnId}` : '—'}</td>
                   <td style={tdStyle}>{r.notes || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Tab: Payments (on behalf) ───────────────────────────────────────── */}
+      {tab === 'payments' && (
+        <div style={cardStyle}>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                {['Date', 'Client', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes'].map((h) => (
+                  <th key={h} style={thStyle}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {payLoading ? (
+                <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
+              ) : paymentExpenses.length === 0 ? (
+                <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
+              ) : paymentExpenses.map((p) => (
+                <tr key={p.id} style={trStyle}>
+                  <td style={tdStyle}>{p.txnDate}</td>
+                  <td style={tdStyle}>{p.clientName}</td>
+                  <td style={{ ...tdStyle, fontWeight: 600, color: '#0369a1' }}>₹{p.amount.toLocaleString('en-IN')}</td>
+                  <td style={tdStyle}>{expensePurposeLabel(p.expensePurpose)}</td>
+                  <td style={tdStyle}>{p.paymentMethod || '—'}</td>
+                  <td style={{ ...tdStyle, maxWidth: 140, whiteSpace: 'normal' }}>{p.paidFrom || '—'}</td>
+                  <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{p.referenceNumber || '—'}</td>
+                  <td style={{ ...tdStyle, maxWidth: 200, whiteSpace: 'normal' }}>{p.narration || '—'}</td>
+                  <td style={tdStyle}><BillingProfileBadge code={p.billingProfileCode} /></td>
+                  <td style={{ ...tdStyle, maxWidth: 160, whiteSpace: 'normal' }}>{p.notes || '—'}</td>
                 </tr>
               ))}
             </tbody>
@@ -1212,8 +1660,7 @@ export default function Invoices() {
                   ))}
                 </select>
                 <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Date from:</span>
-                <input
-                  type="date"
+                <DateInput
                   style={{ ...inputStyle, width: 'auto' }}
                   min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
                   max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
@@ -1221,8 +1668,7 @@ export default function Invoices() {
                   onChange={(e) => setLedgerFilterDateFrom(e.target.value)}
                 />
                 <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>to:</span>
-                <input
-                  type="date"
+                <DateInput
                   style={{ ...inputStyle, width: 'auto' }}
                   min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
                   max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
@@ -1307,16 +1753,16 @@ export default function Invoices() {
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  {['Date','Entry Type','Narration','Billing Profile','Debit (Dr)','Credit (Cr)','Balance'].map(h=>(
+                  {['Date','Entry Type','Narration','Details','Billing Profile','Debit (Dr)','Credit (Cr)','Balance'].map(h=>(
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {ledgerLoading ? (
-                  <tr><td colSpan={7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading ledger…</td></tr>
+                  <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading ledger…</td></tr>
                 ) : ledger.length === 0 ? (
-                  <tr><td colSpan={7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No ledger entries for this client.</td></tr>
+                  <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No ledger entries for this client.</td></tr>
                 ) : ledgerDisplayRows.map((e, i) => (
                   <tr
                     key={e.synthetic ? e.id : `${e.id ?? 'row'}-${i}`}
@@ -1329,6 +1775,7 @@ export default function Invoices() {
                     <td style={tdStyle}>{e.txnDate || e.date || '—'}</td>
                     <td style={tdStyle}><TxnTypeBadge type={e.txnType} /></td>
                     <td style={{ ...tdStyle, fontStyle: e.txnType === 'opening_balance' || e.txnType === 'brought_forward' ? 'italic' : 'normal' }}>{e.narration || '—'}</td>
+                    <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 280, fontSize: 12, color: '#64748b' }}>{buildLedgerDetailLine(e) || '—'}</td>
                     <td style={tdStyle}><BillingProfileBadge code={e.billingProfileCode} /></td>
                     <td style={{ ...tdStyle, color:'#dc2626', fontWeight: e.debit?600:400 }}>{e.debit ? `₹${parseFloat(e.debit).toLocaleString('en-IN')}` : '—'}</td>
                     <td style={{ ...tdStyle, color:'#16a34a', fontWeight: e.credit?600:400 }}>{e.credit ? `₹${parseFloat(e.credit).toLocaleString('en-IN')}` : '—'}</td>

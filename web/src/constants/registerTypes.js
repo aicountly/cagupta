@@ -5,6 +5,7 @@ const DEFAULT_REGISTER_TYPES = [
   { key: 'roc', label: 'ROC Register',    icon: '🏢' },
   { key: 'it',  label: 'IT Register',     icon: '💼' },
   { key: 'pf',  label: 'PF/ESI Register', icon: '👥' },
+  { key: 'payments', label: 'Payment Register', icon: '💳' },
 ];
 
 const STORAGE_KEY = 'registerTypes';

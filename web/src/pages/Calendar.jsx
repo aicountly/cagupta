@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { getAppointments, createAppointment, updateAppointment, deleteAppointment } from '../services/appointmentService';
 import StatusBadge from '../components/common/StatusBadge';
+import DateInput from '../components/common/DateInput';
 import { useNotification } from '../context/NotificationContext';
 
 const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -205,7 +206,11 @@ export default function Calendar() {
               ].map(f=>(
                 <div key={f.key} style={{ marginBottom:12 }}>
                   <label style={labelStyle}>{f.label}{f.required && <span style={{ color:'#ef4444' }}> *</span>}</label>
-                  <input type={f.type} required={f.required} value={form[f.key]} onChange={e=>setForm(v=>({...v,[f.key]:e.target.value}))} style={inputStyle} />
+                  {f.type === 'date' ? (
+                    <DateInput required={f.required} value={form[f.key]} onChange={e=>setForm(v=>({...v,[f.key]:e.target.value}))} style={inputStyle} />
+                  ) : (
+                    <input type={f.type} required={f.required} value={form[f.key]} onChange={e=>setForm(v=>({...v,[f.key]:e.target.value}))} style={inputStyle} />
+                  )}
                 </div>
               ))}
               <div style={{ marginBottom:16 }}>

@@ -12,6 +12,8 @@ import Organizations from './pages/Organizations';
 import OrganizationCreatePage from './pages/OrganizationCreatePage';
 import Services from './pages/Services';
 import NewServiceEngagement from './pages/NewServiceEngagement';
+import ServiceEngagementEdit from './pages/ServiceEngagementEdit';
+import ServiceEngagementFiles from './pages/ServiceEngagementFiles';
 import Documents from './pages/Documents';
 import Invoices from './pages/Invoices';
 import Calendar from './pages/Calendar';
@@ -41,6 +43,8 @@ const pageTitles = {
   '/clients/groups':            '🗂️ Groups',
   '/services':                  '📋 Services & Tasks',
   '/services/new':              '➕ New Service Engagement',
+  '/services/edit':             '✏️ Edit Service Engagement',
+  '/services/files':            '📂 Engagement Files',
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
   '/calendar':                  '📅 Calendar & Appointments',
@@ -85,6 +89,12 @@ export default function App() {
           <Route path="/clients/groups" element={<ProtectedRoute><Layout routePath="/clients/groups"><ClientGroups /></Layout></ProtectedRoute>} />
           <Route path="/services" element={<ProtectedRoute><Layout routePath="/services"><Services /></Layout></ProtectedRoute>} />
           <Route path="/services/new" element={<ProtectedRoute><Layout routePath="/services/new"><NewServiceEngagement /></Layout></ProtectedRoute>} />
+          <Route path="/services/:id/edit" element={
+            <ProtectedRoute requiredPermission="services.edit">
+              <Layout routePath="/services/edit"><ServiceEngagementEdit /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/services/:id/files" element={<ProtectedRoute><Layout routePath="/services/files"><ServiceEngagementFiles /></Layout></ProtectedRoute>} />
           <Route path="/documents" element={<ProtectedRoute><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
           <Route path="/calendar" element={<ProtectedRoute><Layout routePath="/calendar"><Calendar /></Layout></ProtectedRoute>} />

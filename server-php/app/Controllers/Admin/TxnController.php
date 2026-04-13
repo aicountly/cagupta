@@ -25,8 +25,8 @@ class TxnController extends BaseController
     /**
      * List/paginate transactions with optional filters.
      *
-     * Query params: page, per_page, search, txn_type, client_id,
-     *               tds_status, status, date_from, date_to
+     * Query params: page, per_page, search, txn_type, client_id, organization_id,
+     *               expense_purpose, tds_status, status, date_from, date_to
      */
     public function index(): never
     {
@@ -35,6 +35,9 @@ class TxnController extends BaseController
         $search    = trim((string)$this->query('search', ''));
         $txnType   = trim((string)$this->query('txn_type', ''));
         $clientId  = (int)$this->query('client_id', 0);
+        $orgId     = (int)$this->query('organization_id', 0);
+        $expensePurpose = trim((string)$this->query('expense_purpose', ''));
+        $paymentMethodFilter = trim((string)$this->query('payment_method', ''));
         $tdsStatus = trim((string)$this->query('tds_status', ''));
         $status    = trim((string)$this->query('status', ''));
         $dateFrom  = trim((string)$this->query('date_from', ''));
@@ -42,7 +45,7 @@ class TxnController extends BaseController
 
         $result = $this->txn->paginate(
             $page, $perPage, $search, $txnType,
-            $clientId, $tdsStatus, $status, $dateFrom, $dateTo
+            $clientId, $orgId, $tdsStatus, $status, $dateFrom, $dateTo, $expensePurpose, $paymentMethodFilter
         );
 
         $this->success($result['txns'], 'Transactions retrieved', 200, [
@@ -89,7 +92,11 @@ class TxnController extends BaseController
                 if ($cid > 0 && $oid > 0) {
                     $this->error('Provide only one of client_id or organization_id for an invoice.', 422);
                 }
-                $id = $this->txn->createInvoice($body);
+                try {
+                    $id = $this->txn->createInvoice($body);
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
+                }
                 break;
             case 'receipt':
                 $rcid = (int)($body['client_id'] ?? 0);
@@ -103,6 +110,18 @@ class TxnController extends BaseController
                 $id = $this->txn->createReceipt($body);
                 break;
             case 'payment_expense':
+                $pAmount = (float)($body['amount'] ?? 0);
+                if ($pAmount <= 0) {
+                    $this->error('amount must be greater than zero.', 422);
+                }
+                $pcid = (int)($body['client_id'] ?? 0);
+                $poid = (int)($body['organization_id'] ?? 0);
+                if ($pcid <= 0 && $poid <= 0) {
+                    $this->error('client_id or organization_id is required for a payment expense.', 422);
+                }
+                if ($pcid > 0 && $poid > 0) {
+                    $this->error('Provide only one of client_id or organization_id for a payment expense.', 422);
+                }
                 $id = $this->txn->createPaymentExpense($body);
                 break;
             case 'tds_provisional':
