@@ -711,6 +711,10 @@ export default function Invoices() {
       getLedger(ledgerParam).catch(() => []),
       getOpeningBalance(ledgerClientId).catch(() => []),
     ]).then(([entries, obs]) => {
+      // #region agent log
+      const invRows = entries.filter((e) => (e.txnType || e.txn_type) === 'invoice');
+      fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '00e6bd' }, body: JSON.stringify({ sessionId: '00e6bd', hypothesisId: 'H3-H5', location: 'Invoices.jsx:ledger:loaded', message: 'ledger fetch resolved', data: { ledgerEntityType, ledgerClientId, ledgerParam, rawEntryCount: entries.length, invoiceRowCount: invRows.length, lastInvoiceDates: invRows.slice(-5).map((r) => r.txnDate || r.date) }, timestamp: Date.now() }) }).catch(() => {});
+      // #endregion
       setLedger(entries);
       setOpeningBalances(obs);
       setLedgerFyStartYear((prev) => {
@@ -744,6 +748,14 @@ export default function Invoices() {
     );
   }, [ledger, ledgerFyOptions, ledgerFyStartYear, ledgerFilterDateFrom, ledgerFilterDateTo]);
 
+  useEffect(() => {
+    if (tab !== 'ledger' || !ledgerClientId || ledger.length === 0) return;
+    if (ledgerDisplayRows.length !== 0) return;
+    // #region agent log
+    fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '00e6bd' }, body: JSON.stringify({ sessionId: '00e6bd', hypothesisId: 'H4', location: 'Invoices.jsx:ledger:displayFilter', message: 'ledger has raw rows but zero display rows (FY/date filter)', data: { rawEntryCount: ledger.length, ledgerFyStartYear, ledgerFilterDateFrom, ledgerFilterDateTo }, timestamp: Date.now() }) }).catch(() => {});
+    // #endregion
+  }, [tab, ledgerClientId, ledger.length, ledgerDisplayRows.length, ledgerFyStartYear, ledgerFilterDateFrom, ledgerFilterDateTo]);
+
   // ── Summary cards ───────────────────────────────────────────────────────────
   const totalBilled    = invoices.reduce((a, i) => a + (i.amount || i.debit || 0), 0);
   const totalCollected = receipts.reduce((a, r) => a + (r.amount || r.credit || 0), 0);
@@ -756,6 +768,9 @@ export default function Invoices() {
 
   // ── Invoice handlers ────────────────────────────────────────────────────────
   function handleRaiseInvoice(data) {
+    // #region agent log
+    fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '00e6bd' }, body: JSON.stringify({ sessionId: '00e6bd', hypothesisId: 'H1-H2', location: 'Invoices.jsx:handleRaiseInvoice', message: 'raise invoice UI payload', data: { clientId: data.clientId, invoiceDate: data.invoiceDate, totalAmount: data.totalAmount, billingProfileCode: data.billingProfileCode || '' }, timestamp: Date.now() }) }).catch(() => {});
+    // #endregion
     createTxn({
       txn_type:             'invoice',
       client_id:            data.clientId,
@@ -765,8 +780,17 @@ export default function Invoices() {
       billing_profile_code: data.billingProfileCode,
       notes:                data.notes,
     })
-      .then(newInv => setInvoices(prev => [newInv, ...prev]))
-      .catch(() => {});
+      .then((newInv) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '00e6bd' }, body: JSON.stringify({ sessionId: '00e6bd', hypothesisId: 'H1', location: 'Invoices.jsx:handleRaiseInvoice:success', message: 'raise invoice API ok', data: { id: newInv?.id, clientId: newInv?.clientId, organizationId: newInv?.organizationId, txnDate: newInv?.txnDate }, timestamp: Date.now() }) }).catch(() => {});
+        // #endregion
+        setInvoices(prev => [newInv, ...prev]);
+      })
+      .catch((err) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '00e6bd' }, body: JSON.stringify({ sessionId: '00e6bd', hypothesisId: 'H1', location: 'Invoices.jsx:handleRaiseInvoice:error', message: 'raise invoice API failed', data: { errorMessage: err && err.message ? String(err.message) : String(err) }, timestamp: Date.now() }) }).catch(() => {});
+        // #endregion
+      });
   }
 
   function handleRecordPayment(data) {

@@ -81,6 +81,25 @@ class TxnController extends BaseController
 
         switch ($txnType) {
             case 'invoice':
+                // #region agent log
+                @file_put_contents(
+                    dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-00e6bd.log',
+                    json_encode([
+                        'sessionId'    => '00e6bd',
+                        'hypothesisId' => 'H1-H2',
+                        'location'     => 'TxnController.php:store:invoice',
+                        'message'      => 'invoice txn create incoming body',
+                        'data'         => [
+                            'client_id_raw'       => $body['client_id'] ?? null,
+                            'organization_id_raw' => $body['organization_id'] ?? null,
+                            'amount'              => $body['amount'] ?? $body['total'] ?? null,
+                            'txn_date'            => $body['txn_date'] ?? null,
+                        ],
+                        'timestamp'    => (int) round(microtime(true) * 1000),
+                    ], JSON_UNESCAPED_UNICODE) . "\n",
+                    FILE_APPEND | LOCK_EX
+                );
+                // #endregion
                 $id = $this->txn->createInvoice($body);
                 break;
             case 'receipt':
@@ -106,6 +125,27 @@ class TxnController extends BaseController
         }
 
         $row = $this->txn->find($id);
+        // #region agent log
+        if ($txnType === 'invoice') {
+            @file_put_contents(
+                dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-00e6bd.log',
+                json_encode([
+                    'sessionId'    => '00e6bd',
+                    'hypothesisId' => 'H2',
+                    'location'     => 'TxnController.php:store:after_find',
+                    'message'      => 'invoice txn persisted row',
+                    'data'         => [
+                        'id'              => $row['id'] ?? null,
+                        'client_id'       => $row['client_id'] ?? null,
+                        'organization_id' => $row['organization_id'] ?? null,
+                        'txn_type'        => $row['txn_type'] ?? null,
+                    ],
+                    'timestamp'    => (int) round(microtime(true) * 1000),
+                ], JSON_UNESCAPED_UNICODE) . "\n",
+                FILE_APPEND | LOCK_EX
+            );
+        }
+        // #endregion
         $this->success($row, 'Transaction created', 201);
     }
 
@@ -167,6 +207,33 @@ class TxnController extends BaseController
         } else {
             $entries = $this->txn->getLedgerByClient($clientId);
         }
+        // #region agent log
+        $invRows = array_values(array_filter(
+            $entries,
+            static fn ($e) => ($e['entry_type'] ?? '') === 'invoice'
+        ));
+        @file_put_contents(
+            dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-00e6bd.log',
+            json_encode([
+                'sessionId'    => '00e6bd',
+                'hypothesisId' => 'H3-H5',
+                'location'     => 'TxnController.php:ledger',
+                'message'      => 'ledger query result',
+                'data'         => [
+                    'client_id'          => $clientId,
+                    'organization_id'    => $orgId,
+                    'entry_count'        => count($entries),
+                    'invoice_row_count'  => count($invRows),
+                    'last_invoice_dates' => array_slice(
+                        array_map(static fn ($r) => $r['date'] ?? null, $invRows),
+                        -5
+                    ),
+                ],
+                'timestamp'    => (int) round(microtime(true) * 1000),
+            ], JSON_UNESCAPED_UNICODE) . "\n",
+            FILE_APPEND | LOCK_EX
+        );
+        // #endregion
         $this->success($entries, 'Ledger retrieved');
     }
 

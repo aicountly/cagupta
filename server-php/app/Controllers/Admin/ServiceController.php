@@ -62,6 +62,38 @@ class ServiceController extends BaseController
         $body        = $this->getJsonBody();
         $serviceType = trim((string)($body['service_type'] ?? ''));
 
+        $assignedTo = null;
+        if (array_key_exists('assigned_to', $body) && $body['assigned_to'] !== null && $body['assigned_to'] !== '') {
+            if (is_numeric($body['assigned_to'])) {
+                $n = (int)$body['assigned_to'];
+                $assignedTo = $n > 0 ? $n : null;
+            }
+        }
+
+        // #region agent log
+        $rawAssign = $body['assigned_to'] ?? null;
+        $assignInt = isset($body['assigned_to']) ? (int)$body['assigned_to'] : null;
+        file_put_contents(
+            dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-634b1d.log',
+            json_encode([
+                'sessionId'    => '634b1d',
+                'runId'        => 'post-fix',
+                'hypothesisId' => 'A',
+                'location'     => 'ServiceController.php:store',
+                'message'      => 'create service: assigned_to raw vs int cast vs normalized',
+                'data'         => [
+                    'assigned_to_raw'        => is_scalar($rawAssign) ? (string)$rawAssign : gettype($rawAssign),
+                    'assigned_to_int'        => $assignInt,
+                    'assigned_to_normalized' => $assignedTo,
+                    'client_id'              => $body['client_id'] ?? null,
+                    'organization_id'        => $body['organization_id'] ?? null,
+                ],
+                'timestamp'    => (int) round(microtime(true) * 1000),
+            ], JSON_UNESCAPED_UNICODE) . "\n",
+            FILE_APPEND | LOCK_EX
+        );
+        // #endregion
+
         if ($serviceType === '') {
             $this->error('service_type is required.', 422);
         }
@@ -77,7 +109,7 @@ class ServiceController extends BaseController
             'financial_year'       => $body['financial_year']       ?? null,
             'due_date'             => $body['due_date']             ?? null,
             'status'               => $body['status']               ?? 'not_started',
-            'assigned_to'          => $body['assigned_to']          ?? null,
+            'assigned_to'          => $assignedTo,
             'fees'                 => isset($body['fees'])          ? (float)$body['fees'] : null,
             'notes'                => $body['notes']                ?? null,
             'tasks'                => $body['tasks']                ?? [],

@@ -73,6 +73,12 @@ export async function getEngagements({ page = 1, perPage = 100, search = '', sta
  * @param {object} payload
  * @returns {Promise<object>}
  */
+function positiveIntOrNull(v) {
+  if (v === '' || v === null || v === undefined) return null;
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
 export async function createEngagement(payload) {
   const body = {
     client_type:          payload.clientType         || 'contact',
@@ -87,13 +93,17 @@ export async function createEngagement(payload) {
     engagement_type_name: payload.engagementTypeName  || null,
     service_type:         payload.type                || null,
     financial_year:       payload.financialYear       || null,
-    assigned_to:          payload.assignedTo          || null,
+    assigned_to:          positiveIntOrNull(payload.assignedTo),
     due_date:             payload.dueDate             || null,
     status:               payload.status              || 'not_started',
     fees:                 payload.feeAgreed           || null,
     notes:                payload.notes               || null,
     tasks:                payload.tasks               || [],
   };
+
+  // #region agent log
+  fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '634b1d' }, body: JSON.stringify({ sessionId: '634b1d', location: 'engagementService.js:createEngagement', message: 'POST /admin/services body snapshot', data: { assigned_to: body.assigned_to, client_id: body.client_id, organization_id: body.organization_id }, timestamp: Date.now(), hypothesisId: 'A' }) }).catch(() => {});
+  // #endregion
 
   const res = await fetch(`${API_BASE}/admin/services`, {
     method:  'POST',
@@ -113,7 +123,7 @@ export async function createEngagement(payload) {
 export async function updateEngagement(id, payload) {
   const body = {
     status:        payload.status        || null,
-    assigned_to:   payload.assignedTo    || null,
+    assigned_to:   positiveIntOrNull(payload.assignedTo),
     due_date:      payload.dueDate       || null,
     fees:          payload.feeAgreed     || null,
     notes:         payload.notes         || null,

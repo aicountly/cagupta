@@ -420,7 +420,9 @@ export default function NewServiceEngagement() {
                   style={{ ...selectStyle, borderColor: errors.assignedTo ? '#ef4444' : '#E6E8F0' }}
                 >
                   <option value="">Select staff…</option>
-                  {staffUsers.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  {staffUsers.map(s => (
+                    <option key={s.id} value={String(s.id)}>{s.name}</option>
+                  ))}
                 </select>
                 {errors.assignedTo && <ErrorMsg msg={errors.assignedTo} />}
               </div>
