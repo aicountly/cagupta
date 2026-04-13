@@ -5,16 +5,16 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Config\Auth as AuthConfig;
+use App\Models\AffiliateProfileModel;
 use App\Models\UserModel;
 use App\Models\RoleModel;
 use App\Libraries\BrevoMailer;
 use App\Libraries\PasswordHasher;
 
 /**
- * UserController — user and role management (admin-only).
+ * UserController — user and role management.
  *
- * All endpoints require Bearer token + role: super_admin or admin
- * (enforced by RoleFilter in Routes.php).
+ * Routes use permission_any: users.manage (full) or users.delegate (team they invited only).
  */
 class UserController extends BaseController
 {
@@ -42,7 +42,13 @@ class UserController extends BaseController
         $role    = trim((string)$this->query('role', ''));
         $status  = trim((string)$this->query('status', ''));
 
-        $result = $this->users->paginate($page, $perPage, $search, $role, $status);
+        $acting      = $this->authUser();
+        $delegatorId = 0;
+        if ($acting !== null && !$this->userHasManageAll() && $this->userHasDelegate()) {
+            $delegatorId = (int)$acting['id'];
+        }
+
+        $result = $this->users->paginate($page, $perPage, $search, $role, $status, $delegatorId);
 
         $this->success($result['users'], 'Users retrieved', 200, [
             'pagination' => [
@@ -93,6 +99,10 @@ class UserController extends BaseController
 
         $actingUser = $this->authUser();
 
+        if (!$this->userHasManageAll() && $this->userHasDelegate()) {
+            $this->assertDelegateAssignableRole((int)($body['role_id'] ?? 0));
+        }
+
         $newId = $this->users->create([
             'name'       => $name,
             'email'      => $email,
@@ -101,6 +111,11 @@ class UserController extends BaseController
             'is_active'  => isset($body['is_active']) ? (bool)$body['is_active'] : true,
             'created_by' => $actingUser ? (int)$actingUser['id'] : null,
         ]);
+
+        $roleRow = isset($body['role_id']) ? $this->roles->find((int)$body['role_id']) : null;
+        if ($roleRow !== null && ($roleRow['name'] ?? '') === 'affiliate') {
+            (new AffiliateProfileModel())->insertPending($newId, null);
+        }
 
         $user = $this->users->find($newId);
         $this->success($this->formatUserRow($user), 'User created', 201);
@@ -117,6 +132,7 @@ class UserController extends BaseController
         if ($user === null) {
             $this->error('User not found.', 404);
         }
+        $this->assertUserRowVisible($user);
         $this->success($this->formatUserRow($user));
     }
 
@@ -134,6 +150,7 @@ class UserController extends BaseController
         if ($user === null) {
             $this->error('User not found.', 404);
         }
+        $this->assertUserRowVisible($user);
 
         // Protect the hardcoded super admin
         if ($this->isSuperAdminEmail($user['email'])) {
@@ -141,6 +158,10 @@ class UserController extends BaseController
         }
 
         $body = $this->getJsonBody();
+
+        if (!$this->userHasManageAll() && $this->userHasDelegate() && array_key_exists('role_id', $body)) {
+            $this->assertDelegateAssignableRole((int)$body['role_id']);
+        }
         $data = [];
 
         if (isset($body['name'])) {
@@ -218,6 +239,7 @@ class UserController extends BaseController
         if ($user === null) {
             $this->error('User not found.', 404);
         }
+        $this->assertUserRowVisible($user);
 
         if ($this->isSuperAdminEmail($user['email'])) {
             $this->error('The super-admin account cannot be deleted.', 403);
@@ -235,6 +257,12 @@ class UserController extends BaseController
     public function roles(): never
     {
         $all = $this->roles->all();
+        if (!$this->userHasManageAll() && $this->userHasDelegate()) {
+            $all = array_values(array_filter(
+                $all,
+                static fn (array $r): bool => in_array($r['name'] ?? '', ['staff', 'viewer'], true)
+            ));
+        }
         $this->success($all);
     }
 
@@ -268,6 +296,68 @@ class UserController extends BaseController
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    private function userHasManageAll(): bool
+    {
+        $u = $this->authUser();
+        if ($u === null) {
+            return false;
+        }
+        if (strtolower((string)($u['email'] ?? '')) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
+            return true;
+        }
+        $p = $u['role_permissions_array'] ?? [];
+
+        return in_array('*', $p, true) || in_array('users.manage', $p, true);
+    }
+
+    private function userHasDelegate(): bool
+    {
+        $u = $this->authUser();
+        if ($u === null) {
+            return false;
+        }
+        $p = $u['role_permissions_array'] ?? [];
+
+        return in_array('users.delegate', $p, true);
+    }
+
+    /**
+     * @param array<string, mixed> $user
+     */
+    private function assertUserRowVisible(array $user): void
+    {
+        if ($this->userHasManageAll()) {
+            return;
+        }
+        $acting = $this->authUser();
+        if ($acting === null) {
+            $this->error('Not authenticated.', 401);
+        }
+        $aid = (int)$acting['id'];
+        if ((int)$user['id'] === $aid) {
+            return;
+        }
+        if ($this->userHasDelegate() && (int)($user['created_by'] ?? 0) === $aid) {
+            return;
+        }
+        $this->error('Access denied.', 403);
+    }
+
+    private function assertDelegateAssignableRole(int $roleId): void
+    {
+        if ($roleId <= 0) {
+            $this->error('role_id is required.', 422);
+        }
+        $role = $this->roles->find($roleId);
+        if ($role === null) {
+            $this->error('Invalid role.', 422);
+        }
+        $allowed = ['staff', 'viewer'];
+        if (!in_array($role['name'], $allowed, true)) {
+            $this->error('Delegated administrators may only assign staff or viewer roles.', 422);
+        }
+    }
 
     /**
      * Normalise a user row for API output.

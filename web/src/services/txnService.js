@@ -35,10 +35,34 @@ function normalizeLineItems(raw) {
     }
   }
   if (!Array.isArray(arr)) return [];
-  return arr.map((row) => ({
-    description: String(row?.description ?? '').trim(),
-    amount:      parseFloat(row?.amount ?? 0) || 0,
-  })).filter((row) => row.description && row.amount > 0);
+  return arr.map((row) => {
+    const o = {
+      description: String(row?.description ?? '').trim(),
+      amount:      parseFloat(row?.amount ?? 0) || 0,
+    };
+    const lk = row?.line_kind ?? row?.lineKind;
+    o.lineKind = lk === 'cost_recovery' ? 'cost_recovery' : 'professional_fee';
+    if (o.lineKind === 'professional_fee') {
+      o.manpowerIncluded = Boolean(row?.manpower_included ?? row?.manpowerIncluded);
+      o.manpowerCostAmount = parseFloat(row?.manpower_cost_amount ?? row?.manpowerCostAmount ?? 0) || 0;
+    }
+    if (row?.engagement_type_id != null) o.engagementTypeId = parseInt(row.engagement_type_id, 10) || null;
+    if (row?.service_line_key) o.serviceLineKey = String(row.service_line_key);
+    return o;
+  }).filter((row) => row.description && row.amount > 0);
+}
+
+function normalizeGstBreakdown(raw) {
+  if (raw == null || raw === '') return null;
+  if (typeof raw === 'string') {
+    try {
+      const p = JSON.parse(raw);
+      return typeof p === 'object' && p !== null ? p : null;
+    } catch {
+      return null;
+    }
+  }
+  return typeof raw === 'object' ? raw : null;
 }
 
 /**
@@ -73,10 +97,12 @@ function normalizeTxn(t) {
     tdsSection:         t.tds_section      || '',
     tdsRate:            parseFloat(t.tds_rate || 0),
     linkedTxnId:        t.linked_txn_id    || null,
+    serviceId:          t.service_id       != null ? parseInt(t.service_id, 10) || null : null,
     notes:              t.notes            || '',
     status:             t.status           || 'active',
     createdAt:          t.created_at       || '',
     lineItems:          normalizeLineItems(t.line_items),
+    gstBreakdown:       normalizeGstBreakdown(t.gst_breakdown),
   };
 }
 
@@ -91,6 +117,7 @@ export async function getTxns(params = {}) {
   if (params.organizationId) query.set('organization_id', params.organizationId);
   if (params.expensePurpose) query.set('expense_purpose', params.expensePurpose);
   if (params.paymentMethod) query.set('payment_method', params.paymentMethod);
+  if (params.paidFrom) query.set('paid_from', params.paidFrom);
   if (params.tdsStatus) query.set('tds_status', params.tdsStatus);
   if (params.status)    query.set('status', params.status);
   if (params.dateFrom)  query.set('date_from', params.dateFrom);
@@ -122,24 +149,46 @@ export async function getTxn(id) {
   return normalizeTxn(data.data);
 }
 
-/** PUT /api/admin/txn/:id */
-export async function updateTxn(id, payload) {
+/** PUT /api/admin/txn/:id — pass superadminOtp for ledger invoice rows */
+export async function updateTxn(id, payload, { superadminOtp } = {}) {
+  const headers = { ...authHeaders() };
+  if (superadminOtp) {
+    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
+  }
   const res  = await fetch(`${API_BASE}/admin/txn/${id}`, {
     method:  'PUT',
-    headers: authHeaders(),
+    headers,
     body:    JSON.stringify(payload),
   });
   const data = await parseResponse(res);
   return normalizeTxn(data.data);
 }
 
-/** DELETE /api/admin/txn/:id */
-export async function deleteTxn(id) {
+/** DELETE /api/admin/txn/:id — invoice rows require superadminOtp header */
+export async function deleteTxn(id, { superadminOtp } = {}) {
+  const headers = { ...authHeaders() };
+  if (superadminOtp) {
+    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
+  }
   const res = await fetch(`${API_BASE}/admin/txn/${id}`, {
     method:  'DELETE',
-    headers: authHeaders(),
+    headers,
   });
   await parseResponse(res);
+}
+
+/** POST — superadmin receives OTP email; intent is update | delete */
+export async function requestInvoiceModifyOtp(id, { intent = 'update' } = {}) {
+  const res = await fetch(
+    `${API_BASE}/admin/txn/${id}/request-invoice-modify-otp?intent=${encodeURIComponent(intent)}`,
+    {
+      method:  'POST',
+      headers: authHeaders(),
+      body:    JSON.stringify({ intent }),
+    }
+  );
+  const data = await parseResponse(res);
+  return data.data || {};
 }
 
 /** GET /api/admin/txn/ledger?client_id=... or ?organization_id=... */

@@ -57,7 +57,9 @@ class ServiceModel
         int    $page    = 1,
         int    $perPage = 20,
         string $search  = '',
-        string $status  = ''
+        string $status  = '',
+        int    $clientId = 0,
+        int    $orgId    = 0
     ): array {
         $where  = ['1=1'];
         $params = [];
@@ -71,9 +73,17 @@ class ServiceModel
                                    OR s.client_name ILIKE :search)";
             $params[':search'] = "%{$search}%";
         }
-        if ($status !== '') {
+        if ($status !== '' && strtolower($status) !== 'all') {
             $where[]           = 's.status = :status';
             $params[':status'] = $status;
+        }
+        if ($clientId > 0) {
+            $where[]              = 's.client_id = :filter_client_id';
+            $params[':filter_client_id'] = $clientId;
+        }
+        if ($orgId > 0) {
+            $where[]              = 's.organization_id = :filter_org_id';
+            $params[':filter_org_id'] = $orgId;
         }
 
         $whereClause = implode(' AND ', $where);
@@ -132,7 +142,8 @@ class ServiceModel
                 category_id, category_name,
                 subcategory_id, subcategory_name,
                 engagement_type_id, engagement_type_name,
-                tasks
+                tasks,
+                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
              ) VALUES (
                 :client_id, :organization_id, :service_type, :description,
                 :financial_year, :due_date, :status, :priority, :assigned_to,
@@ -141,7 +152,8 @@ class ServiceModel
                 :category_id, :category_name,
                 :subcategory_id, :subcategory_name,
                 :engagement_type_id, :engagement_type_name,
-                :tasks
+                :tasks,
+                :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted
              ) RETURNING id'
         );
         $params = [
@@ -166,6 +178,11 @@ class ServiceModel
             ':engagement_type_id'  => $data['engagement_type_id']  ?? null,
             ':engagement_type_name'=> $data['engagement_type_name'] ?? null,
             ':tasks'               => isset($data['tasks']) ? json_encode($data['tasks']) : '[]',
+            ':referring_affiliate_user_id' => isset($data['referring_affiliate_user_id']) && (int)$data['referring_affiliate_user_id'] > 0
+                ? (int)$data['referring_affiliate_user_id'] : null,
+            ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
+            ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
+            ':client_facing_restricted' => !empty($data['client_facing_restricted']),
         ];
         $stmt->execute($params);
         return (int)$stmt->fetchColumn();
@@ -181,7 +198,10 @@ class ServiceModel
         $setClauses = [];
         $params     = [':id' => $id];
 
-        $allowed = ['status', 'assigned_to', 'due_date', 'fees', 'notes', 'priority', 'service_type', 'financial_year'];
+        $allowed = [
+            'status', 'assigned_to', 'due_date', 'fees', 'notes', 'priority', 'service_type', 'financial_year',
+            'referring_affiliate_user_id', 'referral_start_date', 'commission_mode', 'client_facing_restricted',
+        ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
                 $setClauses[]       = "{$field} = :{$field}";
@@ -240,6 +260,43 @@ class ServiceModel
     /**
      * Count service engagements tied to a category (directly, via subcategory, or engagement type).
      */
+    /**
+     * Services linked to an affiliate referrer.
+     *
+     * @return array{total: int, services: array<int, array<string, mixed>>}
+     */
+    public function paginateForReferringAffiliate(int $affiliateUserId, int $page = 1, int $perPage = 30): array
+    {
+        $whereClause = 's.referring_affiliate_user_id = :aid';
+        $params      = [':aid' => $affiliateUserId];
+        $offset      = ($page - 1) * $perPage;
+
+        $countStmt = $this->db->prepare("SELECT COUNT(*) FROM services s WHERE {$whereClause}");
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+
+        $stmt = $this->db->prepare(
+            "SELECT s.*,
+                    COALESCE(c.organization_name,
+                             NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                             o.name,
+                             s.client_name,
+                             'Unknown') AS client_name
+             FROM services s
+             LEFT JOIN clients c ON c.id = s.client_id
+             LEFT JOIN organizations o ON o.id = s.organization_id
+             WHERE {$whereClause}
+             ORDER BY s.created_at DESC
+             LIMIT :limit OFFSET :offset"
+        );
+        $stmt->bindValue(':aid', $affiliateUserId, PDO::PARAM_INT);
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return ['total' => $total, 'services' => $stmt->fetchAll()];
+    }
+
     public function countReferencingCategoryTree(int $categoryId): int
     {
         $stmt = $this->db->prepare(

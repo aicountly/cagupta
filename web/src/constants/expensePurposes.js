@@ -4,6 +4,7 @@ export const EXPENSE_PURPOSE_OPTIONS = [
   { value: 'stamp_paper', label: 'Stamp paper / duty' },
   { value: 'notary', label: 'Notary' },
   { value: 'statutory_fee', label: 'Statutory / government fee' },
+  { value: 'dept_office_misc', label: 'Dept. / office (misc.)' },
   { value: 'misc', label: 'Miscellaneous' },
   { value: 'other', label: 'Other' },
 ];

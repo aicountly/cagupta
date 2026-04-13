@@ -3,8 +3,12 @@ declare(strict_types=1);
 
 namespace App\Controllers\Admin;
 
+use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
+use App\Libraries\BrevoMailer;
+use App\Models\AdminAuditLogModel;
 use App\Models\ServiceModel;
+use App\Models\UserModel;
 
 /**
  * ServiceController — CRUD for the `services` table (service engagements).
@@ -14,10 +18,14 @@ use App\Models\ServiceModel;
 class ServiceController extends BaseController
 {
     private ServiceModel $services;
+    private AdminAuditLogModel $audit;
+    private UserModel $users;
 
     public function __construct()
     {
         $this->services = new ServiceModel();
+        $this->audit    = new AdminAuditLogModel();
+        $this->users    = new UserModel();
     }
 
     // ── GET /api/admin/services ──────────────────────────────────────────────
@@ -29,12 +37,14 @@ class ServiceController extends BaseController
      */
     public function index(): never
     {
-        $page    = max(1, (int)$this->query('page', 1));
-        $perPage = min(100, max(1, (int)$this->query('per_page', 20)));
-        $search  = trim((string)$this->query('search', ''));
-        $status  = trim((string)$this->query('status', ''));
+        $page     = max(1, (int)$this->query('page', 1));
+        $perPage  = min(100, max(1, (int)$this->query('per_page', 20)));
+        $search   = trim((string)$this->query('search', ''));
+        $status   = trim((string)$this->query('status', ''));
+        $clientId = (int)$this->query('client_id', 0);
+        $orgId    = (int)$this->query('organization_id', 0);
 
-        $result = $this->services->paginate($page, $perPage, $search, $status);
+        $result = $this->services->paginate($page, $perPage, $search, $status, $clientId, $orgId);
 
         $this->success($result['services'], 'Services retrieved', 200, [
             'pagination' => [
@@ -76,6 +86,8 @@ class ServiceController extends BaseController
 
         $actingUser = $this->authUser();
 
+        $refAff = isset($body['referring_affiliate_user_id']) ? (int)$body['referring_affiliate_user_id'] : 0;
+
         $newId = $this->services->create([
             'client_type'          => $body['client_type']          ?? 'contact',
             'client_id'            => isset($body['client_id'])    ? (int)$body['client_id']    : null,
@@ -96,6 +108,10 @@ class ServiceController extends BaseController
             'subcategory_name'     => $body['subcategory_name']     ?? null,
             'engagement_type_id'   => $body['engagement_type_id']   ?? null,
             'engagement_type_name' => $body['engagement_type_name'] ?? null,
+            'referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
+            'referral_start_date'  => !empty($body['referral_start_date']) ? $body['referral_start_date'] : null,
+            'commission_mode'      => $body['commission_mode'] ?? 'referral_only',
+            'client_facing_restricted' => !empty($body['client_facing_restricted']),
         ]);
 
         $service = $this->services->find($newId);
@@ -128,21 +144,37 @@ class ServiceController extends BaseController
             $this->error('Service not found.', 404);
         }
 
-        $body = $this->getJsonBody();
-        $data = [];
+        $beforeSnap = $this->serviceAuditSnapshot($service);
+        $body       = $this->getJsonBody();
+        $data       = [];
 
-        $allowed = ['status', 'assigned_to', 'due_date', 'fees', 'notes', 'priority', 'service_type', 'financial_year'];
+        $allowed = [
+            'status', 'assigned_to', 'due_date', 'fees', 'notes', 'priority', 'service_type', 'financial_year',
+            'referral_start_date', 'commission_mode', 'client_facing_restricted',
+        ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $body)) {
                 $data[$field] = $body[$field];
             }
+        }
+        if (array_key_exists('referring_affiliate_user_id', $body)) {
+            $ra = (int)$body['referring_affiliate_user_id'];
+            $data['referring_affiliate_user_id'] = $ra > 0 ? $ra : null;
         }
         if (array_key_exists('tasks', $body)) {
             $data['tasks'] = $body['tasks'];
         }
 
         $this->services->update($id, $data);
-        $updated = $this->services->find($id);
+        $updated   = $this->services->find($id);
+        $afterSnap = $this->serviceAuditSnapshot($updated ?? []);
+        $meta      = $this->taskDiffMetadata($beforeSnap['tasks'] ?? [], $afterSnap['tasks'] ?? []);
+        $actorId   = $this->authUser() ? (int)$this->authUser()['id'] : null;
+        try {
+            $this->audit->insert($actorId, 'service.updated', 'service', $id, $meta, $beforeSnap, $afterSnap);
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Audit log failed: ' . $e->getMessage());
+        }
         $this->success($updated, 'Service updated');
     }
 
@@ -158,7 +190,15 @@ class ServiceController extends BaseController
             $this->error('Service not found.', 404);
         }
 
+        $beforeSnap = $this->serviceAuditSnapshot($service);
+        $actorId    = $this->authUser() ? (int)$this->authUser()['id'] : null;
         $this->services->delete($id);
+        try {
+            $this->audit->insert($actorId, 'service.deleted', 'service', $id, [], $beforeSnap, null);
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Audit log failed: ' . $e->getMessage());
+        }
+        $this->sendServiceDeletedEmails($service, $this->authUser());
         $this->success(null, 'Service deleted');
     }
 
@@ -176,7 +216,8 @@ class ServiceController extends BaseController
             $this->error('Service not found.', 404);
         }
 
-        $body  = $this->getJsonBody();
+        $beforeSnap = $this->serviceAuditSnapshot($service);
+        $body       = $this->getJsonBody();
         $title = trim((string)($body['title'] ?? ''));
 
         if ($title === '') {
@@ -205,7 +246,153 @@ class ServiceController extends BaseController
         $tasks[] = $newTask;
 
         $this->services->update($id, ['tasks' => $tasks]);
-        $updated = $this->services->find($id);
+        $updated   = $this->services->find($id);
+        $afterSnap = $this->serviceAuditSnapshot($updated ?? []);
+        $actorId   = $this->authUser() ? (int)$this->authUser()['id'] : null;
+        try {
+            $this->audit->insert(
+                $actorId,
+                'service.updated',
+                'service',
+                $id,
+                ['task_added' => $newTask['title'] ?? ''],
+                $beforeSnap,
+                $afterSnap
+            );
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Audit log failed: ' . $e->getMessage());
+        }
         $this->success($updated, 'Task added');
+    }
+
+    /**
+     * @param array<string, mixed> $service
+     *
+     * @return array<string, mixed>
+     */
+    private function serviceAuditSnapshot(array $service): array
+    {
+        return [
+            'status'         => $service['status'] ?? null,
+            'assigned_to'    => $service['assigned_to'] ?? null,
+            'due_date'       => $service['due_date'] ?? null,
+            'fees'           => $service['fees'] ?? null,
+            'notes'          => $service['notes'] ?? null,
+            'service_type'   => $service['service_type'] ?? null,
+            'financial_year' => $service['financial_year'] ?? null,
+            'priority'       => $service['priority'] ?? null,
+            'client_name'    => $service['client_name'] ?? null,
+            'tasks'          => $this->normalizeTasksForAudit($service['tasks'] ?? []),
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function normalizeTasksForAudit(mixed $raw): array
+    {
+        if (is_array($raw)) {
+            return $raw;
+        }
+        if (is_string($raw) && $raw !== '') {
+            $decoded = json_decode($raw, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return [];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $before
+     * @param array<int, array<string, mixed>> $after
+     *
+     * @return array<string, mixed>
+     */
+    private function taskDiffMetadata(array $before, array $after): array
+    {
+        $idsBefore = [];
+        foreach ($before as $t) {
+            if (is_array($t) && isset($t['id'])) {
+                $idsBefore[(string)$t['id']] = $t;
+            }
+        }
+        $idsAfter = [];
+        foreach ($after as $t) {
+            if (is_array($t) && isset($t['id'])) {
+                $idsAfter[(string)$t['id']] = $t;
+            }
+        }
+        $removed = [];
+        foreach ($idsBefore as $tid => $t) {
+            if (!isset($idsAfter[$tid])) {
+                $removed[] = [
+                    'id'    => $tid,
+                    'title' => (string)($t['title'] ?? ''),
+                ];
+            }
+        }
+        $meta = [];
+        if ($removed !== []) {
+            $meta['tasks_removed'] = $removed;
+        }
+
+        return $meta;
+    }
+
+    /**
+     * @param array<string, mixed>      $service
+     * @param array<string, mixed>|null $actingUser
+     */
+    private function sendServiceDeletedEmails(array $service, ?array $actingUser): void
+    {
+        $actorName  = (string)(($actingUser ?? [])['name'] ?? 'Unknown');
+        $actorEmail = (string)(($actingUser ?? [])['email'] ?? 'Unknown');
+        $timestamp  = date('d M Y, h:i A T');
+        $serviceId  = (string)($service['id'] ?? '');
+        $clientName = (string)($service['client_name'] ?? 'Unknown');
+        $serviceType = (string)($service['service_type'] ?? '—');
+
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('service-deleted-notify', [
+                'serviceId'   => $serviceId,
+                'clientName'  => $clientName,
+                'serviceType' => $serviceType,
+                'actorName'   => $actorName,
+                'actorEmail'  => $actorEmail,
+                'timestamp'   => $timestamp,
+            ]);
+            if ($htmlBody === '') {
+                return;
+            }
+            $subject = 'Service engagement deleted - CA Rahul Gupta';
+
+            $superEmail = (string)(getenv('SUPERADMIN_NOTIFY_EMAIL') ?: '');
+            if ($superEmail === '') {
+                $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
+                $superEmail = $super ? trim((string)($super['email'] ?? '')) : '';
+            }
+            if ($superEmail !== '') {
+                BrevoMailer::send($superEmail, 'CA Rahul Gupta', $subject, $htmlBody);
+            }
+
+            $assigneeId = isset($service['assigned_to']) ? (int)$service['assigned_to'] : 0;
+            if ($assigneeId > 0) {
+                $assignee = $this->users->find($assigneeId);
+                if ($assignee !== null && $assignee['is_active']) {
+                    $aEmail = trim((string)($assignee['email'] ?? ''));
+                    if ($aEmail !== '' && strtolower($aEmail) !== strtolower($superEmail)) {
+                        BrevoMailer::send(
+                            $aEmail,
+                            (string)($assignee['name'] ?? $aEmail),
+                            $subject,
+                            $htmlBody
+                        );
+                    }
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Deletion notify email failed: ' . $e->getMessage());
+        }
     }
 }

@@ -82,31 +82,31 @@ class Routes
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/users',
                 'handler'    => 'Admin\UserController@index',
-                'middleware' => ['auth', 'role:super_admin,admin'],
+                'middleware' => ['auth', 'permission_any:users.manage,users.delegate'],
             ],
             [
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/users',
                 'handler'    => 'Admin\UserController@store',
-                'middleware' => ['auth', 'role:super_admin,admin'],
+                'middleware' => ['auth', 'permission_any:users.manage,users.delegate'],
             ],
             [
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/users/:id',
                 'handler'    => 'Admin\UserController@show',
-                'middleware' => ['auth', 'role:super_admin,admin'],
+                'middleware' => ['auth', 'permission_any:users.manage,users.delegate'],
             ],
             [
                 'method'     => 'PUT',
                 'pattern'    => '/api/admin/users/:id',
                 'handler'    => 'Admin\UserController@update',
-                'middleware' => ['auth', 'role:super_admin,admin'],
+                'middleware' => ['auth', 'permission_any:users.manage,users.delegate'],
             ],
             [
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/users/:id',
                 'handler'    => 'Admin\UserController@destroy',
-                'middleware' => ['auth', 'role:super_admin,admin'],
+                'middleware' => ['auth', 'permission_any:users.manage,users.delegate'],
             ],
 
             // ── Admin — Roles ─────────────────────────────────────────────────
@@ -114,7 +114,7 @@ class Routes
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/roles',
                 'handler'    => 'Admin\UserController@roles',
-                'middleware' => ['auth', 'role:super_admin,admin'],
+                'middleware' => ['auth', 'permission_any:users.manage,users.delegate'],
             ],
             [
                 'method'     => 'PUT',
@@ -240,7 +240,7 @@ class Routes
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/services/:id',
                 'handler'    => 'Admin\ServiceController@destroy',
-                'middleware' => ['auth', 'permission:services.edit'],
+                'middleware' => ['auth', 'permission:services.delete'],
             ],
             [
                 'method'     => 'POST',
@@ -618,6 +618,12 @@ class Routes
                 'middleware' => ['auth', 'permission:invoices.create'],
             ],
             [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/:id/request-invoice-modify-otp',
+                'handler'    => 'Admin\TxnController@requestInvoiceModifyOtp',
+                'middleware' => ['auth', 'permission_any:invoices.edit,invoices.delete'],
+            ],
+            [
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/:id',
                 'handler'    => 'Admin\TxnController@show',
@@ -633,7 +639,7 @@ class Routes
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/txn/:id',
                 'handler'    => 'Admin\TxnController@destroy',
-                'middleware' => ['auth', 'permission:invoices.edit'],
+                'middleware' => ['auth', 'permission_any:invoices.edit,invoices.delete'],
             ],
 
             // ── Admin — Client Groups ─────────────────────────────────────────
@@ -666,6 +672,130 @@ class Routes
                 'pattern'    => '/api/admin/client-groups/:id',
                 'handler'    => 'Admin\ClientGroupController@destroy',
                 'middleware' => ['auth', 'permission:clients.edit'],
+            ],
+
+            // ── Admin — Affiliates & commissions ─────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/affiliates',
+                'handler'    => 'Admin\AffiliateAdminController@index',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/affiliates/:id/approve',
+                'handler'    => 'Admin\AffiliateAdminController@approve',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/affiliates/:id/suspend',
+                'handler'    => 'Admin\AffiliateAdminController@suspend',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/commission-defaults',
+                'handler'    => 'Admin\AffiliateAdminController@commissionDefaults',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/commission-defaults',
+                'handler'    => 'Admin\AffiliateAdminController@updateCommissionDefaults',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/affiliates/:id/rates',
+                'handler'    => 'Admin\AffiliateAdminController@ratesIndex',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/affiliates/:id/rates',
+                'handler'    => 'Admin\AffiliateAdminController@ratesStore',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/affiliate-rates/:id',
+                'handler'    => 'Admin\AffiliateAdminController@ratesDestroy',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/payout-requests',
+                'handler'    => 'Admin\AffiliateAdminController@payoutIndex',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/payout-requests/:id',
+                'handler'    => 'Admin\AffiliateAdminController@payoutUpdate',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/affiliate-bank/:id/verify',
+                'handler'    => 'Admin\AffiliateAdminController@bankVerify',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+
+            // ── Affiliate portal ─────────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/affiliate/dashboard',
+                'handler'    => 'Affiliate\AffiliatePortalController@dashboard',
+                'middleware' => ['auth', 'permission:affiliate.portal'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/affiliate/services',
+                'handler'    => 'Affiliate\AffiliatePortalController@services',
+                'middleware' => ['auth', 'permission:affiliate.portal'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/affiliate/commissions',
+                'handler'    => 'Affiliate\AffiliatePortalController@commissions',
+                'middleware' => ['auth', 'permission:affiliate.portal'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/affiliate/statement',
+                'handler'    => 'Affiliate\AffiliatePortalController@statement',
+                'middleware' => ['auth', 'permission:affiliate.portal'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/affiliate/bank',
+                'handler'    => 'Affiliate\AffiliatePortalController@bankIndex',
+                'middleware' => ['auth', 'permission:affiliate.bank.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/affiliate/bank',
+                'handler'    => 'Affiliate\AffiliatePortalController@bankStore',
+                'middleware' => ['auth', 'permission:affiliate.bank.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/affiliate/payout-requests',
+                'handler'    => 'Affiliate\AffiliatePortalController@payoutIndex',
+                'middleware' => ['auth', 'permission:affiliate.payouts.request'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/affiliate/payout-requests',
+                'handler'    => 'Affiliate\AffiliatePortalController@payoutStore',
+                'middleware' => ['auth', 'permission:affiliate.payouts.request'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/affiliate/sub-affiliates',
+                'handler'    => 'Affiliate\AffiliatePortalController@subAffiliateStore',
+                'middleware' => ['auth', 'permission:affiliate.sub_affiliates.create'],
             ],
         ];
     }

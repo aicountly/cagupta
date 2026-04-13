@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronRight, Plus, X, CheckSquare, Square } from 'lucide-react';
+import { ChevronRight, Plus, X, CheckSquare, Square, Trash2 } from 'lucide-react';
 import DateInput from '../components/common/DateInput';
 import { useStaffUsers } from '../hooks/useStaffUsers';
-import { getEngagement, updateEngagement, createTask } from '../services/engagementService';
+import { useAuth } from '../auth/AuthContext';
+import { getEngagement, updateEngagement, createTask, deleteEngagement } from '../services/engagementService';
+import { getApprovedAffiliates } from '../services/affiliateAdminService';
 
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'pending_info', 'review', 'completed', 'cancelled'];
 
@@ -58,6 +60,9 @@ function AddTaskModal({ onClose, onSave }) {
 export default function ServiceEngagementEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
+  const canListAffiliates = hasPermission('affiliates.manage');
+  const canDeleteService = hasPermission('services.delete');
   const { staffUsers } = useStaffUsers();
 
   const [loading, setLoading] = useState(true);
@@ -75,6 +80,13 @@ export default function ServiceEngagementEdit() {
   const [tasks, setTasks] = useState([]);
   const [showAddTask, setShowAddTask] = useState(false);
   const [assigneeFallbackName, setAssigneeFallbackName] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  const [referringAffiliateUserId, setReferringAffiliateUserId] = useState('');
+  const [referralStartDate, setReferralStartDate] = useState('');
+  const [commissionMode, setCommissionMode] = useState('referral_only');
+  const [clientFacingRestricted, setClientFacingRestricted] = useState(false);
+  const [approvedAffiliates, setApprovedAffiliates] = useState([]);
 
   const staffOptions = useMemo(() => {
     const list = [...staffUsers];
@@ -102,10 +114,21 @@ export default function ServiceEngagementEdit() {
         setFee(eng.feeAgreed != null && !Number.isNaN(Number(eng.feeAgreed)) ? String(eng.feeAgreed) : '');
         setNotes(eng.notes || '');
         setTasks(Array.isArray(eng.tasks) ? eng.tasks.map(t => ({ ...t })) : []);
+        setReferringAffiliateUserId(eng.referringAffiliateUserId != null ? String(eng.referringAffiliateUserId) : '');
+        setReferralStartDate(eng.referralStartDate || '');
+        setCommissionMode(eng.commissionMode || 'referral_only');
+        setClientFacingRestricted(Boolean(eng.clientFacingRestricted));
       })
       .catch(e => setError(e.message || 'Could not load engagement.'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    if (!canListAffiliates) return;
+    getApprovedAffiliates()
+      .then(setApprovedAffiliates)
+      .catch(() => setApprovedAffiliates([]));
+  }, [canListAffiliates]);
 
   async function handleSave() {
     if (!id) return;
@@ -122,6 +145,10 @@ export default function ServiceEngagementEdit() {
         tasks,
         type: serviceType.trim(),
         financialYear: fy.trim(),
+        referringAffiliateUserId: referringAffiliateUserId === '' ? null : referringAffiliateUserId,
+        referralStartDate: referringAffiliateUserId && referralStartDate ? referralStartDate : null,
+        commissionMode,
+        clientFacingRestricted,
       });
       setToast('Engagement saved');
       setTimeout(() => setToast(''), 2000);
@@ -149,6 +176,26 @@ export default function ServiceEngagementEdit() {
       const next = t.status === 'done' ? 'not_started' : 'done';
       return { ...t, status: next };
     }));
+  }
+
+  function removeTask(taskId) {
+    if (!taskId) return;
+    setTasks(prev => prev.filter(t => t.id !== taskId));
+  }
+
+  async function handleDeleteEngagement() {
+    if (!id) return;
+    if (!window.confirm('Delete this service engagement permanently? Assigned users will be notified by email.')) return;
+    setDeleting(true);
+    setError('');
+    try {
+      await deleteEngagement(id);
+      navigate('/services');
+    } catch (e) {
+      setError(e.message || 'Delete failed.');
+    } finally {
+      setDeleting(false);
+    }
   }
 
   if (loading) {
@@ -196,6 +243,68 @@ export default function ServiceEngagementEdit() {
           <label style={{ ...fieldLabel, marginTop: 14 }}>
             Financial year
             <input value={fy} onChange={e => setFy(e.target.value)} style={inputStyle} placeholder="e.g. 2025-26" />
+          </label>
+        </section>
+
+        <section style={sectionCard}>
+          <div style={sectionTitle}>Referral &amp; commission</div>
+          {!canListAffiliates && (
+            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px', lineHeight: 1.45 }}>
+              Affiliate list requires <strong>Affiliates</strong> admin permission. Existing values are shown; clear the affiliate only if your role allows updating this field.
+            </p>
+          )}
+          <label style={fieldLabel}>
+            Referring affiliate
+            <select
+              value={referringAffiliateUserId}
+              onChange={(e) => {
+                const v = e.target.value;
+                setReferringAffiliateUserId(v);
+              }}
+              style={selectStyle}
+              disabled={!canListAffiliates}
+            >
+              <option value="">None</option>
+              {approvedAffiliates.map((a) => (
+                <option key={a.id} value={String(a.id)}>{a.name} ({a.email})</option>
+              ))}
+              {referringAffiliateUserId && !approvedAffiliates.some((a) => String(a.id) === String(referringAffiliateUserId)) && (
+                <option value={referringAffiliateUserId}>Linked user #{referringAffiliateUserId}</option>
+              )}
+            </select>
+          </label>
+          <div style={{ ...twoCol, marginTop: 14 }}>
+            <label style={fieldLabel}>
+              Referral start date
+              <DateInput
+                value={referralStartDate}
+                onChange={e => setReferralStartDate(e.target.value)}
+                style={inputStyle}
+                disabled={!referringAffiliateUserId}
+              />
+            </label>
+            <label style={fieldLabel}>
+              Commission mode
+              <select
+                value={commissionMode}
+                onChange={e => setCommissionMode(e.target.value)}
+                style={selectStyle}
+                disabled={!referringAffiliateUserId}
+              >
+                <option value="referral_only">Referral only (tiered %)</option>
+                <option value="direct_interaction">Direct interaction (50/50 split)</option>
+              </select>
+            </label>
+          </div>
+          <label style={{ ...fieldLabel, marginTop: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={clientFacingRestricted}
+              onChange={e => setClientFacingRestricted(e.target.checked)}
+              disabled={!referringAffiliateUserId}
+              style={{ marginTop: 2 }}
+            />
+            <span>Client-facing restricted (reporting flag)</span>
           </label>
         </section>
 
@@ -256,13 +365,15 @@ export default function ServiceEngagementEdit() {
           {tasks.map((t, i) => (
             <div
               key={t.id || `task-${i}`}
-              style={taskRow}
-              role="button"
-              tabIndex={0}
-              onClick={() => t.id && toggleTaskDone(t.id)}
-              onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && t.id && toggleTaskDone(t.id)}
+              style={{ ...taskRow, cursor: 'default' }}
             >
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flex: 1, minWidth: 0 }}>
+              <div
+                style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flex: 1, minWidth: 0, cursor: t.id ? 'pointer' : 'default' }}
+                role="button"
+                tabIndex={0}
+                onClick={() => t.id && toggleTaskDone(t.id)}
+                onKeyDown={e => (e.key === 'Enter' || e.key === ' ') && t.id && toggleTaskDone(t.id)}
+              >
                 <span style={{ marginTop: 2, flexShrink: 0, display: 'flex' }}>
                   {t.status === 'done' ? <CheckSquare size={18} color="#55B848" /> : <Square size={18} color="#94a3b8" />}
                 </span>
@@ -275,14 +386,47 @@ export default function ServiceEngagementEdit() {
                   </div>
                 </div>
               </div>
+              {t.id && (
+                <button
+                  type="button"
+                  title="Remove task (click Save changes to apply)"
+                  onClick={(e) => { e.stopPropagation(); removeTask(t.id); }}
+                  style={{
+                    background: '#fff', border: '1px solid #e2e8f0', borderRadius: 6, padding: 6, cursor: 'pointer', color: '#64748b',
+                  }}
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
             </div>
           ))}
         </section>
       </div>
 
-      <div style={actionRow}>
-        <button type="button" style={btnSecondary} onClick={() => navigate('/services')}>Cancel</button>
-        <button type="button" style={btnPrimary} disabled={saving} onClick={handleSave}>{saving ? 'Saving…' : 'Save changes'}</button>
+      <div style={{ ...actionRow, justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        {canDeleteService && (
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={handleDeleteEngagement}
+            style={{
+              padding: '10px 18px',
+              background: '#fff',
+              color: '#b91c1c',
+              border: '1px solid #fecaca',
+              borderRadius: 8,
+              cursor: deleting ? 'not-allowed' : 'pointer',
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            {deleting ? 'Deleting…' : 'Delete engagement'}
+          </button>
+        )}
+        <div style={{ display: 'flex', gap: 10, marginLeft: 'auto' }}>
+          <button type="button" style={btnSecondary} onClick={() => navigate('/services')}>Cancel</button>
+          <button type="button" style={btnPrimary} disabled={saving} onClick={handleSave}>{saving ? 'Saving…' : 'Save changes'}</button>
+        </div>
       </div>
     </div>
   );
@@ -316,7 +460,7 @@ const feePrefix = {
 };
 const hint = { fontSize: 12, color: '#64748b', margin: '0 0 12px', lineHeight: 1.45 };
 const taskRow = {
-  display: 'flex', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #F0F2F8', cursor: 'pointer',
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '10px 0', borderBottom: '1px solid #F0F2F8',
 };
 const btnSmall = {
   display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 12px',

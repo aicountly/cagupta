@@ -11,6 +11,7 @@ export const ROLES = {
   MANAGER:     'manager',
   STAFF:       'staff',
   VIEWER:      'viewer',
+  AFFILIATE:   'affiliate',
 };
 
 /** Human-readable display names for each role. */
@@ -20,6 +21,7 @@ export const ROLE_LABELS = {
   manager:     'Manager',
   staff:       'Staff',
   viewer:      'Viewer',
+  affiliate:   'Affiliate',
 };
 
 /** Tailwind-compatible badge colour classes for each role. */
@@ -29,6 +31,7 @@ export const ROLE_BADGE_COLORS = {
   manager:     { bg: '#dbeafe', color: '#1e40af', border: '#93c5fd' }, // blue
   staff:       { bg: '#dcfce7', color: '#166534', border: '#86efac' }, // green
   viewer:      { bg: '#f3f4f6', color: '#374151', border: '#d1d5db' }, // gray
+  affiliate:   { bg: '#ede9fe', color: '#5b21b6', border: '#c4b5fd' }, // violet
 };
 
 /**
@@ -44,7 +47,7 @@ export const PERMISSIONS = {
     'clients.view', 'clients.create', 'clients.edit', 'clients.delete',
     'services.view', 'services.create', 'services.edit', 'services.delete',
     'documents.view', 'documents.upload',
-    'invoices.view', 'invoices.create', 'invoices.edit',
+    'invoices.view', 'invoices.create', 'invoices.edit', 'invoices.delete',
     'calendar.view', 'calendar.create',
     'credentials.view',
     'registers.view',
@@ -52,6 +55,8 @@ export const PERMISSIONS = {
     'quotations.setup', 'quotations.manage',
     'settings.view',
     'users.manage',
+    'users.delegate',
+    'affiliates.manage',
   ],
   manager: [
     'dashboard.view',
@@ -63,6 +68,8 @@ export const PERMISSIONS = {
     'registers.view',
     'leads.view', 'leads.create',
     'quotations.manage',
+    'users.delegate',
+    'affiliates.manage',
   ],
   staff: [
     'dashboard.view',
@@ -77,6 +84,13 @@ export const PERMISSIONS = {
     'services.view',
     'documents.view',
     'invoices.view',
+  ],
+  affiliate: [
+    'affiliate.portal',
+    'affiliate.profile',
+    'affiliate.payouts.request',
+    'affiliate.sub_affiliates.create',
+    'affiliate.bank.manage',
   ],
 };
 

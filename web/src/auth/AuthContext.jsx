@@ -73,6 +73,11 @@ export function AuthProvider({ children }) {
     return hasPermission(session?.user?.permissions, permission);
   }, [session]);
 
+  const checkAnyPermission = useCallback((permissions) => {
+    if (!permissions || permissions.length === 0) return false;
+    return permissions.some((p) => hasPermission(session?.user?.permissions, p));
+  }, [session]);
+
   /** Merge fields into the stored user (e.g. after profile save). */
   const updateSessionUser = useCallback((user) => {
     setSession((prev) => {
@@ -90,12 +95,14 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       session,
+      user: session?.user ?? null,
       isAuthenticated,
       loading,
       login,
       logout,
       updateSessionUser,
       hasPermission: checkPermission,
+      hasAnyPermission: checkAnyPermission,
     }}>
       {children}
     </AuthContext.Provider>

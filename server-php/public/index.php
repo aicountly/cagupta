@@ -62,6 +62,7 @@ use App\Config\App as AppConfig;
 use App\Config\Routes;
 use App\Filters\AuthFilter;
 use App\Filters\PermissionFilter;
+use App\Filters\PermissionAnyFilter;
 use App\Filters\RoleFilter;
 
 use function App\Helpers\api_error;
@@ -139,6 +140,9 @@ foreach ($routes as $route) {
         } elseif (str_starts_with($mw, 'permission:')) {
             $requiredPermission = substr($mw, 11);
             (new PermissionFilter($requiredPermission))->handle();
+        } elseif (str_starts_with($mw, 'permission_any:')) {
+            $list = array_values(array_filter(array_map('trim', explode(',', substr($mw, 15)))));
+            (new PermissionAnyFilter($list))->handle();
         }
     }
 

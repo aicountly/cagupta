@@ -3,8 +3,16 @@ declare(strict_types=1);
 
 namespace App\Controllers\Admin;
 
+use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
+use App\Libraries\BrevoMailer;
+use App\Libraries\CommissionSyncService;
+use App\Libraries\GstInvoiceTax;
+use App\Libraries\OtpService;
+use App\Models\ClientModel;
+use App\Models\OrganizationModel;
 use App\Models\TxnModel;
+use App\Models\UserModel;
 
 /**
  * TxnController — unified transaction endpoints.
@@ -14,10 +22,12 @@ use App\Models\TxnModel;
 class TxnController extends BaseController
 {
     private TxnModel $txn;
+    private UserModel $users;
 
     public function __construct()
     {
-        $this->txn = new TxnModel();
+        $this->txn   = new TxnModel();
+        $this->users = new UserModel();
     }
 
     // ── GET /api/admin/txn ───────────────────────────────────────────────────
@@ -38,6 +48,7 @@ class TxnController extends BaseController
         $orgId     = (int)$this->query('organization_id', 0);
         $expensePurpose = trim((string)$this->query('expense_purpose', ''));
         $paymentMethodFilter = trim((string)$this->query('payment_method', ''));
+        $paidFromFilter = trim((string)$this->query('paid_from', ''));
         $tdsStatus = trim((string)$this->query('tds_status', ''));
         $status    = trim((string)$this->query('status', ''));
         $dateFrom  = trim((string)$this->query('date_from', ''));
@@ -45,7 +56,7 @@ class TxnController extends BaseController
 
         $result = $this->txn->paginate(
             $page, $perPage, $search, $txnType,
-            $clientId, $orgId, $tdsStatus, $status, $dateFrom, $dateTo, $expensePurpose, $paymentMethodFilter
+            $clientId, $orgId, $tdsStatus, $status, $dateFrom, $dateTo, $expensePurpose, $paymentMethodFilter, $paidFromFilter
         );
 
         $this->success($result['txns'], 'Transactions retrieved', 200, [
@@ -93,7 +104,9 @@ class TxnController extends BaseController
                     $this->error('Provide only one of client_id or organization_id for an invoice.', 422);
                 }
                 try {
-                    $id = $this->txn->createInvoice($body);
+                    $recipientGstin = $this->resolveRecipientGstin($cid, $oid);
+                    $prepared         = GstInvoiceTax::prepareInvoice($body, $recipientGstin);
+                    $id               = $this->txn->createInvoice(array_merge($body, $prepared));
                 } catch (\InvalidArgumentException $e) {
                     $this->error($e->getMessage(), 422);
                 }
@@ -140,6 +153,13 @@ class TxnController extends BaseController
                 $id = $this->txn->create($body);
         }
 
+        if ($txnType === 'invoice') {
+            (new CommissionSyncService())->syncInvoiceSafe((int)$id);
+        }
+        if ($txnType === 'credit_note' && !empty($body['linked_txn_id'])) {
+            (new CommissionSyncService())->afterCreditNote((int)$body['linked_txn_id']);
+        }
+
         $row = $this->txn->find($id);
         $this->success($row, 'Transaction created', 201);
     }
@@ -155,6 +175,76 @@ class TxnController extends BaseController
         $this->success($row);
     }
 
+    // ── POST /api/admin/txn/:id/request-invoice-modify-otp ─────────────────────
+
+    /**
+     * Send a superadmin OTP to authorize ledger invoice update or delete.
+     * Query or JSON body: intent = update | delete
+     */
+    public function requestInvoiceModifyOtp(int $id): never
+    {
+        $body   = $this->getJsonBody();
+        $intent = trim((string)($this->query('intent', '') ?: ($body['intent'] ?? 'update')));
+        if (!in_array($intent, ['update', 'delete'], true)) {
+            $this->error('intent must be update or delete.', 422);
+        }
+
+        $acting = $this->authUser();
+        if ($intent === 'update' && !$this->userHasPermission($acting, 'invoices.edit')) {
+            $this->error('Access denied. Required permission: invoices.edit.', 403);
+        }
+        if ($intent === 'delete' && !$this->userHasPermission($acting, 'invoices.delete')) {
+            $this->error('Access denied. Required permission: invoices.delete.', 403);
+        }
+
+        $row = $this->txn->find($id);
+        if ($row === null) {
+            $this->error('Transaction not found.', 404);
+        }
+        if (($row['txn_type'] ?? '') !== 'invoice') {
+            $this->error('OTP requests are only for invoice transactions.', 422);
+        }
+
+        $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
+        if ($super === null || !$super['is_active']) {
+            $this->error('Super admin account is not provisioned.', 500);
+        }
+        $superId = (int)$super['id'];
+        $email   = trim((string)($super['email'] ?? ''));
+        if ($email === '') {
+            $this->error('Super admin has no email.', 500);
+        }
+
+        $otp = OtpService::generate($superId);
+        $intentLabel = $intent === 'delete' ? 'delete' : 'modify';
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('invoice-modify-otp', [
+                'userName'       => (string)($super['name'] ?? $email),
+                'otpCode'        => $otp,
+                'expiryMinutes'  => (string)OtpService::expiryMinutes(),
+                'intentLabel'    => $intentLabel,
+                'txnId'          => (string)$id,
+                'invoiceRef'     => (string)($row['invoice_number'] ?? '—'),
+            ]);
+            if ($htmlBody !== '') {
+                BrevoMailer::send(
+                    $email,
+                    (string)($super['name'] ?? $email),
+                    'Invoice change OTP - CA Rahul Gupta',
+                    $htmlBody
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[TxnController] Invoice modify OTP email failed: ' . $e->getMessage());
+        }
+
+        $this->success([
+            'otp_sent'     => true,
+            'masked_email' => $this->maskEmail($email),
+            'intent'       => $intent,
+        ], 'OTP sent.');
+    }
+
     // ── PUT /api/admin/txn/:id ───────────────────────────────────────────────
 
     public function update(int $id): never
@@ -165,8 +255,20 @@ class TxnController extends BaseController
         }
 
         $body = $this->getJsonBody();
+        if (($row['txn_type'] ?? '') === 'invoice') {
+            $otp = $this->readSuperadminOtpFromRequest();
+            if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
+                $this->error('Valid superadmin OTP is required to modify an invoice. Request a code first.', 403);
+            }
+            unset($body['txn_type']);
+        }
+
         $this->txn->update($id, $body);
         $updated = $this->txn->find($id);
+        if (($row['txn_type'] ?? '') === 'invoice') {
+            (new CommissionSyncService())->syncInvoiceSafe($id);
+            $this->notifyAdminsInvoiceChange('updated', $row, $updated, $this->authUser());
+        }
         $this->success($updated, 'Transaction updated');
     }
 
@@ -178,7 +280,27 @@ class TxnController extends BaseController
         if ($row === null) {
             $this->error('Transaction not found.', 404);
         }
+
+        $isInvoice = (($row['txn_type'] ?? '') === 'invoice');
+        if ($isInvoice) {
+            if (!$this->userHasPermission($this->authUser(), 'invoices.delete')) {
+                $this->error('Access denied. Required permission: invoices.delete.', 403);
+            }
+            $otp = $this->readSuperadminOtpFromRequest();
+            if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
+                $this->error('Valid superadmin OTP is required to delete an invoice. Request a code first.', 403);
+            }
+        } elseif (!$this->userHasPermission($this->authUser(), 'invoices.edit')) {
+            $this->error('Access denied. Required permission: invoices.edit.', 403);
+        }
+
+        if ($isInvoice) {
+            (new CommissionSyncService())->onInvoiceDeleted($id);
+        }
         $this->txn->delete($id);
+        if ($isInvoice) {
+            $this->notifyAdminsInvoiceChange('deleted', $row, null, $this->authUser());
+        }
         $this->success(null, 'Transaction deleted');
     }
 
@@ -400,5 +522,152 @@ class TxnController extends BaseController
         } catch (\Throwable $e) {
             $this->error('Failed to save opening balance: ' . $e->getMessage(), 500);
         }
+    }
+
+    /**
+     * GSTIN from contact or organization for place-of-supply.
+     */
+    private function resolveRecipientGstin(int $clientId, int $orgId): ?string
+    {
+        if ($clientId > 0) {
+            $c = (new ClientModel())->find($clientId);
+
+            return $c ? trim((string)($c['gstin'] ?? '')) : null;
+        }
+        if ($orgId > 0) {
+            $o = (new OrganizationModel())->find($orgId);
+
+            return $o ? trim((string)($o['gstin'] ?? '')) : null;
+        }
+
+        return null;
+    }
+
+    private function readSuperadminOtpFromRequest(): string
+    {
+        $h = $_SERVER['HTTP_X_SUPERADMIN_OTP'] ?? '';
+        if (is_string($h) && trim($h) !== '') {
+            return trim($h);
+        }
+
+        return '';
+    }
+
+    private function verifySuperadminOtp(string $otp): bool
+    {
+        $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
+        if ($super === null) {
+            return false;
+        }
+
+        return OtpService::verify((int)$super['id'], $otp);
+    }
+
+    /**
+     * @param array<string, mixed>|null $acting
+     */
+    private function userHasPermission(?array $acting, string $permission): bool
+    {
+        if ($acting === null) {
+            return false;
+        }
+        if (strtolower((string)($acting['email'] ?? '')) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
+            return true;
+        }
+        $role = (string)($acting['role_name'] ?? '');
+        if (in_array($role, ['super_admin', 'admin'], true)) {
+            return true;
+        }
+        $permissions = $acting['role_permissions_array'] ?? [];
+        if (in_array('*', $permissions, true)) {
+            return true;
+        }
+
+        return in_array($permission, $permissions, true);
+    }
+
+    private function maskEmail(string $email): string
+    {
+        $parts = explode('@', $email, 2);
+        if (count($parts) !== 2) {
+            return '***@***.***';
+        }
+        $local  = $parts[0];
+        $domain = $parts[1];
+        $len    = strlen($local);
+        if ($len <= 2) {
+            $masked = $local[0] . str_repeat('*', max(1, $len - 1));
+        } else {
+            $masked = $local[0] . str_repeat('*', $len - 2) . $local[$len - 1];
+        }
+
+        return $masked . '@' . $domain;
+    }
+
+    /**
+     * @param array<string, mixed>      $beforeRow
+     * @param array<string, mixed>|null $afterRow
+     * @param array<string, mixed>|null $acting
+     */
+    private function notifyAdminsInvoiceChange(string $verb, array $beforeRow, ?array $afterRow, ?array $acting): void
+    {
+        $actionLabel = $verb === 'deleted' ? 'deleted' : 'updated';
+        $actorName   = (string)(($acting ?? [])['name'] ?? 'Unknown');
+        $actorEmail  = (string)(($acting ?? [])['email'] ?? 'Unknown');
+        $timestamp   = date('d M Y, h:i A T');
+        $txnId       = (string)($beforeRow['id'] ?? '');
+        $invoiceRef  = (string)($beforeRow['invoice_number'] ?? '—');
+        $clientName  = (string)($beforeRow['client_name'] ?? '—');
+        $summary     = $verb === 'deleted'
+            ? 'Invoice transaction removed from the ledger.'
+            : $this->summarizeInvoiceDiff($beforeRow, $afterRow ?? []);
+
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('invoice-changed-notify', [
+                'actionLabel' => $actionLabel,
+                'txnId'       => $txnId,
+                'invoiceRef'  => $invoiceRef,
+                'clientName'  => $clientName,
+                'actorName'   => $actorName,
+                'actorEmail'  => $actorEmail,
+                'timestamp'   => $timestamp,
+                'summary'     => $summary,
+            ]);
+            if ($htmlBody === '') {
+                return;
+            }
+            $subject = 'Ledger invoice ' . $actionLabel . ' - CA Rahul Gupta';
+            foreach ($this->users->listActiveAdminNotificationRecipients() as $rec) {
+                BrevoMailer::send($rec['email'], $rec['name'], $subject, $htmlBody);
+            }
+        } catch (\Throwable $e) {
+            error_log('[TxnController] Admin invoice notification failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $before
+     * @param array<string, mixed> $after
+     */
+    private function summarizeInvoiceDiff(array $before, array $after): string
+    {
+        $keys = ['txn_date', 'narration', 'debit', 'credit', 'amount', 'billing_profile_code', 'invoice_number', 'due_date', 'invoice_status', 'notes', 'status'];
+        $parts = [];
+        foreach ($keys as $k) {
+            $b = $before[$k] ?? null;
+            $a = $after[$k] ?? null;
+            if ((string)(is_scalar($b) ? $b : json_encode($b)) !== (string)(is_scalar($a) ? $a : json_encode($a))) {
+                $parts[] = "{$k}: " . (is_scalar($b) ? (string)$b : '…') . ' → ' . (is_scalar($a) ? (string)$a : '…');
+            }
+        }
+        $bLines = $before['line_items'] ?? null;
+        $aLines = $after['line_items'] ?? null;
+        $bJson  = is_string($bLines) ? $bLines : json_encode($bLines ?? []);
+        $aJson  = is_string($aLines) ? $aLines : json_encode($aLines ?? []);
+        if ($bJson !== $aJson) {
+            $parts[] = 'line_items: updated';
+        }
+
+        return $parts !== [] ? implode('; ', $parts) : 'Fields updated (no scalar diff detected).';
     }
 }

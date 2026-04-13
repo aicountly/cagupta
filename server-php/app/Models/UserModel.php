@@ -86,8 +86,17 @@ class UserModel
      *
      * @return array{total: int, users: array<int, array<string, mixed>>}
      */
-    public function paginate(int $page = 1, int $perPage = 20, string $search = '', string $role = '', string $status = ''): array
-    {
+    /**
+     * @param int $delegatorId If > 0, only users created by this id (or the delegator themself) are listed.
+     */
+    public function paginate(
+        int $page = 1,
+        int $perPage = 20,
+        string $search = '',
+        string $role = '',
+        string $status = '',
+        int $delegatorId = 0
+    ): array {
         $where  = ['1=1'];
         $params = [];
 
@@ -102,6 +111,11 @@ class UserModel
         if ($status !== '') {
             $where[]         = 'u.is_active = :is_active_filter';
             $params[':is_active_filter'] = ($status === 'active') ? 'true' : 'false';
+        }
+        if ($delegatorId > 0) {
+            $where[]                    = '(u.created_by = :delegator_id OR u.id = :delegator_self)';
+            $params[':delegator_id']    = $delegatorId;
+            $params[':delegator_self']  = $delegatorId;
         }
 
         $whereClause = implode(' AND ', $where);
@@ -220,5 +234,48 @@ class UserModel
     {
         $stmt = $this->db->prepare('UPDATE users SET last_login_at = NOW() WHERE id = :id');
         $stmt->execute([':id' => $id]);
+    }
+
+    /**
+     * Distinct active users to notify for invoice / admin alerts: admin + super_admin roles, plus super-admin email.
+     *
+     * @return array<int, array{email: string, name: string}>
+     */
+    public function listActiveAdminNotificationRecipients(): array
+    {
+        $superEmail = \App\Config\Auth::SUPER_ADMIN_EMAIL;
+        $stmt       = $this->db->prepare(
+            "SELECT TRIM(u.email) AS email,
+                    COALESCE(NULLIF(TRIM(u.name), ''), TRIM(u.email)) AS name
+             FROM users u
+             LEFT JOIN roles r ON r.id = u.role_id
+             WHERE u.is_active = TRUE
+               AND TRIM(COALESCE(u.email, '')) <> ''
+               AND (
+                   r.name IN ('admin', 'super_admin')
+                   OR LOWER(TRIM(u.email)) = LOWER(:super_email)
+               )"
+        );
+        $stmt->execute([':super_email' => $superEmail]);
+        $rows = $stmt->fetchAll();
+        $seen = [];
+        $out  = [];
+        foreach ($rows as $row) {
+            $email = trim((string)($row['email'] ?? ''));
+            if ($email === '') {
+                continue;
+            }
+            $key = strtolower($email);
+            if (isset($seen[$key])) {
+                continue;
+            }
+            $seen[$key] = true;
+            $out[]      = [
+                'email' => $email,
+                'name'  => (string)($row['name'] ?? $email),
+            ];
+        }
+
+        return $out;
     }
 }

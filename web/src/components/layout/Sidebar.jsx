@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen,
   Target, Settings, ChevronRight, ChevronDown,
-  UserRound, Building2, ShieldCheck, Layers,
+  UserRound, Building2, ShieldCheck, Layers, Handshake,
 } from 'lucide-react';
 
 const navSections = [
@@ -46,14 +46,15 @@ const navSections = [
   },
 ];
 
-/** Items shown only to users with users.manage permission */
+/** Team admin: full manage or delegated (staff/viewer) invites */
 const adminNavItems = [
-  { to: '/admin/users', label: 'User Management', icon: ShieldCheck, permission: 'users.manage' },
+  { to: '/admin/users', label: 'User Management', icon: ShieldCheck, anyOf: ['users.manage', 'users.delegate'] },
+  { to: '/admin/affiliates', label: 'Affiliates', icon: Handshake, permission: 'affiliates.manage' },
 ];
 
 export default function Sidebar() {
   const loc = useLocation();
-  const { session, hasPermission } = useAuth();
+  const { session, hasPermission, hasAnyPermission } = useAuth();
   const isClientsActive = loc.pathname.startsWith('/clients');
   const [clientsOpen, setClientsOpen] = useState(isClientsActive);
 
@@ -68,9 +69,11 @@ export default function Sidebar() {
   }, [isClientsActive]);
 
   // Build admin section if user has any admin items visible
-  const visibleAdminItems = adminNavItems.filter(
-    (item) => !item.permission || hasPermission(item.permission)
-  );
+  const visibleAdminItems = adminNavItems.filter((item) => {
+    if (item.permission && !hasPermission(item.permission)) return false;
+    if (item.anyOf && !hasAnyPermission(item.anyOf)) return false;
+    return true;
+  });
 
   return (
     <aside style={styles.sidebar}>

@@ -23,10 +23,30 @@ function isValidEmail(email) {
   return /^[^\s@]+@[^\"]+\.[^\s@]+$/.test(email);
 }
 
+function portalMismatchMessage(portal, user) {
+  if (user?.role === 'affiliate' && portal !== 'affiliate') {
+    return 'This account is for affiliates. Select “Affiliate partner” above.';
+  }
+  if (user?.role && user.role !== 'affiliate' && portal === 'affiliate') {
+    return 'This is a staff account. Select “Staff & team” above.';
+  }
+  return '';
+}
+
+function homeForUser(user) {
+  return user?.role === 'affiliate' ? '/affiliate' : '/';
+}
+
 export default function LoginPage() {
-  const { isAuthenticated, login } = useAuth();
+  const { isAuthenticated, login, user } = useAuth();
   const navigate = useNavigate();
   const { instance: msalInstance } = useMsal();
+
+  const [loginPortal, setLoginPortalState] = useState(() => sessionStorage.getItem('login_portal') || 'staff');
+  const setLoginPortal = (p) => {
+    sessionStorage.setItem('login_portal', p);
+    setLoginPortalState(p);
+  };
 
   // Step 1 state
   const [email, setEmail] = useState('');
@@ -42,8 +62,10 @@ export default function LoginPage() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (isAuthenticated) navigate('/', { replace: true });
-  }, [isAuthenticated, navigate]);
+    if (isAuthenticated && user) {
+      navigate(homeForUser(user), { replace: true });
+    }
+  }, [isAuthenticated, user, navigate]);
 
   useEffect(() => {
     const msalError = sessionStorage.getItem('msal_login_error');
@@ -64,9 +86,14 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const { token, user } = await loginWithGoogle(credentialResponse.credential);
-      login(token, user);
-      navigate('/', { replace: true });
+      const { token, user: u } = await loginWithGoogle(credentialResponse.credential);
+      const msg = portalMismatchMessage(loginPortal, u);
+      if (msg) {
+        setError(msg);
+        return;
+      }
+      login(token, u);
+      navigate(homeForUser(u), { replace: true });
     } catch (err) {
       setError(err.message || 'Google login failed. Please try again.');
     } finally {
@@ -107,8 +134,13 @@ export default function LoginPage() {
         setOtpStep(true);
         setResendTimer(60);
       } else {
+        const msg = portalMismatchMessage(loginPortal, result.user);
+        if (msg) {
+          setError(msg);
+          return;
+        }
         login(result.token, result.user);
-        navigate('/', { replace: true });
+        navigate(homeForUser(result.user), { replace: true });
       }
     } catch (err) {
       setError(err.message || 'Login failed. Please check your credentials.');
@@ -126,9 +158,14 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      const { token, user } = await verifyEmailOtp(email, otp);
-      login(token, user);
-      navigate('/', { replace: true });
+      const { token, user: u } = await verifyEmailOtp(email, otp);
+      const msg = portalMismatchMessage(loginPortal, u);
+      if (msg) {
+        setError(msg);
+        return;
+      }
+      login(token, u);
+      navigate(homeForUser(u), { replace: true });
     } catch (err) {
       setError(err.message || 'Invalid OTP. Please try again.');
     } finally {
@@ -160,6 +197,42 @@ export default function LoginPage() {
         <div style={s.card}>
           <div style={s.logoWrap}>
             <img src={logoUrl} alt="CA Office Portal" style={s.logo} />
+          </div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <button
+              type="button"
+              onClick={() => setLoginPortal('staff')}
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: loginPortal === 'staff' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                background: loginPortal === 'staff' ? '#eff6ff' : '#fff',
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: 'pointer',
+                color: '#0f172a',
+              }}
+            >
+              Staff & team
+            </button>
+            <button
+              type="button"
+              onClick={() => setLoginPortal('affiliate')}
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: loginPortal === 'affiliate' ? '2px solid #7c3aed' : '1px solid #e2e8f0',
+                background: loginPortal === 'affiliate' ? '#f5f3ff' : '#fff',
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: 'pointer',
+                color: '#0f172a',
+              }}
+            >
+              Affiliate partner
+            </button>
           </div>
           <h1 style={s.heading}>Sign in to your account</h1>
           <p style={s.subheading}>CA Rahul Gupta – Office Portal</p>

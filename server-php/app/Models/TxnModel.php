@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Config\Database;
+use App\Libraries\InvoiceLineCommission;
 use PDO;
 
 /**
@@ -51,7 +52,7 @@ class TxnModel
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch();
         if ($row) {
-            $this->decodeLineItemsOnRow($row);
+            $this->decodeJsonbInvoiceFields($row);
         }
         return $row ?: null;
     }
@@ -73,7 +74,8 @@ class TxnModel
         string $dateFrom  = '',
         string $dateTo    = '',
         string $expensePurpose = '',
-        string $paymentMethod = ''
+        string $paymentMethod = '',
+        string $paidFrom = ''
     ): array {
         $where  = ['1=1'];
         $params = [];
@@ -109,6 +111,10 @@ class TxnModel
         if ($paymentMethod !== '') {
             $where[]                 = 't.payment_method = :payment_method_filter';
             $params[':payment_method_filter'] = $paymentMethod;
+        }
+        if ($paidFrom !== '') {
+            $where[]                   = 'TRIM(COALESCE(t.paid_from, \'\')) = :paid_from_filter';
+            $params[':paid_from_filter'] = $paidFrom;
         }
         if ($tdsStatus !== '') {
             $where[]               = 't.tds_status = :tds_status';
@@ -163,7 +169,7 @@ class TxnModel
 
         $txns = $stmt->fetchAll();
         foreach ($txns as &$trow) {
-            $this->decodeLineItemsOnRow($trow);
+            $this->decodeJsonbInvoiceFields($trow);
         }
         unset($trow);
 
@@ -326,7 +332,8 @@ class TxnModel
      */
     public function create(array $data): int
     {
-        $lineItemsJson = $this->normalizeLineItemsForStorage($data['line_items'] ?? null);
+        $lineItemsJson   = $this->normalizeLineItemsForStorage($data['line_items'] ?? null);
+        $gstBreakdownJson = $this->normalizeGstBreakdownForStorage($data['gst_breakdown'] ?? null);
 
         $stmt = $this->db->prepare(
             'INSERT INTO txn (
@@ -337,7 +344,7 @@ class TxnModel
                 payment_method, reference_number,
                 expense_purpose, paid_from,
                 tds_status, tds_section, tds_rate,
-                linked_txn_id, notes, status, created_by, line_items
+                linked_txn_id, notes, status, created_by, line_items, gst_breakdown
              ) VALUES (
                 :client_id, :organization_id, :txn_type, :txn_date, :narration,
                 :debit, :credit, :amount, :billing_profile_code,
@@ -346,7 +353,7 @@ class TxnModel
                 :payment_method, :reference_number,
                 :expense_purpose, :paid_from,
                 :tds_status, :tds_section, :tds_rate,
-                :linked_txn_id, :notes, :status, :created_by, CAST(:line_items AS jsonb)
+                :linked_txn_id, :notes, :status, :created_by, CAST(:line_items AS jsonb), CAST(:gst_breakdown AS jsonb)
              ) RETURNING id'
         );
         $stmt->execute([
@@ -363,8 +370,10 @@ class TxnModel
             ':service_id'          => $data['service_id']          ?? null,
             ':due_date'            => $data['due_date']            ?? null,
             ':subtotal'            => isset($data['subtotal'])     ? (float)$data['subtotal'] : null,
-            ':tax_percent'         => isset($data['tax_percent'])  ? (float)$data['tax_percent'] : null,
-            ':tax_amount'          => isset($data['tax_amount'])   ? (float)$data['tax_amount'] : null,
+            ':tax_percent'         => array_key_exists('tax_percent', $data) && $data['tax_percent'] !== null
+                ? (float)$data['tax_percent'] : null,
+            ':tax_amount'          => array_key_exists('tax_amount', $data) && $data['tax_amount'] !== null
+                ? (float)$data['tax_amount'] : null,
             ':invoice_status'      => $data['invoice_status']      ?? null,
             ':payment_method'      => $data['payment_method']      ?? null,
             ':reference_number'    => $data['reference_number']    ?? null,
@@ -378,6 +387,7 @@ class TxnModel
             ':status'              => $data['status']              ?? 'active',
             ':created_by'          => $data['created_by']          ?? null,
             ':line_items'          => $lineItemsJson,
+            ':gst_breakdown'       => $gstBreakdownJson,
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -399,7 +409,12 @@ class TxnModel
             throw new \InvalidArgumentException('Invoice total must be greater than zero.');
         }
 
-        $normalizedLines = $this->validateAndNormalizeInvoiceLineItems($data['line_items'] ?? null, $total);
+        $lines = $data['line_items'] ?? null;
+        if (!is_array($lines) || count($lines) === 0) {
+            throw new \InvalidArgumentException('At least one line item is required.');
+        }
+        InvoiceLineCommission::assertValid($lines);
+        $this->assertLineItemsSumMatchesSubtotal($lines, $subtotal);
 
         return $this->create(array_merge($data, [
             'txn_type'       => 'invoice',
@@ -411,7 +426,7 @@ class TxnModel
             'subtotal'       => $subtotal,
             'invoice_status' => $data['invoice_status'] ?? $data['status_val'] ?? 'draft',
             'status'         => 'active',
-            'line_items'     => $normalizedLines,
+            'line_items'     => $lines,
         ]));
     }
 
@@ -449,11 +464,12 @@ class TxnModel
     public function createPaymentExpense(array $data): int
     {
         $amount = (float)($data['amount'] ?? 0);
+        // Firm paid on the client's behalf → recoverable from client (same sign as an invoice charge).
         return $this->create(array_merge($data, [
             'txn_type' => 'payment_expense',
             'narration'=> $data['narration'] ?? 'Payment — ' . ($data['payment_method'] ?? 'Transfer'),
-            'debit'    => 0,
-            'credit'   => $amount,
+            'debit'    => $amount,
+            'credit'   => 0,
             'amount'   => $amount,
             'status'   => 'active',
         ]));
@@ -642,7 +658,7 @@ class TxnModel
         $stmt->execute($params);
         $rows = $stmt->fetchAll();
         foreach ($rows as &$r) {
-            $this->decodeLineItemsOnRow($r);
+            $this->decodeJsonbInvoiceFields($r);
         }
         unset($r);
 
@@ -666,21 +682,39 @@ class TxnModel
             'payment_method', 'reference_number',
             'expense_purpose', 'paid_from',
             'tds_status', 'tds_section', 'tds_rate',
-            'linked_txn_id', 'notes', 'status', 'line_items',
+            'linked_txn_id', 'notes', 'status', 'line_items', 'gst_breakdown',
         ];
         foreach ($allowed as $field) {
             if (!array_key_exists($field, $data)) {
                 continue;
             }
             if ($field === 'line_items') {
+                $lv = $data['line_items'];
+                if (is_array($lv) && count($lv) > 0) {
+                    InvoiceLineCommission::assertValid($lv);
+                    if (array_key_exists('subtotal', $data)) {
+                        $this->assertLineItemsSumMatchesSubtotal($lv, (float)$data['subtotal']);
+                    }
+                }
                 $setClauses[] = 'line_items = CAST(:line_items AS jsonb)';
-                $lv           = $data['line_items'];
                 if ($lv === null || (is_array($lv) && count($lv) === 0)) {
                     $params[':line_items'] = null;
                 } elseif (is_array($lv)) {
                     $params[':line_items'] = json_encode(array_values($lv), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
                 } else {
                     $params[':line_items'] = (string)$lv;
+                }
+                continue;
+            }
+            if ($field === 'gst_breakdown') {
+                $setClauses[] = 'gst_breakdown = CAST(:gst_breakdown AS jsonb)';
+                $gv           = $data['gst_breakdown'];
+                if ($gv === null) {
+                    $params[':gst_breakdown'] = null;
+                } elseif (is_array($gv)) {
+                    $params[':gst_breakdown'] = json_encode($gv, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+                } else {
+                    $params[':gst_breakdown'] = (string)$gv;
                 }
                 continue;
             }
@@ -711,18 +745,19 @@ class TxnModel
     // ── Private helpers ───────────────────────────────────────────────────────
 
     /**
-     * Decode JSONB line_items for API responses (PDO returns a string).
+     * Decode JSONB invoice fields for API responses (PDO may return a string).
      *
      * @param array<string, mixed> $row
      */
-    private function decodeLineItemsOnRow(array &$row): void
+    private function decodeJsonbInvoiceFields(array &$row): void
     {
-        if (!array_key_exists('line_items', $row) || $row['line_items'] === null) {
-            return;
-        }
-        if (is_string($row['line_items'])) {
+        if (array_key_exists('line_items', $row) && $row['line_items'] !== null && is_string($row['line_items'])) {
             $decoded = json_decode($row['line_items'], true);
             $row['line_items'] = is_array($decoded) ? $decoded : null;
+        }
+        if (array_key_exists('gst_breakdown', $row) && $row['gst_breakdown'] !== null && is_string($row['gst_breakdown'])) {
+            $decoded = json_decode($row['gst_breakdown'], true);
+            $row['gst_breakdown'] = is_array($decoded) ? $decoded : null;
         }
     }
 
@@ -745,39 +780,32 @@ class TxnModel
     }
 
     /**
-     * @param mixed $raw
-     * @return array<int, array{description: string, amount: float}>|null
+     * @param array<int, array<string, mixed>> $lines
      */
-    private function validateAndNormalizeInvoiceLineItems(mixed $raw, float $total): ?array
+    private function assertLineItemsSumMatchesSubtotal(array $lines, float $subtotal): void
     {
-        if ($raw === null || $raw === '' || !is_array($raw) || count($raw) === 0) {
+        $sum = 0.0;
+        foreach ($lines as $line) {
+            $sum += (float)($line['amount'] ?? 0);
+        }
+        if (abs(round($sum, 2) - round($subtotal, 2)) > 0.02) {
+            throw new \InvalidArgumentException('Line items must sum to the taxable (pre-GST) subtotal.');
+        }
+    }
+
+    /**
+     * @return string|null JSON for CAST(:x AS jsonb), or null
+     */
+    private function normalizeGstBreakdownForStorage(mixed $raw): ?string
+    {
+        if ($raw === null || $raw === []) {
+            return null;
+        }
+        if (!is_array($raw)) {
             return null;
         }
 
-        $normalized = [];
-        $sum        = 0.0;
-
-        foreach ($raw as $line) {
-            if (!is_array($line)) {
-                throw new \InvalidArgumentException('Each line item must be an object with description and amount.');
-            }
-            $desc = trim((string)($line['description'] ?? ''));
-            $amt  = (float)($line['amount'] ?? 0);
-            if ($desc === '') {
-                throw new \InvalidArgumentException('Each line item requires a description.');
-            }
-            if ($amt <= 0) {
-                throw new \InvalidArgumentException('Each line item amount must be greater than zero.');
-            }
-            $normalized[] = ['description' => $desc, 'amount' => round($amt, 2)];
-            $sum += $amt;
-        }
-
-        if (abs($sum - $total) > 0.02) {
-            throw new \InvalidArgumentException('Line items must sum to the invoice total.');
-        }
-
-        return $normalized;
+        return json_encode($raw, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
 
     /**

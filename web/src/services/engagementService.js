@@ -55,6 +55,10 @@ function normalizeEngagement(s) {
     clientType:         s.client_type         || 'contact',
     clientId:           s.client_id           || s.organization_id || null,
     clientName:         s.client_name         || s.organization_name || 'Unknown',
+    referringAffiliateUserId: s.referring_affiliate_user_id ?? null,
+    referralStartDate:  s.referral_start_date || '',
+    commissionMode:     s.commission_mode     || 'referral_only',
+    clientFacingRestricted: Boolean(s.client_facing_restricted),
     categoryId:         s.category_id         || '',
     categoryName:       s.category_name       || '',
     subcategoryId:      s.subcategory_id      || '',
@@ -78,10 +82,18 @@ function normalizeEngagement(s) {
  * Fetch the list of service engagements.
  * @returns {Promise<object[]>}
  */
-export async function getEngagements({ page = 1, perPage = 100, search = '', status = '' } = {}) {
+export async function getEngagements({
+  page = 1, perPage = 100, search = '', status = '', clientId = null, organizationId = null,
+} = {}) {
   const params = new URLSearchParams({ page, per_page: perPage });
   if (search) params.set('search', search);
   if (status && status !== 'all') params.set('status', status);
+  if (clientId != null && clientId !== '' && Number(clientId) > 0) {
+    params.set('client_id', String(clientId));
+  }
+  if (organizationId != null && organizationId !== '' && Number(organizationId) > 0) {
+    params.set('organization_id', String(organizationId));
+  }
 
   const res = await fetch(`${API_BASE}/admin/services?${params}`, {
     headers: authHeaders(),
@@ -130,6 +142,19 @@ export async function createEngagement(payload) {
     notes:                payload.notes               || null,
     tasks:                payload.tasks               || [],
   };
+  const refAff = positiveIntOrNull(payload.referringAffiliateUserId);
+  if (refAff) {
+    body.referring_affiliate_user_id = refAff;
+  }
+  if (payload.referralStartDate) {
+    body.referral_start_date = payload.referralStartDate;
+  }
+  if (payload.commissionMode) {
+    body.commission_mode = payload.commissionMode;
+  }
+  if (payload.clientFacingRestricted) {
+    body.client_facing_restricted = true;
+  }
 
   const res = await fetch(`${API_BASE}/admin/services`, {
     method:  'POST',
@@ -159,6 +184,12 @@ export async function updateEngagement(id, payload) {
   if ('tasks' in payload) body.tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
   if ('type' in payload) body.service_type = payload.type || null;
   if ('financialYear' in payload) body.financial_year = payload.financialYear || null;
+  if ('referringAffiliateUserId' in payload) {
+    body.referring_affiliate_user_id = positiveIntOrNull(payload.referringAffiliateUserId);
+  }
+  if ('referralStartDate' in payload) body.referral_start_date = payload.referralStartDate || null;
+  if ('commissionMode' in payload) body.commission_mode = payload.commissionMode || 'referral_only';
+  if ('clientFacingRestricted' in payload) body.client_facing_restricted = Boolean(payload.clientFacingRestricted);
 
   const res = await fetch(`${API_BASE}/admin/services/${id}`, {
     method:  'PUT',
@@ -175,6 +206,18 @@ export async function updateEngagement(id, payload) {
  * @param {object} taskData  { title, assignedTo?, dueDate?, priority? }
  * @returns {Promise<object>} Updated engagement after adding the task.
  */
+/**
+ * Delete a service engagement permanently.
+ * @param {number|string} id
+ */
+export async function deleteEngagement(id) {
+  const res = await fetch(`${API_BASE}/admin/services/${id}`, {
+    method:  'DELETE',
+    headers: authHeaders(),
+  });
+  await parseResponse(res);
+}
+
 export async function createTask(engagementId, taskData) {
   const body = {
     title:      taskData.title      || '',

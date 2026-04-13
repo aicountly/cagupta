@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getEngagements, createTask } from '../services/engagementService';
+import { getEngagements, createTask, deleteEngagement } from '../services/engagementService';
+import { useAuth } from '../auth/AuthContext';
 import StatusBadge from '../components/common/StatusBadge';
 import DateInput from '../components/common/DateInput';
 import {
   Plus, Search, SlidersHorizontal,
   Pencil, FolderOpen, Clock, AlertTriangle,
   Info, CheckCircle2, TrendingUp, X,
-  ChevronUp,
+  ChevronUp, Trash2,
 } from 'lucide-react';
 
 // ── Add Task Modal ────────────────────────────────────────────────────────────
@@ -132,6 +133,8 @@ function KpiCard({ item }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Services() {
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
+  const canDeleteService = hasPermission('services.delete');
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedService, setSelectedService] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
@@ -168,6 +171,17 @@ export default function Services() {
         setSelectedService(updated);
       })
       .catch(() => {});
+  }
+
+  async function handleDeleteServiceRow(s) {
+    if (!window.confirm(`Permanently delete this engagement for ${s.clientName} — ${s.type || 'service'}?`)) return;
+    try {
+      await deleteEngagement(s.id);
+      setAllServices((prev) => prev.filter((x) => x.id !== s.id));
+      setSelectedService((cur) => (cur && cur.id === s.id ? null : cur));
+    } catch {
+      /* toast optional */
+    }
   }
 
   const filteredServices = allServices.filter(s => {
@@ -277,6 +291,9 @@ export default function Services() {
                         <div style={{ display: 'flex', gap: 4 }}>
                           <ActionBtn icon={Pencil} title="Edit" onClick={() => navigate(`/services/${s.id}/edit`)} />
                           <ActionBtn icon={FolderOpen} title="View Files" onClick={() => navigate(`/services/${s.id}/files`)} />
+                          {canDeleteService && (
+                            <ActionBtn icon={Trash2} title="Delete" onClick={() => handleDeleteServiceRow(s)} />
+                          )}
                         </div>
                       </td>
                     </tr>

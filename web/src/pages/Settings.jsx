@@ -3,7 +3,8 @@ import { useAuth } from '../auth/AuthContext';
 import { getPortalTypes } from '../constants/portalTypes';
 import { fetchPortalTypes, createPortalType, deletePortalType } from '../services/portalTypeService';
 import { getRegisterTypes, saveRegisterTypes } from '../constants/registerTypes';
-import { BILLING_PROFILES } from '../constants/billingProfiles';
+import { loadBillingProfiles, saveBillingProfiles } from '../constants/billingProfiles';
+import { stateCodeFromGstin } from '../utils/gstUtils';
 import {
   getCategories,
   createCategory, deleteCategory,
@@ -31,7 +32,7 @@ const PERMISSION_GROUPS = [
   { group: 'Leads',       keys: ['leads.view', 'leads.create', 'leads.edit'] },
   { group: 'Quotations',  keys: ['quotations.setup', 'quotations.manage'] },
   { group: 'Settings',  keys: ['settings.view'] },
-  { group: 'Users',     keys: ['users.manage'] },
+  { group: 'Users',     keys: ['users.manage', 'users.delegate'] },
 ];
 
 function authHeaders() {
@@ -180,10 +181,12 @@ export default function Settings() {
   const [registerTypes, setRegisterTypes] = useState(() => getRegisterTypes());
   const [newRegister, setNewRegister] = useState('');
   const [registerError, setRegisterError] = useState('');
-  const [billingProfiles, setBillingProfiles] = useState(BILLING_PROFILES);
+  const [billingProfiles, setBillingProfiles] = useState(() => loadBillingProfiles());
   const [showBillingForm, setShowBillingForm] = useState(false);
   const [billingEdit, setBillingEdit] = useState(null);
-  const [billingForm, setBillingForm] = useState({ code:'', name:'' });
+  const [billingForm, setBillingForm] = useState({
+    code: '', name: '', gstRegistered: false, gstin: '', stateCode: '', defaultGstRate: 18,
+  });
   const [billingError, setBillingError] = useState('');
 
   // ── Service Configuration state ────────────────────────────────────────────
@@ -617,7 +620,10 @@ export default function Settings() {
           )}
           <div style={cardStyle}>
             <h3 style={sectionTitle}>🔐 Roles & Permissions</h3>
-            <p style={{ fontSize:13, color:'#64748b', marginBottom:16 }}>Define what each role can access across the portal.</p>
+            <p style={{ fontSize:13, color:'#64748b', marginBottom:16 }}>
+              Define what each role can access across the portal. <strong>users.manage</strong> is full team administration;
+              <strong> users.delegate</strong> lets managers invite and manage only users they created (staff or viewer roles), for hierarchy delegation.
+            </p>
             {rolesLoading && <div style={{ fontSize:13, color:'#64748b' }}>Loading roles…</div>}
             {roles.length > 0 && roles.map(r => (
               <div key={r.id} style={{ padding:'14px 0', borderBottom:'1px solid #f1f5f9', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
@@ -644,27 +650,51 @@ export default function Settings() {
       )}
 
       {tab==='billing' && (
-        <div style={{ maxWidth:700 }}>
+        <div style={{ maxWidth:720 }}>
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
             <div>
               <h2 style={{ margin:'0 0 4px 0', fontSize:18, fontWeight:700, color:'#1e293b' }}>🏢 Billing Firms</h2>
-              <p style={{ margin:0, fontSize:13, color:'#64748b' }}>These billing profiles appear as options when raising invoices.</p>
+              <p style={{ margin:0, fontSize:13, color:'#64748b' }}>Used when raising invoices. GST registration drives tax split (CGST/SGST/UTGST/IGST) from supplier vs client state codes.</p>
             </div>
-            <button style={btnPrimary} onClick={() => { setBillingForm({ code:'', name:'' }); setBillingEdit(null); setShowBillingForm(true); }}>➕ Add Billing Firm</button>
+            <button style={btnPrimary} onClick={() => {
+              setBillingForm({ code:'', name:'', gstRegistered:false, gstin:'', stateCode:'', defaultGstRate:18 });
+              setBillingEdit(null);
+              setShowBillingForm(true);
+            }}>➕ Add Billing Firm</button>
           </div>
           <div style={cardStyle}>
             <table style={tableStyle}>
               <thead>
-                <tr>{['Code','Firm Name','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
+                <tr>{['Code','Firm Name','GST','State','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
               </thead>
               <tbody>
                 {billingProfiles.map(p=>(
                   <tr key={p.id} style={trStyle}>
                     <td style={{ ...tdStyle, fontFamily:'monospace', fontWeight:700 }}>{p.code}</td>
                     <td style={{ ...tdStyle, fontWeight:600 }}>{p.name}</td>
+                    <td style={tdStyle}>{p.gstRegistered ? 'Registered' : '—'}</td>
+                    <td style={{ ...tdStyle, fontFamily:'monospace' }}>{p.stateCode || '—'}</td>
                     <td style={tdStyle}>
-                      <button style={iconBtn} onClick={() => { setBillingForm({ code:p.code, name:p.name }); setBillingEdit(p.id); setShowBillingForm(true); }}>✏️ Edit</button>
-                      <button style={{ ...iconBtn, color:'#ef4444' }} onClick={() => { if(window.confirm(`Delete "${p.name}"?`)) setBillingProfiles(prev=>prev.filter(x=>x.id!==p.id)); }}>🗑️</button>
+                      <button style={iconBtn} onClick={() => {
+                        setBillingForm({
+                          code: p.code,
+                          name: p.name,
+                          gstRegistered: Boolean(p.gstRegistered),
+                          gstin: p.gstin || '',
+                          stateCode: p.stateCode || '',
+                          defaultGstRate: p.defaultGstRate ?? 18,
+                        });
+                        setBillingEdit(p.id);
+                        setShowBillingForm(true);
+                      }}>✏️ Edit</button>
+                      <button style={{ ...iconBtn, color:'#ef4444' }} onClick={() => {
+                        if (!window.confirm(`Delete "${p.name}"?`)) return;
+                        setBillingProfiles(prev => {
+                          const next = prev.filter(x => x.id !== p.id);
+                          saveBillingProfiles(next);
+                          return next;
+                        });
+                      }}>🗑️</button>
                     </td>
                   </tr>
                 ))}
@@ -677,23 +707,88 @@ export default function Settings() {
               <div style={{ display:'grid', gridTemplateColumns:'1fr 2fr', gap:12, marginBottom:12 }}>
                 <div>
                   <label style={labelStyle}>Code</label>
-                  <input value={billingForm.code} onChange={e=>{ setBillingForm(v=>({...v,code:e.target.value})); setBillingError(''); }} style={inputStyle} placeholder="e.g. RBGC-CHD" />
+                  <input value={billingForm.code} onChange={e=>{ setBillingForm(v=>({...v,code:e.target.value})); setBillingError(''); }} style={inputStyle} placeholder="e.g. RBGC-CHD" disabled={Boolean(billingEdit)} />
                 </div>
                 <div>
                   <label style={labelStyle}>Firm Name</label>
                   <input value={billingForm.name} onChange={e=>{ setBillingForm(v=>({...v,name:e.target.value})); setBillingError(''); }} style={inputStyle} placeholder="e.g. RAHUL B GUPTA & CO." />
                 </div>
               </div>
+              <label style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12, fontSize:13, color:'#334155', cursor:'pointer' }}>
+                <input type="checkbox" checked={billingForm.gstRegistered} onChange={e=>setBillingForm(v=>({ ...v, gstRegistered: e.target.checked }))} />
+                GST registered (tax applied on invoices using this profile)
+              </label>
+              {billingForm.gstRegistered && (
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12, marginBottom:12 }}>
+                  <div>
+                    <label style={labelStyle}>GSTIN</label>
+                    <input
+                      value={billingForm.gstin}
+                      onChange={e=>{ setBillingForm(v=>({...v,gstin:e.target.value.toUpperCase()})); setBillingError(''); }}
+                      onBlur={() => {
+                        const sc = stateCodeFromGstin(billingForm.gstin);
+                        if (sc) setBillingForm(v => ({ ...v, stateCode: v.stateCode || sc }));
+                      }}
+                      style={inputStyle}
+                      placeholder="15-character GSTIN"
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>State code (2 digits)</label>
+                    <input
+                      value={billingForm.stateCode}
+                      onChange={e=>{ setBillingForm(v=>({...v,stateCode:e.target.value.replace(/\D/g,'').slice(0,2)})); setBillingError(''); }}
+                      style={inputStyle}
+                      placeholder="From GSTIN or manual"
+                    />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>Default GST % (on taxable amount)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="40"
+                      step="0.01"
+                      value={billingForm.defaultGstRate}
+                      onChange={e=>{ setBillingForm(v=>({...v,defaultGstRate:parseFloat(e.target.value,10)||0})); setBillingError(''); }}
+                      style={inputStyle}
+                    />
+                  </div>
+                </div>
+              )}
               {billingError && <div style={{ fontSize:11, color:'#dc2626', marginBottom:8 }}>{billingError}</div>}
               <div style={{ display:'flex', gap:8 }}>
                 <button style={btnPrimary} onClick={() => {
                   if (!billingForm.code.trim()) { setBillingError('Code is required.'); return; }
                   if (!billingForm.name.trim()) { setBillingError('Firm name is required.'); return; }
-                  if (billingEdit) {
-                    setBillingProfiles(prev => prev.map(p => p.id === billingEdit ? { ...p, code:billingForm.code.trim(), name:billingForm.name.trim() } : p));
-                  } else {
-                    setBillingProfiles(prev => [...prev, { id: String(Date.now()), code:billingForm.code.trim(), name:billingForm.name.trim() }]);
+                  let stateCode = String(billingForm.stateCode || '').trim();
+                  if (billingForm.gstRegistered) {
+                    const fromG = stateCodeFromGstin(billingForm.gstin);
+                    if (!stateCode && fromG) stateCode = fromG;
+                    if (!stateCode || stateCode.length !== 2) {
+                      setBillingError('Enter a valid GSTIN or a 2-digit state code for the billing entity.');
+                      return;
+                    }
                   }
+                  const row = {
+                    id: billingEdit || String(Date.now()),
+                    code: billingForm.code.trim(),
+                    name: billingForm.name.trim(),
+                    gstRegistered: billingForm.gstRegistered,
+                    gstin: billingForm.gstRegistered ? String(billingForm.gstin || '').replace(/\s/g,'').toUpperCase() : '',
+                    stateCode: billingForm.gstRegistered ? stateCode : '',
+                    defaultGstRate: billingForm.gstRegistered ? Math.min(40, Math.max(0, parseFloat(billingForm.defaultGstRate, 10) || 18)) : 18,
+                  };
+                  setBillingProfiles(prev => {
+                    let next;
+                    if (billingEdit) {
+                      next = prev.map(p => p.id === billingEdit ? { ...p, ...row } : p);
+                    } else {
+                      next = [...prev, row];
+                    }
+                    saveBillingProfiles(next);
+                    return next;
+                  });
                   setBillingError('');
                   setShowBillingForm(false);
                 }}>💾 Save</button>

@@ -241,12 +241,21 @@ export default function Registers() {
     if (tab !== 'payments') return;
     let cancelled = false;
     setPayRegLoading(true);
+    const f = filters.payments || {};
+    const expensePurpose =
+      f.expense_purpose && f.expense_purpose !== '__all__' ? f.expense_purpose : undefined;
+    const paymentMethod =
+      f.payment_method && f.payment_method !== '__all__' ? f.payment_method : undefined;
+    const paidFrom = f.paid_from && f.paid_from !== '__all__' ? f.paid_from : undefined;
     getTxns({
       txnType: 'payment_expense',
       perPage: 100,
       page: payRegPage,
       dateFrom: payDateFrom || undefined,
       dateTo: payDateTo || undefined,
+      expensePurpose,
+      paymentMethod,
+      paidFrom,
     })
       .then(({ txns, pagination }) => {
         if (cancelled) return;
@@ -273,7 +282,7 @@ export default function Registers() {
         if (!cancelled) setPayRegLoading(false);
       });
     return () => { cancelled = true; };
-  }, [tab, payRegPage, payDateFrom, payDateTo]);
+  }, [tab, payRegPage, payDateFrom, payDateTo, filters.payments]);
 
   function getFilterState(tabKey) {
     return filters[tabKey] || {};
@@ -284,12 +293,17 @@ export default function Registers() {
       ...prev,
       [tabKey]: { ...(prev[tabKey] || {}), [filterKey]: value }
     }));
+    if (tabKey === 'payments') {
+      setPayRegPage(1);
+      setPaymentRows([]);
+    }
   }
 
   const config = REGISTER_CONFIG[tab] || DEFAULT_REGISTER_CONFIG;
   const rawData = tab === 'payments' ? paymentRows : (registerData[tab] || []);
+  // Payment register rows are filtered server-side (pagination stays correct).
   const filteredData = tab === 'payments'
-    ? applyFilters(rawData, getFilterState('payments'))
+    ? rawData
     : applyFilters(rawData, getFilterState(tab));
 
   return (

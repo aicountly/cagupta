@@ -12,7 +12,7 @@ const TXN_TYPE_LABELS = {
   credit_note: 'Credit Note',
   opening_balance: 'Opening Bal.',
   brought_forward: 'B/F',
-  payment_expense: 'Payment Exp.',
+  payment_expense: 'On-behalf payment',
 };
 
 function txnTypeLabel(type) {
@@ -210,7 +210,7 @@ export async function exportLedgerPdf({
   doc.setFontSize(10);
   doc.setTextColor(71, 85, 105);
   const meta = [
-    `Client: ${clientName || '—'}`,
+    `Name: ${clientName || '—'}`,
     `Financial year: ${fyLabel || '—'}`,
   ];
   if (dateFrom || dateTo) {

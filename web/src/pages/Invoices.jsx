@@ -4,16 +4,21 @@ import {
   getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createTds, finalizeTds,
   getTdsEntries, createRebate, createCreditNote, getLedger,
   getOpeningBalance, setOpeningBalance,
+  updateTxn, deleteTxn, requestInvoiceModifyOtp,
 } from '../services/txnService';
+import { useAuth } from '../auth/AuthContext';
 import { getContact } from '../services/contactService';
 import { getOrganization } from '../services/organizationService';
+import { getCategories } from '../services/serviceCategoryService';
+import { getEngagements } from '../services/engagementService';
 import { EXPENSE_PURPOSE_OPTIONS, expensePurposeLabel } from '../constants/expensePurposes';
 import { buildLedgerDetailLine } from '../utils/ledgerTxnDetails';
 import StatusBadge from '../components/common/StatusBadge';
 import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
 import EntitySearchDropdown from '../components/common/EntitySearchDropdown';
 import DateInput from '../components/common/DateInput';
-import { BILLING_PROFILES, getBillingProfileByCode } from '../constants/billingProfiles';
+import { getBillingProfiles, getBillingProfileByCode } from '../constants/billingProfiles';
+import { stateCodeFromGstin } from '../utils/gstUtils';
 import {
   collectIndianFYStartYearsWithFallback,
   buildLedgerRowsForIndianFY,
@@ -57,7 +62,7 @@ function TxnTypeBadge({ type }) {
     tds_final: 'TDS (Final)', rebate: 'Rebate', credit_note: 'Credit Note',
     opening_balance: 'Opening Bal.',
     brought_forward: 'B/F',
-    payment_expense: 'Payment Exp.',
+    payment_expense: 'On-behalf payment',
   };
   return (
     <span style={{ background:c.bg, color:c.color, border:`1px solid ${c.border}`, padding:'2px 8px', borderRadius:99, fontSize:11, fontWeight:700, whiteSpace:'nowrap', display:'inline-block' }}>
@@ -70,11 +75,52 @@ const TDS_SECTIONS = ['194J','194C','194H','194I','194A','194Q','Other'];
 
 const PAYMENT_METHOD_OPTIONS = ['NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'IMPS'];
 
+function buildEngagementLineOptions(categories) {
+  const out = [];
+  for (const c of categories || []) {
+    for (const sub of c.subcategories || []) {
+      for (const et of sub.engagementTypes || []) {
+        out.push({
+          key: `et-${et.id}`,
+          engagementTypeId: et.id,
+          description: `${et.name} (${c.name})`,
+        });
+      }
+    }
+  }
+  return out;
+}
+
 // ── RaiseInvoiceModal ─────────────────────────────────────────────────────────
 
-const emptyInvoiceLine = () => ({ description: '', amount: '' });
+/** Map a UI line row to API `line_items` element (snake_case). */
+function buildLineItemApiRow(l) {
+  const description = String(l.description || '').trim();
+  const amount = typeof l.amount === 'number' ? l.amount : parseFloat(l.amount, 10);
+  if (!description || !Number.isFinite(amount) || amount <= 0) return null;
+  const row = { description, amount };
+  const kind = l.lineKind === 'cost_recovery' ? 'cost_recovery' : 'professional_fee';
+  row.line_kind = kind;
+  if (kind === 'professional_fee' && l.manpowerIncluded) {
+    row.manpower_included = true;
+    const mc = typeof l.manpowerCostAmount === 'number' ? l.manpowerCostAmount : parseFloat(l.manpowerCostAmount, 10);
+    row.manpower_cost_amount = Number.isFinite(mc) && mc >= 0 ? mc : 0;
+  }
+  if (l.engagementTypeId) row.engagement_type_id = l.engagementTypeId;
+  return row;
+}
 
-function RaiseInvoiceModal({ onClose, onSave }) {
+const emptyInvoiceLine = () => ({
+  presetKey: '',
+  engagementTypeId: null,
+  description: '',
+  amount: '',
+  lineKind: 'professional_fee',
+  manpowerIncluded: false,
+  manpowerCostAmount: '',
+});
+
+function RaiseInvoiceModal({ onClose, onSave, open }) {
   const [form, setForm] = useState({
     entityId: '',
     entityName: '',
@@ -83,8 +129,60 @@ function RaiseInvoiceModal({ onClose, onSave }) {
     dueDate: '',
     notes: '',
     billingProfileCode: '',
+    serviceEngagementId: '',
     lines: [emptyInvoiceLine(), emptyInvoiceLine()],
   });
+  const [serviceCategories, setServiceCategories] = useState([]);
+  const [recipientGstin, setRecipientGstin] = useState('');
+  const [engagementOptions, setEngagementOptions] = useState([]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    getCategories().then(setServiceCategories).catch(() => setServiceCategories([]));
+    return undefined;
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !form.entityId) {
+      setRecipientGstin('');
+      return undefined;
+    }
+    let cancelled = false;
+    const idNum = parseInt(form.entityId, 10);
+    (async () => {
+      try {
+        if (form.entityType === 'organization') {
+          const o = await getOrganization(idNum);
+          if (!cancelled) setRecipientGstin((o?.gstin || '').replace(/\s/g, '').toUpperCase());
+        } else {
+          const c = await getContact(idNum);
+          if (!cancelled) setRecipientGstin((c?.gstin || '').replace(/\s/g, '').toUpperCase());
+        }
+      } catch {
+        if (!cancelled) setRecipientGstin('');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [open, form.entityId, form.entityType]);
+
+  useEffect(() => {
+    if (!open || !form.entityId) {
+      setEngagementOptions([]);
+      return undefined;
+    }
+    let cancelled = false;
+    const idNum = parseInt(form.entityId, 10);
+    const q = form.entityType === 'organization'
+      ? { organizationId: idNum, perPage: 200, status: 'all' }
+      : { clientId: idNum, perPage: 200, status: 'all' };
+    getEngagements(q)
+      .then((rows) => { if (!cancelled) setEngagementOptions(rows); })
+      .catch(() => { if (!cancelled) setEngagementOptions([]); });
+    return () => { cancelled = true; };
+  }, [open, form.entityId, form.entityType]);
+
+  const lineOptions = useMemo(() => buildEngagementLineOptions(serviceCategories), [serviceCategories]);
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const setLine = (idx, field, value) => {
     setForm(f => ({
@@ -92,6 +190,26 @@ function RaiseInvoiceModal({ onClose, onSave }) {
       lines: f.lines.map((row, i) => (i === idx ? { ...row, [field]: value } : row)),
     }));
   };
+
+  const applyPreset = (idx, key) => {
+    if (!key) {
+      setLine(idx, 'presetKey', '');
+      setLine(idx, 'engagementTypeId', null);
+      return;
+    }
+    const opt = lineOptions.find((o) => o.key === key);
+    if (!opt) return;
+    setForm((f) => ({
+      ...f,
+      lines: f.lines.map((row, i) => (i === idx ? {
+        ...row,
+        presetKey: key,
+        engagementTypeId: opt.engagementTypeId,
+        description: opt.description,
+      } : row)),
+    }));
+  };
+
   const addLine = () => setForm(f => ({ ...f, lines: [...f.lines, emptyInvoiceLine()] }));
   const removeLine = (idx) => {
     setForm(f => ({
@@ -105,14 +223,41 @@ function RaiseInvoiceModal({ onClose, onSave }) {
       return sum + (Number.isFinite(n) && n > 0 ? n : 0);
     }, 0);
   }, [form.lines]);
+
+  const billingProfiles = useMemo(() => getBillingProfiles(), [open, form.billingProfileCode]);
+  const selectedProfile = getBillingProfileByCode(form.billingProfileCode);
+  const gstPreview = useMemo(() => {
+    if (!selectedProfile?.gstRegistered) return null;
+    const subtotal = lineTotal;
+    const rate = selectedProfile.defaultGstRate ?? 18;
+    const tax = Math.round(subtotal * rate / 100 * 100) / 100;
+    const supplier = selectedProfile.stateCode || stateCodeFromGstin(selectedProfile.gstin);
+    const recipient = stateCodeFromGstin(recipientGstin);
+    let split = '—';
+    if (supplier && recipient) {
+      split = supplier === recipient
+        ? 'Intra-state: CGST + SGST (or CGST + UTGST for UT)'
+        : 'Inter-state: IGST';
+    }
+    return { subtotal, rate, tax, total: Math.round((subtotal + tax) * 100) / 100, supplier, recipient, split };
+  }, [selectedProfile, lineTotal, recipientGstin]);
+
   const handleSave = () => {
     if (!form.entityId || !form.invoiceDate) return;
-    const parsed = form.lines
-      .map(l => ({
-        description: String(l.description || '').trim(),
-        amount: parseFloat(l.amount, 10),
-      }))
-      .filter(l => l.description && Number.isFinite(l.amount) && l.amount > 0);
+    const profile = getBillingProfileByCode(form.billingProfileCode);
+    if (profile?.gstRegistered) {
+      const sup = profile.stateCode || stateCodeFromGstin(profile.gstin);
+      if (!sup || sup.length !== 2) {
+        window.alert('This billing profile is GST registered but has no valid state code. Complete Billing Firms in Settings.');
+        return;
+      }
+      const rCode = stateCodeFromGstin(recipientGstin);
+      if (!rCode) {
+        window.alert('Cannot raise a GST invoice: the contact or organization must have a GSTIN so the place of supply (state) can be determined.');
+        return;
+      }
+    }
+    const parsed = form.lines.map(buildLineItemApiRow).filter(Boolean);
     if (parsed.length === 0) return;
     onSave({
       ...form,
@@ -123,7 +268,7 @@ function RaiseInvoiceModal({ onClose, onSave }) {
   };
   return (
     <div style={overlayStyle}>
-      <div style={{ ...modalStyle, maxWidth: 640 }}>
+      <div style={{ ...modalStyle, maxWidth: 700 }}>
         <div style={modalHeaderStyle}>
           <span style={{ fontSize:15, fontWeight:700 }}>🧾 Raise Invoice</span>
           <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
@@ -140,11 +285,34 @@ function RaiseInvoiceModal({ onClose, onSave }) {
                 entityId: String(c.id),
                 entityName: c.displayName,
                 entityType: c.entityType,
+                serviceEngagementId: '',
               }))}
               placeholder="Search contact or organization…"
               style={inputStyle}
             />
           </label>
+          {recipientGstin ? (
+            <div style={{ fontSize:12, color:'#475569' }}>Recipient GSTIN (place of supply): <span style={{ fontFamily:'monospace', fontWeight:600 }}>{recipientGstin}</span></div>
+          ) : form.entityId ? (
+            <div style={{ fontSize:12, color:'#b45309' }}>No GSTIN on this entity — required when using a GST-registered billing profile.</div>
+          ) : null}
+          {form.entityId ? (
+            <label style={labelStyle}>
+              Link to service engagement (optional — for affiliate commissions)
+              <select
+                style={inputStyle}
+                value={form.serviceEngagementId}
+                onChange={(e) => set('serviceEngagementId', e.target.value)}
+              >
+                <option value="">— None —</option>
+                {engagementOptions.map((eng) => (
+                  <option key={eng.id} value={String(eng.id)}>
+                    #{eng.id} · {eng.type || 'Service'}{eng.referringAffiliateUserId ? ' · affiliate' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Invoice Date
@@ -156,27 +324,85 @@ function RaiseInvoiceModal({ onClose, onSave }) {
             </label>
           </div>
           <div style={labelStyle}>
-            <span>Line items (fees / charges — not inventory)</span>
-            <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:4 }}>
+            <span>Line items (taxable fees — amounts are before GST)</span>
+            <div style={{ display:'flex', flexDirection:'column', gap:10, marginTop:4 }}>
               {form.lines.map((row, idx) => (
-                <div key={idx} style={{ display:'grid', gridTemplateColumns:'1fr 120px 36px', gap:8, alignItems:'center' }}>
-                  <input
-                    type="text"
-                    style={inputStyle}
-                    placeholder="e.g. Professional consultancy"
-                    value={row.description}
-                    onChange={e => setLine(idx, 'description', e.target.value)}
-                  />
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    style={{ ...inputStyle, textAlign:'right' }}
-                    placeholder="₹"
-                    value={row.amount}
-                    onChange={e => setLine(idx, 'amount', e.target.value)}
-                  />
-                  <button type="button" onClick={() => removeLine(idx)} style={{ ...btnSecondary, padding:'6px', fontSize:12 }} title="Remove line">✕</button>
+                <div key={idx} style={{ display:'flex', flexDirection:'column', gap:6, paddingBottom:8, borderBottom:'1px solid #f1f5f9' }}>
+                  <select
+                    style={{ ...inputStyle, fontSize:12 }}
+                    value={row.presetKey}
+                    onChange={(e) => applyPreset(idx, e.target.value)}
+                  >
+                    <option value="">Custom description…</option>
+                    {lineOptions.map((o) => (
+                      <option key={o.key} value={o.key}>{o.description}</option>
+                    ))}
+                  </select>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 120px 36px', gap:8, alignItems:'center' }}>
+                    <input
+                      type="text"
+                      style={inputStyle}
+                      placeholder="e.g. Professional consultancy"
+                      value={row.description}
+                      onChange={(e) => setForm((f) => ({
+                        ...f,
+                        lines: f.lines.map((line, i) => (i === idx ? {
+                          ...line,
+                          description: e.target.value,
+                          presetKey: '',
+                          engagementTypeId: null,
+                        } : line)),
+                      }))}
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      style={{ ...inputStyle, textAlign:'right' }}
+                      placeholder="₹"
+                      value={row.amount}
+                      onChange={e => setLine(idx, 'amount', e.target.value)}
+                    />
+                    <button type="button" onClick={() => removeLine(idx)} style={{ ...btnSecondary, padding:'6px', fontSize:12 }} title="Remove line">✕</button>
+                  </div>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:10, alignItems:'center', fontSize:12 }}>
+                    <label style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <span style={{ color:'#64748b' }}>Line type</span>
+                      <select
+                        style={{ ...inputStyle, fontSize:12, width:160 }}
+                        value={row.lineKind}
+                        onChange={(e) => setLine(idx, 'lineKind', e.target.value)}
+                      >
+                        <option value="professional_fee">Professional fee</option>
+                        <option value="cost_recovery">Cost recovery</option>
+                      </select>
+                    </label>
+                    {row.lineKind !== 'cost_recovery' ? (
+                      <>
+                        <label style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <input
+                            type="checkbox"
+                            checked={row.manpowerIncluded}
+                            onChange={(e) => setLine(idx, 'manpowerIncluded', e.target.checked)}
+                          />
+                          <span>Manpower cost included</span>
+                        </label>
+                        {row.manpowerIncluded ? (
+                          <label style={{ display:'flex', alignItems:'center', gap:6 }}>
+                            <span>Manpower ₹</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              style={{ ...inputStyle, width:100, fontSize:12 }}
+                              value={row.manpowerCostAmount}
+                              onChange={(e) => setLine(idx, 'manpowerCostAmount', e.target.value)}
+                            />
+                          </label>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
                 </div>
               ))}
             </div>
@@ -184,15 +410,23 @@ function RaiseInvoiceModal({ onClose, onSave }) {
               + Add line
             </button>
             <div style={{ marginTop:8, fontSize:13, fontWeight:700, color:'#0f172a' }}>
-              Total (₹): {lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              Taxable subtotal (₹): {lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
+            {gstPreview && (
+              <div style={{ marginTop:8, padding:10, background:'#f8fafc', borderRadius:8, fontSize:12, color:'#334155', lineHeight:1.5 }}>
+                <div style={{ fontWeight:700, marginBottom:4 }}>GST @ {gstPreview.rate}% (preview)</div>
+                <div>GST amount: ₹{gstPreview.tax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div>Invoice total: ₹{gstPreview.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div style={{ marginTop:4, color:'#64748b' }}>{gstPreview.split}</div>
+              </div>
+            )}
           </div>
           <label style={labelStyle}>
             Billing Profile
             <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
               <option value="">— Select Billing Profile —</option>
-              {BILLING_PROFILES.map(p=>(
-                <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
+              {billingProfiles.map(p=>(
+                <option key={p.id} value={p.code}>{p.code} – {p.name}{p.gstRegistered ? ' (GST)' : ''}</option>
               ))}
             </select>
           </label>
@@ -239,7 +473,7 @@ function formatBillToAddressFromOrg(o) {
   return lines;
 }
 
-function InvoiceViewModal({ txn, onClose }) {
+function InvoiceViewModal({ txn, onClose, onEdit, onDelete, canEditInvoice, canDeleteInvoice }) {
   const [detail, setDetail] = useState(null);
   const [entity, setEntity] = useState(null);
   const [loadErr, setLoadErr] = useState('');
@@ -289,6 +523,7 @@ function InvoiceViewModal({ txn, onClose }) {
       : [];
   const gstin = entity?.type === 'contact' ? entity.data.gstin : entity?.type === 'organization' ? entity.data.gstin : '';
   const lines = inv.lineItems && inv.lineItems.length > 0 ? inv.lineItems : [];
+  const gst = inv.gstBreakdown;
 
   return (
     <div style={overlayStyle} className="invoice-view-overlay">
@@ -337,20 +572,59 @@ function InvoiceViewModal({ txn, onClose }) {
                     <tbody>
                       {lines.map((row, i) => (
                         <tr key={i} style={{ borderBottom:'1px solid #f1f5f9' }}>
-                          <td style={{ padding:'8px 0', verticalAlign:'top' }}>{row.description}</td>
-                          <td style={{ padding:'8px 0', textAlign:'right', fontWeight:600 }}>{row.amount.toLocaleString('en-IN')}</td>
+                          <td style={{ padding:'8px 0', verticalAlign:'top' }}>
+                            <div>{row.description}</div>
+                            {row.lineKind === 'cost_recovery' ? (
+                              <div style={{ fontSize:10, fontWeight:700, color:'#b45309', marginTop:4 }}>Cost recovery</div>
+                            ) : null}
+                            {row.manpowerIncluded && Number(row.manpowerCostAmount) > 0 ? (
+                              <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>Manpower in fee: ₹{Number(row.manpowerCostAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            ) : null}
+                          </td>
+                          <td style={{ padding:'8px 0', textAlign:'right', fontWeight:600 }}>{Number(row.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         </tr>
                       ))}
                     </tbody>
                     <tfoot>
-                      <tr>
-                        <td style={{ paddingTop:12, fontWeight:700 }}>Total</td>
-                        <td style={{ paddingTop:12, textAlign:'right', fontWeight:700 }}>₹{(inv.amount || inv.debit || 0).toLocaleString('en-IN')}</td>
-                      </tr>
+                      {gst ? (
+                        <>
+                          <tr>
+                            <td style={{ paddingTop:12, color:'#64748b' }}>Taxable value</td>
+                            <td style={{ paddingTop:12, textAlign:'right' }}>₹{(gst.taxable_value ?? inv.subtotal ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          </tr>
+                          {(gst.cgst_amount > 0) && (
+                            <tr><td style={{ color:'#64748b' }}>CGST</td><td style={{ textAlign:'right' }}>₹{Number(gst.cgst_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>
+                          )}
+                          {(gst.sgst_amount > 0) && (
+                            <tr><td style={{ color:'#64748b' }}>SGST</td><td style={{ textAlign:'right' }}>₹{Number(gst.sgst_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>
+                          )}
+                          {(gst.utgst_amount > 0) && (
+                            <tr><td style={{ color:'#64748b' }}>UTGST</td><td style={{ textAlign:'right' }}>₹{Number(gst.utgst_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>
+                          )}
+                          {(gst.igst_amount > 0) && (
+                            <tr><td style={{ color:'#64748b' }}>IGST</td><td style={{ textAlign:'right' }}>₹{Number(gst.igst_amount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td></tr>
+                          )}
+                          <tr>
+                            <td style={{ paddingTop:8, fontWeight:700 }}>Invoice total</td>
+                            <td style={{ paddingTop:8, textAlign:'right', fontWeight:700 }}>₹{(inv.amount || inv.debit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          </tr>
+                        </>
+                      ) : (
+                        <tr>
+                          <td style={{ paddingTop:12, fontWeight:700 }}>Total</td>
+                          <td style={{ paddingTop:12, textAlign:'right', fontWeight:700 }}>₹{(inv.amount || inv.debit || 0).toLocaleString('en-IN')}</td>
+                        </tr>
+                      )}
                     </tfoot>
                   </table>
                 ) : (
                   <div style={{ fontSize:14, fontWeight:600 }}>₹{(inv.amount || inv.debit || 0).toLocaleString('en-IN')}</div>
+                )}
+                {gst && (
+                  <div style={{ marginTop:10, fontSize:11, color:'#64748b', lineHeight:1.5 }}>
+                    Place of supply: {gst.place_of_supply_code || gst.recipient_state_code || '—'} · Supplier state: {gst.supplier_state_code || '—'}
+                    {gst.scheme ? ` · ${gst.scheme}` : ''}
+                  </div>
                 )}
                 {lines.length === 0 && (
                   <div style={{ fontSize:12, color:'#94a3b8', marginTop:6 }}>No line breakdown on file (older invoice).</div>
@@ -365,9 +639,319 @@ function InvoiceViewModal({ txn, onClose }) {
             </>
           )}
         </div>
-        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }} className="no-print">
+        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10, flexWrap:'wrap' }} className="no-print">
+          {canEditInvoice && onEdit && (
+            <button type="button" onClick={() => onEdit(txn)} style={btnSecondary}>Edit</button>
+          )}
+          {canDeleteInvoice && onDelete && (
+            <button type="button" onClick={() => onDelete(txn)} style={{ ...btnSecondary, color:'#b91c1c', borderColor:'#fecaca' }}>Delete</button>
+          )}
           <button type="button" onClick={() => window.print()} style={btnSecondary}>Print</button>
           <button type="button" onClick={onClose} style={btnPrimary}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const INVOICE_EDIT_STATUS_OPTIONS = ['draft', 'sent', 'partially_paid', 'paid', 'overdue'];
+
+function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [requesting, setRequesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    txnDate: '',
+    dueDate: '',
+    invoiceStatus: 'draft',
+    notes: '',
+    billingProfileCode: '',
+    narration: '',
+    lines: [emptyInvoiceLine(), emptyInvoiceLine()],
+  });
+
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const setLine = (idx, field, value) => {
+    setForm((f) => ({
+      ...f,
+      lines: f.lines.map((row, i) => (i === idx ? { ...row, [field]: value } : row)),
+    }));
+  };
+  const addLine = () => setForm((f) => ({ ...f, lines: [...f.lines, emptyInvoiceLine()] }));
+  const removeLine = (idx) => {
+    setForm((f) => ({
+      ...f,
+      lines: f.lines.length <= 1 ? f.lines : f.lines.filter((_, i) => i !== idx),
+    }));
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr('');
+    setOtpSent(false);
+    setOtp('');
+    getTxn(invoiceId)
+      .then((row) => {
+        if (cancelled) return;
+        const lines = row.lineItems && row.lineItems.length > 0
+          ? row.lineItems.map((l) => ({
+            description: l.description,
+            amount: String(l.amount),
+            lineKind: (l.lineKind === 'cost_recovery' || l.line_kind === 'cost_recovery') ? 'cost_recovery' : 'professional_fee',
+            manpowerIncluded: Boolean(l.manpowerIncluded ?? l.manpower_included),
+            manpowerCostAmount: l.manpowerCostAmount != null && l.manpowerCostAmount !== ''
+              ? String(l.manpowerCostAmount)
+              : (l.manpower_cost_amount != null ? String(l.manpower_cost_amount) : ''),
+          }))
+          : [emptyInvoiceLine()];
+        setForm({
+          txnDate: row.txnDate || '',
+          dueDate: row.dueDate || '',
+          invoiceStatus: row.invoiceStatus || row.status || 'draft',
+          notes: row.notes || '',
+          billingProfileCode: row.billingProfileCode || '',
+          narration: row.narration || '',
+          lines,
+        });
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(e.message || 'Failed to load invoice.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [invoiceId]);
+
+  async function handleRequestOtp() {
+    setErr('');
+    setRequesting(true);
+    try {
+      await requestInvoiceModifyOtp(invoiceId, { intent: 'update' });
+      setOtpSent(true);
+    } catch (e) {
+      setErr(e.message || 'Could not send OTP.');
+    } finally {
+      setRequesting(false);
+    }
+  }
+
+  async function handleSave() {
+    const parsed = form.lines.map(buildLineItemApiRow).filter(Boolean);
+    if (!form.txnDate || parsed.length === 0) {
+      setErr('Invoice date and at least one line item are required.');
+      return;
+    }
+    if (!otp.trim()) {
+      setErr('Request a superadmin code, then enter the OTP here.');
+      return;
+    }
+    const subtotal = parsed.reduce((a, l) => a + l.amount, 0);
+    setSaving(true);
+    setErr('');
+    try {
+      const payload = {
+        txn_date: form.txnDate,
+        due_date: form.dueDate || null,
+        invoice_status: form.invoiceStatus,
+        notes: form.notes || null,
+        billing_profile_code: form.billingProfileCode || null,
+        narration: form.narration || null,
+        line_items: parsed,
+        subtotal,
+        amount: subtotal,
+        debit: subtotal,
+      };
+      const updated = await updateTxn(invoiceId, payload, { superadminOtp: otp.trim() });
+      onSaved(updated);
+      onClose();
+    } catch (e) {
+      setErr(e.message || 'Save failed.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={overlayStyle}>
+      <div style={{ ...modalStyle, maxWidth: 640 }}>
+        <div style={modalHeaderStyle}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>✏️ Edit invoice</span>
+          <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {loading && <div style={{ color: '#64748b', fontSize: 13 }}>Loading…</div>}
+          {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
+          {!loading && (
+            <>
+              <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+                Superadmin receives a one-time code by email. Request the code, then enter it below before saving.
+              </p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <label style={labelStyle}>
+                  Invoice date *
+                  <DateInput style={inputStyle} value={form.txnDate} onChange={(e) => set('txnDate', e.target.value)} />
+                </label>
+                <label style={labelStyle}>
+                  Due date
+                  <DateInput style={inputStyle} value={form.dueDate} onChange={(e) => set('dueDate', e.target.value)} />
+                </label>
+              </div>
+              <label style={labelStyle}>
+                Status
+                <select style={inputStyle} value={form.invoiceStatus} onChange={(e) => set('invoiceStatus', e.target.value)}>
+                  {INVOICE_EDIT_STATUS_OPTIONS.map((s) => (
+                    <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={labelStyle}>
+                Billing profile
+                <select style={inputStyle} value={form.billingProfileCode} onChange={(e) => set('billingProfileCode', e.target.value)}>
+                  <option value="">— Select —</option>
+                  {BILLING_PROFILES.map((p) => (
+                    <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={labelStyle}>
+                Narration
+                <input type="text" style={inputStyle} value={form.narration} onChange={(e) => set('narration', e.target.value)} />
+              </label>
+              <label style={labelStyle}>
+                Notes
+                <input type="text" style={inputStyle} value={form.notes} onChange={(e) => set('notes', e.target.value)} />
+              </label>
+              <div style={{ fontSize: 12, fontWeight: 700, color: '#475569' }}>Line items *</div>
+              {form.lines.map((line, idx) => (
+                <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 10, borderBottom: '1px solid #f1f5f9' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 120px 36px', gap: 8, alignItems: 'end' }}>
+                    <label style={labelStyle}>
+                      Description
+                      <input type="text" style={inputStyle} value={line.description} onChange={(e) => setLine(idx, 'description', e.target.value)} />
+                    </label>
+                    <label style={labelStyle}>
+                      Amount (₹)
+                      <input type="number" style={inputStyle} min="0" step="0.01" value={line.amount} onChange={(e) => setLine(idx, 'amount', e.target.value)} />
+                    </label>
+                    <button type="button" style={{ ...btnSecondary, height: 36 }} onClick={() => removeLine(idx)}>✕</button>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', fontSize: 12 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      Line type
+                      <select style={{ ...inputStyle, fontSize: 12, width: 160 }} value={line.lineKind} onChange={(e) => setLine(idx, 'lineKind', e.target.value)}>
+                        <option value="professional_fee">Professional fee</option>
+                        <option value="cost_recovery">Cost recovery</option>
+                      </select>
+                    </label>
+                    {line.lineKind !== 'cost_recovery' ? (
+                      <>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <input type="checkbox" checked={line.manpowerIncluded} onChange={(e) => setLine(idx, 'manpowerIncluded', e.target.checked)} />
+                          Manpower cost included
+                        </label>
+                        {line.manpowerIncluded ? (
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            Manpower ₹
+                            <input type="number" min="0" step="0.01" style={{ ...inputStyle, width: 100, fontSize: 12 }} value={line.manpowerCostAmount} onChange={(e) => setLine(idx, 'manpowerCostAmount', e.target.value)} />
+                          </label>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+              <button type="button" style={{ ...btnSecondary, alignSelf: 'flex-start' }} onClick={addLine}>+ Line</button>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
+                  {requesting ? 'Sending…' : 'Request superadmin OTP'}
+                </button>
+                {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent to superadmin email</span>}
+              </div>
+              <label style={labelStyle}>
+                Superadmin OTP *
+                <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\s/g, ''))} />
+              </label>
+            </>
+          )}
+        </div>
+        <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button type="button" style={btnPrimary} disabled={loading || saving} onClick={handleSave}>{saving ? 'Saving…' : 'Save changes'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeleteInvoiceModal({ invoice, onClose, onDeleted }) {
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function sendOtp() {
+    setErr('');
+    setBusy(true);
+    try {
+      await requestInvoiceModifyOtp(invoice.id, { intent: 'delete' });
+      setOtpSent(true);
+    } catch (e) {
+      setErr(e.message || 'Failed to send OTP.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function confirmDelete() {
+    if (!otp.trim()) {
+      setErr('Enter the superadmin OTP.');
+      return;
+    }
+    setBusy(true);
+    setErr('');
+    try {
+      await deleteTxn(invoice.id, { superadminOtp: otp.trim() });
+      onDeleted(invoice.id);
+      onClose();
+    } catch (e) {
+      setErr(e.message || 'Delete failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={overlayStyle}>
+      <div style={modalStyle}>
+        <div style={modalHeaderStyle}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#b91c1c' }}>Delete invoice</span>
+          <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+            Permanently delete <strong>{invoice.invoiceNumber || `INV-${invoice.id}`}</strong> for {invoice.clientName}? This cannot be undone.
+          </p>
+          <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+            Request a superadmin OTP, then enter it to confirm.
+          </p>
+          {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
+          <button type="button" style={btnSecondary} disabled={busy} onClick={sendOtp}>
+            {busy && !otpSent ? 'Sending…' : 'Request superadmin OTP'}
+          </button>
+          {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent</span>}
+          <label style={labelStyle}>
+            Superadmin OTP *
+            <input type="text" style={inputStyle} inputMode="numeric" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\s/g, ''))} />
+          </label>
+        </div>
+        <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button type="button" disabled={busy} onClick={confirmDelete} style={{ ...btnPrimary, background: '#b91c1c' }}>Delete invoice</button>
         </div>
       </div>
     </div>
@@ -423,7 +1007,7 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
             Billing Profile
             <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
               <option value="">— Select Billing Profile —</option>
-              {BILLING_PROFILES.map(p=>(
+              {getBillingProfiles().map(p=>(
                 <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
               ))}
             </select>
@@ -527,7 +1111,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
             Billing profile
             <select style={inputStyle} value={form.billingProfileCode} onChange={(e) => set('billingProfileCode', e.target.value)}>
               <option value="">— Select billing profile —</option>
-              {BILLING_PROFILES.map((p) => (
+              {getBillingProfiles().map((p) => (
                 <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
               ))}
             </select>
@@ -599,7 +1183,7 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
             Billing Profile
             <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
               <option value="">— Select Billing Profile —</option>
-              {BILLING_PROFILES.map(p=>(
+              {getBillingProfiles().map(p=>(
                 <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
               ))}
             </select>
@@ -680,7 +1264,7 @@ function TdsModal({ onClose, onSave }) {
             Billing Profile
             <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
               <option value="">— Select Billing Profile —</option>
-              {BILLING_PROFILES.map(p=>(
+              {getBillingProfiles().map(p=>(
                 <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
               ))}
             </select>
@@ -744,7 +1328,7 @@ function RebateModal({ onClose, onSave }) {
             Billing Profile
             <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
               <option value="">— Select Billing Profile —</option>
-              {BILLING_PROFILES.map(p=>(
+              {getBillingProfiles().map(p=>(
                 <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
               ))}
             </select>
@@ -817,7 +1401,7 @@ function CreditNoteModal({ onClose, onSave, openInvoices }) {
             Billing Profile
             <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
               <option value="">— Select Billing Profile —</option>
-              {BILLING_PROFILES.map(p=>(
+              {getBillingProfiles().map(p=>(
                 <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
               ))}
             </select>
@@ -840,7 +1424,7 @@ function CreditNoteModal({ onClose, onSave, openInvoices }) {
 
 function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBalances }) {
   const [balances, setBalances] = useState(
-    BILLING_PROFILES.map(p => {
+    getBillingProfiles().map(p => {
       const existing = existingBalances.find(b => b.billingProfileCode === p.code);
       return {
         profileCode: p.code,
@@ -939,6 +1523,9 @@ function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBa
 // ── Main Invoices page ────────────────────────────────────────────────────────
 
 export default function Invoices() {
+  const { hasPermission } = useAuth();
+  const canEditInvoice = hasPermission('invoices.edit');
+  const canDeleteInvoice = hasPermission('invoices.delete');
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState('invoices');
 
@@ -948,6 +1535,8 @@ export default function Invoices() {
   const [showRecordPayment, setShowRecordPayment] = useState(false);
   const [selectedInvoice, setSelectedInvoice]   = useState(null);
   const [viewInvoiceTxn, setViewInvoiceTxn]     = useState(null);
+  const [editInvoiceId, setEditInvoiceId]       = useState(null);
+  const [deleteInvoiceTxn, setDeleteInvoiceTxn] = useState(null);
   const [invoices, setInvoices]                 = useState([]);
   const [invLoading, setInvLoading]             = useState(true);
 
@@ -1130,23 +1719,39 @@ export default function Invoices() {
   function handleRaiseInvoice(data) {
     const idNum = parseInt(data.entityId, 10);
     if (Number.isNaN(idNum) || idNum <= 0) return;
-    const lineItems = (data.lineItems || [])
-      .map((l) => ({
+    const lineItems = (data.lineItems || []).map((l) => {
+      const row = {
         description: String(l.description || '').trim(),
         amount: typeof l.amount === 'number' ? l.amount : parseFloat(l.amount, 10),
-      }))
-      .filter((l) => l.description && Number.isFinite(l.amount) && l.amount > 0);
+      };
+      if (l.line_kind) row.line_kind = l.line_kind;
+      if (l.manpower_included) {
+        row.manpower_included = true;
+        row.manpower_cost_amount = typeof l.manpower_cost_amount === 'number' ? l.manpower_cost_amount : parseFloat(l.manpower_cost_amount, 10) || 0;
+      }
+      if (l.engagement_type_id != null) row.engagement_type_id = l.engagement_type_id;
+      return row;
+    }).filter((l) => l.description && Number.isFinite(l.amount) && l.amount > 0);
     if (lineItems.length === 0) return;
-    const total = lineItems.reduce((a, l) => a + l.amount, 0);
+    const profile = getBillingProfileByCode(data.billingProfileCode);
+    const subtotal = lineItems.reduce((a, l) => a + l.amount, 0);
     const payload = {
       txn_type:             'invoice',
       txn_date:             data.invoiceDate,
       due_date:             data.dueDate || null,
-      amount:               total,
+      amount:               subtotal,
       billing_profile_code: data.billingProfileCode,
       notes:                data.notes,
       line_items:           lineItems,
+      billing_gst_registered: Boolean(profile?.gstRegistered),
+      billing_supplier_state_code: profile?.gstRegistered ? (profile.stateCode || stateCodeFromGstin(profile.gstin) || null) : null,
+      billing_supplier_gstin: profile?.gstRegistered ? (profile.gstin || null) : null,
+      default_gst_rate_percent: profile?.defaultGstRate ?? 18,
     };
+    const sid = parseInt(data.serviceEngagementId, 10);
+    if (Number.isInteger(sid) && sid > 0) {
+      payload.service_id = sid;
+    }
     if (data.entityType === 'organization') {
       payload.organization_id = idNum;
     } else {
@@ -1154,7 +1759,9 @@ export default function Invoices() {
     }
     createTxn(payload)
       .then(newInv => setInvoices(prev => [newInv, ...prev]))
-      .catch(() => {});
+      .catch((err) => {
+        window.alert(err?.message || 'Could not create invoice.');
+      });
   }
 
   function handleRecordPayment(data) {
@@ -1322,12 +1929,38 @@ export default function Invoices() {
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
       {showRaiseInvoice && (
         <RaiseInvoiceModal
+          open={showRaiseInvoice}
           onClose={() => setShowRaiseInvoice(false)}
           onSave={(data) => { handleRaiseInvoice(data); setShowRaiseInvoice(false); }}
         />
       )}
       {viewInvoiceTxn && (
-        <InvoiceViewModal txn={viewInvoiceTxn} onClose={() => setViewInvoiceTxn(null)} />
+        <InvoiceViewModal
+          txn={viewInvoiceTxn}
+          onClose={() => setViewInvoiceTxn(null)}
+          canEditInvoice={canEditInvoice}
+          canDeleteInvoice={canDeleteInvoice}
+          onEdit={(t) => { setViewInvoiceTxn(null); setEditInvoiceId(t.id); }}
+          onDelete={(t) => { setViewInvoiceTxn(null); setDeleteInvoiceTxn(t); }}
+        />
+      )}
+      {editInvoiceId != null && (
+        <EditInvoiceModal
+          invoiceId={editInvoiceId}
+          onClose={() => setEditInvoiceId(null)}
+          onSaved={(row) => {
+            setInvoices((prev) => prev.map((x) => (String(x.id) === String(row.id) ? row : x)));
+          }}
+        />
+      )}
+      {deleteInvoiceTxn && (
+        <DeleteInvoiceModal
+          invoice={deleteInvoiceTxn}
+          onClose={() => setDeleteInvoiceTxn(null)}
+          onDeleted={(id) => {
+            setInvoices((prev) => prev.filter((x) => String(x.id) !== String(id)));
+          }}
+        />
       )}
       {showRecordPayment && (
         <RecordPaymentModal
@@ -1455,7 +2088,13 @@ export default function Invoices() {
                   <td style={tdStyle}><StatusBadge status={i.invoiceStatus || i.status} /></td>
                   <td style={tdStyle} onClick={e => e.stopPropagation()}>
                     <button type="button" style={iconBtn} onClick={() => setViewInvoiceTxn(i)}>👁 View</button>
+                    {canEditInvoice && (
+                      <button type="button" style={iconBtn} onClick={() => setEditInvoiceId(i.id)}>✏️ Edit</button>
+                    )}
                     <button type="button" style={iconBtn} onClick={() => { setSelectedInvoice(i); setShowRecordPayment(true); }}>💳 Pay</button>
+                    {canDeleteInvoice && (
+                      <button type="button" style={iconBtn} onClick={() => setDeleteInvoiceTxn(i)}>🗑 Delete</button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -1513,7 +2152,7 @@ export default function Invoices() {
                 <tr key={p.id} style={trStyle}>
                   <td style={tdStyle}>{p.txnDate}</td>
                   <td style={tdStyle}>{p.clientName}</td>
-                  <td style={{ ...tdStyle, fontWeight: 600, color: '#0369a1' }}>₹{p.amount.toLocaleString('en-IN')}</td>
+                  <td style={{ ...tdStyle, fontWeight: 600, color: '#b91c1c' }} title="Recoverable from client (ledger debit)">₹{p.amount.toLocaleString('en-IN')}</td>
                   <td style={tdStyle}>{expensePurposeLabel(p.expensePurpose)}</td>
                   <td style={tdStyle}>{p.paymentMethod || '—'}</td>
                   <td style={{ ...tdStyle, maxWidth: 140, whiteSpace: 'normal' }}>{p.paidFrom || '—'}</td>
