@@ -90,7 +90,8 @@ class OrganizationController extends BaseController
 
         $actingUser = $this->authUser();
 
-        $newId = $this->orgs->create([
+        $referral = $this->referralFieldsFromBody($body);
+        $newId = $this->orgs->create(array_merge([
             'name'               => $name,
             'type'               => $body['type']    ?? null,
             'gstin'              => strtoupper(trim((string)($body['gstin'] ?? ''))) ?: null,
@@ -109,7 +110,7 @@ class OrganizationController extends BaseController
             'primary_contact_id' => $body['primary_contact_id'] ?? null,
             'is_active'          => $body['is_active'] ?? true,
             'created_by'         => $actingUser ? (int)$actingUser['id'] : null,
-        ]);
+        ], $referral));
 
         $org = $this->orgs->find($newId);
 
@@ -171,6 +172,20 @@ class OrganizationController extends BaseController
         if (array_key_exists('primary_contact_id', $body)) {
             $data['primary_contact_id'] = $body['primary_contact_id'] ? (int)$body['primary_contact_id'] : null;
         }
+        if (array_key_exists('referring_affiliate_user_id', $body)) {
+            $ra = (int)$body['referring_affiliate_user_id'];
+            $data['referring_affiliate_user_id'] = $ra > 0 ? $ra : null;
+        }
+        if (array_key_exists('referral_start_date', $body)) {
+            $data['referral_start_date'] = !empty($body['referral_start_date']) ? trim((string)$body['referral_start_date']) : null;
+        }
+        if (array_key_exists('commission_mode', $body)) {
+            $m = (string)($body['commission_mode'] ?? 'referral_only');
+            $data['commission_mode'] = in_array($m, ['referral_only', 'direct_interaction'], true) ? $m : 'referral_only';
+        }
+        if (array_key_exists('client_facing_restricted', $body)) {
+            $data['client_facing_restricted'] = (bool)$body['client_facing_restricted'];
+        }
 
         $this->orgs->update($id, $data);
         $updated    = $this->orgs->find($id);
@@ -227,6 +242,25 @@ class OrganizationController extends BaseController
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array<string, mixed>
+     */
+    private function referralFieldsFromBody(array $body): array
+    {
+        $refAff = isset($body['referring_affiliate_user_id']) ? (int)$body['referring_affiliate_user_id'] : 0;
+        $m      = (string)($body['commission_mode'] ?? 'referral_only');
+        $mode   = in_array($m, ['referral_only', 'direct_interaction'], true) ? $m : 'referral_only';
+
+        return [
+            'referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
+            'referral_start_date'         => !empty($body['referral_start_date']) ? trim((string)$body['referral_start_date']) : null,
+            'commission_mode'             => $mode,
+            'client_facing_restricted'    => !empty($body['client_facing_restricted']),
+        ];
+    }
 
     /**
      * Send an alert email to the Superadmin (fire-and-forget).

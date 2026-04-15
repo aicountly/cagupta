@@ -544,26 +544,6 @@ class TxnController extends BaseController
         return null;
     }
 
-    private function readSuperadminOtpFromRequest(): string
-    {
-        $h = $_SERVER['HTTP_X_SUPERADMIN_OTP'] ?? '';
-        if (is_string($h) && trim($h) !== '') {
-            return trim($h);
-        }
-
-        return '';
-    }
-
-    private function verifySuperadminOtp(string $otp): bool
-    {
-        $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
-        if ($super === null) {
-            return false;
-        }
-
-        return OtpService::verify((int)$super['id'], $otp);
-    }
-
     /**
      * @param array<string, mixed>|null $acting
      */

@@ -3,11 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronRight, User, Building2, Search, X, CheckSquare, Square } from 'lucide-react';
 import { getCategories } from '../services/serviceCategoryService';
 import { createEngagement } from '../services/engagementService';
-import { getContacts } from '../services/contactService';
-import { getOrganizations } from '../services/organizationService';
+import { getContacts, getContact } from '../services/contactService';
+import { getOrganizations, getOrganization } from '../services/organizationService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useNotification } from '../context/NotificationContext';
-import { useAuth } from '../auth/AuthContext';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import DateInput from '../components/common/DateInput';
 
@@ -130,18 +129,14 @@ function SearchableDropdown({ items, value, onChange, placeholder }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-function todayIsoDate() {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
+const COMMISSION_MODE_LABELS = {
+  referral_only: 'Referral only (tiered %)',
+  direct_interaction: 'Direct interaction (50/50 split)',
+};
 
 export default function NewServiceEngagement() {
   const navigate = useNavigate();
   const { addNotification } = useNotification();
-  const { hasPermission } = useAuth();
 
   // Catalog loaded from API
   const [categories, setCategories] = useState([]);
@@ -182,10 +177,7 @@ export default function NewServiceEngagement() {
   const [notes, setNotes] = useState('');
   const [createChecklist, setCreateChecklist] = useState(false);
 
-  const [referringAffiliateUserId, setReferringAffiliateUserId] = useState('');
-  const [referralStartDate, setReferralStartDate] = useState('');
-  const [commissionMode, setCommissionMode] = useState('referral_only');
-  const [clientFacingRestricted, setClientFacingRestricted] = useState(false);
+  const [masterClient, setMasterClient] = useState(null);
   const [approvedAffiliates, setApprovedAffiliates] = useState([]);
 
   // UI state
@@ -196,13 +188,22 @@ export default function NewServiceEngagement() {
   // Dynamic staff list
   const { staffUsers } = useStaffUsers();
 
-  const canListAffiliates = hasPermission('affiliates.manage');
   useEffect(() => {
-    if (!canListAffiliates) return;
     getApprovedAffiliates()
       .then(setApprovedAffiliates)
       .catch(() => setApprovedAffiliates([]));
-  }, [canListAffiliates]);
+  }, []);
+
+  useEffect(() => {
+    if (!clientId) {
+      setMasterClient(null);
+      return;
+    }
+    const req = clientType === 'contact'
+      ? getContact(clientId)
+      : getOrganization(clientId);
+    req.then(setMasterClient).catch(() => setMasterClient(null));
+  }, [clientId, clientType]);
 
   // ── Derived catalog data ────────────────────────────────────────────────────
   const selectedCategory = categories.find(c => String(c.id) === String(categoryId));
@@ -213,6 +214,27 @@ export default function NewServiceEngagement() {
   const engagementTypes = selectedSubcategory?.engagementTypes ?? [];
 
   const selectedEngagementType = engagementTypes.find(e => String(e.id) === String(engagementTypeId));
+
+  const referralAffiliateLabel = useMemo(() => {
+    if (!masterClient) return 'Select a client to see referral details.';
+    const aid = masterClient.referringAffiliateUserId;
+    if (!aid) return 'None';
+    const a = approvedAffiliates.find((x) => String(x.id) === String(aid));
+    return a ? `${a.name} (${a.email})` : `Linked user #${aid}`;
+  }, [masterClient, approvedAffiliates]);
+
+  const referralCommissionLabel = useMemo(() => {
+    if (!masterClient) return '—';
+    const m = masterClient.commissionMode || 'referral_only';
+    return COMMISSION_MODE_LABELS[m] || m;
+  }, [masterClient]);
+
+  const referralClientFacingNote = useMemo(() => {
+    if (!masterClient) return '';
+    return masterClient.clientFacingRestricted
+      ? 'Client master default: client-facing restricted (applied when this engagement is created).'
+      : 'Client master default: not restricted (applied when this engagement is created).';
+  }, [masterClient]);
 
   // ── Client lists ────────────────────────────────────────────────────────────
   const clientList = clientType === 'contact' ? contacts : organizations;
@@ -287,10 +309,6 @@ export default function NewServiceEngagement() {
       feeAgreed: fee ? Number(fee) : null,
       notes,
       tasks: checklist,
-      referringAffiliateUserId: referringAffiliateUserId || null,
-      referralStartDate: referringAffiliateUserId && referralStartDate ? referralStartDate : null,
-      commissionMode,
-      clientFacingRestricted,
     };
 
     setSaving(true);
@@ -418,66 +436,18 @@ export default function NewServiceEngagement() {
             {errors.engagementTypeId && <ErrorMsg msg={errors.engagementTypeId} />}
           </FormSection>
 
-          {/* ── Section: Referral & commission ─────────────────────────── */}
+          {/* ── Section: Referral & commission (from client master; read-only here) ─ */}
           <FormSection title="Referral &amp; commission">
-            {!canListAffiliates && (
-              <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px', lineHeight: 1.45 }}>
-                To pick a referring affiliate from the list, your account needs the <strong>Affiliates</strong> admin permission. You can still create the engagement; a manager can link an affiliate when editing.
-              </p>
-            )}
+            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px', lineHeight: 1.45 }}>
+              Referring affiliate, commission mode, and referral start date are set on the <strong>contact or organization</strong> record. They are copied into this engagement when it is created and cannot be changed here.
+            </p>
             <FieldLabel label="Referring affiliate" />
-            <select
-              value={referringAffiliateUserId}
-              onChange={(e) => {
-                const v = e.target.value;
-                setReferringAffiliateUserId(v);
-                if (v && !referralStartDate) setReferralStartDate(todayIsoDate());
-              }}
-              style={selectStyle}
-              disabled={!canListAffiliates}
-            >
-              <option value="">None</option>
-              {approvedAffiliates.map((a) => (
-                <option key={a.id} value={String(a.id)}>{a.name} ({a.email})</option>
-              ))}
-            </select>
-            <div style={{ ...twoCol, marginTop: 14 }}>
-              <div>
-                <FieldLabel label="Referral start date" />
-                <DateInput
-                  value={referralStartDate}
-                  onChange={(e) => setReferralStartDate(e.target.value)}
-                  style={inputStyle}
-                  disabled={!referringAffiliateUserId}
-                />
-              </div>
-              <div>
-                <FieldLabel label="Commission mode" />
-                <select
-                  value={commissionMode}
-                  onChange={(e) => setCommissionMode(e.target.value)}
-                  style={selectStyle}
-                  disabled={!referringAffiliateUserId}
-                >
-                  <option value="referral_only">Referral only (tiered %)</option>
-                  <option value="direct_interaction">Direct interaction (50/50 split)</option>
-                </select>
-              </div>
-            </div>
-            <label
-              style={{
-                display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 14, fontSize: 13, color: '#334155', cursor: 'pointer',
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={clientFacingRestricted}
-                onChange={(e) => setClientFacingRestricted(e.target.checked)}
-                disabled={!referringAffiliateUserId}
-                style={{ marginTop: 2 }}
-              />
-              <span>Mark client-facing as restricted (documentation / reporting flag)</span>
-            </label>
+            <div style={{ ...inputStyle, background: '#f8fafc', color: '#334155', cursor: 'default' }}>{referralAffiliateLabel}</div>
+            <FieldLabel label="Commission mode" style={{ marginTop: 14 }} />
+            <div style={{ ...inputStyle, background: '#f8fafc', color: '#334155', cursor: 'default' }}>{referralCommissionLabel}</div>
+            {referralClientFacingNote && (
+              <p style={{ fontSize: 12, color: '#64748b', margin: '14px 0 0', lineHeight: 1.45 }}>{referralClientFacingNote}</p>
+            )}
           </FormSection>
 
           {/* ── Section: Engagement Details ─────────────────────────────── */}

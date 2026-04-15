@@ -200,13 +200,16 @@ class ServiceModel
 
         $allowed = [
             'status', 'assigned_to', 'due_date', 'fees', 'notes', 'priority', 'service_type', 'financial_year',
-            'referring_affiliate_user_id', 'referral_start_date', 'commission_mode', 'client_facing_restricted',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
                 $setClauses[]       = "{$field} = :{$field}";
                 $params[":{$field}"] = $data[$field];
             }
+        }
+        if (array_key_exists('client_facing_restricted', $data)) {
+            $setClauses[]                       = 'client_facing_restricted = :client_facing_restricted';
+            $params[':client_facing_restricted'] = ((bool)$data['client_facing_restricted']) ? 'true' : 'false';
         }
         if (array_key_exists('tasks', $data)) {
             $setClauses[]    = 'tasks = :tasks';
@@ -577,5 +580,40 @@ class ServiceModel
         }
 
         return $this->find($id);
+    }
+
+    /**
+     * Referral start date for commission tiers: client/org master, then legacy service column, then fallback.
+     *
+     * @param array<string, mixed> $service
+     */
+    public function resolveReferralStartDateForCommission(array $service, string $fallbackDate): string
+    {
+        $clientType = strtolower(trim((string)($service['client_type'] ?? 'contact')));
+        $cid        = (int)($service['client_id'] ?? 0);
+        $oid        = (int)($service['organization_id'] ?? 0);
+
+        if ($clientType === 'organization' && $oid > 0) {
+            $stmt = $this->db->prepare('SELECT referral_start_date FROM organizations WHERE id = :id LIMIT 1');
+            $stmt->execute([':id' => $oid]);
+            $row = $stmt->fetch();
+            if ($row && !empty($row['referral_start_date'])) {
+                return (string)$row['referral_start_date'];
+            }
+        } elseif ($cid > 0) {
+            $stmt = $this->db->prepare('SELECT referral_start_date FROM clients WHERE id = :id LIMIT 1');
+            $stmt->execute([':id' => $cid]);
+            $row = $stmt->fetch();
+            if ($row && !empty($row['referral_start_date'])) {
+                return (string)$row['referral_start_date'];
+            }
+        }
+
+        $legacy = (string)($service['referral_start_date'] ?? '');
+        if ($legacy !== '') {
+            return $legacy;
+        }
+
+        return $fallbackDate;
     }
 }

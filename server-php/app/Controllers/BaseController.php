@@ -4,6 +4,8 @@ declare(strict_types=1);
 namespace App\Controllers;
 
 use App\Config\Auth as AuthConfig;
+use App\Libraries\OtpService;
+use App\Models\UserModel;
 
 use function App\Helpers\api_success;
 use function App\Helpers\api_error;
@@ -90,5 +92,32 @@ abstract class BaseController
     protected function isSuperAdminEmail(string $email): bool
     {
         return strtolower($email) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL);
+    }
+
+    /**
+     * Superadmin invoice/service OTP header (see TxnController, ServiceController).
+     */
+    protected function readSuperadminOtpFromRequest(): string
+    {
+        $h = $_SERVER['HTTP_X_SUPERADMIN_OTP'] ?? '';
+        if (is_string($h) && trim($h) !== '') {
+            return trim($h);
+        }
+
+        return '';
+    }
+
+    protected function verifySuperadminOtp(string $otp): bool
+    {
+        if ($otp === '') {
+            return false;
+        }
+        $users = new UserModel();
+        $super = $users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
+        if ($super === null) {
+            return false;
+        }
+
+        return OtpService::verify((int)$super['id'], $otp);
     }
 }

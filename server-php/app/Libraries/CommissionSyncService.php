@@ -129,7 +129,7 @@ final class CommissionSyncService
         }
 
         $txnDate       = (string)($inv['txn_date'] ?? date('Y-m-d'));
-        $referralStart = (string)($service['referral_start_date'] ?? $txnDate);
+        $referralStart = $this->services->resolveReferralStartDateForCommission($service, $txnDate);
         if ($referralStart === '') {
             $referralStart = $txnDate;
         }

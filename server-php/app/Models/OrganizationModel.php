@@ -110,13 +110,16 @@ class OrganizationModel
             'INSERT INTO organizations (
                 name, type, gstin, pan, email, phone,
                 address, city, state, country, pincode, website, notes,
-                reference, group_id, primary_contact_id, is_active, created_by
+                reference, group_id, primary_contact_id, is_active, created_by,
+                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
              ) VALUES (
                 :name, :type, :gstin, :pan, :email, :phone,
                 :address, :city, :state, :country, :pincode, :website, :notes,
-                :reference, :group_id, :primary_contact_id, :is_active, :created_by
+                :reference, :group_id, :primary_contact_id, :is_active, :created_by,
+                :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted
              ) RETURNING id'
         );
+        $refAff = isset($data['referring_affiliate_user_id']) ? (int)$data['referring_affiliate_user_id'] : 0;
         $stmt->execute([
             ':name'               => $data['name'],
             ':type'               => $data['type']       ?? null,
@@ -136,6 +139,10 @@ class OrganizationModel
             ':primary_contact_id' => isset($data['primary_contact_id']) && $data['primary_contact_id'] !== '' ? (int)$data['primary_contact_id'] : null,
             ':is_active'          => ((bool)($data['is_active'] ?? true)) ? 'true' : 'false',
             ':created_by'         => $data['created_by'] ?? null,
+            ':referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
+            ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
+            ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
+            ':client_facing_restricted' => ((bool)($data['client_facing_restricted'] ?? false)) ? 'true' : 'false',
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -153,12 +160,22 @@ class OrganizationModel
         $allowed = [
             'name', 'type', 'gstin', 'pan', 'email', 'phone',
             'address', 'city', 'state', 'country', 'pincode', 'website', 'notes', 'reference',
+            'referral_start_date', 'commission_mode',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
                 $setClauses[]       = "{$field} = :{$field}";
                 $params[":{$field}"] = $data[$field];
             }
+        }
+        if (array_key_exists('referring_affiliate_user_id', $data)) {
+            $ra = (int)$data['referring_affiliate_user_id'];
+            $setClauses[]                    = 'referring_affiliate_user_id = :referring_affiliate_user_id';
+            $params[':referring_affiliate_user_id'] = $ra > 0 ? $ra : null;
+        }
+        if (array_key_exists('client_facing_restricted', $data)) {
+            $setClauses[]                       = 'client_facing_restricted = :client_facing_restricted';
+            $params[':client_facing_restricted'] = ((bool)$data['client_facing_restricted']) ? 'true' : 'false';
         }
         if (array_key_exists('primary_contact_id', $data)) {
             $setClauses[]               = 'primary_contact_id = :primary_contact_id';

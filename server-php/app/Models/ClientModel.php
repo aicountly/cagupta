@@ -201,14 +201,17 @@ class ClientModel
                 type, first_name, last_name, organization_name,
                 email, phone, pan, gstin,
                 address_line1, address_line2, city, state, pincode, country,
-                notes, reference, group_id, is_active, created_by
+                notes, reference, group_id, is_active, created_by,
+                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
              ) VALUES (
                 :type, :first_name, :last_name, :organization_name,
                 :email, :phone, :pan, :gstin,
                 :address_line1, :address_line2, :city, :state, :pincode, :country,
-                :notes, :reference, :group_id, :is_active, :created_by
+                :notes, :reference, :group_id, :is_active, :created_by,
+                :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted
              ) RETURNING id'
         );
+        $refAff = isset($data['referring_affiliate_user_id']) ? (int)$data['referring_affiliate_user_id'] : 0;
         $stmt->execute([
             ':type'              => $data['type']              ?? 'individual',
             ':first_name'        => $data['first_name']        ?? null,
@@ -229,6 +232,10 @@ class ClientModel
             ':group_id'          => isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null,
             ':is_active'         => ((bool)($data['is_active'] ?? true)) ? 'true' : 'false',
             ':created_by'        => $data['created_by']        ?? null,
+            ':referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
+            ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
+            ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
+            ':client_facing_restricted' => ((bool)($data['client_facing_restricted'] ?? false)) ? 'true' : 'false',
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -248,12 +255,22 @@ class ClientModel
             'email', 'phone', 'pan', 'gstin',
             'address_line1', 'address_line2', 'city', 'state', 'pincode', 'country',
             'notes', 'reference',
+            'referral_start_date', 'commission_mode',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
                 $setClauses[]       = "{$field} = :{$field}";
                 $params[":{$field}"] = $data[$field];
             }
+        }
+        if (array_key_exists('referring_affiliate_user_id', $data)) {
+            $ra = (int)$data['referring_affiliate_user_id'];
+            $setClauses[]                    = 'referring_affiliate_user_id = :referring_affiliate_user_id';
+            $params[':referring_affiliate_user_id'] = $ra > 0 ? $ra : null;
+        }
+        if (array_key_exists('client_facing_restricted', $data)) {
+            $setClauses[]                       = 'client_facing_restricted = :client_facing_restricted';
+            $params[':client_facing_restricted'] = ((bool)$data['client_facing_restricted']) ? 'true' : 'false';
         }
         if (array_key_exists('is_active', $data)) {
             $setClauses[]       = 'is_active = :is_active';

@@ -143,19 +143,6 @@ export async function createEngagement(payload) {
     notes:                payload.notes               || null,
     tasks:                payload.tasks               || [],
   };
-  const refAff = positiveIntOrNull(payload.referringAffiliateUserId);
-  if (refAff) {
-    body.referring_affiliate_user_id = refAff;
-  }
-  if (payload.referralStartDate) {
-    body.referral_start_date = payload.referralStartDate;
-  }
-  if (payload.commissionMode) {
-    body.commission_mode = payload.commissionMode;
-  }
-  if (payload.clientFacingRestricted) {
-    body.client_facing_restricted = true;
-  }
 
   const res = await fetch(`${API_BASE}/admin/services`, {
     method:  'POST',
@@ -170,9 +157,10 @@ export async function createEngagement(payload) {
  * Update an existing service engagement.
  * @param {number|string} id
  * @param {object} payload
+ * @param {{ superadminOtp?: string }} [opts] Pass superadminOtp when changing clientFacingRestricted.
  * @returns {Promise<object>}
  */
-export async function updateEngagement(id, payload) {
+export async function updateEngagement(id, payload, { superadminOtp } = {}) {
   const body = {};
   if ('status' in payload) body.status = payload.status;
   if ('assignedTo' in payload) body.assigned_to = positiveIntOrNull(payload.assignedTo);
@@ -185,20 +173,33 @@ export async function updateEngagement(id, payload) {
   if ('tasks' in payload) body.tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
   if ('type' in payload) body.service_type = payload.type || null;
   if ('financialYear' in payload) body.financial_year = payload.financialYear || null;
-  if ('referringAffiliateUserId' in payload) {
-    body.referring_affiliate_user_id = positiveIntOrNull(payload.referringAffiliateUserId);
-  }
-  if ('referralStartDate' in payload) body.referral_start_date = payload.referralStartDate || null;
-  if ('commissionMode' in payload) body.commission_mode = payload.commissionMode || 'referral_only';
   if ('clientFacingRestricted' in payload) body.client_facing_restricted = Boolean(payload.clientFacingRestricted);
+
+  const headers = { ...authHeaders() };
+  if (superadminOtp) {
+    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
+  }
 
   const res = await fetch(`${API_BASE}/admin/services/${id}`, {
     method:  'PUT',
-    headers: authHeaders(),
+    headers,
     body:    JSON.stringify(body),
   });
   const data = await parseResponse(res);
   return normalizeEngagement(data.data);
+}
+
+/**
+ * Request superadmin OTP to toggle client-facing restricted on a service engagement.
+ * @param {number|string} id
+ */
+export async function requestServiceClientFacingOtp(id) {
+  const res = await fetch(`${API_BASE}/admin/services/${id}/request-client-facing-otp`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify({}),
+  });
+  return parseResponse(res);
 }
 
 /**

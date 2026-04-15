@@ -6,7 +6,10 @@ namespace App\Controllers\Admin;
 use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
+use App\Libraries\OtpService;
 use App\Models\AdminAuditLogModel;
+use App\Models\ClientModel;
+use App\Models\OrganizationModel;
 use App\Models\ServiceModel;
 use App\Models\TimeEntryModel;
 use App\Models\UserModel;
@@ -89,7 +92,38 @@ class ServiceController extends BaseController
 
         $actingUser = $this->authUser();
 
-        $refAff = isset($body['referring_affiliate_user_id']) ? (int)$body['referring_affiliate_user_id'] : 0;
+        $clientType = strtolower(trim((string)($body['client_type'] ?? 'contact')));
+        $clientId   = isset($body['client_id']) ? (int)$body['client_id'] : 0;
+        $orgId      = isset($body['organization_id']) ? (int)$body['organization_id'] : 0;
+
+        $refAff         = null;
+        $commissionMode = 'referral_only';
+        $clientFacing   = false;
+
+        $clients = new ClientModel();
+        $orgs    = new OrganizationModel();
+
+        if ($clientType === 'organization') {
+            if ($orgId > 0) {
+                $row = $orgs->find($orgId);
+                if ($row === null) {
+                    $this->error('Organization not found.', 404);
+                }
+                $r = (int)($row['referring_affiliate_user_id'] ?? 0);
+                $refAff         = $r > 0 ? $r : null;
+                $commissionMode = $this->normalizeCommissionMode($row['commission_mode'] ?? 'referral_only');
+                $clientFacing   = !empty($row['client_facing_restricted']);
+            }
+        } elseif ($clientId > 0) {
+            $row = $clients->find($clientId);
+            if ($row === null) {
+                $this->error('Contact not found.', 404);
+            }
+            $r = (int)($row['referring_affiliate_user_id'] ?? 0);
+            $refAff         = $r > 0 ? $r : null;
+            $commissionMode = $this->normalizeCommissionMode($row['commission_mode'] ?? 'referral_only');
+            $clientFacing   = !empty($row['client_facing_restricted']);
+        }
 
         $newId = $this->services->create([
             'client_type'          => $body['client_type']          ?? 'contact',
@@ -111,10 +145,10 @@ class ServiceController extends BaseController
             'subcategory_name'     => $body['subcategory_name']     ?? null,
             'engagement_type_id'   => $body['engagement_type_id']   ?? null,
             'engagement_type_name' => $body['engagement_type_name'] ?? null,
-            'referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
-            'referral_start_date'  => !empty($body['referral_start_date']) ? $body['referral_start_date'] : null,
-            'commission_mode'      => $body['commission_mode'] ?? 'referral_only',
-            'client_facing_restricted' => !empty($body['client_facing_restricted']),
+            'referring_affiliate_user_id' => $refAff,
+            'referral_start_date'  => null,
+            'commission_mode'      => $commissionMode,
+            'client_facing_restricted' => $clientFacing,
         ]);
 
         $this->services->promoteBillingOpenIfEligible($newId);
@@ -179,6 +213,54 @@ class ServiceController extends BaseController
         }
         $txns = $this->services->listBillingInvoiceTxns($id);
         $this->success($txns, 'Billing invoices retrieved');
+    }
+
+    // ── POST /api/admin/services/:id/request-client-facing-otp ───────────────
+
+    /**
+     * Send a superadmin OTP to authorize toggling client_facing_restricted on a service.
+     */
+    public function requestClientFacingOtp(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
+        if ($super === null || !$super['is_active']) {
+            $this->error('Super admin account is not provisioned.', 500);
+        }
+        $superId = (int)$super['id'];
+        $email   = trim((string)($super['email'] ?? ''));
+        if ($email === '') {
+            $this->error('Super admin has no email.', 500);
+        }
+
+        $otp = OtpService::generate($superId);
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('service-client-facing-otp', [
+                'userName'       => (string)($super['name'] ?? $email),
+                'otpCode'        => $otp,
+                'expiryMinutes'  => (string)OtpService::expiryMinutes(),
+                'serviceId'      => (string)$id,
+            ]);
+            if ($htmlBody !== '') {
+                BrevoMailer::send(
+                    $email,
+                    (string)($super['name'] ?? $email),
+                    'Service client-facing OTP - CA Rahul Gupta',
+                    $htmlBody
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Client-facing OTP email failed: ' . $e->getMessage());
+        }
+
+        $this->success([
+            'otp_sent'     => true,
+            'masked_email' => $this->maskEmail($email),
+        ], 'OTP sent.');
     }
 
     // ── PATCH /api/admin/services/:id/billing-closure ────────────────────────
@@ -266,22 +348,31 @@ class ServiceController extends BaseController
 
         $allowed = [
             'status', 'assigned_to', 'due_date', 'fees', 'notes', 'priority', 'service_type', 'financial_year',
-            'referral_start_date', 'commission_mode', 'client_facing_restricted',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $body)) {
                 $data[$field] = $body[$field];
             }
         }
-        if (array_key_exists('referring_affiliate_user_id', $body)) {
-            $ra = (int)$body['referring_affiliate_user_id'];
-            $data['referring_affiliate_user_id'] = $ra > 0 ? $ra : null;
-        }
         if (array_key_exists('tasks', $body)) {
             $data['tasks'] = $body['tasks'];
         }
 
-        $this->services->update($id, $data);
+        $oldCfr = (bool)($service['client_facing_restricted'] ?? false);
+        if (array_key_exists('client_facing_restricted', $body)) {
+            $newCfr = (bool)$body['client_facing_restricted'];
+            if ($newCfr !== $oldCfr) {
+                $otp = $this->readSuperadminOtpFromRequest();
+                if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
+                    $this->error('Valid superadmin OTP is required to change client-facing restricted. Request a code first.', 403);
+                }
+                $data['client_facing_restricted'] = $newCfr;
+            }
+        }
+
+        if ($data !== []) {
+            $this->services->update($id, $data);
+        }
         $this->services->promoteBillingOpenIfEligible($id);
         $updated   = $this->services->find($id);
         $afterSnap = $this->serviceAuditSnapshot($updated ?? []);
@@ -512,5 +603,30 @@ class ServiceController extends BaseController
         } catch (\Throwable $e) {
             error_log('[ServiceController] Deletion notify email failed: ' . $e->getMessage());
         }
+    }
+
+    private function normalizeCommissionMode(mixed $v): string
+    {
+        $m = (string)($v ?? 'referral_only');
+
+        return in_array($m, ['referral_only', 'direct_interaction'], true) ? $m : 'referral_only';
+    }
+
+    private function maskEmail(string $email): string
+    {
+        $parts = explode('@', $email, 2);
+        if (count($parts) !== 2) {
+            return '***@***.***';
+        }
+        $local  = $parts[0];
+        $domain = $parts[1];
+        $len    = strlen($local);
+        if ($len <= 2) {
+            $masked = $local[0] . str_repeat('*', max(1, $len - 1));
+        } else {
+            $masked = $local[0] . str_repeat('*', $len - 2) . $local[$len - 1];
+        }
+
+        return $masked . '@' . $domain;
     }
 }

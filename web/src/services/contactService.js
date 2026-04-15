@@ -121,6 +121,10 @@ function normalizeContact(c) {
     status:        c.is_active === false ? 'inactive' : (c.is_active === true ? 'active' : (c.status || 'active')),
     createdAt:     c.created_at || '',
     groupId:       c.group_id ?? null,
+    referringAffiliateUserId: c.referring_affiliate_user_id ?? null,
+    referralStartDate: c.referral_start_date || '',
+    commissionMode: c.commission_mode || 'referral_only',
+    clientFacingRestricted: Boolean(c.client_facing_restricted),
   };
 }
 
@@ -178,6 +182,11 @@ export async function createContact(payload) {
     assigned_manager:  payload.assignedManager || null,
     linked_org_ids:    payload.linkedOrgIds    || [],
     group_id:          payload.groupId ?? null,
+    referring_affiliate_user_id: payload.referringAffiliateUserId != null && payload.referringAffiliateUserId !== ''
+      ? Number(payload.referringAffiliateUserId) : null,
+    referral_start_date: payload.referralStartDate || null,
+    commission_mode: payload.commissionMode || 'referral_only',
+    client_facing_restricted: Boolean(payload.clientFacingRestricted),
   };
 
   const res = await fetch(`${API_BASE}/admin/contacts`, {
@@ -234,6 +243,13 @@ export async function updateContact(id, payload) {
   if (hasOwn(payload, 'groupId') || hasOwn(payload, 'group_id')) {
     body.group_id = payload.groupId ?? payload.group_id ?? null;
   }
+  if (hasOwn(payload, 'referringAffiliateUserId')) {
+    const v = payload.referringAffiliateUserId;
+    body.referring_affiliate_user_id = v === '' || v == null ? null : Number(v);
+  }
+  if (hasOwn(payload, 'referralStartDate')) body.referral_start_date = payload.referralStartDate || null;
+  if (hasOwn(payload, 'commissionMode')) body.commission_mode = payload.commissionMode || 'referral_only';
+  if (hasOwn(payload, 'clientFacingRestricted')) body.client_facing_restricted = Boolean(payload.clientFacingRestricted);
 
   const res = await fetch(`${API_BASE}/admin/contacts/${id}`, {
     method:  'PUT',

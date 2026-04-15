@@ -4,7 +4,10 @@ import { ChevronRight, X } from 'lucide-react';
 import { createContact, updateContact as updateContactApi, getContact } from '../services/contactService';
 import { getOrganizations } from '../services/organizationService';
 import { getGroups } from '../services/clientGroupService';
+import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
+import { useAuth } from '../auth/AuthContext';
+import DateInput from '../components/common/DateInput';
 
 // ── Country / State data ──────────────────────────────────────────────────────
 const COUNTRIES = [
@@ -97,6 +100,10 @@ function emptyForm(defaultManager = '') {
     notes: '',
     groupId: '',
     reference: '',
+    referringAffiliateUserId: '',
+    referralStartDate: '',
+    commissionMode: 'referral_only',
+    clientFacingRestricted: false,
   };
 }
 
@@ -119,6 +126,16 @@ export default function ContactCreatePage() {
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
+  const { hasPermission } = useAuth();
+  const canListAffiliates = hasPermission('affiliates.manage');
+  const [approvedAffiliates, setApprovedAffiliates] = useState([]);
+
+  useEffect(() => {
+    if (!canListAffiliates) return;
+    getApprovedAffiliates()
+      .then(setApprovedAffiliates)
+      .catch(() => setApprovedAffiliates([]));
+  }, [canListAffiliates]);
 
   // Track "dirty" state so we can warn on cancel
   const [dirty, setDirty] = useState(false);
@@ -163,6 +180,10 @@ export default function ContactCreatePage() {
           notes:           existing.notes           || '',
           groupId:         existing.groupId || existing.group_id || '',
           reference:       existing.reference || '',
+          referringAffiliateUserId: existing.referringAffiliateUserId != null ? String(existing.referringAffiliateUserId) : '',
+          referralStartDate: existing.referralStartDate || '',
+          commissionMode: existing.commissionMode || 'referral_only',
+          clientFacingRestricted: Boolean(existing.clientFacingRestricted),
         });
       })
       .catch(err => {
@@ -270,6 +291,10 @@ export default function ContactCreatePage() {
       notes:           form.notes.trim()           || undefined,
       groupId:         form.groupId || null,
       reference:       form.reference.trim()        || undefined,
+      referringAffiliateUserId: form.referringAffiliateUserId || null,
+      referralStartDate: form.referralStartDate || undefined,
+      commissionMode: form.commissionMode || 'referral_only',
+      clientFacingRestricted: form.clientFacingRestricted,
     };
     return contact;
   }, [form, isEdit]);
@@ -597,6 +622,54 @@ export default function ContactCreatePage() {
             </div>
           )}
         </div>
+
+        {/* ── Section: Referral & commission ── */}
+        <SectionHeader title="Referral & commission" style={{ marginTop: 24 }} />
+        <div style={gridStyle}>
+          <FormField label="Referring affiliate">
+            {canListAffiliates ? (
+              <select
+                value={form.referringAffiliateUserId}
+                onChange={e => update('referringAffiliateUserId', e.target.value)}
+                style={inputStyle}
+              >
+                <option value="">None</option>
+                {approvedAffiliates.map(a => (
+                  <option key={a.id} value={String(a.id)}>{a.name} ({a.email})</option>
+                ))}
+                {form.referringAffiliateUserId && !approvedAffiliates.some(a => String(a.id) === String(form.referringAffiliateUserId)) && (
+                  <option value={form.referringAffiliateUserId}>Linked user #{form.referringAffiliateUserId}</option>
+                )}
+              </select>
+            ) : (
+              <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+                Picking an affiliate requires <strong>Affiliates</strong> admin permission. Values still save if already set.
+              </p>
+            )}
+          </FormField>
+          <FormField label="Referral start date">
+            <DateInput
+              value={form.referralStartDate}
+              onChange={e => update('referralStartDate', e.target.value)}
+              style={inputStyle}
+            />
+          </FormField>
+          <FormField label="Commission mode">
+            <select value={form.commissionMode} onChange={e => update('commissionMode', e.target.value)} style={inputStyle}>
+              <option value="referral_only">Referral only (tiered %)</option>
+              <option value="direct_interaction">Direct interaction (50/50 split)</option>
+            </select>
+          </FormField>
+        </div>
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 12, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={form.clientFacingRestricted}
+            onChange={e => update('clientFacingRestricted', e.target.checked)}
+            style={{ marginTop: 2 }}
+          />
+          <span>Client-facing restricted (default for new service engagements)</span>
+        </label>
 
         {/* ── Section: Notes ── */}
         <SectionHeader title="Notes / Remarks" style={{ marginTop: 24 }} />

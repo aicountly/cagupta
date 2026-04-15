@@ -43,7 +43,10 @@ function normalizeOrg(o) {
     state:            o.state       || '',
     country:          o.country     || 'India',
     pincode:          o.pincode     || '',
+    pin:              o.pincode     || '',
     address:          o.address     || '',
+    addressLine1:     o.address_line1 || o.address || '',
+    addressLine2:     o.address_line2 || '',
     notes:            o.notes       || '',
     reference:        o.reference   || '',
     primaryContact:   o.primary_contact_name || o.primary_contact || '—',
@@ -52,6 +55,10 @@ function normalizeOrg(o) {
     status:           o.is_active === false ? 'inactive' : (o.is_active === true ? 'active' : (o.status || 'active')),
     createdAt:        o.created_at  || '',
     groupId:          o.group_id ?? null,
+    referringAffiliateUserId: o.referring_affiliate_user_id ?? null,
+    referralStartDate: o.referral_start_date || '',
+    commissionMode: o.commission_mode || 'referral_only',
+    clientFacingRestricted: Boolean(o.client_facing_restricted),
   };
 }
 
@@ -142,6 +149,11 @@ export async function createOrganization(payload) {
     primary_contact_id:  payload.primaryContactId  || null,
     assigned_manager:    payload.assignedManager   || null,
     group_id:            payload.groupId ?? payload.group_id ?? null,
+    referring_affiliate_user_id: payload.referringAffiliateUserId != null && payload.referringAffiliateUserId !== ''
+      ? Number(payload.referringAffiliateUserId) : null,
+    referral_start_date: payload.referralStartDate || null,
+    commission_mode: payload.commissionMode || 'referral_only',
+    client_facing_restricted: Boolean(payload.clientFacingRestricted),
   };
 
   const res = await fetch(`${API_BASE}/admin/organizations`, {
@@ -179,6 +191,11 @@ export async function updateOrganization(id, payload) {
     primary_contact_id: payload.primaryContactId || null,
     assigned_manager:   payload.assignedManager  || null,
     group_id:           payload.groupId ?? payload.group_id ?? null,
+    referring_affiliate_user_id: payload.referringAffiliateUserId != null && payload.referringAffiliateUserId !== ''
+      ? Number(payload.referringAffiliateUserId) : null,
+    referral_start_date: payload.referralStartDate || null,
+    commission_mode: payload.commissionMode || 'referral_only',
+    client_facing_restricted: Boolean(payload.clientFacingRestricted),
   };
 
   const res = await fetch(`${API_BASE}/admin/organizations/${id}`, {

@@ -4,11 +4,22 @@ import { ChevronRight, Plus, X, CheckSquare, Square, Trash2 } from 'lucide-react
 import DateInput from '../components/common/DateInput';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useAuth } from '../auth/AuthContext';
-import { getEngagement, updateEngagement, createTask, deleteEngagement } from '../services/engagementService';
+import {
+  getEngagement,
+  updateEngagement,
+  createTask,
+  deleteEngagement,
+  requestServiceClientFacingOtp,
+} from '../services/engagementService';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import { getTimeEntries, createTimeEntry, TIME_ACTIVITY_TYPES } from '../services/timeEntryService';
 
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'pending_info', 'review', 'completed', 'cancelled'];
+
+const COMMISSION_MODE_LABELS = {
+  referral_only: 'Referral only (tiered %)',
+  direct_interaction: 'Direct interaction (50/50 split)',
+};
 
 function AddTaskModal({ onClose, onSave }) {
   const [form, setForm] = useState({ title: '', assignedTo: '', dueDate: '', priority: 'medium' });
@@ -62,7 +73,6 @@ export default function ServiceEngagementEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { hasPermission, session } = useAuth();
-  const canListAffiliates = hasPermission('affiliates.manage');
   const canDeleteService = hasPermission('services.delete');
   const canLogTimePermission = hasPermission('services.edit');
   const canManageTeamRates = hasPermission('users.manage');
@@ -100,9 +110,11 @@ export default function ServiceEngagementEdit() {
   const [deleting, setDeleting] = useState(false);
 
   const [referringAffiliateUserId, setReferringAffiliateUserId] = useState('');
-  const [referralStartDate, setReferralStartDate] = useState('');
   const [commissionMode, setCommissionMode] = useState('referral_only');
   const [clientFacingRestricted, setClientFacingRestricted] = useState(false);
+  const [initialClientFacing, setInitialClientFacing] = useState(false);
+  const [cfOtp, setCfOtp] = useState('');
+  const [requestingCfOtp, setRequestingCfOtp] = useState(false);
   const [approvedAffiliates, setApprovedAffiliates] = useState([]);
 
   const canLogTime = useMemo(() => {
@@ -145,20 +157,29 @@ export default function ServiceEngagementEdit() {
         setTasks(Array.isArray(eng.tasks) ? eng.tasks.map(t => ({ ...t })) : []);
         setBillingClosure(eng.billingClosure != null && eng.billingClosure !== '' ? eng.billingClosure : null);
         setReferringAffiliateUserId(eng.referringAffiliateUserId != null ? String(eng.referringAffiliateUserId) : '');
-        setReferralStartDate(eng.referralStartDate || '');
         setCommissionMode(eng.commissionMode || 'referral_only');
-        setClientFacingRestricted(Boolean(eng.clientFacingRestricted));
+        const cfr = Boolean(eng.clientFacingRestricted);
+        setClientFacingRestricted(cfr);
+        setInitialClientFacing(cfr);
+        setCfOtp('');
       })
       .catch(e => setError(e.message || 'Could not load engagement.'))
       .finally(() => setLoading(false));
   }, [id]);
 
   useEffect(() => {
-    if (!canListAffiliates) return;
     getApprovedAffiliates()
       .then(setApprovedAffiliates)
       .catch(() => setApprovedAffiliates([]));
-  }, [canListAffiliates]);
+  }, []);
+
+  const affiliateReadonlyLabel = useMemo(() => {
+    if (!referringAffiliateUserId) return 'None';
+    const a = approvedAffiliates.find((x) => String(x.id) === String(referringAffiliateUserId));
+    return a ? `${a.name} (${a.email})` : `Linked user #${referringAffiliateUserId}`;
+  }, [referringAffiliateUserId, approvedAffiliates]);
+
+  const commissionReadonlyLabel = COMMISSION_MODE_LABELS[commissionMode] || commissionMode;
 
   useEffect(() => {
     if (session?.user?.id) {
@@ -182,7 +203,7 @@ export default function ServiceEngagementEdit() {
     setError('');
     setToast('');
     try {
-      await updateEngagement(id, {
+      const payload = {
         status,
         assignedTo: assigneeId === '' ? null : assigneeId,
         dueDate,
@@ -191,11 +212,15 @@ export default function ServiceEngagementEdit() {
         tasks,
         type: serviceType.trim(),
         financialYear: fy.trim(),
-        referringAffiliateUserId: referringAffiliateUserId === '' ? null : referringAffiliateUserId,
-        referralStartDate: referringAffiliateUserId && referralStartDate ? referralStartDate : null,
-        commissionMode,
-        clientFacingRestricted,
-      });
+      };
+      if (clientFacingRestricted !== initialClientFacing) {
+        payload.clientFacingRestricted = clientFacingRestricted;
+        await updateEngagement(id, payload, { superadminOtp: cfOtp.trim() });
+      } else {
+        await updateEngagement(id, payload);
+      }
+      setInitialClientFacing(clientFacingRestricted);
+      setCfOtp('');
       setToast('Engagement saved');
       setTimeout(() => setToast(''), 2000);
     } catch (e) {
@@ -269,6 +294,21 @@ export default function ServiceEngagementEdit() {
     }
   }
 
+  async function handleRequestCfOtp() {
+    if (!id) return;
+    setRequestingCfOtp(true);
+    setError('');
+    try {
+      await requestServiceClientFacingOtp(id);
+      setToast('OTP sent to superadmin email');
+      setTimeout(() => setToast(''), 2500);
+    } catch (e) {
+      setError(e.message || 'Could not send OTP.');
+    } finally {
+      setRequestingCfOtp(false);
+    }
+  }
+
   async function handleDeleteEngagement() {
     if (!id) return;
     if (!window.confirm('Delete this service engagement permanently? Assigned users will be notified by email.')) return;
@@ -334,64 +374,48 @@ export default function ServiceEngagementEdit() {
 
         <section style={sectionCard}>
           <div style={sectionTitle}>Referral &amp; commission</div>
-          {!canListAffiliates && (
-            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px', lineHeight: 1.45 }}>
-              Affiliate list requires <strong>Affiliates</strong> admin permission. Existing values are shown; clear the affiliate only if your role allows updating this field.
-            </p>
-          )}
+          <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px', lineHeight: 1.45 }}>
+            Referring affiliate and commission mode are fixed for this engagement. Referral start date is maintained on the client record. To change the client-facing flag, request a superadmin OTP and enter it before saving.
+          </p>
           <label style={fieldLabel}>
             Referring affiliate
-            <select
-              value={referringAffiliateUserId}
-              onChange={(e) => {
-                const v = e.target.value;
-                setReferringAffiliateUserId(v);
-              }}
-              style={selectStyle}
-              disabled={!canListAffiliates}
-            >
-              <option value="">None</option>
-              {approvedAffiliates.map((a) => (
-                <option key={a.id} value={String(a.id)}>{a.name} ({a.email})</option>
-              ))}
-              {referringAffiliateUserId && !approvedAffiliates.some((a) => String(a.id) === String(referringAffiliateUserId)) && (
-                <option value={referringAffiliateUserId}>Linked user #{referringAffiliateUserId}</option>
-              )}
-            </select>
+            <div style={{ ...inputStyle, background: '#f8fafc', color: '#334155', cursor: 'default' }}>{affiliateReadonlyLabel}</div>
           </label>
-          <div style={{ ...twoCol, marginTop: 14 }}>
-            <label style={fieldLabel}>
-              Referral start date
-              <DateInput
-                value={referralStartDate}
-                onChange={e => setReferralStartDate(e.target.value)}
+          <label style={{ ...fieldLabel, marginTop: 14 }}>
+            Commission mode
+            <div style={{ ...inputStyle, background: '#f8fafc', color: '#334155', cursor: 'default' }}>{commissionReadonlyLabel}</div>
+          </label>
+          <div style={{ marginTop: 16, padding: 12, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0' }}>
+            <label style={{ ...fieldLabel, flexDirection: 'row', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={clientFacingRestricted}
+                onChange={e => setClientFacingRestricted(e.target.checked)}
+                style={{ marginTop: 2 }}
+              />
+              <span>Client-facing restricted (reporting flag)</span>
+            </label>
+            <p style={{ fontSize: 12, color: '#64748b', margin: '10px 0 8px', lineHeight: 1.45 }}>
+              Superadmin receives a one-time code by email. Request the code, then enter it below before saving if you change this flag.
+            </p>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+              <button type="button" style={btnSecondary} disabled={requestingCfOtp} onClick={handleRequestCfOtp}>
+                {requestingCfOtp ? 'Sending…' : 'Request superadmin OTP'}
+              </button>
+            </div>
+            <label style={{ ...fieldLabel, marginTop: 12 }}>
+              Superadmin OTP
+              <input
+                type="text"
                 style={inputStyle}
-                disabled={!referringAffiliateUserId}
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="Enter code if you changed the flag above"
+                value={cfOtp}
+                onChange={e => setCfOtp(e.target.value.replace(/\s/g, ''))}
               />
             </label>
-            <label style={fieldLabel}>
-              Commission mode
-              <select
-                value={commissionMode}
-                onChange={e => setCommissionMode(e.target.value)}
-                style={selectStyle}
-                disabled={!referringAffiliateUserId}
-              >
-                <option value="referral_only">Referral only (tiered %)</option>
-                <option value="direct_interaction">Direct interaction (50/50 split)</option>
-              </select>
-            </label>
           </div>
-          <label style={{ ...fieldLabel, marginTop: 14, flexDirection: 'row', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
-            <input
-              type="checkbox"
-              checked={clientFacingRestricted}
-              onChange={e => setClientFacingRestricted(e.target.checked)}
-              disabled={!referringAffiliateUserId}
-              style={{ marginTop: 2 }}
-            />
-            <span>Client-facing restricted (reporting flag)</span>
-          </label>
         </section>
 
         <section style={sectionCard}>

@@ -255,6 +255,12 @@ class Routes
                 'middleware' => ['auth', 'permission:invoices.view'],
             ],
             [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/services/:id/request-client-facing-otp',
+                'handler'    => 'Admin\ServiceController@requestClientFacingOtp',
+                'middleware' => ['auth', 'permission:services.edit'],
+            ],
+            [
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/services/:id/time-entries',
                 'handler'    => 'Admin\TimeEntryController@indexForService',

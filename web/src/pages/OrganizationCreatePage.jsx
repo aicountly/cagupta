@@ -2,9 +2,16 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import { getContacts, createContact } from '../services/contactService';
-import { createOrganization, updateOrganization as updateOrganizationApi, getOrganizations } from '../services/organizationService';
+import {
+  createOrganization,
+  updateOrganization as updateOrganizationApi,
+  getOrganization,
+} from '../services/organizationService';
 import { getGroups } from '../services/clientGroupService';
+import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
+import { useAuth } from '../auth/AuthContext';
+import DateInput from '../components/common/DateInput';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ORG_TYPES = ['Company', 'LLP', 'Partnership', 'Proprietorship', 'Trust', 'Society', 'Other'];
@@ -136,6 +143,10 @@ function blankForm(defaultManager) {
     notes: '',
     group_id: '',
     reference: '',
+    referringAffiliateUserId: '',
+    referralStartDate: '',
+    commissionMode: 'referral_only',
+    clientFacingRestricted: false,
   };
 }
 
@@ -165,6 +176,16 @@ export default function OrganizationCreatePage() {
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
+  const { hasPermission } = useAuth();
+  const canListAffiliates = hasPermission('affiliates.manage');
+  const [approvedAffiliates, setApprovedAffiliates] = useState([]);
+
+  useEffect(() => {
+    if (!canListAffiliates) return;
+    getApprovedAffiliates()
+      .then(setApprovedAffiliates)
+      .catch(() => setApprovedAffiliates([]));
+  }, [canListAffiliates]);
 
   // Load contacts list
   useEffect(() => {
@@ -179,38 +200,39 @@ export default function OrganizationCreatePage() {
   // Load existing org in edit mode
   useEffect(() => {
     if (!isEdit) return;
-    getOrganizations()
-      .then(list => {
-        const existing = list.find(o => String(o.id) === id);
-        if (existing) {
-          setOrgCode(existing.clientCode || `ORG-${String(existing.id).padStart(4, '0')}`);
-          setOrgId(existing.id);
-          const rawCountry = existing.country || deriveCountryFromLegacyState(existing.state);
-          const country = COUNTRIES.includes(rawCountry) ? rawCountry : 'India';
-          const state = normalizeOrgStateForCountry(existing.state || '', country);
-          setForm({
-            displayName:        existing.displayName        || '',
-            constitution:       existing.constitution       || '',
-            pan:                existing.pan                || '',
-            gstin:              existing.gstin              || '',
-            cin:                existing.cin                || '',
-            primaryContactId:   existing.primaryContactId   || '',
-            secondaryContactIds: existing.secondaryContactIds || [],
-            email:              existing.email              || '',
-            phone:              existing.phone              || '',
-            addressLine1:       existing.addressLine1        || '',
-            addressLine2:       existing.addressLine2        || '',
-            city:               existing.city               || '',
-            country,
-            state,
-            pin:                existing.pin ?? existing.pincode ?? '',
-            status:             existing.status             || 'active',
-            assignedManager:    existing.assignedManager    || '',
-            notes:              existing.notes              || '',
-            group_id:           existing.group_id           || '',
-            reference:          existing.reference          || '',
-          });
-        }
+    getOrganization(id)
+      .then(existing => {
+        setOrgCode(existing.clientCode || `ORG-${String(existing.id).padStart(4, '0')}`);
+        setOrgId(existing.id);
+        const rawCountry = existing.country || deriveCountryFromLegacyState(existing.state);
+        const country = COUNTRIES.includes(rawCountry) ? rawCountry : 'India';
+        const state = normalizeOrgStateForCountry(existing.state || '', country);
+        setForm({
+          displayName:        existing.displayName        || '',
+          constitution:       existing.constitution       || '',
+          pan:                existing.pan                || '',
+          gstin:              existing.gstin              || '',
+          cin:                existing.cin                || '',
+          primaryContactId:   existing.primaryContactId   || '',
+          secondaryContactIds: existing.secondaryContactIds || [],
+          email:              existing.email              || '',
+          phone:              existing.phone              || '',
+          addressLine1:       existing.addressLine1        || '',
+          addressLine2:       existing.addressLine2        || '',
+          city:               existing.city               || '',
+          country,
+          state,
+          pin:                existing.pin ?? existing.pincode ?? '',
+          status:             existing.status             || 'active',
+          assignedManager:    existing.assignedManager    || '',
+          notes:              existing.notes              || '',
+          group_id:           existing.group_id           || '',
+          reference:          existing.reference          || '',
+          referringAffiliateUserId: existing.referringAffiliateUserId != null ? String(existing.referringAffiliateUserId) : '',
+          referralStartDate: existing.referralStartDate || '',
+          commissionMode: existing.commissionMode || 'referral_only',
+          clientFacingRestricted: Boolean(existing.clientFacingRestricted),
+        });
       })
       .catch(() => {});
   }, [isEdit, id]);
@@ -279,6 +301,10 @@ export default function OrganizationCreatePage() {
       notes:        f.notes              || null,
       group_id:     f.group_id || null,
       reference:    f.reference          || null,
+      referringAffiliateUserId: f.referringAffiliateUserId || null,
+      referralStartDate: f.referralStartDate || null,
+      commissionMode: f.commissionMode || 'referral_only',
+      clientFacingRestricted: f.clientFacingRestricted,
     };
   }
 
@@ -633,6 +659,57 @@ export default function OrganizationCreatePage() {
               />
             </div>
           </div>
+        </FormSection>
+
+        <FormSection title="Referral &amp; commission">
+          <div style={fieldRow}>
+            <div style={fieldWrap}>
+              <FieldLabel label="Referring affiliate" />
+              {canListAffiliates ? (
+                <select
+                  value={form.referringAffiliateUserId}
+                  onChange={e => setField('referringAffiliateUserId', e.target.value)}
+                  style={selectStyle}
+                >
+                  <option value="">None</option>
+                  {approvedAffiliates.map(a => (
+                    <option key={a.id} value={String(a.id)}>{a.name} ({a.email})</option>
+                  ))}
+                  {form.referringAffiliateUserId && !approvedAffiliates.some(a => String(a.id) === String(form.referringAffiliateUserId)) && (
+                    <option value={form.referringAffiliateUserId}>Linked user #{form.referringAffiliateUserId}</option>
+                  )}
+                </select>
+              ) : (
+                <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+                  Picking an affiliate requires <strong>Affiliates</strong> admin permission.
+                </p>
+              )}
+            </div>
+            <div style={fieldWrap}>
+              <FieldLabel label="Referral start date" />
+              <DateInput
+                value={form.referralStartDate}
+                onChange={e => setField('referralStartDate', e.target.value)}
+                style={inputStyle}
+              />
+            </div>
+            <div style={fieldWrap}>
+              <FieldLabel label="Commission mode" />
+              <select value={form.commissionMode} onChange={e => setField('commissionMode', e.target.value)} style={selectStyle}>
+                <option value="referral_only">Referral only (tiered %)</option>
+                <option value="direct_interaction">Direct interaction (50/50 split)</option>
+              </select>
+            </div>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 12, fontSize: 13, color: '#334155', cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={form.clientFacingRestricted}
+              onChange={e => setField('clientFacingRestricted', e.target.checked)}
+              style={{ marginTop: 2 }}
+            />
+            <span>Client-facing restricted (default for new service engagements)</span>
+          </label>
         </FormSection>
 
         {/* ── Section: Administration ──────────────────────────────────── */}

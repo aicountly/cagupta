@@ -49,7 +49,6 @@ function normalizeAppointment(a) {
     zoomJoinUrl:         a.zoom_join_url || null,
     feeRuleId:           a.fee_rule_id ?? null,
     billingProfileCode:  a.billing_profile_code || null,
-    paymentTerms:        a.payment_terms || null,
     advanceAmount:       a.advance_amount != null ? Number(a.advance_amount) : null,
     advancePercent:      a.advance_percent != null ? Number(a.advance_percent) : null,
     billingProfileSnapshot: a.billing_profile_snapshot || null,
