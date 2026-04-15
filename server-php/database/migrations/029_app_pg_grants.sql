@@ -6,6 +6,8 @@
 -- owner (e.g. postgres) do not grant those to other roles automatically.
 --
 -- Edit `app_role` below to match DB_USER in server-php/.env (e.g. cagupta_app).
+-- Easier: from server-php run `php database/print_app_grants.php` and execute the
+-- printed SQL as postgres (or any superuser / table owner).
 -- If that role does not exist yet, this block only logs a NOTICE and skips
 -- (typical local dev using superuser-only). Create the role, adjust `app_role`,
 -- then run the GRANT section manually or re-apply this file in psql.

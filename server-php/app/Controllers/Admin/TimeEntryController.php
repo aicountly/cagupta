@@ -15,28 +15,6 @@ class TimeEntryController extends BaseController
     private ServiceModel $services;
     private TimeEntryModel $entries;
 
-    /** @internal debug session dc6652 */
-    private static function agentDebugLog(string $hypothesisId, string $location, string $message, array $data = []): void
-    {
-        $line = json_encode([
-            'sessionId' => 'dc6652',
-            'runId' => 'grant-check',
-            'hypothesisId' => $hypothesisId,
-            'location' => $location,
-            'message' => $message,
-            'data' => $data,
-            'timestamp' => (int) round(microtime(true) * 1000),
-        ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) . "\n";
-        $paths = [
-            dirname(__DIR__, 4) . '/.cursor/debug-dc6652.log',
-            rtrim(sys_get_temp_dir(), '/') . '/debug-dc6652.log',
-        ];
-        foreach ($paths as $path) {
-            @file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
-        }
-        error_log('[dc6652] ' . trim($line));
-    }
-
     /**
      * PostgreSQL insufficient_privilege / permission denied → clear operator message.
      */
@@ -55,6 +33,17 @@ class TimeEntryController extends BaseController
             || str_contains($msg, 'must be owner of');
     }
 
+    private static function dbGrantDeniedMessage(string $operations): string
+    {
+        $role = trim((string)(getenv('DB_USER') ?: ''));
+        $rolePart = $role !== '' ? "PostgreSQL role \"{$role}\" (DB_USER)" : 'the PostgreSQL role in DB_USER';
+
+        return 'Database access denied: ' . $rolePart . ' lacks privileges (' . $operations . '). '
+            . 'Connect as a superuser and run the SQL printed by: php database/print_app_grants.php '
+            . '(from the server-php directory), or apply database/migrations/029_app_pg_grants.sql after '
+            . 'setting app_role there to match DB_USER.';
+    }
+
     public function __construct()
     {
         $this->services = new ServiceModel();
@@ -71,27 +60,10 @@ class TimeEntryController extends BaseController
                 $this->error('Service not found.', 404);
             }
             $rows = $this->entries->listForService($id);
-            // #region agent log
-            self::agentDebugLog('E', 'TimeEntryController.php:indexForService', 'list ok', ['serviceId' => $id, 'rowCount' => is_array($rows) ? count($rows) : -1]);
-            // #endregion
             $this->success($rows, 'Time entries retrieved');
         } catch (\Throwable $e) {
-            // #region agent log
-            $hid = $e instanceof \JsonException ? 'C' : (($e instanceof \PDOException) ? 'A' : 'B');
-            $pdoInfo = $e instanceof \PDOException ? ['sqlstate' => $e->errorInfo[0] ?? '', 'driver' => $e->errorInfo[1] ?? ''] : [];
-            self::agentDebugLog($hid, 'TimeEntryController.php:indexForService', 'exception', array_merge([
-                'serviceId' => $id,
-                'class' => $e::class,
-                'error' => $e->getMessage(),
-            ], $pdoInfo));
-            // #endregion
             if (self::isDbPermissionDenied($e)) {
-                $this->error(
-                    'Database access denied for this user. A PostgreSQL superuser must GRANT '
-                    . 'USAGE on schema public and SELECT (plus INSERT for logging time) on application tables '
-                    . 'to the same role as DB_USER. See database/migrations/029_app_pg_grants.sql.',
-                    503
-                );
+                $this->error(self::dbGrantDeniedMessage('SELECT on time-related tables; INSERT for new time rows'), 503);
             }
             throw $e;
         }
@@ -159,31 +131,12 @@ class TimeEntryController extends BaseController
             $this->error('date_from and date_to are required (YYYY-MM-DD).', 422);
         }
 
-        // #region agent log
-        self::agentDebugLog('D', 'TimeEntryController.php:report', 'params', ['userId' => $uid, 'dateFrom' => $from, 'dateTo' => $to]);
-        // #endregion
         try {
             $rows = $this->entries->reportByUserService($uid, $from, $to);
-            // #region agent log
-            self::agentDebugLog('A', 'TimeEntryController.php:report', 'report query ok', ['rowCount' => is_array($rows) ? count($rows) : -1]);
-            // #endregion
             $this->success($rows, 'Time entry report retrieved');
         } catch (\Throwable $e) {
-            // #region agent log
-            $hid = $e instanceof \JsonException ? 'C' : (($e instanceof \PDOException) ? 'A' : 'B');
-            $pdoInfo = $e instanceof \PDOException ? ['sqlstate' => $e->errorInfo[0] ?? '', 'driver' => $e->errorInfo[1] ?? ''] : [];
-            self::agentDebugLog($hid, 'TimeEntryController.php:report', 'exception', array_merge([
-                'class' => $e::class,
-                'error' => $e->getMessage(),
-            ], $pdoInfo));
-            // #endregion
             if (self::isDbPermissionDenied($e)) {
-                $this->error(
-                    'Database access denied for this user. A PostgreSQL superuser must GRANT '
-                    . 'USAGE on schema public and SELECT on application tables to the same role as DB_USER. '
-                    . 'See database/migrations/029_app_pg_grants.sql.',
-                    503
-                );
+                $this->error(self::dbGrantDeniedMessage('SELECT on time_entries and related tables'), 503);
             }
             throw $e;
         }
