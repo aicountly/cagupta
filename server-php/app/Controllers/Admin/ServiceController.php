@@ -114,8 +114,115 @@ class ServiceController extends BaseController
             'client_facing_restricted' => !empty($body['client_facing_restricted']),
         ]);
 
+        $this->services->promoteBillingOpenIfEligible($newId);
         $service = $this->services->find($newId);
         $this->success($service, 'Service engagement created', 201);
+    }
+
+    // ── GET /api/admin/services/billing-report ───────────────────────────────
+
+    /**
+     * Billing queue / built / non-billable report for completed engagements.
+     *
+     * Query: completion=engagement|tasks|any, closure=pending|built|non_billable,
+     *        page, per_page, search
+     */
+    public function billingReport(): never
+    {
+        $page       = max(1, (int)$this->query('page', 1));
+        $perPage    = min(100, max(1, (int)$this->query('per_page', 20)));
+        $completion = trim((string)$this->query('completion', 'any'));
+        $closure    = trim((string)$this->query('closure', 'pending'));
+        $search     = trim((string)$this->query('search', ''));
+
+        $result = $this->services->billingReportPaginate($page, $perPage, $completion, $closure, $search);
+        $rows   = [];
+        foreach ($result['rows'] as $r) {
+            $invC = (int)($r['invoice_count'] ?? 0);
+            $ec   = $r['engagement_completed'] ?? false;
+            $atd  = $r['all_tasks_done'] ?? false;
+            $row  = array_merge($r, [
+                'client_name'      => $r['display_client_name'] ?? $r['client_name'] ?? null,
+                'has_invoice'      => $invC > 0,
+                'completion_flags' => [
+                    'engagement_completed' => $ec === true || $ec === 't' || $ec === '1',
+                    'all_tasks_done'       => $atd === true || $atd === 't' || $atd === '1',
+                ],
+            ]);
+            unset($row['display_client_name']);
+            $rows[] = $row;
+        }
+
+        $this->success($rows, 'Billing report retrieved', 200, [
+            'pagination' => [
+                'page'      => $page,
+                'per_page'  => $perPage,
+                'total'     => $result['total'],
+                'last_page' => $result['total'] > 0 ? (int)ceil($result['total'] / $perPage) : 1,
+            ],
+        ]);
+    }
+
+    // ── GET /api/admin/services/:id/billing-invoices ─────────────────────────
+
+    /**
+     * Invoice txn history for a service engagement (eye icon).
+     */
+    public function billingInvoices(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+        $txns = $this->services->listBillingInvoiceTxns($id);
+        $this->success($txns, 'Billing invoices retrieved');
+    }
+
+    // ── PATCH /api/admin/services/:id/billing-closure ────────────────────────
+
+    /**
+     * Close billing row: built (in books) or non_billable.
+     *
+     * Body: { closure: "built"|"non_billable", reason?: string }
+     */
+    public function patchBillingClosure(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $body    = $this->getJsonBody();
+        $closure = strtolower(trim((string)($body['closure'] ?? '')));
+        $reason  = isset($body['reason']) ? trim((string)$body['reason']) : null;
+
+        if (!in_array($closure, ['built', 'non_billable'], true)) {
+            $this->error('closure must be "built" or "non_billable".', 422);
+        }
+
+        $updated = $this->services->applyBillingClosure($id, $closure, $reason);
+        if ($updated === null) {
+            $this->error('Billing closure can only be changed when billing_closure is "open".', 422);
+        }
+
+        $beforeSnap = $this->serviceAuditSnapshot($service);
+        $afterSnap  = $this->serviceAuditSnapshot($updated);
+        $actorId    = $this->authUser() ? (int)$this->authUser()['id'] : null;
+        try {
+            $this->audit->insert(
+                $actorId,
+                'service.billing_closure',
+                'service',
+                $id,
+                ['closure' => $closure],
+                $beforeSnap,
+                $afterSnap
+            );
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Audit log failed: ' . $e->getMessage());
+        }
+
+        $this->success($updated, 'Billing closure updated');
     }
 
     // ── GET /api/admin/services/:id ──────────────────────────────────────────
@@ -166,6 +273,7 @@ class ServiceController extends BaseController
         }
 
         $this->services->update($id, $data);
+        $this->services->promoteBillingOpenIfEligible($id);
         $updated   = $this->services->find($id);
         $afterSnap = $this->serviceAuditSnapshot($updated ?? []);
         $meta      = $this->taskDiffMetadata($beforeSnap['tasks'] ?? [], $afterSnap['tasks'] ?? []);
@@ -246,6 +354,7 @@ class ServiceController extends BaseController
         $tasks[] = $newTask;
 
         $this->services->update($id, ['tasks' => $tasks]);
+        $this->services->promoteBillingOpenIfEligible($id);
         $updated   = $this->services->find($id);
         $afterSnap = $this->serviceAuditSnapshot($updated ?? []);
         $actorId   = $this->authUser() ? (int)$this->authUser()['id'] : null;

@@ -234,3 +234,90 @@ export async function createTask(engagementId, taskData) {
   const data = await parseResponse(res);
   return normalizeEngagement(data.data);
 }
+
+/** @param {object} r Raw API row from billing-report */
+function normalizeBillingReportRow(r) {
+  const flags = r.completion_flags || {};
+  return {
+    id: r.id,
+    clientType: r.client_type || 'contact',
+    clientId: r.client_id || null,
+    organizationId: r.organization_id || null,
+    clientName: r.client_name || 'Unknown',
+    serviceType: r.service_type || '',
+    status: r.status || '',
+    billingClosure: r.billing_closure || null,
+    billingBuiltAt: r.billing_built_at || null,
+    billingBuiltAmount: r.billing_built_amount != null ? Number(r.billing_built_amount) : null,
+    nonBillableAt: r.non_billable_at || null,
+    nonBillableReason: r.non_billable_reason || '',
+    invoiceCount: Number(r.invoice_count) || 0,
+    amountBilled: Number(r.amount_billed) || 0,
+    hasInvoice: Boolean(r.has_invoice),
+    completionFlags: {
+      engagementCompleted: Boolean(flags.engagement_completed),
+      allTasksDone: Boolean(flags.all_tasks_done),
+    },
+  };
+}
+
+/**
+ * Billing queue report (Invoices & Ledger → Service billing).
+ * @returns {Promise<{ rows: object[], pagination: object }>}
+ */
+export async function getBillingReport({
+  page = 1,
+  perPage = 20,
+  completion = 'any',
+  closure = 'pending',
+  search = '',
+} = {}) {
+  const params = new URLSearchParams({
+    page: String(page),
+    per_page: String(perPage),
+    completion,
+    closure,
+  });
+  if (search) params.set('search', search);
+
+  const res = await fetch(`${API_BASE}/admin/services/billing-report?${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  const rows = (data.data || []).map(normalizeBillingReportRow);
+  return { rows, pagination: data.pagination || {} };
+}
+
+/**
+ * Invoice txn rows linked to an engagement (history modal).
+ * @returns {Promise<object[]>}
+ */
+export async function getServiceBillingInvoices(serviceId) {
+  const res = await fetch(`${API_BASE}/admin/services/${serviceId}/billing-invoices`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return (data.data || []).map((t) => ({
+    id: t.id,
+    invoiceNumber: t.invoice_number || '',
+    txnDate: t.txn_date || '',
+    subtotal: Number(t.subtotal) || Number(t.amount) || 0,
+    amount: Number(t.amount) || 0,
+    narration: t.narration || '',
+    invoiceStatus: t.invoice_status || '',
+  }));
+}
+
+/**
+ * Mark billing closure: built | non_billable
+ */
+export async function patchBillingClosure(serviceId, { closure, reason }) {
+  const body = { closure };
+  if (reason != null && String(reason).trim() !== '') body.reason = String(reason).trim();
+  const res = await fetch(`${API_BASE}/admin/services/${serviceId}/billing-closure`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  await parseResponse(res);
+}

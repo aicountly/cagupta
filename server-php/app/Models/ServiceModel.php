@@ -312,4 +312,270 @@ class ServiceModel
         $stmt->execute([':cid' => $categoryId]);
         return (int)$stmt->fetchColumn();
     }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function decodeTasksJson(mixed $tasksRaw): array
+    {
+        if (is_array($tasksRaw)) {
+            return $tasksRaw;
+        }
+        if (is_string($tasksRaw) && $tasksRaw !== '') {
+            $decoded = json_decode($tasksRaw, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return [];
+    }
+
+    public function tasksAllDone(mixed $tasksRaw): bool
+    {
+        $tasks = $this->decodeTasksJson($tasksRaw);
+        if ($tasks === []) {
+            return false;
+        }
+        foreach ($tasks as $t) {
+            if (!is_array($t)) {
+                return false;
+            }
+            $st = isset($t['status']) ? (string)$t['status'] : '';
+            if ($st !== 'done') {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Eligible for billing queue when engagement is completed OR all tasks are done (non-empty task list).
+     *
+     * @param array<string, mixed> $row
+     */
+    public function isEligibleForBillingOpen(array $row): bool
+    {
+        if (($row['status'] ?? '') === 'completed') {
+            return true;
+        }
+
+        return $this->tasksAllDone($row['tasks'] ?? []);
+    }
+
+    /**
+     * First time an engagement becomes billable, promote billing_closure from NULL to 'open'.
+     */
+    public function promoteBillingOpenIfEligible(int $id): void
+    {
+        $row = $this->find($id);
+        if ($row === null) {
+            return;
+        }
+        $bc = $row['billing_closure'] ?? null;
+        if ($bc !== null && $bc !== '') {
+            return;
+        }
+        if (!$this->isEligibleForBillingOpen($row)) {
+            return;
+        }
+        $stmt = $this->db->prepare(
+            "UPDATE services SET billing_closure = 'open', updated_at = NOW()
+             WHERE id = :id AND billing_closure IS NULL"
+        );
+        $stmt->execute([':id' => $id]);
+    }
+
+    /**
+     * Sum active, non-cancelled invoice subtotals for a service engagement.
+     */
+    public function sumInvoiceAmountBilledForService(int $serviceId): float
+    {
+        $stmt = $this->db->prepare(
+            "SELECT COALESCE(SUM(COALESCE(subtotal, amount, 0)), 0)
+             FROM txn
+             WHERE service_id = :sid
+               AND txn_type = 'invoice'
+               AND status = 'active'
+               AND (invoice_status IS NULL OR invoice_status <> 'cancelled')"
+        );
+        $stmt->execute([':sid' => $serviceId]);
+        $v = $stmt->fetchColumn();
+
+        return round((float)$v, 2);
+    }
+
+    /**
+     * Paginated billing report with invoice aggregates.
+     *
+     * @return array{total: int, rows: array<int, array<string, mixed>>}
+     */
+    public function billingReportPaginate(
+        int $page,
+        int $perPage,
+        string $completion,
+        string $closure,
+        string $search
+    ): array {
+        $completion = strtolower(trim($completion));
+        if (!in_array($completion, ['engagement', 'tasks', 'any'], true)) {
+            $completion = 'any';
+        }
+        $closure = strtolower(trim($closure));
+        if (!in_array($closure, ['pending', 'built', 'non_billable'], true)) {
+            $closure = 'pending';
+        }
+
+        $completionSql = match ($completion) {
+            'engagement' => "s.status = 'completed'",
+            'tasks' => "(jsonb_array_length(COALESCE(s.tasks, '[]'::jsonb)) > 0 AND NOT EXISTS (
+                SELECT 1 FROM jsonb_array_elements(COALESCE(s.tasks, '[]'::jsonb)) el
+                WHERE COALESCE(el->>'status', '') <> 'done'
+            ))",
+            default => "(s.status = 'completed' OR (
+                jsonb_array_length(COALESCE(s.tasks, '[]'::jsonb)) > 0 AND NOT EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(COALESCE(s.tasks, '[]'::jsonb)) el
+                    WHERE COALESCE(el->>'status', '') <> 'done'
+                )
+            ))",
+        };
+
+        $closureSql = match ($closure) {
+            'built' => "s.billing_closure = 'built'",
+            'non_billable' => "s.billing_closure = 'non_billable'",
+            default => "s.billing_closure = 'open'",
+        };
+
+        $where  = ['1=1', '(' . $completionSql . ')', '(' . $closureSql . ')'];
+        $params = [];
+
+        if ($search !== '') {
+            $where[]          = "(s.service_type ILIKE :search
+                OR COALESCE(c.organization_name,
+                    NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                    o.name,
+                    s.client_name,
+                    '') ILIKE :search)";
+            $params[':search'] = '%' . $search . '%';
+        }
+
+        $whereClause = implode(' AND ', $where);
+        $offset      = ($page - 1) * $perPage;
+
+        $from = "FROM services s
+            LEFT JOIN clients c ON c.id = s.client_id
+            LEFT JOIN organizations o ON o.id = s.organization_id
+            LEFT JOIN (
+                SELECT t.service_id AS sid,
+                    COUNT(*)::int AS invoice_count,
+                    COALESCE(SUM(COALESCE(t.subtotal, t.amount, 0)), 0) AS amount_billed
+                FROM txn t
+                WHERE t.txn_type = 'invoice'
+                  AND t.status = 'active'
+                  AND (t.invoice_status IS NULL OR t.invoice_status <> 'cancelled')
+                  AND t.service_id IS NOT NULL
+                GROUP BY t.service_id
+            ) inv ON inv.sid = s.id
+            WHERE {$whereClause}";
+
+        $countStmt = $this->db->prepare("SELECT COUNT(*) {$from}");
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+
+        $sql = "SELECT s.*,
+                COALESCE(inv.invoice_count, 0)::int AS invoice_count,
+                COALESCE(inv.amount_billed, 0) AS amount_billed,
+                (s.status = 'completed') AS engagement_completed,
+                (CASE WHEN jsonb_array_length(COALESCE(s.tasks, '[]'::jsonb)) > 0 AND NOT EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(COALESCE(s.tasks, '[]'::jsonb)) el
+                    WHERE COALESCE(el->>'status', '') <> 'done'
+                ) THEN TRUE ELSE FALSE END) AS all_tasks_done,
+                COALESCE(c.organization_name,
+                    NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                    o.name,
+                    s.client_name,
+                    'Unknown') AS display_client_name
+            {$from}
+            ORDER BY s.updated_at DESC NULLS LAST, s.id DESC
+            LIMIT :limit OFFSET :offset";
+
+        $stmt = $this->db->prepare($sql);
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll();
+
+        return ['total' => $total, 'rows' => $rows];
+    }
+
+    /**
+     * Invoice txn rows linked to a service (for history modal).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listBillingInvoiceTxns(int $serviceId): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT id, invoice_number, txn_date, subtotal, amount, narration, invoice_status, txn_type, status
+             FROM txn
+             WHERE service_id = :sid
+               AND txn_type = 'invoice'
+               AND status = 'active'
+             ORDER BY txn_date DESC, id DESC"
+        );
+        $stmt->execute([':sid' => $serviceId]);
+
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Mark billing closure from open → built or non_billable.
+     *
+     * @return array<string, mixed>|null Updated service row or null if not found / invalid state.
+     */
+    public function applyBillingClosure(int $id, string $closure, ?string $reason): ?array
+    {
+        $closure = strtolower(trim($closure));
+        if (!in_array($closure, ['built', 'non_billable'], true)) {
+            return null;
+        }
+        $row = $this->find($id);
+        if ($row === null) {
+            return null;
+        }
+        if (($row['billing_closure'] ?? null) !== 'open') {
+            return null;
+        }
+
+        if ($closure === 'built') {
+            $sum = $this->sumInvoiceAmountBilledForService($id);
+            $stmt = $this->db->prepare(
+                "UPDATE services SET
+                    billing_closure = 'built',
+                    billing_built_at = NOW(),
+                    billing_built_amount = :amt,
+                    updated_at = NOW()
+                 WHERE id = :id AND billing_closure = 'open'"
+            );
+            $stmt->execute([':id' => $id, ':amt' => $sum]);
+        } else {
+            $stmt = $this->db->prepare(
+                "UPDATE services SET
+                    billing_closure = 'non_billable',
+                    non_billable_at = NOW(),
+                    non_billable_reason = :reason,
+                    updated_at = NOW()
+                 WHERE id = :id AND billing_closure = 'open'"
+            );
+            $stmt->execute([
+                ':id'     => $id,
+                ':reason' => ($reason !== null && trim($reason) !== '') ? trim($reason) : null,
+            ]);
+        }
+
+        return $this->find($id);
+    }
 }

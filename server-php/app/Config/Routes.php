@@ -226,9 +226,27 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/services/billing-report',
+                'handler'    => 'Admin\ServiceController@billingReport',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/services/:id',
                 'handler'    => 'Admin\ServiceController@show',
                 'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/services/:id/billing-invoices',
+                'handler'    => 'Admin\ServiceController@billingInvoices',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/services/:id/billing-closure',
+                'handler'    => 'Admin\ServiceController@patchBillingClosure',
+                'middleware' => ['auth', 'permission_any:services.edit,invoices.edit'],
             ],
             [
                 'method'     => 'PUT',

@@ -10,7 +10,12 @@ import { useAuth } from '../auth/AuthContext';
 import { getContact } from '../services/contactService';
 import { getOrganization } from '../services/organizationService';
 import { getCategories } from '../services/serviceCategoryService';
-import { getEngagements } from '../services/engagementService';
+import {
+  getEngagements,
+  getBillingReport,
+  getServiceBillingInvoices,
+  patchBillingClosure,
+} from '../services/engagementService';
 import { EXPENSE_PURPOSE_OPTIONS, expensePurposeLabel } from '../constants/expensePurposes';
 import { buildLedgerDetailLine } from '../utils/ledgerTxnDetails';
 import StatusBadge from '../components/common/StatusBadge';
@@ -120,7 +125,7 @@ const emptyInvoiceLine = () => ({
   manpowerCostAmount: '',
 });
 
-function RaiseInvoiceModal({ onClose, onSave, open }) {
+function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
   const [form, setForm] = useState({
     entityId: '',
     entityName: '',
@@ -135,6 +140,32 @@ function RaiseInvoiceModal({ onClose, onSave, open }) {
   const [serviceCategories, setServiceCategories] = useState([]);
   const [recipientGstin, setRecipientGstin] = useState('');
   const [engagementOptions, setEngagementOptions] = useState([]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const blank = () => ({
+      entityId: '',
+      entityName: '',
+      entityType: 'contact',
+      invoiceDate: new Date().toISOString().slice(0, 10),
+      dueDate: '',
+      notes: '',
+      billingProfileCode: '',
+      serviceEngagementId: '',
+      lines: [emptyInvoiceLine(), emptyInvoiceLine()],
+    });
+    const next = blank();
+    if (prefill && prefill.entityId != null && String(prefill.entityId).trim() !== '') {
+      next.entityId = String(prefill.entityId);
+      next.entityName = prefill.entityName || '';
+      next.entityType = prefill.entityType || 'contact';
+      if (prefill.serviceEngagementId != null && String(prefill.serviceEngagementId).trim() !== '') {
+        next.serviceEngagementId = String(prefill.serviceEngagementId);
+      }
+    }
+    setForm(next);
+    return undefined;
+  }, [open, prefill]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -1526,6 +1557,8 @@ export default function Invoices() {
   const { hasPermission } = useAuth();
   const canEditInvoice = hasPermission('invoices.edit');
   const canDeleteInvoice = hasPermission('invoices.delete');
+  const canCreateInvoice = hasPermission('invoices.create');
+  const canBillingClosure = hasPermission('services.edit') || hasPermission('invoices.edit');
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState('invoices');
 
@@ -1582,6 +1615,19 @@ export default function Invoices() {
   const [ledgerFyStartYear, setLedgerFyStartYear] = useState(null);
   const [ledgerFilterDateFrom, setLedgerFilterDateFrom] = useState('');
   const [ledgerFilterDateTo, setLedgerFilterDateTo]     = useState('');
+
+  // ── Service billing tab ─────────────────────────────────────────────────────
+  const [billingCompletion, setBillingCompletion]       = useState('any');
+  const [billingClosureFilter, setBillingClosureFilter]   = useState('pending');
+  const [billingSearch, setBillingSearch]                 = useState('');
+  const [billingPage, setBillingPage]                     = useState(1);
+  const [billingRows, setBillingRows]                     = useState([]);
+  const [billingLoading, setBillingLoading]               = useState(false);
+  const [billingPagination, setBillingPagination]       = useState({ total: 0, last_page: 1 });
+  const [raiseInvoicePrefill, setRaiseInvoicePrefill]   = useState(null);
+  const [billingHistoryServiceId, setBillingHistoryServiceId] = useState(null);
+  const [billingHistoryRows, setBillingHistoryRows]     = useState([]);
+  const [billingHistoryLoading, setBillingHistoryLoading] = useState(false);
 
   // ── Load invoices on mount ──────────────────────────────────────────────────
   useEffect(() => {
@@ -1687,6 +1733,42 @@ export default function Invoices() {
     setLedgerFilterDateTo('');
   }, [ledgerClientId]);
 
+  useEffect(() => {
+    setBillingPage(1);
+  }, [billingCompletion, billingClosureFilter, billingSearch]);
+
+  useEffect(() => {
+    if (tab !== 'service_billing') return undefined;
+    setBillingLoading(true);
+    getBillingReport({
+      page: billingPage,
+      perPage: 20,
+      completion: billingCompletion,
+      closure: billingClosureFilter,
+      search: billingSearch,
+    })
+      .then(({ rows, pagination }) => {
+        setBillingRows(rows);
+        setBillingPagination(pagination || {});
+      })
+      .catch(() => setBillingRows([]))
+      .finally(() => setBillingLoading(false));
+    return undefined;
+  }, [tab, billingPage, billingCompletion, billingClosureFilter, billingSearch]);
+
+  useEffect(() => {
+    if (!billingHistoryServiceId) {
+      setBillingHistoryRows([]);
+      return undefined;
+    }
+    setBillingHistoryLoading(true);
+    getServiceBillingInvoices(billingHistoryServiceId)
+      .then(setBillingHistoryRows)
+      .catch(() => setBillingHistoryRows([]))
+      .finally(() => setBillingHistoryLoading(false));
+    return undefined;
+  }, [billingHistoryServiceId]);
+
   const ledgerFyOptions = useMemo(
     () => collectIndianFYStartYearsWithFallback(ledger),
     [ledger]
@@ -1758,7 +1840,23 @@ export default function Invoices() {
       payload.client_id = idNum;
     }
     createTxn(payload)
-      .then(newInv => setInvoices(prev => [newInv, ...prev]))
+      .then((newInv) => {
+        setInvoices((prev) => [newInv, ...prev]);
+        if (tab === 'service_billing') {
+          getBillingReport({
+            page: billingPage,
+            perPage: 20,
+            completion: billingCompletion,
+            closure: billingClosureFilter,
+            search: billingSearch,
+          })
+            .then(({ rows, pagination }) => {
+              setBillingRows(rows);
+              setBillingPagination(pagination || {});
+            })
+            .catch(() => {});
+        }
+      })
       .catch((err) => {
         window.alert(err?.message || 'Could not create invoice.');
       });
@@ -1914,6 +2012,65 @@ export default function Invoices() {
     );
   }
 
+  function refreshBillingReport() {
+    getBillingReport({
+      page: billingPage,
+      perPage: 20,
+      completion: billingCompletion,
+      closure: billingClosureFilter,
+      search: billingSearch,
+    })
+      .then(({ rows, pagination }) => {
+        setBillingRows(rows);
+        setBillingPagination(pagination || {});
+      })
+      .catch(() => {});
+  }
+
+  function billingPrefillFromRow(row) {
+    const oid = row.organizationId && Number(row.organizationId) > 0;
+    const cid = row.clientId && Number(row.clientId) > 0;
+    if (oid) {
+      return {
+        entityId: row.organizationId,
+        entityName: row.clientName,
+        entityType: 'organization',
+        serviceEngagementId: row.id,
+      };
+    }
+    if (cid) {
+      return {
+        entityId: row.clientId,
+        entityName: row.clientName,
+        entityType: 'contact',
+        serviceEngagementId: row.id,
+      };
+    }
+    return {
+      entityId: '',
+      entityName: row.clientName || '',
+      entityType: 'contact',
+      serviceEngagementId: row.id,
+    };
+  }
+
+  function handleBillingMarkBuilt(row) {
+    if (!canBillingClosure) return;
+    if (!window.confirm(`Mark engagement #${row.id} as built? It will leave the pending billing queue.`)) return;
+    patchBillingClosure(row.id, { closure: 'built' })
+      .then(() => refreshBillingReport())
+      .catch((e) => window.alert(e?.message || 'Could not update.'));
+  }
+
+  function handleBillingNonBillable(row) {
+    if (!canBillingClosure) return;
+    const reason = window.prompt('Optional reason (non-billable):', '');
+    if (reason === null) return;
+    patchBillingClosure(row.id, { closure: 'non_billable', reason })
+      .then(() => refreshBillingReport())
+      .catch((e) => window.alert(e?.message || 'Could not update.'));
+  }
+
   const TABS = [
     { key:'invoices',    label:'🧾 Invoices' },
     { key:'receipts',    label:'💵 Receipts' },
@@ -1922,6 +2079,7 @@ export default function Invoices() {
     { key:'rebate',      label:'💸 Rebate/Discount' },
     { key:'credit_note', label:'📝 Credit Notes' },
     { key:'ledger',      label:'📒 Ledger' },
+    { key:'service_billing', label:'📋 Service billing' },
   ];
 
   return (
@@ -1930,9 +2088,56 @@ export default function Invoices() {
       {showRaiseInvoice && (
         <RaiseInvoiceModal
           open={showRaiseInvoice}
-          onClose={() => setShowRaiseInvoice(false)}
-          onSave={(data) => { handleRaiseInvoice(data); setShowRaiseInvoice(false); }}
+          prefill={raiseInvoicePrefill}
+          onClose={() => { setShowRaiseInvoice(false); setRaiseInvoicePrefill(null); }}
+          onSave={(data) => {
+            handleRaiseInvoice(data);
+            setShowRaiseInvoice(false);
+            setRaiseInvoicePrefill(null);
+          }}
         />
+      )}
+      {billingHistoryServiceId != null && (
+        <div style={overlayStyle} role="presentation" onClick={() => setBillingHistoryServiceId(null)}>
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ ...modalStyle, maxWidth: 560 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={modalHeaderStyle}>
+              <span style={{ fontSize: 15, fontWeight: 700 }}>Invoice history (service #{billingHistoryServiceId})</span>
+              <button type="button" onClick={() => setBillingHistoryServiceId(null)} style={closeBtnStyle}>✕</button>
+            </div>
+            <div style={{ padding: '16px 24px 24px' }}>
+              {billingHistoryLoading ? (
+                <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading…</div>
+              ) : billingHistoryRows.length === 0 ? (
+                <div style={{ color: '#94a3b8', fontSize: 13 }}>No invoice transactions linked to this engagement.</div>
+              ) : (
+                <table style={{ ...tableStyle, fontSize: 12 }}>
+                  <thead>
+                    <tr>
+                      {['Invoice #', 'Date', 'Subtotal', 'Status'].map((h) => (
+                        <th key={h} style={thStyle}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {billingHistoryRows.map((t) => (
+                      <tr key={t.id} style={trStyle}>
+                        <td style={{ ...tdStyle, fontFamily: 'monospace' }}>{t.invoiceNumber || `INV-${t.id}`}</td>
+                        <td style={tdStyle}>{t.txnDate || '—'}</td>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>₹{t.subtotal.toLocaleString('en-IN')}</td>
+                        <td style={tdStyle}>{t.invoiceStatus || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
       )}
       {viewInvoiceTxn && (
         <InvoiceViewModal
@@ -2033,8 +2238,17 @@ export default function Invoices() {
             {t.label}
           </button>
         ))}
-        {tab==='invoices' && (
-          <button onClick={() => setShowRaiseInvoice(true)} style={{ ...btnPrimary, marginLeft:'auto' }}>🧾 Raise Invoice</button>
+        {tab==='invoices' && canCreateInvoice && (
+          <button onClick={() => { setRaiseInvoicePrefill(null); setShowRaiseInvoice(true); }} style={{ ...btnPrimary, marginLeft:'auto' }}>🧾 Raise Invoice</button>
+        )}
+        {tab === 'service_billing' && canCreateInvoice && (
+          <button
+            type="button"
+            onClick={() => { setRaiseInvoicePrefill(null); setShowRaiseInvoice(true); }}
+            style={{ ...btnPrimary, marginLeft: 'auto' }}
+          >
+            🧾 Raise Invoice
+          </button>
         )}
         {tab==='receipts' && (
           <button onClick={() => setShowReceiptModal(true)} style={{ ...btnPrimary, marginLeft:'auto' }}>+ Receipt</button>
@@ -2423,6 +2637,168 @@ export default function Invoices() {
                 ))}
               </tbody>
             </table>
+          )}
+        </div>
+      )}
+
+      {tab === 'service_billing' && (
+        <div style={cardStyle}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Completion</span>
+            <select
+              style={{ ...inputStyle, minWidth: 160 }}
+              value={billingCompletion}
+              onChange={(e) => setBillingCompletion(e.target.value)}
+            >
+              <option value="engagement">Engagement completed</option>
+              <option value="tasks">All tasks done</option>
+              <option value="any">Any (union)</option>
+            </select>
+            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Queue</span>
+            <select
+              style={{ ...inputStyle, minWidth: 120 }}
+              value={billingClosureFilter}
+              onChange={(e) => setBillingClosureFilter(e.target.value)}
+            >
+              <option value="pending">Pending</option>
+              <option value="built">Built</option>
+              <option value="non_billable">Non-billable</option>
+            </select>
+            <input
+              type="search"
+              placeholder="Search client or service…"
+              value={billingSearch}
+              onChange={(e) => setBillingSearch(e.target.value)}
+              style={{ ...inputStyle, minWidth: 200, flex: '1 1 180px' }}
+            />
+          </div>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                {['#', 'Client', 'Engagement', 'Badges', 'Billed (₹)', 'Invoices', 'Status', 'Actions'].map((h) => (
+                  <th key={h} style={thStyle}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {billingLoading ? (
+                <tr>
+                  <td colSpan={8} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>
+                    Loading service billing…
+                  </td>
+                </tr>
+              ) : billingRows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>
+                    No rows for this filter. Completed engagements or all tasks done enter the queue when billing is open.
+                  </td>
+                </tr>
+              ) : (
+                billingRows.map((row) => (
+                  <tr key={row.id} style={trStyle}>
+                    <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{row.id}</td>
+                    <td style={{ ...tdStyle, maxWidth: 200, whiteSpace: 'normal' }}>{row.clientName}</td>
+                    <td style={{ ...tdStyle, maxWidth: 220, whiteSpace: 'normal' }}>{row.serviceType || '—'}</td>
+                    <td style={{ ...tdStyle, fontSize: 11 }}>
+                      {row.completionFlags?.engagementCompleted && (
+                        <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: 4, marginRight: 4 }}>Engagement</span>
+                      )}
+                      {row.completionFlags?.allTasksDone && (
+                        <span style={{ background: '#f0fdf4', color: '#15803d', padding: '2px 6px', borderRadius: 4 }}>Tasks</span>
+                      )}
+                    </td>
+                    <td style={{ ...tdStyle, fontWeight: 600 }}>
+                      ₹{row.amountBilled.toLocaleString('en-IN')}
+                    </td>
+                    <td style={tdStyle}>{row.invoiceCount}</td>
+                    <td style={tdStyle}>
+                      {billingClosureFilter === 'pending' ? (
+                        row.hasInvoice ? (
+                          <span style={{ color: '#15803d', fontWeight: 700 }}>Final</span>
+                        ) : (
+                          <span style={{ color: '#94a3b8' }}>Not invoiced</span>
+                        )
+                      ) : billingClosureFilter === 'built' ? (
+                        <span style={{ fontSize: 12 }}>
+                          {row.billingBuiltAmount != null
+                            ? `₹${Number(row.billingBuiltAmount).toLocaleString('en-IN')}`
+                            : '—'}
+                          {row.billingBuiltAt ? (
+                            <span style={{ color: '#94a3b8', display: 'block', fontSize: 11 }}>
+                              {String(row.billingBuiltAt).slice(0, 10)}
+                            </span>
+                          ) : null}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 12, whiteSpace: 'normal', maxWidth: 200 }}>
+                          {row.nonBillableReason || '—'}
+                          {row.nonBillableAt ? (
+                            <span style={{ color: '#94a3b8', display: 'block', fontSize: 11 }}>
+                              {String(row.nonBillableAt).slice(0, 10)}
+                            </span>
+                          ) : null}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                      <button
+                        type="button"
+                        style={iconBtn}
+                        title="Invoice history"
+                        onClick={() => setBillingHistoryServiceId(row.id)}
+                      >
+                        👁
+                      </button>
+                      {canCreateInvoice && billingClosureFilter === 'pending' && (
+                        <button
+                          type="button"
+                          style={iconBtn}
+                          onClick={() => {
+                            setRaiseInvoicePrefill(billingPrefillFromRow(row));
+                            setShowRaiseInvoice(true);
+                          }}
+                        >
+                          Raise invoice
+                        </button>
+                      )}
+                      {canBillingClosure && billingClosureFilter === 'pending' && (
+                        <>
+                          <button type="button" style={iconBtn} onClick={() => handleBillingMarkBuilt(row)}>
+                            Mark as built
+                          </button>
+                          <button type="button" style={iconBtn} onClick={() => handleBillingNonBillable(row)}>
+                            Non-billable
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+          {(billingPagination.last_page || 1) > 1 && (
+            <div style={{ padding: '12px 16px', display: 'flex', gap: 12, alignItems: 'center', fontSize: 13, color: '#64748b' }}>
+              <button
+                type="button"
+                style={btnSecondary}
+                disabled={billingPage <= 1}
+                onClick={() => setBillingPage((p) => Math.max(1, p - 1))}
+              >
+                Previous
+              </button>
+              <span>
+                Page {billingPage} of {Math.max(1, billingPagination.last_page || 1)} ({billingPagination.total} total)
+              </span>
+              <button
+                type="button"
+                style={btnSecondary}
+                disabled={billingPage >= (billingPagination.last_page || 1)}
+                onClick={() => setBillingPage((p) => p + 1)}
+              >
+                Next
+              </button>
+            </div>
           )}
         </div>
       )}
