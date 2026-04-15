@@ -18,17 +18,41 @@ class TimeEntryController extends BaseController
     /** @internal debug session dc6652 */
     private static function agentDebugLog(string $hypothesisId, string $location, string $message, array $data = []): void
     {
-        $path = dirname(__DIR__, 4) . '/.cursor/debug-dc6652.log';
-        $line  = json_encode([
+        $line = json_encode([
             'sessionId' => 'dc6652',
-            'runId' => 'post-fix',
+            'runId' => 'grant-check',
             'hypothesisId' => $hypothesisId,
             'location' => $location,
             'message' => $message,
             'data' => $data,
             'timestamp' => (int) round(microtime(true) * 1000),
         ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) . "\n";
-        @file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
+        $paths = [
+            dirname(__DIR__, 4) . '/.cursor/debug-dc6652.log',
+            rtrim(sys_get_temp_dir(), '/') . '/debug-dc6652.log',
+        ];
+        foreach ($paths as $path) {
+            @file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
+        }
+        error_log('[dc6652] ' . trim($line));
+    }
+
+    /**
+     * PostgreSQL insufficient_privilege / permission denied → clear operator message.
+     */
+    private static function isDbPermissionDenied(\Throwable $e): bool
+    {
+        if (!$e instanceof \PDOException) {
+            return false;
+        }
+        $state = $e->errorInfo[0] ?? '';
+        if ($state === '42501') {
+            return true;
+        }
+        $msg = strtolower($e->getMessage());
+
+        return str_contains($msg, 'permission denied for')
+            || str_contains($msg, 'must be owner of');
     }
 
     public function __construct()
@@ -54,12 +78,21 @@ class TimeEntryController extends BaseController
         } catch (\Throwable $e) {
             // #region agent log
             $hid = $e instanceof \JsonException ? 'C' : (($e instanceof \PDOException) ? 'A' : 'B');
-            self::agentDebugLog($hid, 'TimeEntryController.php:indexForService', 'exception', [
+            $pdoInfo = $e instanceof \PDOException ? ['sqlstate' => $e->errorInfo[0] ?? '', 'driver' => $e->errorInfo[1] ?? ''] : [];
+            self::agentDebugLog($hid, 'TimeEntryController.php:indexForService', 'exception', array_merge([
                 'serviceId' => $id,
                 'class' => $e::class,
                 'error' => $e->getMessage(),
-            ]);
+            ], $pdoInfo));
             // #endregion
+            if (self::isDbPermissionDenied($e)) {
+                $this->error(
+                    'Database access denied for this user. A PostgreSQL superuser must GRANT '
+                    . 'USAGE on schema public and SELECT (plus INSERT for logging time) on application tables '
+                    . 'to the same role as DB_USER. See database/migrations/029_app_pg_grants.sql.',
+                    503
+                );
+            }
             throw $e;
         }
     }
@@ -138,11 +171,20 @@ class TimeEntryController extends BaseController
         } catch (\Throwable $e) {
             // #region agent log
             $hid = $e instanceof \JsonException ? 'C' : (($e instanceof \PDOException) ? 'A' : 'B');
-            self::agentDebugLog($hid, 'TimeEntryController.php:report', 'exception', [
+            $pdoInfo = $e instanceof \PDOException ? ['sqlstate' => $e->errorInfo[0] ?? '', 'driver' => $e->errorInfo[1] ?? ''] : [];
+            self::agentDebugLog($hid, 'TimeEntryController.php:report', 'exception', array_merge([
                 'class' => $e::class,
                 'error' => $e->getMessage(),
-            ]);
+            ], $pdoInfo));
             // #endregion
+            if (self::isDbPermissionDenied($e)) {
+                $this->error(
+                    'Database access denied for this user. A PostgreSQL superuser must GRANT '
+                    . 'USAGE on schema public and SELECT on application tables to the same role as DB_USER. '
+                    . 'See database/migrations/029_app_pg_grants.sql.',
+                    503
+                );
+            }
             throw $e;
         }
     }
