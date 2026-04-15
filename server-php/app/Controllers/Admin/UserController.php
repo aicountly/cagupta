@@ -189,6 +189,20 @@ class UserController extends BaseController
         if (isset($body['is_active'])) {
             $data['is_active'] = (bool)$body['is_active'];
         }
+        if (array_key_exists('planned_billable_rate_per_hour', $body)) {
+            $v = $body['planned_billable_rate_per_hour'];
+            if ($v === '' || $v === null) {
+                $data['planned_billable_rate_per_hour'] = null;
+            } elseif (is_numeric($v)) {
+                $n = round((float)$v, 2);
+                if ($n < 0) {
+                    $this->error('planned_billable_rate_per_hour cannot be negative.', 422);
+                }
+                $data['planned_billable_rate_per_hour'] = $n;
+            } else {
+                $this->error('planned_billable_rate_per_hour must be a number or empty.', 422);
+            }
+        }
         if (!empty($body['password'])) {
             $pass = (string)$body['password'];
             if (strlen($pass) < 8) {
@@ -382,6 +396,9 @@ class UserController extends BaseController
             'last_login_at'  => $user['last_login_at'] ?? null,
             'login_provider' => $user['login_provider'] ?? 'local',
             'created_at'   => $user['created_at'],
+            'planned_billable_rate_per_hour' => isset($user['planned_billable_rate_per_hour']) && $user['planned_billable_rate_per_hour'] !== null && $user['planned_billable_rate_per_hour'] !== ''
+                ? round((float)$user['planned_billable_rate_per_hour'], 2)
+                : null,
         ];
     }
 }

@@ -5,7 +5,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { getInitials } from '../../utils/getInitials';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
-  Receipt, CalendarDays, KeyRound, BookOpen,
+  Receipt, CalendarDays, KeyRound, BookOpen, Clock,
   Target, Settings, ChevronRight, ChevronDown,
   UserRound, Building2, ShieldCheck, Layers, Handshake,
 } from 'lucide-react';
@@ -32,6 +32,7 @@ const navSections = [
     label: 'FINANCE',
     items: [
       { to: '/invoices', label: 'Invoices & Ledger', icon: Receipt },
+      { to: '/reports/timesheets', label: 'Timesheet report', icon: Clock, permission: 'services.view' },
       { to: '/calendar', label: 'Calendar', icon: CalendarDays },
       { to: '/credentials', label: 'Credentials Vault', icon: KeyRound },
       { to: '/registers', label: 'Registers', icon: BookOpen },
@@ -88,6 +89,9 @@ export default function Sidebar() {
             <div style={styles.sectionLabel}>{section.label}</div>
             {section.items.map((item) => {
               const Icon = item.icon;
+              if (item.permission && !hasPermission(item.permission)) {
+                return null;
+              }
 
               // Clients: render as expandable parent with sub-items
               if (item.children) {

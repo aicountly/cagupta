@@ -172,6 +172,7 @@ const roleTextColors = { super_admin:'#9d174d', admin:'#5b21b6', partner:'#1d4ed
 
 export default function Settings() {
   const { hasPermission } = useAuth();
+  const canManageUserRates = hasPermission('users.manage');
   const [tab, setTab] = useState('firm');
   const [portalTypes, setPortalTypes] = useState(() => getPortalTypes());
   const [newPortal, setNewPortal] = useState('');
@@ -230,6 +231,7 @@ export default function Settings() {
   const [teamUsers, setTeamUsers]       = useState([]);
   const [teamLoading, setTeamLoading]   = useState(false);
   const [teamError, setTeamError]       = useState('');
+  const [teamRateSavingId, setTeamRateSavingId] = useState(null);
 
   // ── Roles & Permissions state ──────────────────────────────────────────────
   const [roles, setRoles]                   = useState([]);
@@ -500,6 +502,39 @@ export default function Settings() {
     setRegisterError('');
   }
 
+  async function saveUserPlannedRate(userId, rawValue) {
+    if (!canManageUserRates) return;
+    const trimmed = String(rawValue ?? '').trim();
+    let payloadVal = null;
+    if (trimmed !== '') {
+      const n = Number(trimmed);
+      if (!Number.isFinite(n) || n < 0) {
+        window.alert('Enter a valid non-negative number for planned ₹/hr, or leave empty.');
+        return;
+      }
+      payloadVal = n;
+    }
+    setTeamRateSavingId(userId);
+    try {
+      await parseApiResponse(
+        await fetch(`${API_BASE_URL}/admin/users/${userId}`, {
+          method: 'PUT',
+          headers: authHeaders(),
+          body: JSON.stringify({ planned_billable_rate_per_hour: payloadVal }),
+        }),
+      );
+      setTeamUsers((prev) =>
+        prev.map((row) =>
+          row.id === userId ? { ...row, planned_billable_rate_per_hour: payloadVal } : row,
+        ),
+      );
+    } catch (e) {
+      window.alert(e.message || 'Could not save planned rate.');
+    } finally {
+      setTeamRateSavingId(null);
+    }
+  }
+
   return (
     <div style={{ padding:24 }}>
       <div style={{ display:'flex', gap:4, marginBottom:24, borderBottom:'2px solid #e2e8f0' }}>
@@ -555,6 +590,11 @@ export default function Settings() {
             <button style={btnPrimary}>➕ Invite Team Member</button>
           </div>
           <div style={cardStyle}>
+            {!teamLoading && (
+              <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px', lineHeight: 1.45 }}>
+                Set each team member's <strong>planned billable rate (₹/hr)</strong> for benchmark comparisons when an engagement is marked built. Leave blank if not used.
+              </p>
+            )}
             {teamLoading && <div style={{ padding:24, textAlign:'center', color:'#64748b', fontSize:14 }}>Loading team members…</div>}
             {teamError && <div style={{ padding:12, color:'#dc2626', fontSize:13 }}>{teamError}</div>}
             {!teamLoading && !teamError && teamUsers.length === 0 && (
@@ -563,13 +603,17 @@ export default function Settings() {
             {!teamLoading && teamUsers.length > 0 && (
               <table style={tableStyle}>
                 <thead>
-                  <tr>{['Name','Email','Role','Status','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
+                  <tr>{['Name','Email','Role','Planned ₹/hr','Status','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {teamUsers.map(u=>{
                     const roleName = u.role_name || u.role || 'unknown';
                     const isActive = u.is_active;
                     const displayName = u.name || '';
+                    const defaultRate = u.planned_billable_rate_per_hour != null && u.planned_billable_rate_per_hour !== ''
+                      ? String(u.planned_billable_rate_per_hour)
+                      : '';
+                    const rateKey = `planned_rate_${u.id}_${defaultRate}`;
                     return (
                       <tr key={u.id} style={trStyle}>
                         <td style={{ ...tdStyle, fontWeight:600 }}>
@@ -583,6 +627,28 @@ export default function Settings() {
                           <span style={{ background:roleColors[roleName]||'#f1f5f9', color:roleTextColors[roleName]||'#475569', padding:'2px 10px', borderRadius:12, fontSize:12, fontWeight:600, textTransform:'capitalize' }}>
                             {roleName.replace(/_/g, ' ')}
                           </span>
+                        </td>
+                        <td style={tdStyle}>
+                          {canManageUserRates ? (
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <input
+                                type="number"
+                                min={0}
+                                step={0.01}
+                                defaultValue={defaultRate}
+                                key={rateKey}
+                                disabled={teamRateSavingId === u.id}
+                                placeholder="—"
+                                onBlur={(e) => saveUserPlannedRate(u.id, e.target.value)}
+                                style={{ ...inputStyle, width: 110, fontSize: 12, padding: '6px 8px' }}
+                              />
+                              {teamRateSavingId === u.id ? <span style={{ fontSize: 11, color: '#94a3b8' }}>…</span> : null}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 13, color: '#64748b' }}>
+                              {defaultRate !== '' ? `₹${Number(defaultRate).toLocaleString('en-IN')}` : '—'}
+                            </span>
+                          )}
                         </td>
                         <td style={tdStyle}>
                           <span style={{ color: isActive?'#16a34a':'#dc2626', fontWeight:600, fontSize:12 }}>

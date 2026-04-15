@@ -130,6 +130,7 @@ class UserModel
         $stmt = $this->db->prepare(
             "SELECT u.id, u.name, u.email, u.is_active, u.is_email_verified,
                     u.avatar_url, u.last_login_at, u.login_provider, u.created_at,
+                    u.planned_billable_rate_per_hour,
                     r.name AS role_name, r.display_name AS role_display_name
              FROM users u
              LEFT JOIN roles r ON r.id = u.role_id
@@ -191,7 +192,7 @@ class UserModel
         $setClauses = [];
         $params     = [':id' => $id];
 
-        $allowed = ['name', 'email', 'role_id', 'is_active', 'avatar_url', 'last_login_at', 'sso_provider_id'];
+        $allowed = ['name', 'email', 'role_id', 'is_active', 'avatar_url', 'last_login_at', 'sso_provider_id', 'planned_billable_rate_per_hour'];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
                 $setClauses[]       = "{$field} = :{$field}";

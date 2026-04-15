@@ -23,6 +23,7 @@ import Leads from './pages/Leads';
 import Settings from './pages/Settings';
 import UserManagement from './pages/UserManagement';
 import ClientGroups from './pages/ClientGroups';
+import TimesheetsReport from './pages/TimesheetsReport';
 import GlobalSearchPage from './pages/GlobalSearchPage';
 import Profile from './pages/Profile';
 import AdminAffiliates from './pages/AdminAffiliates';
@@ -55,6 +56,7 @@ const pageTitles = {
   '/services/files':            '📂 Engagement Files',
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
+  '/reports/timesheets':        '🕐 Timesheet report',
   '/calendar':                  '📅 Calendar & Appointments',
   '/credentials':               '🔑 Credentials Vault',
   '/registers':                 '📊 Compliance Registers',
@@ -106,6 +108,11 @@ export default function App() {
           <Route path="/services/:id/files" element={<ProtectedRoute staffOnly><Layout routePath="/services/files"><ServiceEngagementFiles /></Layout></ProtectedRoute>} />
           <Route path="/documents" element={<ProtectedRoute staffOnly><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute staffOnly><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
+          <Route path="/reports/timesheets" element={
+            <ProtectedRoute staffOnly requiredPermission="services.view">
+              <Layout routePath="/reports/timesheets"><TimesheetsReport /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/calendar" element={<ProtectedRoute staffOnly><Layout routePath="/calendar"><Calendar /></Layout></ProtectedRoute>} />
           <Route path="/credentials" element={<ProtectedRoute staffOnly><Layout routePath="/credentials"><Credentials /></Layout></ProtectedRoute>} />
           <Route path="/registers" element={<ProtectedRoute staffOnly><Layout routePath="/registers"><Registers /></Layout></ProtectedRoute>} />

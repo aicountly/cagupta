@@ -2058,7 +2058,26 @@ export default function Invoices() {
     if (!canBillingClosure) return;
     if (!window.confirm(`Mark engagement #${row.id} as built? It will leave the pending billing queue.`)) return;
     patchBillingClosure(row.id, { closure: 'built' })
-      .then(() => refreshBillingReport())
+      .then((res) => {
+        const m = res?.billing_time_metrics;
+        if (m?.is_below_planned) {
+          const inv = Number(m.invoiced_subtotal ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const plan = Number(m.planned_value_at_user_rates ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const bh = Number(m.billable_hours ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+          const avg = m.avg_achieved_rate_per_hour != null
+            ? `₹${Number(m.avg_achieved_rate_per_hour).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/hr`
+            : '—';
+          window.alert(
+            `Billing benchmark (informational)\n\n` +
+            `Invoiced subtotal: ₹${inv}\n` +
+            `Value at team planned rates (billable hours × each user’s ₹/hr): ₹${plan}\n` +
+            `Billable hours: ${bh}\n` +
+            `Achieved effective rate: ${avg}\n\n` +
+            `Invoiced amount is below the planned-rate benchmark. You can still proceed; this is for awareness only.`,
+          );
+        }
+        refreshBillingReport();
+      })
       .catch((e) => window.alert(e?.message || 'Could not update.'));
   }
 

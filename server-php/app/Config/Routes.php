@@ -243,6 +243,24 @@ class Routes
                 'middleware' => ['auth', 'permission:invoices.view'],
             ],
             [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/services/:id/time-entries',
+                'handler'    => 'Admin\TimeEntryController@indexForService',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/services/:id/time-entries',
+                'handler'    => 'Admin\TimeEntryController@storeForService',
+                'middleware' => ['auth', 'permission:services.edit'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/time-entries/report',
+                'handler'    => 'Admin\TimeEntryController@report',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
                 'method'     => 'PATCH',
                 'pattern'    => '/api/admin/services/:id/billing-closure',
                 'handler'    => 'Admin\ServiceController@patchBillingClosure',

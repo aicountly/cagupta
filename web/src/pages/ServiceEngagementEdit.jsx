@@ -6,6 +6,7 @@ import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useAuth } from '../auth/AuthContext';
 import { getEngagement, updateEngagement, createTask, deleteEngagement } from '../services/engagementService';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
+import { getTimeEntries, createTimeEntry, TIME_ACTIVITY_TYPES } from '../services/timeEntryService';
 
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'pending_info', 'review', 'completed', 'cancelled'];
 
@@ -60,9 +61,11 @@ function AddTaskModal({ onClose, onSave }) {
 export default function ServiceEngagementEdit() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { hasPermission } = useAuth();
+  const { hasPermission, session } = useAuth();
   const canListAffiliates = hasPermission('affiliates.manage');
   const canDeleteService = hasPermission('services.delete');
+  const canLogTimePermission = hasPermission('services.edit');
+  const canManageTeamRates = hasPermission('users.manage');
   const { staffUsers } = useStaffUsers();
 
   const [loading, setLoading] = useState(true);
@@ -78,6 +81,20 @@ export default function ServiceEngagementEdit() {
   const [fee, setFee] = useState('');
   const [notes, setNotes] = useState('');
   const [tasks, setTasks] = useState([]);
+  const [billingClosure, setBillingClosure] = useState(null);
+  const [timeEntries, setTimeEntries] = useState([]);
+  const [timeLoading, setTimeLoading] = useState(false);
+  const [timeError, setTimeError] = useState('');
+  const [timeSaving, setTimeSaving] = useState(false);
+  const [timeForm, setTimeForm] = useState(() => ({
+    workDate: new Date().toISOString().slice(0, 10),
+    durationMinutes: '60',
+    activityType: 'client_work',
+    isBillable: true,
+    taskId: '',
+    notes: '',
+    userId: '',
+  }));
   const [showAddTask, setShowAddTask] = useState(false);
   const [assigneeFallbackName, setAssigneeFallbackName] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -87,6 +104,18 @@ export default function ServiceEngagementEdit() {
   const [commissionMode, setCommissionMode] = useState('referral_only');
   const [clientFacingRestricted, setClientFacingRestricted] = useState(false);
   const [approvedAffiliates, setApprovedAffiliates] = useState([]);
+
+  const canLogTime = useMemo(() => {
+    if (['completed', 'cancelled'].includes(status)) return false;
+    const bc = billingClosure || '';
+    if (['built', 'non_billable'].includes(bc)) return false;
+    return true;
+  }, [status, billingClosure]);
+
+  const openTasksForTime = useMemo(
+    () => tasks.filter((t) => t.id && t.status !== 'done'),
+    [tasks],
+  );
 
   const staffOptions = useMemo(() => {
     const list = [...staffUsers];
@@ -114,6 +143,7 @@ export default function ServiceEngagementEdit() {
         setFee(eng.feeAgreed != null && !Number.isNaN(Number(eng.feeAgreed)) ? String(eng.feeAgreed) : '');
         setNotes(eng.notes || '');
         setTasks(Array.isArray(eng.tasks) ? eng.tasks.map(t => ({ ...t })) : []);
+        setBillingClosure(eng.billingClosure != null && eng.billingClosure !== '' ? eng.billingClosure : null);
         setReferringAffiliateUserId(eng.referringAffiliateUserId != null ? String(eng.referringAffiliateUserId) : '');
         setReferralStartDate(eng.referralStartDate || '');
         setCommissionMode(eng.commissionMode || 'referral_only');
@@ -129,6 +159,22 @@ export default function ServiceEngagementEdit() {
       .then(setApprovedAffiliates)
       .catch(() => setApprovedAffiliates([]));
   }, [canListAffiliates]);
+
+  useEffect(() => {
+    if (session?.user?.id) {
+      setTimeForm((f) => (f.userId ? f : { ...f, userId: String(session.user.id) }));
+    }
+  }, [session]);
+
+  useEffect(() => {
+    if (!id) return;
+    setTimeLoading(true);
+    setTimeError('');
+    getTimeEntries(id)
+      .then(setTimeEntries)
+      .catch((e) => setTimeError(e.message || 'Could not load time entries.'))
+      .finally(() => setTimeLoading(false));
+  }, [id]);
 
   async function handleSave() {
     if (!id) return;
@@ -181,6 +227,46 @@ export default function ServiceEngagementEdit() {
   function removeTask(taskId) {
     if (!taskId) return;
     setTasks(prev => prev.filter(t => t.id !== taskId));
+  }
+
+  async function handleSaveTimeEntry(e) {
+    e.preventDefault();
+    if (!id || !canLogTimePermission) return;
+    const mins = parseInt(timeForm.durationMinutes, 10);
+    if (!Number.isFinite(mins) || mins < 1 || mins > 1440) {
+      setTimeError('Duration must be between 1 and 1440 minutes.');
+      return;
+    }
+    setTimeSaving(true);
+    setTimeError('');
+    try {
+      const payload = {
+        work_date: timeForm.workDate,
+        duration_minutes: mins,
+        activity_type: timeForm.activityType,
+        is_billable: timeForm.isBillable,
+        notes: timeForm.notes.trim() || undefined,
+      };
+      if (timeForm.taskId) payload.task_id = timeForm.taskId;
+      if (canManageTeamRates && timeForm.userId && String(timeForm.userId) !== String(session?.user?.id)) {
+        payload.user_id = parseInt(timeForm.userId, 10);
+      }
+      await createTimeEntry(id, payload);
+      const list = await getTimeEntries(id);
+      setTimeEntries(list);
+      setTimeForm((f) => ({
+        ...f,
+        durationMinutes: '60',
+        notes: '',
+        taskId: '',
+      }));
+      setToast('Time entry saved');
+      setTimeout(() => setToast(''), 1500);
+    } catch (err) {
+      setTimeError(err.message || 'Could not save time entry.');
+    } finally {
+      setTimeSaving(false);
+    }
   }
 
   async function handleDeleteEngagement() {
@@ -353,6 +439,133 @@ export default function ServiceEngagementEdit() {
             Notes
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Optional notes…" style={textareaStyle} />
           </label>
+        </section>
+
+        <section style={sectionCard}>
+          <div style={sectionTitle}>Time entries</div>
+          <p style={hint}>
+            Log time against this engagement or an <strong>open</strong> task. Entries are blocked when the engagement is completed, cancelled, or billing is closed (built / non-billable), or when the chosen task is marked done.
+          </p>
+          {timeError && <div style={{ ...errBox, marginBottom: 12 }}>{timeError}</div>}
+          {timeLoading ? (
+            <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12 }}>Loading time entries…</div>
+          ) : null}
+          {canLogTimePermission && canLogTime ? (
+            <form onSubmit={handleSaveTimeEntry} style={{ display: 'grid', gap: 12, marginBottom: 16, padding: 14, background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+              <div style={{ ...twoCol, marginTop: 0 }}>
+                <label style={fieldLabel}>
+                  Work date
+                  <DateInput value={timeForm.workDate} onChange={(e) => setTimeForm((f) => ({ ...f, workDate: e.target.value }))} style={inputStyle} />
+                </label>
+                <label style={fieldLabel}>
+                  Duration (minutes)
+                  <input
+                    type="number"
+                    min={1}
+                    max={1440}
+                    value={timeForm.durationMinutes}
+                    onChange={(e) => setTimeForm((f) => ({ ...f, durationMinutes: e.target.value }))}
+                    style={inputStyle}
+                  />
+                </label>
+              </div>
+              <div style={twoCol}>
+                <label style={fieldLabel}>
+                  Activity
+                  <select
+                    value={timeForm.activityType}
+                    onChange={(e) => setTimeForm((f) => ({ ...f, activityType: e.target.value }))}
+                    style={selectStyle}
+                  >
+                    {TIME_ACTIVITY_TYPES.map((a) => (
+                      <option key={a.value} value={a.value}>{a.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label style={fieldLabel}>
+                  Scope
+                  <select
+                    value={timeForm.taskId}
+                    onChange={(e) => setTimeForm((f) => ({ ...f, taskId: e.target.value }))}
+                    style={selectStyle}
+                  >
+                    <option value="">Whole engagement (no specific task)</option>
+                    {openTasksForTime.map((t) => (
+                      <option key={t.id} value={t.id}>{t.title}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {canManageTeamRates ? (
+                <label style={fieldLabel}>
+                  User (team admins only)
+                  <select
+                    value={timeForm.userId}
+                    onChange={(e) => setTimeForm((f) => ({ ...f, userId: e.target.value }))}
+                    style={selectStyle}
+                  >
+                    {staffUsers.map((s) => (
+                      <option key={s.id} value={String(s.id)}>{s.name}</option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <label style={{ ...fieldLabel, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={timeForm.isBillable}
+                  onChange={(e) => setTimeForm((f) => ({ ...f, isBillable: e.target.checked }))}
+                />
+                <span>Billable</span>
+              </label>
+              <label style={fieldLabel}>
+                Notes (optional)
+                <input
+                  type="text"
+                  value={timeForm.notes}
+                  onChange={(e) => setTimeForm((f) => ({ ...f, notes: e.target.value }))}
+                  style={inputStyle}
+                  placeholder="Short note"
+                />
+              </label>
+              <button type="submit" disabled={timeSaving} style={{ ...btnPrimary, justifySelf: 'start' }}>
+                {timeSaving ? 'Saving…' : 'Add time entry'}
+              </button>
+            </form>
+          ) : (
+            <p style={{ ...hint, color: canLogTime ? '#94a3b8' : '#dc2626' }}>
+              {!canLogTimePermission
+                ? 'You do not have permission to add time entries.'
+                : 'This engagement is closed for time entry (completed, cancelled, or billing closed).'}
+            </p>
+          )}
+          {timeEntries.length === 0 ? (
+            <div style={{ color: '#94a3b8', fontSize: 13 }}>No time logged yet.</div>
+          ) : (
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', color: '#64748b' }}>
+                    {['Date', 'User', 'Mins', 'Activity', 'Scope', 'Billable'].map((h) => (
+                      <th key={h} style={{ padding: '6px 4px', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {timeEntries.map((te) => (
+                    <tr key={te.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '6px 4px' }}>{te.workDate}</td>
+                      <td style={{ padding: '6px 4px' }}>{te.userName}</td>
+                      <td style={{ padding: '6px 4px' }}>{te.durationMinutes}</td>
+                      <td style={{ padding: '6px 4px' }}>{te.activityType.replace(/_/g, ' ')}</td>
+                      <td style={{ padding: '6px 4px', color: '#64748b' }}>{te.taskId ? `Task` : 'Engagement'}</td>
+                      <td style={{ padding: '6px 4px' }}>{te.isBillable ? 'Yes' : 'No'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
         <section style={sectionCard}>

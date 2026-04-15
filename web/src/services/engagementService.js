@@ -71,6 +71,7 @@ function normalizeEngagement(s) {
     assignedToUserId:   positiveIntOrNull(s.assigned_to),
     dueDate:            s.due_date            || '',
     status:             s.status              || 'not_started',
+    billingClosure:     s.billing_closure     ?? null,
     feeAgreed:          s.fees                != null ? Number(s.fees) : (s.fee_agreed != null ? Number(s.fee_agreed) : null),
     notes:              s.notes               || '',
     tasks:              parseTasks(s.tasks),
@@ -319,5 +320,5 @@ export async function patchBillingClosure(serviceId, { closure, reason }) {
     headers: authHeaders(),
     body: JSON.stringify(body),
   });
-  await parseResponse(res);
+  return parseResponse(res);
 }

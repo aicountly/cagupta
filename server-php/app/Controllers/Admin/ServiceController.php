@@ -8,6 +8,7 @@ use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
 use App\Models\AdminAuditLogModel;
 use App\Models\ServiceModel;
+use App\Models\TimeEntryModel;
 use App\Models\UserModel;
 
 /**
@@ -20,12 +21,14 @@ class ServiceController extends BaseController
     private ServiceModel $services;
     private AdminAuditLogModel $audit;
     private UserModel $users;
+    private TimeEntryModel $timeEntries;
 
     public function __construct()
     {
-        $this->services = new ServiceModel();
-        $this->audit    = new AdminAuditLogModel();
-        $this->users    = new UserModel();
+        $this->services   = new ServiceModel();
+        $this->audit      = new AdminAuditLogModel();
+        $this->users      = new UserModel();
+        $this->timeEntries = new TimeEntryModel();
     }
 
     // ── GET /api/admin/services ──────────────────────────────────────────────
@@ -222,7 +225,13 @@ class ServiceController extends BaseController
             error_log('[ServiceController] Audit log failed: ' . $e->getMessage());
         }
 
-        $this->success($updated, 'Billing closure updated');
+        $meta = [];
+        if ($closure === 'built') {
+            $invoiced = (float)($updated['billing_built_amount'] ?? 0);
+            $meta['billing_time_metrics'] = $this->timeEntries->finalizeBillingSnapshot($id, $invoiced);
+        }
+
+        $this->success($updated, 'Billing closure updated', 200, $meta);
     }
 
     // ── GET /api/admin/services/:id ──────────────────────────────────────────
