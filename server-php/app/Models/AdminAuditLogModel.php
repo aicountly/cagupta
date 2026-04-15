@@ -43,4 +43,30 @@ class AdminAuditLogModel
             ':after'  => $afterSnapshot === null ? 'null' : json_encode($afterSnapshot, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         ]);
     }
+
+    /**
+     * Recent audit rows for one entity (e.g. a service engagement).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listForEntity(string $entityType, int $entityId, int $limit, int $offset): array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT a.id, a.actor_user_id, a.action, a.entity_type, a.entity_id,
+                    a.metadata, a.before_snapshot, a.after_snapshot, a.created_at,
+                    u.name AS actor_name
+             FROM admin_audit_log a
+             LEFT JOIN users u ON u.id = a.actor_user_id
+             WHERE a.entity_type = :etype AND a.entity_id = :eid
+             ORDER BY a.created_at DESC, a.id DESC
+             LIMIT :lim OFFSET :off'
+        );
+        $stmt->bindValue(':etype', $entityType, PDO::PARAM_STR);
+        $stmt->bindValue(':eid', $entityId, PDO::PARAM_INT);
+        $stmt->bindValue(':lim', $limit, PDO::PARAM_INT);
+        $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll();
+    }
 }

@@ -21,6 +21,7 @@ const breadcrumbMap = {
   '/services':               ['Home', 'Services & Tasks'],
   '/services/new':           ['Home', 'Services & Tasks', 'New Service Engagement'],
   '/services/edit':          ['Home', 'Services & Tasks', 'Edit engagement'],
+  '/services/manage':        ['Home', 'Services & Tasks', 'Manage engagement'],
   '/services/files':         ['Home', 'Services & Tasks', 'Engagement files'],
   '/documents':              ['Home', 'Documents'],
   '/invoices':               ['Home', 'Invoices & Ledger'],
@@ -52,6 +53,9 @@ export default function TopBar({ title }) {
     if (breadcrumbMap[p]) return breadcrumbMap[p];
     if (/^\/services\/[^/]+\/edit$/.test(p)) return ['Home', 'Services & Tasks', 'Edit engagement'];
     if (/^\/services\/[^/]+\/files$/.test(p)) return ['Home', 'Services & Tasks', 'Engagement files'];
+    if (/^\/services\/[^/]+$/.test(p) && p !== '/services/new') {
+      return ['Home', 'Services & Tasks', 'Manage engagement'];
+    }
     return ['Home'];
   })();
   const pageTitle = crumbs[crumbs.length - 1];

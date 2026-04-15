@@ -13,6 +13,24 @@ class ServiceModel
 {
     private PDO $db;
 
+    /** Subselects for assignee list (expects main table alias `s` = services). */
+    private const SQL_ASSIGNEE_IDS_JSON = <<<'SQL'
+(SELECT COALESCE(json_agg(sa.user_id ORDER BY u_asg.name NULLS LAST), '[]'::json)::text
+ FROM service_assignees sa
+ JOIN users u_asg ON u_asg.id = sa.user_id
+ WHERE sa.service_id = s.id)
+SQL;
+
+    private const SQL_ASSIGNEE_NAMES_AGG = <<<'SQL'
+(COALESCE(
+  NULLIF((SELECT string_agg(u_asg2.name::text, ', ' ORDER BY u_asg2.name)
+          FROM service_assignees sa2
+          JOIN users u_asg2 ON u_asg2.id = sa2.user_id
+          WHERE sa2.service_id = s.id), ''),
+  NULL::text
+))
+SQL;
+
     public function __construct()
     {
         $this->db = Database::getConnection();
@@ -25,6 +43,8 @@ class ServiceModel
      */
     public function find(int $id): ?array
     {
+        $aid = self::SQL_ASSIGNEE_IDS_JSON;
+        $an  = self::SQL_ASSIGNEE_NAMES_AGG;
         $stmt = $this->db->prepare(
             "SELECT s.*,
                     c.first_name, c.last_name, c.organization_name,
@@ -34,7 +54,9 @@ class ServiceModel
                              s.client_name,
                              'Unknown') AS client_name,
                     u.name AS assigned_to_name,
-                    cb.name AS created_by_name
+                    cb.name AS created_by_name,
+                    {$aid} AS assignee_user_ids_json,
+                    {$an} AS assignee_names_agg
              FROM services s
              LEFT JOIN clients c         ON c.id = s.client_id
              LEFT JOIN organizations o ON o.id = s.organization_id
@@ -45,7 +67,8 @@ class ServiceModel
         );
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch();
-        return $row ?: null;
+
+        return $row ? $this->attachAssigneeFields($row) : null;
     }
 
     /**
@@ -99,6 +122,8 @@ class ServiceModel
         $countStmt->execute($params);
         $total = (int)$countStmt->fetchColumn();
 
+        $aid = self::SQL_ASSIGNEE_IDS_JSON;
+        $an  = self::SQL_ASSIGNEE_NAMES_AGG;
         $stmt = $this->db->prepare(
             "SELECT s.*,
                     COALESCE(c.organization_name,
@@ -106,7 +131,9 @@ class ServiceModel
                              o.name,
                              s.client_name,
                              'Unknown') AS client_name,
-                    u.name AS assigned_to_name
+                    u.name AS assigned_to_name,
+                    {$aid} AS assignee_user_ids_json,
+                    {$an} AS assignee_names_agg
              FROM services s
              LEFT JOIN clients c         ON c.id = s.client_id
              LEFT JOIN organizations o ON o.id = s.organization_id
@@ -121,8 +148,88 @@ class ServiceModel
         $stmt->bindValue(':limit',  $perPage, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset,  PDO::PARAM_INT);
         $stmt->execute();
+        $rows = $stmt->fetchAll();
+        foreach ($rows as $i => $r) {
+            $rows[$i] = $this->attachAssigneeFields($r);
+        }
 
-        return ['total' => $total, 'services' => $stmt->fetchAll()];
+        return ['total' => $total, 'services' => $rows];
+    }
+
+    /**
+     * Replace junction rows and sync legacy `services.assigned_to` to the first assignee (or null).
+     *
+     * @param array<int> $userIds Unique staff user ids (positive integers).
+     */
+    public function replaceAssignees(int $serviceId, array $userIds): void
+    {
+        $seen = [];
+        $clean = [];
+        foreach ($userIds as $uid) {
+            $n = (int)$uid;
+            if ($n <= 0 || isset($seen[$n])) {
+                continue;
+            }
+            $seen[$n] = true;
+            $clean[] = $n;
+        }
+
+        $this->db->beginTransaction();
+        try {
+            $del = $this->db->prepare('DELETE FROM service_assignees WHERE service_id = :sid');
+            $del->execute([':sid' => $serviceId]);
+
+            $ins = $this->db->prepare(
+                'INSERT INTO service_assignees (service_id, user_id) VALUES (:sid, :uid)'
+            );
+            foreach ($clean as $uid) {
+                $ins->execute([':sid' => $serviceId, ':uid' => $uid]);
+            }
+
+            $lead = $clean[0] ?? null;
+            $upd = $this->db->prepare(
+                'UPDATE services SET assigned_to = :a, updated_at = NOW() WHERE id = :id'
+            );
+            $upd->execute([':a' => $lead, ':id' => $serviceId]);
+
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     *
+     * @return array<string, mixed>
+     */
+    private function attachAssigneeFields(array $row): array
+    {
+        $json = $row['assignee_user_ids_json'] ?? null;
+        unset($row['assignee_user_ids_json']);
+
+        $ids = [];
+        if (is_string($json) && $json !== '') {
+            $decoded = json_decode($json, true);
+            if (is_array($decoded)) {
+                foreach ($decoded as $id) {
+                    if (is_numeric($id)) {
+                        $ids[] = (int)$id;
+                    }
+                }
+            }
+        }
+        $row['assignee_user_ids'] = $ids;
+
+        $namesAgg = isset($row['assignee_names_agg']) ? trim((string)$row['assignee_names_agg']) : '';
+        unset($row['assignee_names_agg']);
+        if ($namesAgg === '' && !empty($row['assigned_to_name'])) {
+            $namesAgg = (string)$row['assigned_to_name'];
+        }
+        $row['assignee_names'] = $namesAgg;
+
+        return $row;
     }
 
     /**

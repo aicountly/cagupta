@@ -152,6 +152,14 @@ class ServiceController extends BaseController
         ]);
 
         $this->services->promoteBillingOpenIfEligible($newId);
+
+        $assigneeList = $this->normalizeAssigneeUserIdsFromBody($body);
+        if ($assigneeList !== null) {
+            $this->services->replaceAssignees($newId, $assigneeList);
+        } elseif ($assignedTo !== null && $assignedTo > 0) {
+            $this->services->replaceAssignees($newId, [$assignedTo]);
+        }
+
         $service = $this->services->find($newId);
         $this->success($service, 'Service engagement created', 201);
     }
@@ -330,6 +338,27 @@ class ServiceController extends BaseController
         $this->success($service);
     }
 
+    // ── GET /api/admin/services/:id/audit-log ────────────────────────────────
+
+    /**
+     * Paginated admin audit rows for this service engagement.
+     *
+     * Query: limit (default 50, max 100), offset (default 0)
+     */
+    public function auditLog(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $limit  = min(100, max(1, (int)$this->query('limit', 50)));
+        $offset = max(0, (int)$this->query('offset', 0));
+
+        $rows = $this->audit->listForEntity('service', $id, $limit, $offset);
+        $this->success($rows, 'Audit log retrieved');
+    }
+
     // ── PUT /api/admin/services/:id ──────────────────────────────────────────
 
     /**
@@ -356,6 +385,23 @@ class ServiceController extends BaseController
         }
         if (array_key_exists('tasks', $body)) {
             $data['tasks'] = $body['tasks'];
+        }
+
+        $assigneeList = $this->normalizeAssigneeUserIdsFromBody($body);
+        if ($assigneeList !== null) {
+            $this->services->replaceAssignees($id, $assigneeList);
+            unset($data['assigned_to']);
+        } elseif (array_key_exists('assigned_to', $body) || array_key_exists('assignedTo', $body)) {
+            $raw = $body['assigned_to'] ?? $body['assignedTo'] ?? null;
+            $n   = null;
+            if ($raw !== null && $raw !== '' && is_numeric($raw)) {
+                $t = (int)$raw;
+                if ($t > 0) {
+                    $n = $t;
+                }
+            }
+            $this->services->replaceAssignees($id, $n !== null ? [$n] : []);
+            unset($data['assigned_to']);
         }
 
         $oldCfr = (bool)($service['client_facing_restricted'] ?? false);
@@ -482,9 +528,10 @@ class ServiceController extends BaseController
     private function serviceAuditSnapshot(array $service): array
     {
         return [
-            'status'         => $service['status'] ?? null,
-            'assigned_to'    => $service['assigned_to'] ?? null,
-            'due_date'       => $service['due_date'] ?? null,
+            'status'            => $service['status'] ?? null,
+            'assigned_to'       => $service['assigned_to'] ?? null,
+            'assignee_user_ids' => $service['assignee_user_ids'] ?? [],
+            'due_date'          => $service['due_date'] ?? null,
             'fees'           => $service['fees'] ?? null,
             'notes'          => $service['notes'] ?? null,
             'service_type'   => $service['service_type'] ?? null,
@@ -628,5 +675,43 @@ class ServiceController extends BaseController
         }
 
         return $masked . '@' . $domain;
+    }
+
+    /**
+     * @return array<int>|null Null if the body did not include an assignee list field.
+     */
+    private function normalizeAssigneeUserIdsFromBody(array $body): ?array
+    {
+        if (array_key_exists('assignee_user_ids', $body)) {
+            return $this->normalizeAssigneeUserIds($body['assignee_user_ids']);
+        }
+        if (array_key_exists('assigneeUserIds', $body)) {
+            return $this->normalizeAssigneeUserIds($body['assigneeUserIds']);
+        }
+
+        return null;
+    }
+
+    /**
+     * @param mixed $raw
+     *
+     * @return array<int>
+     */
+    private function normalizeAssigneeUserIds(mixed $raw): array
+    {
+        if (!is_array($raw)) {
+            return [];
+        }
+        $out = [];
+        foreach ($raw as $v) {
+            if (is_numeric($v)) {
+                $n = (int)$v;
+                if ($n > 0) {
+                    $out[] = $n;
+                }
+            }
+        }
+
+        return array_values(array_unique($out, SORT_REGULAR));
     }
 }

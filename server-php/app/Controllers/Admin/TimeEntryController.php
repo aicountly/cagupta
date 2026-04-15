@@ -15,6 +15,22 @@ class TimeEntryController extends BaseController
     private ServiceModel $services;
     private TimeEntryModel $entries;
 
+    /** @internal debug session dc6652 */
+    private static function agentDebugLog(string $hypothesisId, string $location, string $message, array $data = []): void
+    {
+        $path = dirname(__DIR__, 4) . '/.cursor/debug-dc6652.log';
+        $line  = json_encode([
+            'sessionId' => 'dc6652',
+            'runId' => 'post-fix',
+            'hypothesisId' => $hypothesisId,
+            'location' => $location,
+            'message' => $message,
+            'data' => $data,
+            'timestamp' => (int) round(microtime(true) * 1000),
+        ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) . "\n";
+        @file_put_contents($path, $line, FILE_APPEND | LOCK_EX);
+    }
+
     public function __construct()
     {
         $this->services = new ServiceModel();
@@ -25,19 +41,6 @@ class TimeEntryController extends BaseController
 
     public function indexForService(int $id): never
     {
-        // #region agent log
-        $agentLog = static function (string $hid, string $loc, string $msg, array $data = []): void {
-            $line = json_encode([
-                'sessionId' => 'dc6652',
-                'hypothesisId' => $hid,
-                'location' => $loc,
-                'message' => $msg,
-                'data' => $data,
-                'timestamp' => (int) round(microtime(true) * 1000),
-            ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) . "\n";
-            @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-dc6652.log', $line, FILE_APPEND | LOCK_EX);
-        };
-        // #endregion
         try {
             $service = $this->services->find($id);
             if ($service === null) {
@@ -45,16 +48,15 @@ class TimeEntryController extends BaseController
             }
             $rows = $this->entries->listForService($id);
             // #region agent log
-            $agentLog('E', 'TimeEntryController.php:indexForService', 'list ok', ['serviceId' => $id, 'rowCount' => is_array($rows) ? count($rows) : -1]);
+            self::agentDebugLog('E', 'TimeEntryController.php:indexForService', 'list ok', ['serviceId' => $id, 'rowCount' => is_array($rows) ? count($rows) : -1]);
             // #endregion
             $this->success($rows, 'Time entries retrieved');
         } catch (\Throwable $e) {
             // #region agent log
             $hid = $e instanceof \JsonException ? 'C' : (($e instanceof \PDOException) ? 'A' : 'B');
-            $agentLog($hid, 'TimeEntryController.php:indexForService', 'exception', [
+            self::agentDebugLog($hid, 'TimeEntryController.php:indexForService', 'exception', [
                 'serviceId' => $id,
                 'class' => $e::class,
-                'code' => $e->getCode(),
                 'error' => $e->getMessage(),
             ]);
             // #endregion
@@ -115,19 +117,6 @@ class TimeEntryController extends BaseController
      */
     public function report(): never
     {
-        // #region agent log
-        $agentLog = static function (string $hid, string $loc, string $msg, array $data = []): void {
-            $line = json_encode([
-                'sessionId' => 'dc6652',
-                'hypothesisId' => $hid,
-                'location' => $loc,
-                'message' => $msg,
-                'data' => $data,
-                'timestamp' => (int) round(microtime(true) * 1000),
-            ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) . "\n";
-            @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-dc6652.log', $line, FILE_APPEND | LOCK_EX);
-        };
-        // #endregion
         $uid   = (int)$this->query('user_id', 0);
         $uid   = $uid > 0 ? $uid : null;
         $from  = trim((string)$this->query('date_from', ''));
@@ -138,20 +127,19 @@ class TimeEntryController extends BaseController
         }
 
         // #region agent log
-        $agentLog('D', 'TimeEntryController.php:report', 'params', ['userId' => $uid, 'dateFrom' => $from, 'dateTo' => $to]);
+        self::agentDebugLog('D', 'TimeEntryController.php:report', 'params', ['userId' => $uid, 'dateFrom' => $from, 'dateTo' => $to]);
         // #endregion
         try {
             $rows = $this->entries->reportByUserService($uid, $from, $to);
             // #region agent log
-            $agentLog('A', 'TimeEntryController.php:report', 'report query ok', ['rowCount' => is_array($rows) ? count($rows) : -1]);
+            self::agentDebugLog('A', 'TimeEntryController.php:report', 'report query ok', ['rowCount' => is_array($rows) ? count($rows) : -1]);
             // #endregion
             $this->success($rows, 'Time entry report retrieved');
         } catch (\Throwable $e) {
             // #region agent log
             $hid = $e instanceof \JsonException ? 'C' : (($e instanceof \PDOException) ? 'A' : 'B');
-            $agentLog($hid, 'TimeEntryController.php:report', 'exception', [
+            self::agentDebugLog($hid, 'TimeEntryController.php:report', 'exception', [
                 'class' => $e::class,
-                'code' => $e->getCode(),
                 'error' => $e->getMessage(),
             ]);
             // #endregion

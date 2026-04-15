@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getEngagements, createTask, deleteEngagement } from '../services/engagementService';
+import { getEngagements, createTask, deleteEngagement, updateEngagement } from '../services/engagementService';
 import { useAuth } from '../auth/AuthContext';
 import StatusBadge from '../components/common/StatusBadge';
 import DateInput from '../components/common/DateInput';
@@ -10,6 +10,12 @@ import {
   Info, CheckCircle2, TrendingUp, X,
   ChevronUp, Trash2,
 } from 'lucide-react';
+
+const ROW_STATUS_OPTIONS = ['not_started', 'in_progress', 'pending_info', 'review', 'completed', 'cancelled'];
+
+function formatStatusLabel(s) {
+  return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 // ── Add Task Modal ────────────────────────────────────────────────────────────
 function AddTaskModal({ onClose, onSave }) {
@@ -135,6 +141,7 @@ export default function Services() {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const canDeleteService = hasPermission('services.delete');
+  const canEditService = hasPermission('services.edit');
   const [searchParams, setSearchParams] = useSearchParams();
   const [selectedService, setSelectedService] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
@@ -171,6 +178,21 @@ export default function Services() {
         setSelectedService(updated);
       })
       .catch(() => {});
+  }
+
+  async function handleRowStatusChange(s, nextStatus) {
+    if (!canEditService || nextStatus === s.status) return;
+    if (nextStatus === 'cancelled') {
+      const ok = window.confirm(`Mark this engagement as Cancelled for ${s.clientName}?`);
+      if (!ok) return;
+    }
+    try {
+      const updated = await updateEngagement(s.id, { status: nextStatus });
+      setAllServices((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+      setSelectedService((cur) => (cur && cur.id === updated.id ? updated : cur));
+    } catch {
+      /* optional toast */
+    }
   }
 
   async function handleDeleteServiceRow(s) {
@@ -286,10 +308,25 @@ export default function Services() {
                           ? `₹${Number(s.feeAgreed).toLocaleString('en-IN')}`
                           : '—'}
                       </td>
-                      <td style={tdStyle}><StatusBadge status={s.status} /></td>
+                      <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
+                        {canEditService ? (
+                          <select
+                            value={s.status}
+                            onChange={(e) => handleRowStatusChange(s, e.target.value)}
+                            style={rowStatusSelectStyle}
+                            title="Status"
+                          >
+                            {ROW_STATUS_OPTIONS.map((st) => (
+                              <option key={st} value={st}>{formatStatusLabel(st)}</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <StatusBadge status={s.status} />
+                        )}
+                      </td>
                       <td style={tdStyle} onClick={e => e.stopPropagation()}>
                         <div style={{ display: 'flex', gap: 4 }}>
-                          <ActionBtn icon={Pencil} title="Edit" onClick={() => navigate(`/services/${s.id}/edit`)} />
+                          <ActionBtn icon={Pencil} title="Manage" onClick={() => navigate(`/services/${s.id}`)} />
                           <ActionBtn icon={FolderOpen} title="View Files" onClick={() => navigate(`/services/${s.id}/files`)} />
                           {canDeleteService && (
                             <ActionBtn icon={Trash2} title="Delete" onClick={() => handleDeleteServiceRow(s)} />
@@ -411,6 +448,13 @@ const searchBox = { display: 'flex', alignItems: 'center', gap: 8, background: '
 const searchInput = { border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: '#334155', width: '100%' };
 
 const selectStyle = { padding: '7px 12px', border: '1px solid #E6E8F0', borderRadius: 8, fontSize: 13, background: '#fff', color: '#334155', outline: 'none', cursor: 'pointer' };
+const rowStatusSelectStyle = {
+  ...selectStyle,
+  padding: '5px 8px',
+  fontSize: 12,
+  maxWidth: 140,
+  cursor: 'pointer',
+};
 const btnPrimary = { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, boxShadow: '0 2px 8px rgba(243,121,32,0.30)' };
 const btnSecondary = { display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: '#FEF0E6', color: '#F37920', border: '1px solid rgba(243,121,32,0.35)', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 };
 

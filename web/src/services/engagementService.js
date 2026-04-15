@@ -31,6 +31,17 @@ function positiveIntOrNull(v) {
   return Number.isInteger(n) && n > 0 ? n : null;
 }
 
+/** @param {unknown} raw @returns {number[]} */
+function parseAssigneeUserIds(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const x of raw) {
+    const n = Number(x);
+    if (Number.isInteger(n) && n > 0) out.push(n);
+  }
+  return [...new Set(out)];
+}
+
 /** API stores `tasks` as JSON text; coerce to an array for the UI. */
 function parseTasks(raw) {
   if (raw == null || raw === '') return [];
@@ -50,6 +61,12 @@ function parseTasks(raw) {
  * Map an API service row to the shape expected by the Services/Engagements UI.
  */
 function normalizeEngagement(s) {
+  const assigneeUserIds = parseAssigneeUserIds(s.assignee_user_ids);
+  const nameLine = (s.assignee_names && String(s.assignee_names).trim() !== '')
+    ? String(s.assignee_names)
+    : (s.assigned_to_name || s.assigned_to || '');
+  const leadId = assigneeUserIds.length > 0 ? assigneeUserIds[0] : positiveIntOrNull(s.assigned_to);
+
   return {
     id:                 s.id,
     clientType:         s.client_type         || 'contact',
@@ -67,8 +84,10 @@ function normalizeEngagement(s) {
     engagementTypeName: s.engagement_type_name || '',
     type:               s.service_type        || s.type || '',
     financialYear:      s.financial_year      || '',
-    assignedTo:         s.assigned_to_name    || s.assigned_to || '',
-    assignedToUserId:   positiveIntOrNull(s.assigned_to),
+    assigneeUserIds,
+    assigneeNames:      nameLine,
+    assignedTo:         nameLine,
+    assignedToUserId:   leadId,
     dueDate:            s.due_date            || '',
     status:             s.status              || 'not_started',
     billingClosure:     s.billing_closure     ?? null,
@@ -163,7 +182,11 @@ export async function createEngagement(payload) {
 export async function updateEngagement(id, payload, { superadminOtp } = {}) {
   const body = {};
   if ('status' in payload) body.status = payload.status;
-  if ('assignedTo' in payload) body.assigned_to = positiveIntOrNull(payload.assignedTo);
+  if ('assigneeUserIds' in payload) {
+    body.assignee_user_ids = parseAssigneeUserIds(payload.assigneeUserIds);
+  } else if ('assignedTo' in payload) {
+    body.assigned_to = positiveIntOrNull(payload.assignedTo);
+  }
   if ('dueDate' in payload) body.due_date = payload.dueDate || null;
   if ('feeAgreed' in payload) {
     const v = payload.feeAgreed;
@@ -187,6 +210,23 @@ export async function updateEngagement(id, payload, { superadminOtp } = {}) {
   });
   const data = await parseResponse(res);
   return normalizeEngagement(data.data);
+}
+
+/**
+ * Admin audit log rows for a service engagement.
+ * @param {number|string} id
+ * @param {{ limit?: number, offset?: number }} [opts]
+ * @returns {Promise<object[]>}
+ */
+export async function getServiceAuditLog(id, { limit = 50, offset = 0 } = {}) {
+  const params = new URLSearchParams();
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  const res = await fetch(`${API_BASE}/admin/services/${id}/audit-log?${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return Array.isArray(data.data) ? data.data : [];
 }
 
 /**

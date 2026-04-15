@@ -13,6 +13,7 @@ import OrganizationCreatePage from './pages/OrganizationCreatePage';
 import Services from './pages/Services';
 import NewServiceEngagement from './pages/NewServiceEngagement';
 import ServiceEngagementEdit from './pages/ServiceEngagementEdit';
+import ServiceEngagementManage from './pages/ServiceEngagementManage';
 import ServiceEngagementFiles from './pages/ServiceEngagementFiles';
 import Documents from './pages/Documents';
 import Invoices from './pages/Invoices';
@@ -54,6 +55,7 @@ const pageTitles = {
   '/services':                  '📋 Services & Tasks',
   '/services/new':              '➕ New Service Engagement',
   '/services/edit':             '✏️ Edit Service Engagement',
+  '/services/manage':          '📋 Manage Service Engagement',
   '/services/files':            '📂 Engagement Files',
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
@@ -102,6 +104,11 @@ export default function App() {
           <Route path="/clients/groups" element={<ProtectedRoute staffOnly><Layout routePath="/clients/groups"><ClientGroups /></Layout></ProtectedRoute>} />
           <Route path="/services" element={<ProtectedRoute staffOnly><Layout routePath="/services"><Services /></Layout></ProtectedRoute>} />
           <Route path="/services/new" element={<ProtectedRoute staffOnly><Layout routePath="/services/new"><NewServiceEngagement /></Layout></ProtectedRoute>} />
+          <Route path="/services/:id" element={
+            <ProtectedRoute staffOnly requiredPermission="services.edit">
+              <Layout routePath="/services/manage"><ServiceEngagementManage /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/services/:id/edit" element={
             <ProtectedRoute staffOnly requiredPermission="services.edit">
               <Layout routePath="/services/edit"><ServiceEngagementEdit /></Layout>

@@ -278,16 +278,18 @@ class TimeEntryModel
             return [];
         }
 
+        // client_name is a computed expression: PostgreSQL requires it to be aggregated
+        // (or repeated verbatim in GROUP BY). MAX is safe here — one display name per group.
         $sql = "SELECT
                     te.user_id,
                     u.name AS user_name,
                     te.service_id,
                     s.service_type,
-                    COALESCE(c.organization_name,
+                    MAX(COALESCE(c.organization_name,
                         NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
                         o.name,
                         s.client_name,
-                        'Unknown') AS client_name,
+                        'Unknown')) AS client_name,
                     cg.id AS group_id,
                     cg.name AS group_name,
                     SUM(te.duration_minutes) FILTER (WHERE te.is_billable) AS billable_minutes,

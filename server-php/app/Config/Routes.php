@@ -244,6 +244,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/services/:id/audit-log',
+                'handler'    => 'Admin\ServiceController@auditLog',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/services/:id',
                 'handler'    => 'Admin\ServiceController@show',
                 'middleware' => ['auth', 'permission:services.view'],

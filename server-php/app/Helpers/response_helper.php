@@ -25,7 +25,7 @@ if (!function_exists('App\Helpers\api_success')) {
             'message' => $message,
             'data'    => $data,
             'errors'  => [],
-        ], $meta), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        ], $meta), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
         exit;
     }
 }
@@ -44,7 +44,7 @@ if (!function_exists('App\Helpers\api_error')) {
             'message' => $message,
             'data'    => null,
             'errors'  => $errors,
-        ], JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
         exit;
     }
 }
