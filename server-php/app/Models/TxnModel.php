@@ -344,7 +344,8 @@ class TxnModel
                 payment_method, reference_number,
                 expense_purpose, paid_from,
                 tds_status, tds_section, tds_rate,
-                linked_txn_id, notes, status, created_by, line_items, gst_breakdown
+                linked_txn_id, notes, status, created_by, line_items, gst_breakdown,
+                appointment_id
              ) VALUES (
                 :client_id, :organization_id, :txn_type, :txn_date, :narration,
                 :debit, :credit, :amount, :billing_profile_code,
@@ -353,7 +354,8 @@ class TxnModel
                 :payment_method, :reference_number,
                 :expense_purpose, :paid_from,
                 :tds_status, :tds_section, :tds_rate,
-                :linked_txn_id, :notes, :status, :created_by, CAST(:line_items AS jsonb), CAST(:gst_breakdown AS jsonb)
+                :linked_txn_id, :notes, :status, :created_by, CAST(:line_items AS jsonb), CAST(:gst_breakdown AS jsonb),
+                :appointment_id
              ) RETURNING id'
         );
         $stmt->execute([
@@ -388,6 +390,7 @@ class TxnModel
             ':created_by'          => $data['created_by']          ?? null,
             ':line_items'          => $lineItemsJson,
             ':gst_breakdown'       => $gstBreakdownJson,
+            ':appointment_id'      => isset($data['appointment_id']) ? (int)$data['appointment_id'] : null,
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -446,12 +449,13 @@ class TxnModel
         }
 
         return $this->create(array_merge($data, [
-            'txn_type' => 'receipt',
-            'narration'=> $data['narration'] ?? 'Receipt — ' . ($data['payment_method'] ?? 'Transfer'),
-            'debit'    => 0,
-            'credit'   => $amount,
-            'amount'   => $amount,
-            'status'   => 'active',
+            'txn_type'       => 'receipt',
+            'narration'      => $data['narration'] ?? 'Receipt — ' . ($data['payment_method'] ?? 'Transfer'),
+            'debit'          => 0,
+            'credit'         => $amount,
+            'amount'         => $amount,
+            'status'         => 'active',
+            'appointment_id' => $data['appointment_id'] ?? null,
         ]));
     }
 
@@ -857,5 +861,19 @@ class TxnModel
         $this->db->prepare(
             "UPDATE txn SET invoice_status = :status, updated_at = NOW() WHERE id = :id"
         )->execute([':status' => $newStatus, ':id' => $invoiceId]);
+    }
+
+    /** Sum existing receipt credits linked to an invoice txn (excludes cancelled). */
+    public function sumLinkedReceipts(int $invoiceTxnId): float
+    {
+        $stmt = $this->db->prepare(
+            "SELECT COALESCE(SUM(amount), 0) FROM txn
+             WHERE linked_txn_id = :invoice_id
+               AND txn_type = 'receipt'
+               AND status != 'cancelled'"
+        );
+        $stmt->execute([':invoice_id' => $invoiceTxnId]);
+
+        return (float)$stmt->fetchColumn();
     }
 }

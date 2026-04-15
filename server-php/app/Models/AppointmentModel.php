@@ -40,6 +40,19 @@ class AppointmentModel
         );
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch();
+        if ($row && isset($row['billing_profile_snapshot']) && is_string($row['billing_profile_snapshot'])) {
+            try {
+                $row['billing_profile_snapshot'] = json_decode(
+                    $row['billing_profile_snapshot'],
+                    true,
+                    512,
+                    JSON_THROW_ON_ERROR
+                );
+            } catch (\JsonException) {
+                $row['billing_profile_snapshot'] = null;
+            }
+        }
+
         return $row ?: null;
     }
 
@@ -85,7 +98,24 @@ class AppointmentModel
         $stmt->bindValue(':offset', $offset,  PDO::PARAM_INT);
         $stmt->execute();
 
-        return ['total' => $total, 'appointments' => $stmt->fetchAll()];
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) {
+            if (isset($row['billing_profile_snapshot']) && is_string($row['billing_profile_snapshot'])) {
+                try {
+                    $row['billing_profile_snapshot'] = json_decode(
+                        $row['billing_profile_snapshot'],
+                        true,
+                        512,
+                        JSON_THROW_ON_ERROR
+                    );
+                } catch (\JsonException) {
+                    $row['billing_profile_snapshot'] = null;
+                }
+            }
+        }
+        unset($row);
+
+        return ['total' => $total, 'appointments' => $rows];
     }
 
     /**
@@ -96,29 +126,71 @@ class AppointmentModel
      */
     public function create(array $data): int
     {
+        $snap = $data['billing_profile_snapshot'] ?? null;
+        $snapJson = '{}';
+        if (is_array($snap)) {
+            $snapJson = json_encode($snap, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        }
+
         $stmt = $this->db->prepare(
             'INSERT INTO calendar_events (
                 title, description, event_date, start_time, end_time,
-                event_type, client_id, assigned_to, client_name, staff_name, status, created_by
+                event_type, client_id, assigned_to, client_name, staff_name, status, created_by,
+                fee_rule_id, pricing_model, unit_amount, billable_hours, fee_subtotal,
+                billing_profile_code, billing_profile_snapshot, billing_organization_id,
+                payment_terms, advance_amount, advance_percent, amount_due_now, amount_collected,
+                appointment_status, razorpay_order_id, invoice_txn_id,
+                zoom_meeting_id, zoom_join_url, zoom_password, zoom_last_synced_at, zoom_sync_error,
+                invoice_line_description, invoice_line_kind
              ) VALUES (
                 :title, :description, :event_date, :start_time, :end_time,
-                :event_type, :client_id, :assigned_to, :client_name, :staff_name, :status, :created_by
+                :event_type, :client_id, :assigned_to, :client_name, :staff_name, :status, :created_by,
+                :fee_rule_id, :pricing_model, :unit_amount, :billable_hours, :fee_subtotal,
+                :billing_profile_code, CAST(:billing_profile_snapshot AS jsonb), :billing_organization_id,
+                :payment_terms, :advance_amount, :advance_percent, :amount_due_now, :amount_collected,
+                :appointment_status, :razorpay_order_id, :invoice_txn_id,
+                :zoom_meeting_id, :zoom_join_url, :zoom_password, :zoom_last_synced_at, :zoom_sync_error,
+                :invoice_line_description, :invoice_line_kind
              ) RETURNING id'
         );
         $stmt->execute([
-            ':title'       => $data['title']       ?? '',
-            ':description' => $data['description'] ?? null,
-            ':event_date'  => $data['event_date']  ?? date('Y-m-d'),
-            ':start_time'  => $data['start_time']  ?? null,
-            ':end_time'    => $data['end_time']    ?? null,
-            ':event_type'  => $data['event_type']  ?? 'in_person',
-            ':client_id'   => $data['client_id']   ?? null,
-            ':assigned_to' => $data['assigned_to'] ?? null,
-            ':client_name' => $data['client_name'] ?? null,
-            ':staff_name'  => $data['staff_name']  ?? null,
-            ':status'      => $data['status']      ?? 'scheduled',
-            ':created_by'  => $data['created_by']  ?? null,
+            ':title'                      => $data['title']       ?? '',
+            ':description'                => $data['description'] ?? null,
+            ':event_date'                 => $data['event_date']  ?? date('Y-m-d'),
+            ':start_time'                 => $data['start_time']  ?? null,
+            ':end_time'                   => $data['end_time']    ?? null,
+            ':event_type'                 => $data['event_type']  ?? 'in_person',
+            ':client_id'                  => $data['client_id']   ?? null,
+            ':assigned_to'                => $data['assigned_to'] ?? null,
+            ':client_name'                => $data['client_name'] ?? null,
+            ':staff_name'                 => $data['staff_name']  ?? null,
+            ':status'                     => $data['status']      ?? 'scheduled',
+            ':created_by'                 => $data['created_by']  ?? null,
+            ':fee_rule_id'                => $data['fee_rule_id'] ?? null,
+            ':pricing_model'              => $data['pricing_model'] ?? null,
+            ':unit_amount'                => $data['unit_amount'] ?? null,
+            ':billable_hours'             => $data['billable_hours'] ?? null,
+            ':fee_subtotal'               => $data['fee_subtotal'] ?? null,
+            ':billing_profile_code'       => $data['billing_profile_code'] ?? null,
+            ':billing_profile_snapshot'   => $snapJson,
+            ':billing_organization_id'   => $data['billing_organization_id'] ?? null,
+            ':payment_terms'              => $data['payment_terms'] ?? null,
+            ':advance_amount'             => $data['advance_amount'] ?? null,
+            ':advance_percent'            => $data['advance_percent'] ?? null,
+            ':amount_due_now'             => $data['amount_due_now'] ?? null,
+            ':amount_collected'           => $data['amount_collected'] ?? 0,
+            ':appointment_status'         => $data['appointment_status'] ?? 'confirmed',
+            ':razorpay_order_id'          => $data['razorpay_order_id'] ?? null,
+            ':invoice_txn_id'             => $data['invoice_txn_id'] ?? null,
+            ':zoom_meeting_id'            => $data['zoom_meeting_id'] ?? null,
+            ':zoom_join_url'              => $data['zoom_join_url'] ?? null,
+            ':zoom_password'              => $data['zoom_password'] ?? null,
+            ':zoom_last_synced_at'        => $data['zoom_last_synced_at'] ?? null,
+            ':zoom_sync_error'            => $data['zoom_sync_error'] ?? null,
+            ':invoice_line_description'   => $data['invoice_line_description'] ?? null,
+            ':invoice_line_kind'          => $data['invoice_line_kind'] ?? null,
         ]);
+
         return (int)$stmt->fetchColumn();
     }
 
@@ -132,12 +204,29 @@ class AppointmentModel
         $setClauses = [];
         $params     = [':id' => $id];
 
-        $allowed = ['title', 'description', 'event_date', 'start_time', 'end_time',
-                    'event_type', 'client_name', 'staff_name', 'status'];
+        $allowed = [
+            'title', 'description', 'event_date', 'start_time', 'end_time',
+            'event_type', 'client_name', 'staff_name', 'status', 'client_id',
+            'fee_rule_id', 'pricing_model', 'unit_amount', 'billable_hours', 'fee_subtotal',
+            'billing_profile_code', 'billing_organization_id',
+            'payment_terms', 'advance_amount', 'advance_percent', 'amount_due_now', 'amount_collected',
+            'appointment_status', 'razorpay_order_id', 'invoice_txn_id',
+            'zoom_meeting_id', 'zoom_join_url', 'zoom_password', 'zoom_last_synced_at', 'zoom_sync_error',
+            'invoice_line_description', 'invoice_line_kind',
+        ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
                 $setClauses[]       = "{$field} = :{$field}";
                 $params[":{$field}"] = $data[$field];
+            }
+        }
+        if (array_key_exists('billing_profile_snapshot', $data)) {
+            $snap = $data['billing_profile_snapshot'];
+            if ($snap === null) {
+                $setClauses[] = 'billing_profile_snapshot = NULL';
+            } elseif (is_array($snap)) {
+                $setClauses[]                   = 'billing_profile_snapshot = CAST(:billing_profile_snapshot AS jsonb)';
+                $params[':billing_profile_snapshot'] = json_encode($snap, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
             }
         }
 
@@ -149,6 +238,7 @@ class AppointmentModel
         $setClause    = implode(', ', $setClauses);
 
         $stmt = $this->db->prepare("UPDATE calendar_events SET {$setClause} WHERE id = :id");
+
         return $stmt->execute($params);
     }
 
@@ -158,6 +248,7 @@ class AppointmentModel
     public function delete(int $id): bool
     {
         $stmt = $this->db->prepare('DELETE FROM calendar_events WHERE id = :id');
+
         return $stmt->execute([':id' => $id]);
     }
 }

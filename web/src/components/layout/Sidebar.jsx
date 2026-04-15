@@ -5,7 +5,7 @@ import { useAuth } from '../../auth/AuthContext';
 import { getInitials } from '../../utils/getInitials';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
-  Receipt, CalendarDays, KeyRound, BookOpen, Clock,
+  Receipt, CalendarDays, KeyRound, BookOpen, Clock, Coins,
   Target, Settings, ChevronRight, ChevronDown,
   UserRound, Building2, ShieldCheck, Layers, Handshake,
 } from 'lucide-react';
@@ -34,6 +34,7 @@ const navSections = [
       { to: '/invoices', label: 'Invoices & Ledger', icon: Receipt },
       { to: '/reports/timesheets', label: 'Timesheet report', icon: Clock, permission: 'services.view' },
       { to: '/calendar', label: 'Calendar', icon: CalendarDays },
+      { to: '/settings/appointment-fees', label: 'Appointment fees', icon: Coins },
       { to: '/credentials', label: 'Credentials Vault', icon: KeyRound },
       { to: '/registers', label: 'Registers', icon: BookOpen },
       { to: '/leads', label: 'Leads & Quotations', icon: Target },

@@ -17,6 +17,7 @@ import ServiceEngagementFiles from './pages/ServiceEngagementFiles';
 import Documents from './pages/Documents';
 import Invoices from './pages/Invoices';
 import Calendar from './pages/Calendar';
+import AppointmentFeeRules from './pages/AppointmentFeeRules';
 import Credentials from './pages/Credentials';
 import Registers from './pages/Registers';
 import Leads from './pages/Leads';
@@ -58,6 +59,7 @@ const pageTitles = {
   '/invoices':                  '💰 Invoices & Ledger',
   '/reports/timesheets':        '🕐 Timesheet report',
   '/calendar':                  '📅 Calendar & Appointments',
+  '/settings/appointment-fees': '💳 Appointment fee rules',
   '/credentials':               '🔑 Credentials Vault',
   '/registers':                 '📊 Compliance Registers',
   '/leads':                     '🎯 Leads & Quotations',
@@ -119,6 +121,7 @@ export default function App() {
           <Route path="/leads" element={<ProtectedRoute staffOnly><Layout routePath="/leads"><Leads /></Layout></ProtectedRoute>} />
           <Route path="/search" element={<ProtectedRoute staffOnly><Layout routePath="/search"><GlobalSearchPage /></Layout></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute staffOnly><Layout routePath="/settings"><Settings /></Layout></ProtectedRoute>} />
+          <Route path="/settings/appointment-fees" element={<ProtectedRoute staffOnly><Layout routePath="/settings/appointment-fees"><AppointmentFeeRules /></Layout></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute staffOnly><Layout routePath="/profile"><Profile /></Layout></ProtectedRoute>} />
           <Route path="/admin/users" element={
             <ProtectedRoute staffOnly requiredAnyPermissions={['users.manage', 'users.delegate']}>

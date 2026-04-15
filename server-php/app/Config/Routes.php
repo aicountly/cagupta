@@ -76,6 +76,18 @@ class Routes
                 'handler'    => 'Auth\AuthController@requestOtp',
                 'middleware' => [],
             ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/webhooks/razorpay',
+                'handler'    => 'Webhooks\RazorpayWebhookController@handle',
+                'middleware' => [],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/integrations/zoom/callback',
+                'handler'    => 'Integrations\ZoomCallbackController@handle',
+                'middleware' => [],
+            ],
 
             // ── Admin — Users ─────────────────────────────────────────────────
             [
@@ -360,6 +372,58 @@ class Routes
                 'handler'    => 'Admin\AppointmentController@destroy',
                 'middleware' => ['auth', 'permission:calendar.create'],
             ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/appointments/:id/razorpay-order',
+                'handler'    => 'Admin\AppointmentController@razorpayOrder',
+                'middleware' => ['auth', 'permission:invoices.create'],
+            ],
+
+            // ── Admin — Appointment fee rules ───────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/appointment-fee-rules',
+                'handler'    => 'Admin\AppointmentFeeRuleController@index',
+                'middleware' => ['auth', 'permission:calendar.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/appointment-fee-rules',
+                'handler'    => 'Admin\AppointmentFeeRuleController@store',
+                'middleware' => ['auth', 'permission:calendar.create'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/appointment-fee-rules/:id',
+                'handler'    => 'Admin\AppointmentFeeRuleController@show',
+                'middleware' => ['auth', 'permission:calendar.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/appointment-fee-rules/:id',
+                'handler'    => 'Admin\AppointmentFeeRuleController@update',
+                'middleware' => ['auth', 'permission:calendar.create'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/appointment-fee-rules/:id',
+                'handler'    => 'Admin\AppointmentFeeRuleController@destroy',
+                'middleware' => ['auth', 'permission:calendar.create'],
+            ],
+
+            // ── Admin — Zoom integration ────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/integrations/zoom/authorize',
+                'handler'    => 'Admin\ZoomIntegrationController@authorizeUrl',
+                'middleware' => ['auth', 'permission:calendar.create'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/integrations/zoom/status',
+                'handler'    => 'Admin\ZoomIntegrationController@status',
+                'middleware' => ['auth', 'permission:calendar.view'],
+            ],
 
             // ── Admin — Credentials Vault ─────────────────────────────────────
             [
@@ -639,6 +703,12 @@ class Routes
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/txn/opening-balance',
                 'handler'    => 'Admin\TxnController@storeOpeningBalance',
+                'middleware' => ['auth', 'permission:invoices.create'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/:id/razorpay-order',
+                'handler'    => 'Admin\TxnController@razorpayOrder',
                 'middleware' => ['auth', 'permission:invoices.create'],
             ],
             [

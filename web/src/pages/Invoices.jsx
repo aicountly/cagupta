@@ -32,6 +32,11 @@ import {
 } from '../utils/indianFinancialYear';
 import { exportLedgerExcel, exportLedgerPdf } from '../utils/ledgerExport';
 import ledgerLogoUrl from '../assets/cropped_logo.png';
+import {
+  loadRazorpayScript,
+  createRazorpayOrderForTxn,
+  openRazorpayCheckout,
+} from '../services/razorpayService';
 
 // ── Shared badge components ───────────────────────────────────────────────────
 
@@ -1629,14 +1634,39 @@ export default function Invoices() {
   const [billingHistoryRows, setBillingHistoryRows]     = useState([]);
   const [billingHistoryLoading, setBillingHistoryLoading] = useState(false);
 
-  // ── Load invoices on mount ──────────────────────────────────────────────────
-  useEffect(() => {
+  function reloadInvoices() {
     setInvLoading(true);
     getTxns({ txnType: 'invoice' })
       .then(({ txns }) => setInvoices(txns))
       .catch(() => {})
       .finally(() => setInvLoading(false));
+  }
+
+  // ── Load invoices on mount ──────────────────────────────────────────────────
+  useEffect(() => {
+    reloadInvoices();
   }, []);
+
+  async function handleRazorpayCollect(inv) {
+    try {
+      await loadRazorpayScript();
+      const order = await createRazorpayOrderForTxn(inv.id);
+      openRazorpayCheckout({
+        keyId: order.keyId,
+        orderId: order.orderId,
+        amountPaise: order.amountPaise,
+        name: 'Invoice payment',
+        description: inv.invoiceNumber || `Invoice #${inv.id}`,
+        onSuccess: () => {
+          window.alert('Payment submitted. Refreshing list.');
+          reloadInvoices();
+        },
+        onFailure: (err) => window.alert(err.message || 'Payment failed'),
+      });
+    } catch (e) {
+      window.alert(e.message || 'Could not start Razorpay checkout');
+    }
+  }
 
   useEffect(() => {
     const raw = searchParams.get('openTxn');
@@ -2325,6 +2355,9 @@ export default function Invoices() {
                       <button type="button" style={iconBtn} onClick={() => setEditInvoiceId(i.id)}>✏️ Edit</button>
                     )}
                     <button type="button" style={iconBtn} onClick={() => { setSelectedInvoice(i); setShowRecordPayment(true); }}>💳 Pay</button>
+                    {canCreateInvoice && ['sent', 'partially_paid', 'overdue'].includes(String(i.invoiceStatus || i.status || '')) && (
+                      <button type="button" style={iconBtn} onClick={(e) => { e.stopPropagation(); handleRazorpayCollect(i); }} title="Collect with Razorpay">₹ Razorpay</button>
+                    )}
                     {canDeleteInvoice && (
                       <button type="button" style={iconBtn} onClick={() => setDeleteInvoiceTxn(i)}>🗑 Delete</button>
                     )}

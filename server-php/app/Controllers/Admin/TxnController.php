@@ -9,6 +9,7 @@ use App\Libraries\BrevoMailer;
 use App\Libraries\CommissionSyncService;
 use App\Libraries\GstInvoiceTax;
 use App\Libraries\OtpService;
+use App\Libraries\RazorpayClient;
 use App\Models\ClientModel;
 use App\Models\OrganizationModel;
 use App\Models\TxnModel;
@@ -669,5 +670,52 @@ class TxnController extends BaseController
         }
 
         return $parts !== [] ? implode('; ', $parts) : 'Fields updated (no scalar diff detected).';
+    }
+
+    /** POST /api/admin/txn/:id/razorpay-order */
+    public function razorpayOrder(int $id): never
+    {
+        $inv = $this->txn->find($id);
+        if ($inv === null || ($inv['txn_type'] ?? '') !== 'invoice') {
+            $this->error('Invoice transaction not found.', 404);
+        }
+        $total = (float)($inv['amount'] ?? 0);
+        $paid  = $this->txn->sumLinkedReceipts($id);
+        $remaining = max(0, round($total - $paid, 2));
+        if ($remaining <= 0) {
+            $this->error('Invoice is already fully paid.', 422);
+        }
+
+        $rz = new RazorpayClient();
+        if (!$rz->isConfigured()) {
+            $this->error('Razorpay is not configured on the server.', 503);
+        }
+
+        $body      = $this->getJsonBody();
+        $amountInr = $remaining;
+        if (isset($body['amount']) && (float)$body['amount'] > 0) {
+            $amountInr = min($remaining, round((float)$body['amount'], 2));
+        }
+        $paise = (int)round($amountInr * 100);
+        if ($paise < 100) {
+            $this->error('Order amount must be at least ₹1.', 422);
+        }
+
+        $receipt = 'invtxn_' . $id . '_' . time();
+        $order    = $rz->createOrder($paise, $receipt, [
+            'invoice_txn_id' => (string)$id,
+        ]);
+        $orderId = (string)($order['id'] ?? '');
+        if ($orderId === '') {
+            $this->error('Razorpay did not return an order id.', 502);
+        }
+
+        $this->success([
+            'orderId'     => $orderId,
+            'amount'      => $amountInr,
+            'amountPaise' => $paise,
+            'currency'    => 'INR',
+            'keyId'       => trim((string)(getenv('RAZORPAY_KEY_ID') ?: '')),
+        ], 'Razorpay order created');
     }
 }

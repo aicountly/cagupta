@@ -18,6 +18,8 @@ import {
   saveQuotationDefault,
 } from '../services/quotationService';
 import { API_BASE_URL } from '../constants/config';
+import { Link } from 'react-router-dom';
+import { getZoomIntegrationStatus, getZoomAuthorizeUrl } from '../services/zoomIntegrationService';
 
 // ── Available permission modules ─────────────────────────────────────────────
 const PERMISSION_GROUPS = [
@@ -174,6 +176,8 @@ export default function Settings() {
   const { hasPermission } = useAuth();
   const canManageUserRates = hasPermission('users.manage');
   const [tab, setTab] = useState('firm');
+  const [zoomStatus, setZoomStatus] = useState({ connected: false, accountId: null });
+  const [zoomLoading, setZoomLoading] = useState(false);
   const [portalTypes, setPortalTypes] = useState(() => getPortalTypes());
   const [newPortal, setNewPortal] = useState('');
   const [newPortalUrl, setNewPortalUrl] = useState('');
@@ -535,10 +539,45 @@ export default function Settings() {
     }
   }
 
+  useEffect(() => {
+    if (tab !== 'integrations') return;
+    setZoomLoading(true);
+    getZoomIntegrationStatus()
+      .then((d) => setZoomStatus({ connected: Boolean(d.connected), accountId: d.accountId || null }))
+      .catch(() => setZoomStatus({ connected: false, accountId: null }))
+      .finally(() => setZoomLoading(false));
+  }, [tab]);
+
+  useEffect(() => {
+    function onMsg(ev) {
+      if (ev?.data?.type !== 'zoom_oauth' || !ev.data.ok) return;
+      setZoomLoading(true);
+      getZoomIntegrationStatus()
+        .then((d) => setZoomStatus({ connected: Boolean(d.connected), accountId: d.accountId || null }))
+        .catch(() => {})
+        .finally(() => setZoomLoading(false));
+    }
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  async function handleConnectZoom() {
+    try {
+      const { authorizationUrl } = await getZoomAuthorizeUrl();
+      if (!authorizationUrl) {
+        window.alert('Could not start Zoom OAuth.');
+        return;
+      }
+      window.open(authorizationUrl, 'zoom_oauth', 'width=600,height=720');
+    } catch (e) {
+      window.alert(e.message || 'Zoom OAuth failed');
+    }
+  }
+
   return (
     <div style={{ padding:24 }}>
       <div style={{ display:'flex', gap:4, marginBottom:24, borderBottom:'2px solid #e2e8f0' }}>
-        {[['firm','Firm Profile'],['team','Team & Users'],['roles','Roles & Permissions'],['billing','Billing Firms'],['notifications','Notifications'],['other','Other Settings'],['service_config','Service Configuration']].map(([t,l])=>(
+        {[['firm','Firm Profile'],['team','Team & Users'],['roles','Roles & Permissions'],['billing','Billing Firms'],['integrations','Video & Payments'],['notifications','Notifications'],['other','Other Settings'],['service_config','Service Configuration']].map(([t,l])=>(
           <button key={t} onClick={()=>setTab(t)} style={{ padding:'8px 20px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600, color:tab===t?'#2563eb':'#64748b', borderBottom:tab===t?'2px solid #2563eb':'2px solid transparent', marginBottom:-2 }}>
             {l}
           </button>
@@ -933,6 +972,49 @@ export default function Settings() {
               <button onClick={handleAddRegister} style={btnPrimary}>➕ Add</button>
             </div>
             {registerError && <div style={{ fontSize:11, color:'#dc2626', marginTop:4 }}>{registerError}</div>}
+          </div>
+        </div>
+      )}
+
+      {tab==='integrations' && (
+        <div style={{ maxWidth: 720 }}>
+          <div style={cardStyle}>
+            <h3 style={sectionTitle}>🎥 Zoom (video appointments)</h3>
+            <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>
+              Connect the Zoom account used for super-admin video meetings. After connecting, new confirmed video appointments will create or update Zoom meetings.
+            </p>
+            {zoomLoading ? (
+              <div style={{ fontSize:13, color:'#64748b' }}>Loading…</div>
+            ) : (
+              <div style={{ fontSize:14, color:'#334155', marginBottom:12 }}>
+                Status:{' '}
+                <strong>{zoomStatus.connected ? 'Connected' : 'Not connected'}</strong>
+                {zoomStatus.accountId && (
+                  <span style={{ marginLeft:8, fontFamily:'monospace', fontSize:12, color:'#64748b' }}>Account {zoomStatus.accountId}</span>
+                )}
+              </div>
+            )}
+            <button type="button" style={btnPrimary} onClick={handleConnectZoom}>Connect Zoom</button>
+            <p style={{ fontSize:12, color:'#94a3b8', marginTop:12 }}>
+              Set <code style={{ background:'#f1f5f9', padding:'2px 6px', borderRadius:4 }}>ZOOM_CLIENT_ID</code>,{' '}
+              <code style={{ background:'#f1f5f9', padding:'2px 6px', borderRadius:4 }}>ZOOM_CLIENT_SECRET</code>, and redirect URL on the server (.env).
+            </p>
+          </div>
+          <div style={{ ...cardStyle, marginTop:20 }}>
+            <h3 style={sectionTitle}>💳 Razorpay</h3>
+            <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>
+              Configure <code style={{ background:'#f1f5f9', padding:'2px 6px', borderRadius:4 }}>RAZORPAY_KEY_ID</code>,{' '}
+              <code style={{ background:'#f1f5f9', padding:'2px 6px', borderRadius:4 }}>RAZORPAY_KEY_SECRET</code>, and{' '}
+              <code style={{ background:'#f1f5f9', padding:'2px 6px', borderRadius:4 }}>RAZORPAY_WEBHOOK_SECRET</code> on the API server.
+              Register webhook URL: <code style={{ background:'#f1f5f9', padding:'2px 6px', borderRadius:4 }}>{API_BASE_URL}/webhooks/razorpay</code> for event <strong>payment.captured</strong>.
+            </p>
+          </div>
+          <div style={{ ...cardStyle, marginTop:20 }}>
+            <h3 style={sectionTitle}>📋 Appointment fee rules</h3>
+            <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 12px 0' }}>
+              Define fixed or hourly fees used when booking billable appointments.
+            </p>
+            <Link to="/settings/appointment-fees" style={{ ...btnPrimary, display:'inline-block', textDecoration:'none', textAlign:'center' }}>Manage fee rules</Link>
           </div>
         </div>
       )}

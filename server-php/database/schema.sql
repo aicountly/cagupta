@@ -294,3 +294,59 @@ CREATE INDEX IF NOT EXISTS idx_services_client     ON services(client_id);
 CREATE INDEX IF NOT EXISTS idx_services_assigned   ON services(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_invoices_client     ON invoices(client_id);
 CREATE INDEX IF NOT EXISTS idx_leads_assigned      ON leads(assigned_to);
+
+-- -----------------------------------------------------------------------------
+-- 026 — Appointment fee rules, billing, Zoom, Razorpay (see migration 026)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS appointment_fee_rules (
+    id                           SERIAL PRIMARY KEY,
+    name                         VARCHAR(200) NOT NULL,
+    pricing_model                VARCHAR(20)  NOT NULL,
+    amount                       NUMERIC(12,2) NOT NULL,
+    default_billing_profile_code VARCHAR(50),
+    default_line_description     VARCHAR(500),
+    default_line_kind            VARCHAR(30) DEFAULT 'professional_fee',
+    is_active                    BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at                   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at                   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS zoom_oauth_tokens (
+    user_id        INTEGER NOT NULL PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    access_token   TEXT NOT NULL,
+    refresh_token  TEXT NOT NULL,
+    expires_at     TIMESTAMPTZ NOT NULL,
+    scope          TEXT,
+    account_id     VARCHAR(64),
+    updated_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS razorpay_webhook_events (
+    id                   SERIAL PRIMARY KEY,
+    razorpay_payment_id  VARCHAR(64),
+    razorpay_order_id    VARCHAR(64),
+    event_id             VARCHAR(64),
+    created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE txn ADD COLUMN IF NOT EXISTS appointment_id INTEGER REFERENCES calendar_events(id) ON DELETE SET NULL;
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS fee_rule_id INTEGER REFERENCES appointment_fee_rules(id) ON DELETE SET NULL;
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS pricing_model VARCHAR(20);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS unit_amount NUMERIC(12,2);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS billable_hours NUMERIC(10,4);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS fee_subtotal NUMERIC(12,2);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS billing_profile_code VARCHAR(50);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS billing_profile_snapshot JSONB;
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS billing_organization_id INTEGER REFERENCES organizations(id) ON DELETE SET NULL;
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS payment_terms VARCHAR(20);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS advance_amount NUMERIC(12,2);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS advance_percent NUMERIC(8,4);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS amount_due_now NUMERIC(12,2);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS amount_collected NUMERIC(12,2) NOT NULL DEFAULT 0;
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS appointment_status VARCHAR(30) NOT NULL DEFAULT 'confirmed';
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS razorpay_order_id VARCHAR(100);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS invoice_txn_id INTEGER REFERENCES txn(id) ON DELETE SET NULL;
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS zoom_meeting_id VARCHAR(80);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS zoom_join_url TEXT;
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS zoom_password VARCHAR(128);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS zoom_last_synced_at TIMESTAMPTZ;
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS zoom_sync_error TEXT;
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS invoice_line_description VARCHAR(500);
+ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS invoice_line_kind VARCHAR(30) DEFAULT 'professional_fee';
