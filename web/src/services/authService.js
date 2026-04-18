@@ -136,12 +136,14 @@ export async function loginWithMicrosoft(msalResponse) {
  * { otpRequired: true, maskedEmail } so the caller can show the OTP step.
  * Otherwise it saves the session and returns { token, user } as normal.
  */
-export async function loginWithPassword(email, password) {
+export async function loginWithPassword(email, password, options = {}) {
+  const portal = options.portal || 'staff';
+  const identifier = options.identifier || email;
   if (API_BASE) {
     const res = await fetch(`${API_BASE}/auth/login`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ email, password }),
+      body:    JSON.stringify({ email, password, portal, identifier }),
     });
     const data = await parseResponse(res);
     if (data.data?.otp_required) {
@@ -156,12 +158,14 @@ export async function loginWithPassword(email, password) {
 }
 
 /** Ask the backend (or mock) to send an OTP to the given email. */
-export async function requestEmailOtp(email) {
+export async function requestEmailOtp(email, options = {}) {
+  const portal = options.portal || 'staff';
+  const identifier = options.identifier || email;
   if (API_BASE) {
     const res = await fetch(`${API_BASE}/auth/request-otp`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ email }),
+      body:    JSON.stringify({ email, portal, identifier }),
     });
     if (!res.ok) throw new Error('Failed to send OTP');
     return;
@@ -174,12 +178,14 @@ export async function requestEmailOtp(email) {
  *
  * ⚠️  In mock/dev mode "123456" is accepted for any email.
  */
-export async function verifyEmailOtp(email, otp) {
+export async function verifyEmailOtp(email, otp, options = {}) {
+  const portal = options.portal || 'staff';
+  const identifier = options.identifier || email;
   if (API_BASE) {
     const res = await fetch(`${API_BASE}/auth/verify-otp`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ email, otp }),
+      body:    JSON.stringify({ email, otp, portal, identifier }),
     });
     const data = await parseResponse(res);
     return saveSession(data.data.token, data.data.user);

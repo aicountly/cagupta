@@ -105,7 +105,9 @@ class ContactController extends BaseController
                 'last_name'         => $lastName   ?: null,
                 'organization_name' => $organizationName ?: null,
                 'email'             => trim((string)($body['email']         ?? '')) ?: null,
+                'secondary_email'   => trim((string)($body['secondary_email'] ?? '')) ?: null,
                 'phone'             => trim((string)($body['phone']         ?? '')) ?: null,
+                'secondary_phone'   => trim((string)($body['secondary_phone'] ?? '')) ?: null,
                 'pan'               => strtoupper(trim((string)($body['pan'] ?? ''))) ?: null,
                 'gstin'             => strtoupper(trim((string)($body['gstin'] ?? ''))) ?: null,
                 'address_line1'     => $body['address_line1'] ?? null,
@@ -182,7 +184,7 @@ class ContactController extends BaseController
 
         $textFields = [
             'type', 'first_name', 'last_name', 'organization_name',
-            'email', 'phone', 'pan', 'gstin',
+            'email', 'secondary_email', 'phone', 'secondary_phone', 'pan', 'gstin',
             'address_line1', 'address_line2', 'city', 'state', 'pincode', 'country',
             'notes', 'reference',
         ];

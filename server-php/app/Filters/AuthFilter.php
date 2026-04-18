@@ -7,6 +7,8 @@ use App\Config\Auth as AuthConfig;
 use App\Libraries\JWT;
 use App\Models\UserModel;
 use App\Models\SessionModel;
+use App\Models\ClientSessionModel;
+use App\Models\RoleModel;
 
 use function App\Helpers\api_error;
 
@@ -42,6 +44,42 @@ class AuthFilter
 
         // 2. Verify the session exists in the DB (allows server-side revocation)
         $sessionModel = new SessionModel();
+        $clientSessionModel = new ClientSessionModel();
+        $isClientToken = (($payload['sub_type'] ?? '') === 'client');
+
+        if ($isClientToken) {
+            $clientSession = $clientSessionModel->findByToken($token);
+            if ($clientSession === null) {
+                api_error('Session not found or expired. Please log in again.', 401);
+            }
+            $role = (new RoleModel())->findByName('client');
+            $rawPerms = $role['permissions'] ?? '{"permissions": []}';
+            $decoded = is_string($rawPerms) ? (json_decode($rawPerms, true) ?? []) : $rawPerms;
+            $permissions = (array)($decoded['permissions'] ?? []);
+
+            $authUser = [
+                'id' => (int)($payload['sub'] ?? 0),
+                'name' => 'Client',
+                'email' => null,
+                'is_active' => true,
+                'role_name' => 'client',
+                'role_permissions' => json_encode(['permissions' => $permissions]),
+                'role_permissions_array' => $permissions,
+                'entity_type' => $clientSession['entity_type'] ?? ($payload['entity_type'] ?? 'contact'),
+                'entity_id' => (int)($clientSession['entity_id'] ?? ($payload['sub'] ?? 0)),
+                'contact_id' => isset($clientSession['context_contact_id']) && $clientSession['context_contact_id'] !== null
+                    ? (int)$clientSession['context_contact_id']
+                    : null,
+                'organization_id' => isset($clientSession['context_org_id']) && $clientSession['context_org_id'] !== null
+                    ? (int)$clientSession['context_org_id']
+                    : null,
+            ];
+
+            $GLOBALS['auth_user']  = $authUser;
+            $GLOBALS['auth_token'] = $token;
+            return;
+        }
+
         if ($sessionModel->findByToken($token) === null) {
             api_error('Session not found or expired. Please log in again.', 401);
         }

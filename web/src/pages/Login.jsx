@@ -6,7 +6,6 @@ import logoUrl from '../assets/cropped_logo.png';
 import { useAuth } from '../auth/AuthContext';
 import {
   loginWithGoogle,
-  loginWithMicrosoft,
   loginWithPassword,
   requestEmailOtp,
   verifyEmailOtp,
@@ -20,21 +19,29 @@ const MOCK_GOOGLE_CREDENTIAL =
   '.sig';
 
 function isValidEmail(email) {
-  return /^[^\s@]+@[^\"]+\.[^\s@]+$/.test(email);
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
 function portalMismatchMessage(portal, user) {
   if (user?.role === 'affiliate' && portal !== 'affiliate') {
     return 'This account is for affiliates. Select “Affiliate partner” above.';
   }
+  if (user?.role === 'client' && portal !== 'client') {
+    return 'This account is for clients. Select “Client portal” above.';
+  }
   if (user?.role && user.role !== 'affiliate' && portal === 'affiliate') {
     return 'This is a staff account. Select “Staff & team” above.';
+  }
+  if (user?.role && user.role !== 'client' && portal === 'client') {
+    return 'This is not a client account. Select “Staff & team” or “Affiliate partner”.';
   }
   return '';
 }
 
 function homeForUser(user) {
-  return user?.role === 'affiliate' ? '/affiliate' : '/';
+  if (user?.role === 'affiliate') return '/affiliate';
+  if (user?.role === 'client') return '/client';
+  return '/';
 }
 
 export default function LoginPage() {
@@ -51,6 +58,7 @@ export default function LoginPage() {
   // Step 1 state
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [clientIdentifier, setClientIdentifier] = useState('');
 
   // OTP step state
   const [otpStep, setOtpStep] = useState(false);
@@ -118,17 +126,27 @@ export default function LoginPage() {
   async function handlePasswordLogin(e) {
     e.preventDefault();
     setError('');
-    if (!isValidEmail(email)) {
-      setError('Please enter a valid email address.');
-      return;
-    }
-    if (!password) {
-      setError('Please enter your password.');
-      return;
+    if (loginPortal === 'client') {
+      if (!clientIdentifier.trim()) {
+        setError('Please enter your registered email or mobile.');
+        return;
+      }
+    } else {
+      if (!isValidEmail(email)) {
+        setError('Please enter a valid email address.');
+        return;
+      }
+      if (!password) {
+        setError('Please enter your password.');
+        return;
+      }
     }
     setLoading(true);
     try {
-      const result = await loginWithPassword(email, password);
+      const result = await loginWithPassword(email, password, {
+        portal: loginPortal,
+        identifier: loginPortal === 'client' ? clientIdentifier.trim() : email,
+      });
       if (result.otpRequired) {
         setMaskedEmail(result.maskedEmail || email);
         setOtpStep(true);
@@ -158,7 +176,10 @@ export default function LoginPage() {
     }
     setLoading(true);
     try {
-      const { token, user: u } = await verifyEmailOtp(email, otp);
+      const { token, user: u } = await verifyEmailOtp(email, otp, {
+        portal: loginPortal,
+        identifier: loginPortal === 'client' ? clientIdentifier.trim() : email,
+      });
       const msg = portalMismatchMessage(loginPortal, u);
       if (msg) {
         setError(msg);
@@ -178,11 +199,14 @@ export default function LoginPage() {
     setError('');
     setResendTimer(60);
     try {
-      await requestEmailOtp(email);
+      await requestEmailOtp(email, {
+        portal: loginPortal,
+        identifier: loginPortal === 'client' ? clientIdentifier.trim() : email,
+      });
     } catch (err) {
       setError(err.message || 'Failed to resend OTP. Please try again.');
     }
-  }, [email, resendTimer]);
+  }, [email, resendTimer, clientIdentifier, loginPortal]);
 
   function handleChangeEmail() {
     setOtpStep(false);
@@ -233,6 +257,23 @@ export default function LoginPage() {
             >
               Affiliate partner
             </button>
+            <button
+              type="button"
+              onClick={() => setLoginPortal('client')}
+              style={{
+                flex: 1,
+                padding: '10px 12px',
+                borderRadius: 10,
+                border: loginPortal === 'client' ? '2px solid #15803d' : '1px solid #e2e8f0',
+                background: loginPortal === 'client' ? '#f0fdf4' : '#fff',
+                fontWeight: 700,
+                fontSize: 13,
+                cursor: 'pointer',
+                color: '#0f172a',
+              }}
+            >
+              Client portal
+            </button>
           </div>
           <h1 style={s.heading}>Sign in to your account</h1>
           <p style={s.subheading}>CA Rahul Gupta – Office Portal</p>
@@ -282,7 +323,7 @@ export default function LoginPage() {
           ) : (
             /* ── Email + Password Step ─────────────────────────────────── */
             <>
-              <div style={s.socialSection}>
+              {loginPortal !== 'client' && <div style={s.socialSection}>
                 {GOOGLE_CLIENT_ID ? (
                   <div style={s.googleWrap}>
                     <GoogleLogin
@@ -311,41 +352,59 @@ export default function LoginPage() {
                 >
                   <MicrosoftIcon /> {loading ? 'Redirecting…' : 'Continue with Outlook'}
                 </button>
-              </div>
-              <div style={s.divider}>
+              </div>}
+              {loginPortal !== 'client' && <div style={s.divider}>
                 <div style={s.dividerLine} />
                 <span style={s.dividerText}>or</span>
                 <div style={s.dividerLine} />
-              </div>
+              </div>}
               <form onSubmit={handlePasswordLogin} style={s.form} noValidate>
-                <label style={s.label} htmlFor="login-email">Official email address</label>
-                <input
-                  id="login-email"
-                  type="email"
-                  value={email}
-                  onChange={e => { setEmail(e.target.value); setError(''); }}
-                  placeholder="name@company.com"
-                  style={s.input}
-                  autoComplete="email"
-                  disabled={loading}
-                />
-                <label style={s.label} htmlFor="login-password">Password</label>
-                <input
-                  id="login-password"
-                  type="password"
-                  value={password}
-                  onChange={e => { setPassword(e.target.value); setError(''); }}
-                  placeholder="Enter your password"
-                  style={s.input}
-                  autoComplete="current-password"
-                  disabled={loading}
-                />
+                {loginPortal === 'client' ? (
+                  <>
+                    <label style={s.label} htmlFor="login-client-identifier">Registered email or mobile</label>
+                    <input
+                      id="login-client-identifier"
+                      type="text"
+                      value={clientIdentifier}
+                      onChange={e => { setClientIdentifier(e.target.value); setError(''); }}
+                      placeholder="name@example.com or 98XXXXXXXX"
+                      style={s.input}
+                      autoComplete="username"
+                      disabled={loading}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <label style={s.label} htmlFor="login-email">Official email address</label>
+                    <input
+                      id="login-email"
+                      type="email"
+                      value={email}
+                      onChange={e => { setEmail(e.target.value); setError(''); }}
+                      placeholder="name@company.com"
+                      style={s.input}
+                      autoComplete="email"
+                      disabled={loading}
+                    />
+                    <label style={s.label} htmlFor="login-password">Password</label>
+                    <input
+                      id="login-password"
+                      type="password"
+                      value={password}
+                      onChange={e => { setPassword(e.target.value); setError(''); }}
+                      placeholder="Enter your password"
+                      style={s.input}
+                      autoComplete="current-password"
+                      disabled={loading}
+                    />
+                  </>
+                )}
                 <button
                   type="submit"
                   style={{ ...s.primaryBtn, opacity: loading ? 0.7 : 1 }}
                   disabled={loading}
                 >
-                  {loading ? 'Sending OTP…' : 'Sign In'}
+                  {loading ? 'Sending OTP…' : (loginPortal === 'client' ? 'Continue with OTP' : 'Sign In')}
                 </button>
               </form>
             </>

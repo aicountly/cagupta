@@ -199,13 +199,13 @@ class ClientModel
         $stmt = $this->db->prepare(
             'INSERT INTO clients (
                 type, first_name, last_name, organization_name,
-                email, phone, pan, gstin,
+                email, secondary_email, phone, secondary_phone, pan, gstin,
                 address_line1, address_line2, city, state, pincode, country,
                 notes, reference, group_id, is_active, created_by,
                 referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
              ) VALUES (
                 :type, :first_name, :last_name, :organization_name,
-                :email, :phone, :pan, :gstin,
+                :email, :secondary_email, :phone, :secondary_phone, :pan, :gstin,
                 :address_line1, :address_line2, :city, :state, :pincode, :country,
                 :notes, :reference, :group_id, :is_active, :created_by,
                 :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted
@@ -218,7 +218,9 @@ class ClientModel
             ':last_name'         => $data['last_name']         ?? null,
             ':organization_name' => $data['organization_name'] ?? null,
             ':email'             => $data['email']             ?? null,
+            ':secondary_email'   => $data['secondary_email']   ?? null,
             ':phone'             => $data['phone']             ?? null,
+            ':secondary_phone'   => $data['secondary_phone']   ?? null,
             ':pan'               => $data['pan']               ?? null,
             ':gstin'             => $data['gstin']             ?? null,
             ':address_line1'     => $data['address_line1']     ?? null,
@@ -252,7 +254,7 @@ class ClientModel
 
         $allowed = [
             'type', 'first_name', 'last_name', 'organization_name',
-            'email', 'phone', 'pan', 'gstin',
+            'email', 'secondary_email', 'phone', 'secondary_phone', 'pan', 'gstin',
             'address_line1', 'address_line2', 'city', 'state', 'pincode', 'country',
             'notes', 'reference',
             'referral_start_date', 'commission_mode',

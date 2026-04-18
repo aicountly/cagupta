@@ -36,6 +36,11 @@ import AffiliateCommissions from './pages/affiliate/AffiliateCommissions';
 import AffiliatePayouts from './pages/affiliate/AffiliatePayouts';
 import AffiliateBank from './pages/affiliate/AffiliateBank';
 import AffiliateSubAffiliates from './pages/affiliate/AffiliateSubAffiliates';
+import ClientActiveServices from './pages/client/ClientActiveServices';
+import ClientCompletedServices from './pages/client/ClientCompletedServices';
+import ClientServiceDetails from './pages/client/ClientServiceDetails';
+import ClientLedger from './pages/client/ClientLedger';
+import ClientProfile from './pages/client/ClientProfile';
 
 /** Subpath deployments (e.g. `npm run build:github` → base `/cagupta/`) need this or /search opens the wrong URL. */
 const ROUTER_BASENAME =
@@ -158,6 +163,12 @@ export default function App() {
               </AffiliateLayout>
             </ProtectedRoute>
           } />
+
+          <Route path="/client" element={<ProtectedRoute clientOnly><ClientActiveServices /></ProtectedRoute>} />
+          <Route path="/client/completed" element={<ProtectedRoute clientOnly><ClientCompletedServices /></ProtectedRoute>} />
+          <Route path="/client/services/:id" element={<ProtectedRoute clientOnly><ClientServiceDetails /></ProtectedRoute>} />
+          <Route path="/client/ledger" element={<ProtectedRoute clientOnly><ClientLedger /></ProtectedRoute>} />
+          <Route path="/client/profile" element={<ProtectedRoute clientOnly><ClientProfile /></ProtectedRoute>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

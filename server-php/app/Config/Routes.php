@@ -915,6 +915,31 @@ class Routes
                 'handler'    => 'Affiliate\AffiliatePortalController@subAffiliateStore',
                 'middleware' => ['auth', 'permission:affiliate.sub_affiliates.create'],
             ],
+            // ── Client portal ────────────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/client/me',
+                'handler'    => 'Client\ClientPortalController@me',
+                'middleware' => ['auth', 'permission:client.portal'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/client/services',
+                'handler'    => 'Client\ClientPortalController@services',
+                'middleware' => ['auth', 'permission:client.services.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/client/services/:id',
+                'handler'    => 'Client\ClientPortalController@serviceShow',
+                'middleware' => ['auth', 'permission:client.services.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/client/ledger',
+                'handler'    => 'Client\ClientPortalController@ledger',
+                'middleware' => ['auth', 'permission:client.ledger.view'],
+            ],
         ];
     }
 }

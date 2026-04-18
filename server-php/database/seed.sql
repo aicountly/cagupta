@@ -42,6 +42,12 @@ INSERT INTO roles (name, display_name, permissions, is_system) VALUES
     'Affiliate',
     '{"permissions": ["affiliate.portal","affiliate.profile","affiliate.payouts.request","affiliate.sub_affiliates.create","affiliate.bank.manage"]}',
     TRUE
+),
+(
+    'client',
+    'Client',
+    '{"permissions": ["client.portal","client.services.view","client.ledger.view","client.profile.view"]}',
+    TRUE
 )
 ON CONFLICT (name) DO NOTHING;
 

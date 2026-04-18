@@ -97,7 +97,9 @@ class OrganizationController extends BaseController
             'gstin'              => strtoupper(trim((string)($body['gstin'] ?? ''))) ?: null,
             'pan'                => strtoupper(trim((string)($body['pan']   ?? ''))) ?: null,
             'email'              => trim((string)($body['email']   ?? '')) ?: null,
+            'secondary_email'    => trim((string)($body['secondary_email'] ?? '')) ?: null,
             'phone'              => trim((string)($body['phone']   ?? '')) ?: null,
+            'secondary_phone'    => trim((string)($body['secondary_phone'] ?? '')) ?: null,
             'address'            => $body['address']  ?? null,
             'city'               => $body['city']     ?? null,
             'state'              => $body['state']    ?? null,
@@ -152,7 +154,7 @@ class OrganizationController extends BaseController
         $data = [];
 
         $textFields = [
-            'name', 'type', 'gstin', 'pan', 'email', 'phone',
+            'name', 'type', 'gstin', 'pan', 'email', 'secondary_email', 'phone', 'secondary_phone',
             'address', 'city', 'state', 'country', 'pincode', 'website', 'notes', 'reference',
         ];
         foreach ($textFields as $field) {

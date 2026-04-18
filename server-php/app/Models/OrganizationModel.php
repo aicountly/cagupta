@@ -108,12 +108,12 @@ class OrganizationModel
     {
         $stmt = $this->db->prepare(
             'INSERT INTO organizations (
-                name, type, gstin, pan, email, phone,
+                name, type, gstin, pan, email, secondary_email, phone, secondary_phone,
                 address, city, state, country, pincode, website, notes,
                 reference, group_id, primary_contact_id, is_active, created_by,
                 referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
              ) VALUES (
-                :name, :type, :gstin, :pan, :email, :phone,
+                :name, :type, :gstin, :pan, :email, :secondary_email, :phone, :secondary_phone,
                 :address, :city, :state, :country, :pincode, :website, :notes,
                 :reference, :group_id, :primary_contact_id, :is_active, :created_by,
                 :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted
@@ -126,7 +126,9 @@ class OrganizationModel
             ':gstin'              => $data['gstin']      ?? null,
             ':pan'                => $data['pan']        ?? null,
             ':email'              => $data['email']      ?? null,
+            ':secondary_email'    => $data['secondary_email'] ?? null,
             ':phone'              => $data['phone']      ?? null,
+            ':secondary_phone'    => $data['secondary_phone'] ?? null,
             ':address'            => $data['address']    ?? null,
             ':city'               => $data['city']       ?? null,
             ':state'              => $data['state']      ?? null,
@@ -158,7 +160,7 @@ class OrganizationModel
         $params     = [':id' => $id];
 
         $allowed = [
-            'name', 'type', 'gstin', 'pan', 'email', 'phone',
+            'name', 'type', 'gstin', 'pan', 'email', 'secondary_email', 'phone', 'secondary_phone',
             'address', 'city', 'state', 'country', 'pincode', 'website', 'notes', 'reference',
             'referral_start_date', 'commission_mode',
         ];

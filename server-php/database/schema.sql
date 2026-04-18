@@ -58,7 +58,9 @@ CREATE TABLE IF NOT EXISTS clients (
     last_name         VARCHAR(100),
     organization_name VARCHAR(200),
     email             VARCHAR(255),
+    secondary_email   VARCHAR(255),
     phone             VARCHAR(30),
+    secondary_phone   VARCHAR(30),
     pan               VARCHAR(20),
     gstin             VARCHAR(20),
     address_line1     TEXT,
@@ -84,7 +86,9 @@ CREATE TABLE IF NOT EXISTS organizations (
     gstin      VARCHAR(20),
     pan        VARCHAR(20),
     email      VARCHAR(255),
+    secondary_email VARCHAR(255),
     phone      VARCHAR(30),
+    secondary_phone VARCHAR(30),
     address    TEXT,
     city       VARCHAR(100),
     state      VARCHAR(100),
@@ -290,6 +294,7 @@ CREATE INDEX IF NOT EXISTS idx_users_email         ON users(email);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(token);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user  ON user_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_clients_email       ON clients(email);
+CREATE INDEX IF NOT EXISTS idx_clients_secondary_email ON clients(secondary_email);
 CREATE INDEX IF NOT EXISTS idx_services_client     ON services(client_id);
 CREATE INDEX IF NOT EXISTS idx_services_assigned   ON services(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_invoices_client     ON invoices(client_id);
@@ -350,3 +355,32 @@ ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS zoom_last_synced_at TIMESTA
 ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS zoom_sync_error TEXT;
 ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS invoice_line_description VARCHAR(500);
 ALTER TABLE calendar_events ADD COLUMN IF NOT EXISTS invoice_line_kind VARCHAR(30) DEFAULT 'professional_fee';
+
+-- -----------------------------------------------------------------------------
+-- 030 — Client portal login identities, OTP and sessions
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS client_login_otps (
+    id                SERIAL PRIMARY KEY,
+    login_identifier  VARCHAR(255) NOT NULL,
+    otp_code          VARCHAR(10)  NOT NULL,
+    expires_at        TIMESTAMPTZ  NOT NULL,
+    used              BOOLEAN      DEFAULT FALSE,
+    created_at        TIMESTAMPTZ  DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_login_otps_identifier ON client_login_otps(login_identifier);
+
+CREATE TABLE IF NOT EXISTS client_sessions (
+    id                 SERIAL PRIMARY KEY,
+    token              VARCHAR(512) UNIQUE NOT NULL,
+    login_identifier   VARCHAR(255) NOT NULL,
+    entity_type        VARCHAR(20)  NOT NULL,
+    entity_id          INTEGER      NOT NULL,
+    context_contact_id INTEGER,
+    context_org_id     INTEGER,
+    ip_address         INET,
+    user_agent         TEXT,
+    expires_at         TIMESTAMPTZ  NOT NULL,
+    created_at         TIMESTAMPTZ  DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_client_sessions_token ON client_sessions(token);
+CREATE INDEX IF NOT EXISTS idx_client_sessions_entity ON client_sessions(entity_type, entity_id);

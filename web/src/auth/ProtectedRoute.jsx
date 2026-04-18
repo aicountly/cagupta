@@ -17,6 +17,7 @@ export default function ProtectedRoute({
   requiredPermission,
   requiredAnyPermissions,
   affiliateOnly,
+  clientOnly,
   staffOnly,
 }) {
   const { isAuthenticated, loading, hasPermission, hasAnyPermission, user } = useAuth();
@@ -36,7 +37,15 @@ export default function ProtectedRoute({
     return <Navigate to="/affiliate" replace />;
   }
 
+  if (staffOnly && role === 'client') {
+    return <Navigate to="/client" replace />;
+  }
+
   if (affiliateOnly && role !== 'affiliate') {
+    return <Navigate to="/" replace />;
+  }
+
+  if (clientOnly && role !== 'client') {
     return <Navigate to="/" replace />;
   }
 

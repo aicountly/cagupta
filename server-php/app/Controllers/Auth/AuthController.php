@@ -11,6 +11,10 @@ use App\Libraries\OtpService;
 use App\Libraries\PasswordHasher;
 use App\Models\UserModel;
 use App\Models\SessionModel;
+use App\Models\ClientLoginOtpModel;
+use App\Models\ClientPortalIdentityModel;
+use App\Models\ClientSessionModel;
+use App\Models\RoleModel;
 
 /**
  * AuthController — login, SSO, logout, me, refresh.
@@ -19,11 +23,17 @@ class AuthController extends BaseController
 {
     private UserModel    $users;
     private SessionModel $sessions;
+    private ClientPortalIdentityModel $clientIdentity;
+    private ClientLoginOtpModel $clientOtps;
+    private ClientSessionModel $clientSessions;
 
     public function __construct()
     {
         $this->users    = new UserModel();
         $this->sessions = new SessionModel();
+        $this->clientIdentity = new ClientPortalIdentityModel();
+        $this->clientOtps = new ClientLoginOtpModel();
+        $this->clientSessions = new ClientSessionModel();
     }
 
     // ── POST /api/auth/login ─────────────────────────────────────────────────
@@ -41,6 +51,10 @@ class AuthController extends BaseController
     public function login(): never
     {
         $body  = $this->getJsonBody();
+        $portal = strtolower(trim((string)($body['portal'] ?? '')));
+        if ($portal === 'client') {
+            $this->loginClient($body);
+        }
         $email = trim((string)($body['email'] ?? ''));
         $pass  = (string)($body['password'] ?? '');
 
@@ -102,6 +116,10 @@ class AuthController extends BaseController
     public function verifyOtp(): never
     {
         $body  = $this->getJsonBody();
+        $portal = strtolower(trim((string)($body['portal'] ?? '')));
+        if ($portal === 'client') {
+            $this->verifyClientOtp($body);
+        }
         $email = strtolower(trim((string)($body['email'] ?? '')));
         $otp   = trim((string)($body['otp'] ?? ''));
 
@@ -133,6 +151,10 @@ class AuthController extends BaseController
     public function requestOtp(): never
     {
         $body  = $this->getJsonBody();
+        $portal = strtolower(trim((string)($body['portal'] ?? '')));
+        if ($portal === 'client') {
+            $this->requestClientOtp($body);
+        }
         $email = strtolower(trim((string)($body['email'] ?? '')));
 
         if ($email === '') {
@@ -248,7 +270,12 @@ class AuthController extends BaseController
      */
     public function logout(): never
     {
-        $this->sessions->deleteByToken($this->authToken());
+        $user = $this->authUser();
+        if (($user['role_name'] ?? '') === 'client') {
+            $this->clientSessions->deleteByToken($this->authToken());
+        } else {
+            $this->sessions->deleteByToken($this->authToken());
+        }
         $this->success(null, 'Logged out successfully');
     }
 
@@ -488,6 +515,10 @@ class AuthController extends BaseController
             'is_active'            => (bool)$user['is_active'],
             'last_login_at'        => $user['last_login_at'] ?? null,
             'can_change_password'  => ($pwd !== null && $pwd !== ''),
+            'entity_type'          => $user['entity_type'] ?? null,
+            'entity_id'            => $user['entity_id'] ?? null,
+            'contact_id'           => $user['contact_id'] ?? null,
+            'organization_id'      => $user['organization_id'] ?? null,
         ];
     }
 
@@ -509,5 +540,178 @@ class AuthController extends BaseController
             $masked = $local[0] . str_repeat('*', $len - 2) . $local[$len - 1];
         }
         return $masked . '@' . $domain;
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function loginClient(array $body): never
+    {
+        $identifier = (string)($body['identifier'] ?? $body['email'] ?? $body['mobile'] ?? '');
+        $normalized = $this->clientIdentity->normalizeIdentifier($identifier);
+        if ($normalized === '') {
+            $this->error('Client identifier is required.', 422);
+        }
+
+        $identity = $this->clientIdentity->resolveByIdentifier($normalized);
+        if ($identity === null) {
+            $this->error('Invalid credentials.', 401);
+        }
+
+        $otp = $this->clientOtps->generate($normalized);
+        if (str_contains($normalized, '@')) {
+            try {
+                $htmlBody = BrevoMailer::renderTemplate('login-otp', [
+                    'userName'      => $identity['display_name'] ?? 'Client',
+                    'otpCode'       => $otp,
+                    'expiryMinutes' => OtpService::expiryMinutes(),
+                ]);
+                if ($htmlBody !== '') {
+                    BrevoMailer::send(
+                        $normalized,
+                        (string)($identity['display_name'] ?? 'Client'),
+                        'Your Client Portal OTP - CA Rahul Gupta',
+                        $htmlBody
+                    );
+                }
+            } catch (\Throwable $e) {
+                error_log('[AuthController] Client OTP email failed: ' . $e->getMessage());
+            }
+        }
+
+        $masked = str_contains($normalized, '@') ? $this->maskEmail($normalized) : $this->maskPhone($normalized);
+        $this->success(['otp_required' => true, 'masked_email' => $masked], 'OTP sent to your registered contact point');
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function verifyClientOtp(array $body): never
+    {
+        $identifier = (string)($body['identifier'] ?? $body['email'] ?? $body['mobile'] ?? '');
+        $normalized = $this->clientIdentity->normalizeIdentifier($identifier);
+        $otp = trim((string)($body['otp'] ?? ''));
+        if ($normalized === '' || $otp === '') {
+            $this->error('Identifier and OTP are required.', 422);
+        }
+        if (!$this->clientOtps->verify($normalized, $otp)) {
+            $this->error('Invalid or expired OTP. Please try again.', 401);
+        }
+        $identity = $this->clientIdentity->resolveByIdentifier($normalized);
+        if ($identity === null) {
+            $this->error('Invalid request.', 401);
+        }
+
+        $result = $this->buildClientSession($identity, $normalized);
+        $this->success($result, 'Login successful');
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function requestClientOtp(array $body): never
+    {
+        $identifier = (string)($body['identifier'] ?? $body['email'] ?? $body['mobile'] ?? '');
+        $normalized = $this->clientIdentity->normalizeIdentifier($identifier);
+        if ($normalized === '') {
+            $this->error('Identifier is required.', 422);
+        }
+        $identity = $this->clientIdentity->resolveByIdentifier($normalized);
+        if ($identity !== null) {
+            $otp = $this->clientOtps->generate($normalized);
+            if (str_contains($normalized, '@')) {
+                try {
+                    $htmlBody = BrevoMailer::renderTemplate('login-otp', [
+                        'userName'      => $identity['display_name'] ?? 'Client',
+                        'otpCode'       => $otp,
+                        'expiryMinutes' => OtpService::expiryMinutes(),
+                    ]);
+                    if ($htmlBody !== '') {
+                        BrevoMailer::send(
+                            $normalized,
+                            (string)($identity['display_name'] ?? 'Client'),
+                            'Your Client Portal OTP - CA Rahul Gupta',
+                            $htmlBody
+                        );
+                    }
+                } catch (\Throwable $e) {
+                    error_log('[AuthController] Client OTP resend failed: ' . $e->getMessage());
+                }
+            }
+        }
+        $this->success(null, 'If that identifier exists, a new OTP has been sent.');
+    }
+
+    /**
+     * @param array<string, mixed> $identity
+     * @return array<string, mixed>
+     */
+    private function buildClientSession(array $identity, string $identifier): array
+    {
+        $role = 'client';
+        $permissions = ['client.portal', 'client.services.view', 'client.ledger.view', 'client.profile.view'];
+        $roleRow = (new RoleModel())->findByName('client');
+        if ($roleRow !== null) {
+            $raw = $roleRow['permissions'] ?? '{}';
+            $decoded = is_string($raw) ? (json_decode($raw, true) ?? []) : $raw;
+            $permissions = (array)($decoded['permissions'] ?? $permissions);
+        }
+
+        $now = time();
+        $ttl = (int)AuthConfig::TOKEN_TTL_HOURS * 3600;
+        $exp = $now + $ttl;
+        $payload = [
+            'sub'             => (int)$identity['entity_id'],
+            'sub_type'        => 'client',
+            'entity_type'     => (string)$identity['entity_type'],
+            'contact_id'      => $identity['contact_id'],
+            'organization_id' => $identity['organization_id'],
+            'role'            => $role,
+            'permissions'     => $permissions,
+            'iat'             => $now,
+            'exp'             => $exp,
+        ];
+        $token = JWT::encode($payload, AuthConfig::jwtSecret());
+        $expiresAt = new \DateTimeImmutable("@{$exp}");
+        $this->clientSessions->create(
+            $token,
+            $identifier,
+            (string)$identity['entity_type'],
+            (int)$identity['entity_id'],
+            $identity['contact_id'] !== null ? (int)$identity['contact_id'] : null,
+            $identity['organization_id'] !== null ? (int)$identity['organization_id'] : null,
+            $expiresAt,
+            $_SERVER['REMOTE_ADDR'] ?? '',
+            $_SERVER['HTTP_USER_AGENT'] ?? ''
+        );
+
+        return [
+            'token' => $token,
+            'user'  => [
+                'id' => (int)$identity['entity_id'],
+                'name' => (string)($identity['display_name'] ?? 'Client'),
+                'email' => str_contains($identifier, '@') ? $identifier : null,
+                'role' => 'client',
+                'permissions' => $permissions,
+                'is_active' => true,
+                'can_change_password' => false,
+                'entity_type' => (string)$identity['entity_type'],
+                'contact_id' => $identity['contact_id'],
+                'organization_id' => $identity['organization_id'],
+                'available_organizations' => $identity['available_orgs'] ?? [],
+            ],
+        ];
+    }
+
+    private function maskPhone(string $phone): string
+    {
+        $digits = preg_replace('/\D+/', '', $phone) ?? '';
+        if ($digits === '') {
+            return '***';
+        }
+        if (strlen($digits) <= 4) {
+            return str_repeat('*', max(0, strlen($digits) - 2)) . substr($digits, -2);
+        }
+        return str_repeat('*', strlen($digits) - 4) . substr($digits, -4);
     }
 }
