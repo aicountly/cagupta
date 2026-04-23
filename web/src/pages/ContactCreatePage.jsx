@@ -111,6 +111,40 @@ function emptyForm(defaultManager = '') {
   };
 }
 
+function normalizeContactNameKey(s) {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * @param {string} trimmedInput
+ * @param {Array<{ id: unknown, displayName?: string }>} peers  — already excludes self when editing
+ * @returns {null | { kind: 'identical' | 'similar', matches: { id: number, label: string }[] }}
+ */
+function classifyContactNameDuplicates(trimmedInput, peers) {
+  const t = normalizeContactNameKey(trimmedInput);
+  const identical = [];
+  const similar = [];
+  for (const p of peers || []) {
+    if (!p) continue;
+    const label = String(p.displayName || '').trim() || '—';
+    const pNorm = normalizeContactNameKey(label);
+    if (!t || !pNorm) continue;
+    const cid = Number(p.id);
+    if (!Number.isFinite(cid) || cid <= 0) continue;
+    if (t === pNorm) {
+      identical.push({ id: cid, label });
+    } else {
+      const [shorter, longer] = t.length <= pNorm.length ? [t, pNorm] : [pNorm, t];
+      if (shorter.length >= 3 && longer.includes(shorter)) {
+        similar.push({ id: cid, label });
+      }
+    }
+  }
+  if (identical.length) return { kind: 'identical', matches: identical };
+  if (similar.length) return { kind: 'similar', matches: similar };
+  return null;
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 export default function ContactCreatePage() {
   const navigate = useNavigate();
@@ -127,6 +161,7 @@ export default function ContactCreatePage() {
   const [groups, setGroups] = useState([]);
   const [contactLoading, setContactLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
+  const [nameDuplicateInfo, setNameDuplicateInfo] = useState(null);
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -211,17 +246,23 @@ export default function ContactCreatePage() {
   // #region agent log
   useEffect(() => {
     const q = (form.displayName || '').trim();
-    if (q.length < 1) return undefined;
+    if (q.length < 2) {
+      setNameDuplicateInfo(null);
+      return undefined;
+    }
     if (isEdit && (contactId == null || !Number.isFinite(Number(contactId)))) return undefined;
     const t = setTimeout(() => {
       getContactsForSearch(q, 50)
         .then((rows) => {
           const curId = contactId != null ? Number(contactId) : NaN;
           const others = (rows || []).filter((c) => c && (!Number.isFinite(curId) || curId <= 0 || Number(c.id) !== curId));
-          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'pre-fix', hypothesisId: 'H2', location: 'ContactCreatePage.jsx:nameSearchProbe', message: 'contact name typeahead counts', data: { isEdit, currentEntityId: Number.isFinite(curId) ? curId : null, queryLen: q.length, apiRowCount: (rows || []).length, afterExcludeCount: others.length, apiReturnsPeers: others.length > 0 }, timestamp: Date.now() }) }).catch(() => {});
+          const dup = classifyContactNameDuplicates(q, others);
+          setNameDuplicateInfo(dup);
+          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'post-fix', hypothesisId: 'H2', location: 'ContactCreatePage.jsx:nameSearchProbe', message: 'contact name typeahead counts', data: { isEdit, currentEntityId: Number.isFinite(curId) ? curId : null, queryLen: q.length, apiRowCount: (rows || []).length, afterExcludeCount: others.length, apiReturnsPeers: others.length > 0, resolvedKind: dup?.kind ?? null, identicalCount: dup?.kind === 'identical' ? dup.matches.length : 0, similarCount: dup?.kind === 'similar' ? dup.matches.length : 0 }, timestamp: Date.now() }) }).catch(() => {});
         })
         .catch(() => {
-          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'pre-fix', hypothesisId: 'H4', location: 'ContactCreatePage.jsx:nameSearchProbe', message: 'contact name search request failed', data: { isEdit }, timestamp: Date.now() }) }).catch(() => {});
+          setNameDuplicateInfo(null);
+          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'post-fix', hypothesisId: 'H4', location: 'ContactCreatePage.jsx:nameSearchProbe', message: 'contact name search request failed', data: { isEdit }, timestamp: Date.now() }) }).catch(() => {});
         });
     }, 450);
     return () => clearTimeout(t);
@@ -338,8 +379,27 @@ export default function ContactCreatePage() {
       setToast('Error: Contact is not loaded. Refresh the page and try again.');
       return;
     }
+    const trimmedName = (contact.displayName || '').trim();
+    if (trimmedName.length >= 2) {
+      try {
+        const rows = await getContactsForSearch(trimmedName, 50);
+        const curCid = isEdit && contactId ? Number(contactId) : NaN;
+        const others = (rows || []).filter((c) => c && (!Number.isFinite(curCid) || curCid <= 0 || Number(c.id) !== curCid));
+        const dup = classifyContactNameDuplicates(trimmedName, others);
+        setNameDuplicateInfo(dup);
+        // #region agent log
+        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'post-fix', hypothesisId: 'H2', location: 'ContactCreatePage.jsx:handleSaveQuit', message: 'contact save name gate', data: { saveBlockedByIdenticalName: dup?.kind === 'identical' }, timestamp: Date.now() }) }).catch(() => {});
+        // #endregion
+        if (dup?.kind === 'identical') {
+          setToast('Another contact already uses this exact name. Change the name to save.');
+          return;
+        }
+      } catch {
+        /* allow save if search fails */
+      }
+    }
     // #region agent log
-    fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '21cedb' }, body: JSON.stringify({ sessionId: '21cedb', location: 'ContactCreatePage.jsx:handleSaveQuit', message: 'contact save start', data: { isEdit, contactId, displayNameLen: (contact.displayName || '').length, preSaveNameCheck: false }, timestamp: Date.now(), hypothesisId: 'H1' }) }).catch(() => {});
+    fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '21cedb' }, body: JSON.stringify({ sessionId: '21cedb', location: 'ContactCreatePage.jsx:handleSaveQuit', message: 'contact save start', data: { isEdit, contactId, displayNameLen: (contact.displayName || '').length, preSaveNameCheck: true }, timestamp: Date.now(), hypothesisId: 'H1' }) }).catch(() => {});
     // #endregion
     setSaving(true);
     try {
@@ -365,6 +425,20 @@ export default function ContactCreatePage() {
   async function handleSaveAddNew() {
     const contact = doSave();
     if (!contact) return;
+    const trimmedName = (contact.displayName || '').trim();
+    if (trimmedName.length >= 2) {
+      try {
+        const rows = await getContactsForSearch(trimmedName, 50);
+        const dup = classifyContactNameDuplicates(trimmedName, rows || []);
+        setNameDuplicateInfo(dup);
+        if (dup?.kind === 'identical') {
+          setToast('Another contact already uses this exact name. Change the name to save.');
+          return;
+        }
+      } catch {
+        /* allow save if search fails */
+      }
+    }
     setSaving(true);
     try {
       await createContact(contact);
@@ -372,6 +446,7 @@ export default function ContactCreatePage() {
       setForm(emptyForm(form.assignedManager)); // keep manager prefilled
       setLinkedOrgNameById({});
       setErrors({});
+      setNameDuplicateInfo(null);
       setToast('Contact saved! Ready for another entry.');
     } catch (err) {
       setToast('Error: ' + (err.message || 'Failed to save contact.'));
@@ -494,6 +569,55 @@ export default function ContactCreatePage() {
               style={{ ...inputStyle, borderColor: errors.displayName ? '#dc2626' : '#E6E8F0' }}
             />
             <FieldError msg={errors.displayName} />
+            {nameDuplicateInfo && (
+              <div
+                style={{
+                  marginTop: 8,
+                  padding: 12,
+                  borderRadius: 8,
+                  fontSize: 12,
+                  lineHeight: 1.45,
+                  border: nameDuplicateInfo.kind === 'identical' ? '1px solid #fecaca' : '1px solid #fde68a',
+                  background: nameDuplicateInfo.kind === 'identical' ? '#fef2f2' : '#fffbeb',
+                  color: nameDuplicateInfo.kind === 'identical' ? '#991b1b' : '#92400e',
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                  {nameDuplicateInfo.kind === 'identical'
+                    ? 'Duplicate name — cannot save'
+                    : 'Similar name(s) — please confirm'}
+                </div>
+                <div style={{ marginBottom: 8, opacity: 0.95 }}>
+                  {nameDuplicateInfo.kind === 'identical'
+                    ? 'Another contact already has this exact name. Use a distinct name or open the existing record.'
+                    : 'These contacts match closely (one name contains the other). You can still save if they are genuinely different.'}
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {nameDuplicateInfo.matches.map((m) => (
+                    <li key={m.id} style={{ marginBottom: 4 }}>
+                      <strong>{m.label}</strong>
+                      {' '}(ID {m.id})
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/clients/contacts/${m.id}/edit`)}
+                        style={{
+                          marginLeft: 8,
+                          padding: '2px 8px',
+                          fontSize: 11,
+                          borderRadius: 6,
+                          border: '1px solid rgba(0,0,0,0.12)',
+                          background: '#fff',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Open
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </FormField>
 
           {/* Mobile */}
@@ -725,8 +849,8 @@ export default function ContactCreatePage() {
             <button
               type="button"
               onClick={handleSaveAddNew}
-              style={saving ? { ...btnOutline, opacity: 0.6, cursor: 'not-allowed' } : btnOutline}
-              disabled={saving}
+              style={saving || nameDuplicateInfo?.kind === 'identical' ? { ...btnOutline, opacity: 0.6, cursor: 'not-allowed' } : btnOutline}
+              disabled={saving || nameDuplicateInfo?.kind === 'identical'}
             >
               {saving && <Spinner />} Save &amp; Add New
             </button>
@@ -734,8 +858,8 @@ export default function ContactCreatePage() {
           <button
             type="button"
             onClick={handleSaveQuit}
-            style={saving ? { ...btnPrimary, opacity: 0.6, cursor: 'not-allowed' } : btnPrimary}
-            disabled={saving}
+            style={saving || nameDuplicateInfo?.kind === 'identical' ? { ...btnPrimary, opacity: 0.6, cursor: 'not-allowed' } : btnPrimary}
+            disabled={saving || nameDuplicateInfo?.kind === 'identical'}
           >
             {saving && <Spinner />} {isEdit ? 'Save Changes' : 'Save & Quit'}
           </button>

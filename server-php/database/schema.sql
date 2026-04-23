@@ -110,6 +110,11 @@ ALTER TABLE organizations ADD COLUMN IF NOT EXISTS primary_contact_id INT REFERE
 
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS cin VARCHAR(25);
 
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS organization_status VARCHAR(20) NOT NULL DEFAULT 'active'
+    CHECK (organization_status IN ('active', 'inactive', 'prospect'));
+
+CREATE INDEX IF NOT EXISTS idx_organizations_organization_status ON organizations (organization_status);
+
 CREATE TABLE IF NOT EXISTS contact_organization (
     id              SERIAL PRIMARY KEY,
     contact_id      INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,

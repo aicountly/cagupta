@@ -339,17 +339,34 @@ export async function updateContact(id, payload) {
   return normalizeContact(data.data);
 }
 
+/** POST — super admin receives OTP email to authorize contact delete */
+export async function requestContactDeleteOtp(id) {
+  const res = await fetch(`${API_BASE}/admin/contacts/${id}/request-delete-otp`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({}),
+  });
+  const data = await parseResponse(res);
+  return data.data || {};
+}
+
 /**
  * Permanently delete a contact (DELETE /admin/contacts/:id).
+ * Requires a valid superadmin OTP from requestContactDeleteOtp (X-Superadmin-Otp header).
  * @param {number|string} id
+ * @param {{ superadminOtp?: string }} [opts]
  */
-export async function deleteContact(id) {
+export async function deleteContact(id, { superadminOtp } = {}) {
+  const headers = { ...authHeaders() };
+  if (superadminOtp) {
+    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
+  }
   const res = await fetch(`${API_BASE}/admin/contacts/${id}`, {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers,
   });
   // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2098b5' }, body: JSON.stringify({ sessionId: '2098b5', location: 'contactService.js:deleteContact', message: 'DELETE contact response', data: { id: String(id), ok: res.ok, status: res.status }, timestamp: Date.now(), hypothesisId: 'H2' }) }).catch(() => {});
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2098b5' }, body: JSON.stringify({ sessionId: '2098b5', location: 'contactService.js:deleteContact', message: 'DELETE contact response', data: { id: String(id), ok: res.ok, status: res.status, otpSent: Boolean(superadminOtp && String(superadminOtp).trim()) }, timestamp: Date.now(), hypothesisId: 'H2' }) }).catch(() => {});
   // #endregion
   await parseResponse(res);
 }

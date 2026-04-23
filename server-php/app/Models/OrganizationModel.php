@@ -64,9 +64,9 @@ class OrganizationModel
                                    OR o.pan ILIKE :search OR o.cin ILIKE :search OR o.email ILIKE :search)";
             $params[':search'] = "%{$search}%";
         }
-        if ($status !== '') {
-            $where[]             = 'o.is_active = :is_active';
-            $params[':is_active'] = ($status === 'active') ? 'true' : 'false';
+        if ($status !== '' && in_array($status, ['active', 'inactive', 'prospect'], true)) {
+            $where[]                 = 'o.organization_status = :org_status';
+            $params[':org_status'] = $status;
         }
 
         $whereClause = implode(' AND ', $where);
@@ -114,12 +114,12 @@ class OrganizationModel
             'INSERT INTO organizations (
                 name, type, gstin, pan, cin, email, secondary_email, phone, secondary_phone,
                 address, city, state, country, pincode, website, notes,
-                reference, group_id, primary_contact_id, is_active, created_by,
+                reference, group_id, primary_contact_id, organization_status, is_active, created_by,
                 referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
              ) VALUES (
                 :name, :type, :gstin, :pan, :cin, :email, :secondary_email, :phone, :secondary_phone,
                 :address, :city, :state, :country, :pincode, :website, :notes,
-                :reference, :group_id, :primary_contact_id, :is_active, :created_by,
+                :reference, :group_id, :primary_contact_id, :organization_status, :is_active, :created_by,
                 :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted
              ) RETURNING id'
         );
@@ -144,6 +144,7 @@ class OrganizationModel
             ':reference'          => $data['reference']  ?? null,
             ':group_id'           => isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null,
             ':primary_contact_id' => isset($data['primary_contact_id']) && $data['primary_contact_id'] !== '' ? (int)$data['primary_contact_id'] : null,
+            ':organization_status' => $data['organization_status'] ?? 'active',
             ':is_active'          => ((bool)($data['is_active'] ?? true)) ? 'true' : 'false',
             ':created_by'         => $data['created_by'] ?? null,
             ':referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
@@ -167,7 +168,7 @@ class OrganizationModel
         $allowed = [
             'name', 'type', 'gstin', 'pan', 'cin', 'email', 'secondary_email', 'phone', 'secondary_phone',
             'address', 'city', 'state', 'country', 'pincode', 'website', 'notes', 'reference',
-            'referral_start_date', 'commission_mode',
+            'referral_start_date', 'commission_mode', 'organization_status',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
@@ -213,10 +214,16 @@ class OrganizationModel
      */
     public function updateStatus(int $id, bool $isActive): bool
     {
-        $stmt = $this->db->prepare(
-            'UPDATE organizations SET is_active = :is_active, updated_at = NOW() WHERE id = :id'
+        $orgStatus = $isActive ? 'active' : 'inactive';
+        $stmt      = $this->db->prepare(
+            'UPDATE organizations SET is_active = :is_active, organization_status = :organization_status, updated_at = NOW() WHERE id = :id'
         );
-        return $stmt->execute([':is_active' => $isActive ? 'true' : 'false', ':id' => $id]);
+
+        return $stmt->execute([
+            ':is_active'            => $isActive ? 'true' : 'false',
+            ':organization_status' => $orgStatus,
+            ':id'                   => $id,
+        ]);
     }
 
     /**

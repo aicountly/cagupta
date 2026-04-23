@@ -3,9 +3,12 @@ declare(strict_types=1);
 
 namespace App\Controllers\Admin;
 
+use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
-use App\Models\ClientModel;
 use App\Libraries\BrevoMailer;
+use App\Libraries\OtpService;
+use App\Models\ClientModel;
+use App\Models\UserModel;
 
 /**
  * ContactController — CRUD for the `clients` table.
@@ -19,10 +22,12 @@ use App\Libraries\BrevoMailer;
 class ContactController extends BaseController
 {
     private ClientModel $clients;
+    private UserModel $users;
 
     public function __construct()
     {
         $this->clients = new ClientModel();
+        $this->users   = new UserModel();
     }
 
     // ── GET /api/admin/contacts/search ──────────────────────────────────────
@@ -311,10 +316,60 @@ class ContactController extends BaseController
         $this->success($updated, 'Contact status updated');
     }
 
+    // ── POST /api/admin/contacts/:id/request-delete-otp ──────────────────────
+
+    /**
+     * Send a superadmin OTP email to authorize permanently deleting this contact.
+     */
+    public function requestDeleteOtp(int $id): never
+    {
+        $contact = $this->clients->find($id);
+        if ($contact === null) {
+            $this->error('Contact not found.', 404);
+        }
+
+        $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
+        if ($super === null || !$super['is_active']) {
+            $this->error('Super admin account is not provisioned.', 500);
+        }
+        $superId = (int)$super['id'];
+        $email   = trim((string)($super['email'] ?? ''));
+        if ($email === '') {
+            $this->error('Super admin has no email.', 500);
+        }
+
+        $otp         = OtpService::generate($superId);
+        $contactName = ClientModel::displayName($contact);
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('contact-delete-otp', [
+                'userName'      => (string)($super['name'] ?? $email),
+                'otpCode'       => $otp,
+                'expiryMinutes' => (string)OtpService::expiryMinutes(),
+                'contactId'     => (string)$id,
+                'contactName'   => $contactName,
+            ]);
+            if ($htmlBody !== '') {
+                BrevoMailer::send(
+                    $email,
+                    (string)($super['name'] ?? $email),
+                    'Contact delete OTP - CA Rahul Gupta',
+                    $htmlBody
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[ContactController] Delete OTP email failed: ' . $e->getMessage());
+        }
+
+        $this->success([
+            'otp_sent'     => true,
+            'masked_email' => $this->maskEmail($email),
+        ], 'OTP sent.');
+    }
+
     // ── DELETE /api/admin/contacts/:id ───────────────────────────────────────
 
     /**
-     * Permanently delete a contact.
+     * Permanently delete a contact (requires valid X-Superadmin-Otp).
      */
     public function destroy(int $id): never
     {
@@ -322,6 +377,14 @@ class ContactController extends BaseController
         if ($contact === null) {
             $this->error('Contact not found.', 404);
         }
+
+        $otp = $this->readSuperadminOtpFromRequest();
+        if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
+            $this->error('Valid superadmin OTP is required to delete a contact. Request a code first.', 403);
+        }
+
+        $actingUser = $this->authUser();
+        $this->sendSuperadminAlert('Deleted', $contact, $actingUser);
 
         try {
             $this->clients->delete($id);
@@ -333,6 +396,24 @@ class ContactController extends BaseController
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    private function maskEmail(string $email): string
+    {
+        $parts = explode('@', $email, 2);
+        if (count($parts) !== 2) {
+            return '***@***.***';
+        }
+        $local  = $parts[0];
+        $domain = $parts[1];
+        $len    = strlen($local);
+        if ($len <= 2) {
+            $masked = $local[0] . str_repeat('*', max(1, $len - 1));
+        } else {
+            $masked = $local[0] . str_repeat('*', $len - 2) . $local[$len - 1];
+        }
+
+        return $masked . '@' . $domain;
+    }
 
     /**
      * Referral master fields from JSON body (contact create).

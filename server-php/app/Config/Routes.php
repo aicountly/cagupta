@@ -173,6 +173,12 @@ class Routes
                 'middleware' => ['auth', 'permission:clients.edit'],
             ],
             [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/contacts/:id/request-delete-otp',
+                'handler'    => 'Admin\ContactController@requestDeleteOtp',
+                'middleware' => ['auth', 'permission:clients.edit'],
+            ],
+            [
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/contacts/:id',
                 'handler'    => 'Admin\ContactController@destroy',
@@ -781,6 +787,12 @@ class Routes
             ],
 
             // ── Admin — Client Groups ─────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/client-groups/search',
+                'handler'    => 'Admin\ClientGroupController@search',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
             [
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/client-groups',

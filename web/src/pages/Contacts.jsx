@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { getContacts, deleteContact } from '../services/contactService';
+import { getContacts, deleteContact, requestContactDeleteOtp } from '../services/contactService';
 import StatusBadge from '../components/common/StatusBadge';
 
 const NO_DELETE_CONTACT_HINT =
@@ -17,6 +17,10 @@ export default function Contacts() {
   const [orgModalContact, setOrgModalContact] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+  const [deleteOtpSending, setDeleteOtpSending] = useState(false);
+  const [deleteOtpSent, setDeleteOtpSent] = useState(false);
+  const [deleteOtp, setDeleteOtp] = useState('');
+  const [deleteModalErr, setDeleteModalErr] = useState('');
   const [contacts, setContacts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -39,21 +43,57 @@ export default function Contacts() {
   }, [orgModalContact]);
 
   useEffect(() => {
+    if (!deleteTarget) return;
+    setDeleteOtpSent(false);
+    setDeleteOtp('');
+    setDeleteModalErr('');
+  }, [deleteTarget?.id]);
+
+  useEffect(() => {
+    if (!deleteTarget) return undefined;
+    const onKey = (e) => {
+      if (e.key === 'Escape' && !deleteSubmitting && !deleteOtpSending) setDeleteTarget(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [deleteTarget, deleteSubmitting, deleteOtpSending]);
+
+  useEffect(() => {
     if (loading) return;
     // #region agent log
     fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2098b5' }, body: JSON.stringify({ sessionId: '2098b5', location: 'Contacts.jsx:tableReady', message: 'Contacts list ready', data: { rowCount: contacts.length, canDeleteContact, deleteControlExpected: true }, timestamp: Date.now(), hypothesisId: 'H1' }) }).catch(() => {});
     // #endregion
   }, [loading, contacts.length, canDeleteContact]);
 
+  async function sendDeleteOtp() {
+    const c = deleteTarget;
+    if (!c) return;
+    setDeleteModalErr('');
+    setDeleteOtpSending(true);
+    try {
+      await requestContactDeleteOtp(c.id);
+      setDeleteOtpSent(true);
+    } catch (e) {
+      setDeleteModalErr(e.message || 'Failed to send OTP.');
+    } finally {
+      setDeleteOtpSending(false);
+    }
+  }
+
   async function confirmDeleteContact() {
     const c = deleteTarget;
     if (!c) return;
+    if (!deleteOtp.trim()) {
+      setDeleteModalErr('Enter the superadmin OTP.');
+      return;
+    }
+    setDeleteModalErr('');
     setDeleteSubmitting(true);
     // #region agent log
     fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2098b5' }, body: JSON.stringify({ sessionId: '2098b5', location: 'Contacts.jsx:confirmDeleteContact', message: 'Delete confirm invoked', data: { contactId: c.id }, timestamp: Date.now(), hypothesisId: 'H3' }) }).catch(() => {});
     // #endregion
     try {
-      await deleteContact(c.id);
+      await deleteContact(c.id, { superadminOtp: deleteOtp.trim() });
       setContacts(prev => prev.filter(x => x.id !== c.id));
       if (selected?.id === c.id) setSelected(null);
       if (orgModalContact?.id === c.id) setOrgModalContact(null);
@@ -271,9 +311,9 @@ export default function Contacts() {
         </div>
       )}
       {deleteTarget && (
-        <div style={deleteOverlayStyle} role="presentation" onClick={() => !deleteSubmitting && setDeleteTarget(null)}>
+        <div style={deleteOverlayStyle} role="presentation" onClick={() => !deleteSubmitting && !deleteOtpSending && setDeleteTarget(null)}>
           <div
-            style={deleteModalStyle}
+            style={deleteModalWideStyle}
             role="dialog"
             aria-modal="true"
             aria-labelledby="delete-contact-title"
@@ -281,18 +321,42 @@ export default function Contacts() {
           >
             <div style={deleteModalHeaderStyle}>
               <span id="delete-contact-title" style={{ fontSize: 15, fontWeight: 700, color: '#b91c1c' }}>Delete contact</span>
-              <button type="button" onClick={() => !deleteSubmitting && setDeleteTarget(null)} style={deleteCloseBtnStyle}>✕</button>
+              <button type="button" onClick={() => !deleteSubmitting && !deleteOtpSending && setDeleteTarget(null)} style={deleteCloseBtnStyle}>✕</button>
             </div>
-            <div style={{ padding: '16px 24px' }}>
+            <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
                 Permanently delete <strong>{deleteTarget.displayName}</strong> ({deleteTarget.clientCode})? This cannot be undone.
               </p>
-            </div>
-            <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" onClick={() => !deleteSubmitting && setDeleteTarget(null)} style={deleteBtnSecondary}>Cancel</button>
+              <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+                Request a superadmin OTP, then enter it to confirm.
+              </p>
+              {deleteModalErr && <div style={{ color: '#dc2626', fontSize: 13 }}>{deleteModalErr}</div>}
               <button
                 type="button"
-                disabled={deleteSubmitting}
+                style={deleteBtnSecondary}
+                disabled={deleteOtpSending || deleteSubmitting}
+                onClick={sendDeleteOtp}
+              >
+                {deleteOtpSending && !deleteOtpSent ? 'Sending…' : 'Request superadmin OTP'}
+              </button>
+              {deleteOtpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent</span>}
+              <label style={deleteLabelStyle}>
+                Superadmin OTP *
+                <input
+                  type="text"
+                  style={deleteInputStyle}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={deleteOtp}
+                  onChange={(e) => setDeleteOtp(e.target.value.replace(/\s/g, ''))}
+                />
+              </label>
+            </div>
+            <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => !deleteSubmitting && !deleteOtpSending && setDeleteTarget(null)} style={deleteBtnSecondary}>Cancel</button>
+              <button
+                type="button"
+                disabled={deleteSubmitting || deleteOtpSending}
                 onClick={confirmDeleteContact}
                 style={{ ...deleteBtnPrimary, background: '#b91c1c' }}
               >
@@ -322,6 +386,9 @@ const btnDeleteOutline = { padding: '8px 12px', background: '#fff', color: '#b91
 const btnDeleteDisabled = { ...btnDeleteOutline, opacity: 0.5, cursor: 'not-allowed' };
 const deleteOverlayStyle = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const deleteModalStyle = { background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', minWidth: 360, maxWidth: 480, width: '100%', maxHeight: '90vh', overflowY: 'auto' };
+const deleteModalWideStyle = { ...deleteModalStyle, minWidth: 400, maxWidth: 520 };
+const deleteLabelStyle = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#475569' };
+const deleteInputStyle = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, color: '#334155', outline: 'none' };
 const deleteModalHeaderStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 24px', borderBottom: '1px solid #f1f5f9' };
 const deleteCloseBtnStyle = { background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, color: '#64748b', padding: '2px 6px', borderRadius: 4 };
 const deleteBtnPrimary = { padding: '8px 16px', background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 };

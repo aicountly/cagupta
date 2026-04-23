@@ -9,7 +9,7 @@ import {
   getOrganization,
   getOrganizationsForSearch,
 } from '../services/organizationService';
-import { getGroups } from '../services/clientGroupService';
+import GroupSearchDropdown from '../components/common/GroupSearchDropdown';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useAuth } from '../auth/AuthContext';
@@ -154,6 +154,44 @@ function blankForm(defaultManager) {
   };
 }
 
+/** Collapse whitespace + lowercase for name comparison (no PII in logs). */
+function normalizeDisplayNameKey(s) {
+  return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+/**
+ * Classify other-directory rows vs the typed name.
+ * `peers` must already exclude the record being edited (if any).
+ *
+ * @param {string} trimmedInput
+ * @param {Array<{ id: unknown, displayName?: string }>} peers
+ * @returns {null | { kind: 'identical' | 'similar', matches: { id: number, label: string }[] }}
+ */
+function classifyNameDuplicates(trimmedInput, peers) {
+  const t = normalizeDisplayNameKey(trimmedInput);
+  const identical = [];
+  const similar = [];
+  for (const p of peers || []) {
+    if (!p) continue;
+    const label = String(p.displayName || '').trim() || '—';
+    const pNorm = normalizeDisplayNameKey(label);
+    if (!t || !pNorm) continue;
+    const id = Number(p.id);
+    if (!Number.isFinite(id) || id <= 0) continue;
+    if (t === pNorm) {
+      identical.push({ id, label });
+    } else {
+      const [shorter, longer] = t.length <= pNorm.length ? [t, pNorm] : [pNorm, t];
+      if (shorter.length >= 3 && longer.includes(shorter)) {
+        similar.push({ id, label });
+      }
+    }
+  }
+  if (identical.length) return { kind: 'identical', matches: identical };
+  if (similar.length) return { kind: 'similar', matches: similar };
+  return null;
+}
+
 // ── Main page component ───────────────────────────────────────────────────────
 export default function OrganizationCreatePage() {
   const navigate = useNavigate();
@@ -169,8 +207,8 @@ export default function OrganizationCreatePage() {
 
   const [primaryContactDisplayName, setPrimaryContactDisplayName] = useState('');
   const [secondaryContactNamesById, setSecondaryContactNamesById] = useState({});
-  // Groups list
-  const [groups, setGroups] = useState([]);
+  /** Label for selected client group (from API `group_name` or search pick). */
+  const [groupDisplayName, setGroupDisplayName] = useState('');
 
   // Inline "Create New Contact" modal state
   const [showNewContactModal, setShowNewContactModal] = useState(false);
@@ -179,6 +217,8 @@ export default function OrganizationCreatePage() {
   const [savingNewContact, setSavingNewContact] = useState(false);
 
   const [duplicateConflict, setDuplicateConflict] = useState(null);
+  /** Inline name duplicate / similarity (from search API; not persisted server-side). */
+  const [nameDuplicateInfo, setNameDuplicateInfo] = useState(null);
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -193,18 +233,6 @@ export default function OrganizationCreatePage() {
       .catch(() => setApprovedAffiliates([]));
   }, [canListAffiliates]);
 
-  // Load groups list
-  useEffect(() => {
-    getGroups()
-      .then((rows) => {
-        // #region agent log
-        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', hypothesisId: 'H5', location: 'OrganizationCreatePage.jsx:getGroups', message: 'groups list loaded', data: { count: Array.isArray(rows) ? rows.length : -1 }, timestamp: Date.now() }) }).catch(() => {});
-        // #endregion
-        setGroups(rows);
-      })
-      .catch(() => setGroups([]));
-  }, []);
-
   // Load existing org in edit mode
   useEffect(() => {
     if (!isEdit) return;
@@ -217,8 +245,15 @@ export default function OrganizationCreatePage() {
         const state = normalizeOrgStateForCountry(existing.state || '', country);
         setPrimaryContactDisplayName(existing.primaryContact || '');
         setSecondaryContactNamesById({});
+        const nextGroupIdStr =
+          existing.groupId != null && existing.groupId !== ''
+            ? String(existing.groupId)
+            : existing.group_id != null && existing.group_id !== ''
+              ? String(existing.group_id)
+              : '';
+        setGroupDisplayName(existing.groupName || '');
         // #region agent log
-        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', hypothesisId: 'H1', location: 'OrganizationCreatePage.jsx:loadOrg', message: 'existing keys for group hydrate', data: { existing_group_id: existing.group_id ?? 'MISSING', existing_groupId: existing.groupId ?? 'MISSING', existing_groupName: (existing.groupName || '').slice(0, 40) }, timestamp: Date.now() }) }).catch(() => {});
+        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', runId: 'post-fix', hypothesisId: 'H1', location: 'OrganizationCreatePage.jsx:loadOrg', message: 'group hydrate', data: { existing_group_id: existing.group_id ?? 'MISSING', existing_groupId: existing.groupId ?? 'MISSING', nextGroupIdStr, existing_groupName: (existing.groupName || '').slice(0, 40) }, timestamp: Date.now() }) }).catch(() => {});
         // #endregion
         setForm({
           displayName:        existing.displayName        || '',
@@ -239,7 +274,7 @@ export default function OrganizationCreatePage() {
           status:             existing.status             || 'active',
           assignedManager:    existing.assignedManager    || '',
           notes:              existing.notes              || '',
-          group_id:           existing.group_id           || '',
+          group_id:           nextGroupIdStr,
           reference:          existing.reference          || '',
           referringAffiliateUserId: existing.referringAffiliateUserId != null ? String(existing.referringAffiliateUserId) : '',
           referralStartDate: existing.referralStartDate || '',
@@ -253,17 +288,23 @@ export default function OrganizationCreatePage() {
   // #region agent log
   useEffect(() => {
     const q = (form.displayName || '').trim();
-    if (q.length < 2) return undefined;
+    if (q.length < 2) {
+      setNameDuplicateInfo(null);
+      return undefined;
+    }
     if (isEdit && (orgId == null || !Number.isFinite(Number(orgId)))) return undefined;
     const t = setTimeout(() => {
       getOrganizationsForSearch(q, 50)
         .then((rows) => {
           const curId = orgId != null ? Number(orgId) : NaN;
           const others = (rows || []).filter((o) => o && (!Number.isFinite(curId) || curId <= 0 || Number(o.id) !== curId));
-          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'pre-fix', hypothesisId: 'H1', location: 'OrganizationCreatePage.jsx:nameSearchProbe', message: 'org name typeahead counts', data: { isEdit, currentEntityId: Number.isFinite(curId) ? curId : null, queryLen: q.length, apiRowCount: (rows || []).length, afterExcludeCount: others.length, apiReturnsPeers: others.length > 0 }, timestamp: Date.now() }) }).catch(() => {});
+          const dup = classifyNameDuplicates(q, others);
+          setNameDuplicateInfo(dup);
+          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'post-fix', hypothesisId: 'H1', location: 'OrganizationCreatePage.jsx:nameSearchProbe', message: 'org name typeahead counts', data: { isEdit, currentEntityId: Number.isFinite(curId) ? curId : null, queryLen: q.length, apiRowCount: (rows || []).length, afterExcludeCount: others.length, apiReturnsPeers: others.length > 0, resolvedKind: dup?.kind ?? null, identicalCount: dup?.kind === 'identical' ? dup.matches.length : 0, similarCount: dup?.kind === 'similar' ? dup.matches.length : 0 }, timestamp: Date.now() }) }).catch(() => {});
         })
         .catch(() => {
-          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'pre-fix', hypothesisId: 'H4', location: 'OrganizationCreatePage.jsx:nameSearchProbe', message: 'org name search request failed', data: { isEdit }, timestamp: Date.now() }) }).catch(() => {});
+          setNameDuplicateInfo(null);
+          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'post-fix', hypothesisId: 'H4', location: 'OrganizationCreatePage.jsx:nameSearchProbe', message: 'org name search request failed', data: { isEdit }, timestamp: Date.now() }) }).catch(() => {});
         });
     }, 450);
     return () => clearTimeout(t);
@@ -380,13 +421,34 @@ export default function OrganizationCreatePage() {
     setErrors({});
     setSubmitting(true);
 
+    const trimmedName = form.displayName.trim();
+    if (trimmedName.length >= 2) {
+      try {
+        const rows = await getOrganizationsForSearch(trimmedName, 50);
+        const curOid = isEdit && orgId ? Number(orgId) : NaN;
+        const others = (rows || []).filter((o) => o && (!Number.isFinite(curOid) || curOid <= 0 || Number(o.id) !== curOid));
+        const dup = classifyNameDuplicates(trimmedName, others);
+        setNameDuplicateInfo(dup);
+        // #region agent log
+        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'post-fix', hypothesisId: 'H1', location: 'OrganizationCreatePage.jsx:handleSave', message: 'org save name gate', data: { saveBlockedByIdenticalName: dup?.kind === 'identical' }, timestamp: Date.now() }) }).catch(() => {});
+        // #endregion
+        if (dup?.kind === 'identical') {
+          setToast({ message: '❌ Another organization already uses this exact name. Change the name to save.', type: 'error' });
+          setSubmitting(false);
+          return;
+        }
+      } catch {
+        /* allow save if search fails */
+      }
+    }
+
     try {
       if (isEdit && orgId) {
         // #region agent log
         fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H5', location: 'OrganizationCreatePage.jsx:handleSave', message: 'edit save submit', data: { orgId, formStatus: form.status }, timestamp: Date.now() }) }).catch(() => {});
         // #endregion
         // #region agent log
-        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', hypothesisId: 'H2', location: 'OrganizationCreatePage.jsx:handleSave', message: 'form.group_id before buildOrg', data: { orgId, form_group_id: form.group_id ?? null, built_group_id: buildOrg(form).group_id ?? null }, timestamp: Date.now() }) }).catch(() => {});
+        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', runId: 'post-fix', hypothesisId: 'H2', location: 'OrganizationCreatePage.jsx:handleSave', message: 'form.group_id before buildOrg', data: { orgId, form_group_id: form.group_id ?? null, built_group_id: buildOrg(form).group_id ?? null }, timestamp: Date.now() }) }).catch(() => {});
         // #endregion
         await updateOrganizationApi(orgId, buildOrg(form));
         setToast({ message: '✅ Organization updated successfully!', type: 'success' });
@@ -419,6 +481,8 @@ export default function OrganizationCreatePage() {
       setForm(blankForm(manager));
       setPrimaryContactDisplayName('');
       setSecondaryContactNamesById({});
+      setGroupDisplayName('');
+      setNameDuplicateInfo(null);
     });
   }
 
@@ -518,6 +582,55 @@ export default function OrganizationCreatePage() {
               style={{ ...inputStyle, borderColor: errors.displayName ? '#ef4444' : '#E6E8F0' }}
             />
             {errors.displayName && <ErrorMsg msg={errors.displayName} />}
+            {nameDuplicateInfo && (
+              <div
+                style={{
+                  marginTop: 10,
+                  padding: 12,
+                  borderRadius: 8,
+                  fontSize: 13,
+                  lineHeight: 1.45,
+                  border: nameDuplicateInfo.kind === 'identical' ? '1px solid #fecaca' : '1px solid #fde68a',
+                  background: nameDuplicateInfo.kind === 'identical' ? '#fef2f2' : '#fffbeb',
+                  color: nameDuplicateInfo.kind === 'identical' ? '#991b1b' : '#92400e',
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>
+                  {nameDuplicateInfo.kind === 'identical'
+                    ? 'Duplicate name — cannot save'
+                    : 'Similar name(s) — please confirm'}
+                </div>
+                <div style={{ marginBottom: 8, fontSize: 12, opacity: 0.95 }}>
+                  {nameDuplicateInfo.kind === 'identical'
+                    ? 'Another organization already has this exact name. Use a distinct name or edit the existing record.'
+                    : 'These organizations match closely (one name contains the other). You can still save if they are genuinely different.'}
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
+                  {nameDuplicateInfo.matches.map((m) => (
+                    <li key={m.id} style={{ marginBottom: 4 }}>
+                      <strong>{m.label}</strong>
+                      {' '}(ID {m.id})
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/clients/organizations/${m.id}/edit`)}
+                        style={{
+                          marginLeft: 8,
+                          padding: '2px 8px',
+                          fontSize: 11,
+                          borderRadius: 6,
+                          border: '1px solid rgba(0,0,0,0.12)',
+                          background: '#fff',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                        }}
+                      >
+                        Open
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </FormSection>
 
@@ -781,14 +894,19 @@ export default function OrganizationCreatePage() {
 
           <div style={{ marginTop: 14 }}>
             <FieldLabel label="Group" />
-            <select
-              value={form.group_id || ''}
-              onChange={e => setField('group_id', e.target.value || null)}
-              style={selectStyle}
-            >
-              <option value="">— No Group (None) —</option>
-              {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
-            </select>
+            <GroupSearchDropdown
+              value={form.group_id}
+              displayValue={groupDisplayName}
+              onChange={({ id, displayName }) => {
+                setField('group_id', id ? String(id) : '');
+                setGroupDisplayName(displayName || '');
+              }}
+              placeholder="Search group by name…"
+              style={inputStyle}
+            />
+            <p style={{ fontSize: 12, color: '#64748b', margin: '6px 0 0' }}>
+              Type to search. Clear the field to remove the organization from its group.
+            </p>
           </div>
 
           <div style={{ marginTop: 14 }}>
@@ -821,16 +939,16 @@ export default function OrganizationCreatePage() {
           {!isEdit && (
             <button
               onClick={handleSaveNew}
-              style={{ ...btnSecondary, opacity: submitting ? 0.7 : 1 }}
-              disabled={submitting}
+              style={{ ...btnSecondary, opacity: submitting || nameDuplicateInfo?.kind === 'identical' ? 0.7 : 1 }}
+              disabled={submitting || nameDuplicateInfo?.kind === 'identical'}
             >
               {submitting ? '⏳ Saving…' : '💾 Save & Add New'}
             </button>
           )}
           <button
             onClick={handleSaveQuit}
-            style={{ ...btnPrimary, opacity: submitting ? 0.7 : 1 }}
-            disabled={submitting}
+            style={{ ...btnPrimary, opacity: submitting || nameDuplicateInfo?.kind === 'identical' ? 0.7 : 1 }}
+            disabled={submitting || nameDuplicateInfo?.kind === 'identical'}
           >
             {submitting ? '⏳ Saving…' : isEdit ? '✅ Save Changes' : '✅ Save & Quit'}
           </button>

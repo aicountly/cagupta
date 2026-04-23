@@ -1,0 +1,3 @@
+{"sessionId":"21cedb","location":"ContactCreatePage.jsx:handleSaveQuit","message":"contact save start","data":{"isEdit":true,"contactId":175,"displayNameLen":11,"preSaveNameCheck":false},"timestamp":1776948733154,"hypothesisId":"H1"}
+{"sessionId":"21cedb","location":"contactService.js:updateContact","message":"PUT contacts response","data":{"id":"175","ok":true,"status":200},"timestamp":1776948733863,"hypothesisId":"H2"}
+{"sessionId":"21cedb","location":"ContactCreatePage.jsx:handleSaveQuit","message":"contact update ok","data":{"contactId":175},"timestamp":1776948733864,"hypothesisId":"H1"}

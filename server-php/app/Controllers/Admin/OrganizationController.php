@@ -112,6 +112,17 @@ class OrganizationController extends BaseController
         }
 
         $referral = $this->referralFieldsFromBody($body);
+        $orgStatus = strtolower(trim((string)($body['organization_status'] ?? '')));
+        if ($orgStatus === '') {
+            if (array_key_exists('is_active', $body)) {
+                $orgStatus = ((bool)$body['is_active']) ? 'active' : 'inactive';
+            } else {
+                $orgStatus = 'active';
+            }
+        }
+        if (!in_array($orgStatus, ['active', 'inactive', 'prospect'], true)) {
+            $this->error('organization_status must be one of: active, inactive, prospect.', 422);
+        }
         $newId = $this->orgs->create(array_merge([
             'name'               => $name,
             'type'               => $body['type']    ?? null,
@@ -132,7 +143,8 @@ class OrganizationController extends BaseController
             'reference'          => $body['reference'] ?? null,
             'group_id'           => $body['group_id']  ?? null,
             'primary_contact_id' => $body['primary_contact_id'] ?? null,
-            'is_active'          => $body['is_active'] ?? true,
+            'organization_status' => $orgStatus,
+            'is_active'          => $orgStatus !== 'inactive',
             'created_by'         => $actingUser ? (int)$actingUser['id'] : null,
         ], $referral));
 
@@ -202,8 +214,16 @@ class OrganizationController extends BaseController
         if (array_key_exists('country', $data)) {
             $data['country'] = trim((string)$data['country']) ?: 'India';
         }
-        if (isset($body['is_active'])) {
+        if (array_key_exists('organization_status', $body)) {
+            $os = strtolower(trim((string)$body['organization_status']));
+            if (!in_array($os, ['active', 'inactive', 'prospect'], true)) {
+                $this->error('organization_status must be one of: active, inactive, prospect.', 422);
+            }
+            $data['organization_status'] = $os;
+            $data['is_active']            = $os !== 'inactive';
+        } elseif (isset($body['is_active'])) {
             $data['is_active'] = (bool)$body['is_active'];
+            $data['organization_status'] = $data['is_active'] ? 'active' : 'inactive';
         }
         if (array_key_exists('group_id', $body)) {
             $data['group_id'] = $body['group_id'];

@@ -40,6 +40,19 @@ async function parseResponse(res) {
   return json;
 }
 
+/** Tri-state org status from API row (`organization_status` + legacy `is_active`). */
+function organizationTriStatus(o) {
+  const s = String(o.organization_status ?? '').trim().toLowerCase();
+  if (s === 'inactive' || s === 'prospect' || s === 'active') return s;
+  const inactive = o.is_active === false || o.is_active === 'f' || o.is_active === 'false';
+  return inactive ? 'inactive' : 'active';
+}
+
+function payloadOrganizationStatus(payload) {
+  const s = payload?.status;
+  return s === 'active' || s === 'inactive' || s === 'prospect' ? s : 'active';
+}
+
 /**
  * Map an API organization row to the shape expected by the UI.
  */
@@ -68,7 +81,7 @@ function normalizeOrg(o) {
     primaryContact:   o.primary_contact_name || o.primary_contact || '—',
     primaryContactId: o.primary_contact_id || null,
     assignedManager:  o.assigned_manager || o.created_by_name || '',
-    status:           o.is_active === false ? 'inactive' : (o.is_active === true ? 'active' : (o.status || 'active')),
+    status:           organizationTriStatus(o),
     createdAt:        o.created_at  || '',
     groupId:          o.group_id ?? null,
     groupName:        o.group_name || '',
@@ -110,7 +123,7 @@ export async function getOrganization(id) {
   fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H2', location: 'organizationService.js:getOrganization', message: 'load org for edit', data: { orgId: Number(id), rawIsActive: data.data?.is_active ?? null, rawStatusField: data.data?.status ?? null, normalizedStatus: normalized.status }, timestamp: Date.now() }) }).catch(() => {});
   // #endregion
   // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', hypothesisId: 'H1', location: 'organizationService.js:getOrganization', message: 'group fields raw vs normalized', data: { orgId: Number(id), rawGroupId: data.data?.group_id ?? null, normalizedGroupId: normalized.groupId ?? null, normalizedHasGroup_id: Object.prototype.hasOwnProperty.call(normalized, 'group_id') }, timestamp: Date.now() }) }).catch(() => {});
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', runId: 'post-fix', hypothesisId: 'H1', location: 'organizationService.js:getOrganization', message: 'group fields raw vs normalized', data: { orgId: Number(id), rawGroupId: data.data?.group_id ?? null, normalizedGroupId: normalized.groupId ?? null, normalizedHasGroup_id: Object.prototype.hasOwnProperty.call(normalized, 'group_id') }, timestamp: Date.now() }) }).catch(() => {});
   // #endregion
   return normalized;
 }
@@ -170,7 +183,8 @@ export async function createOrganization(payload) {
     website:             payload.website     || null,
     notes:               payload.notes       || null,
     reference:           payload.reference   || null,
-    is_active:           payload.status !== 'inactive',
+    organization_status: payloadOrganizationStatus(payload),
+    is_active:           payloadOrganizationStatus(payload) !== 'inactive',
     primary_contact_id:  payload.primaryContactId  || null,
     assigned_manager:    payload.assignedManager   || null,
     group_id:            payload.groupId ?? payload.group_id ?? null,
@@ -213,7 +227,8 @@ export async function updateOrganization(id, payload) {
     website:            payload.website || null,
     notes:              payload.notes   || null,
     reference:          payload.reference || null,
-    is_active:          payload.status !== 'inactive',
+    organization_status: payloadOrganizationStatus(payload),
+    is_active:          payloadOrganizationStatus(payload) !== 'inactive',
     primary_contact_id: payload.primaryContactId || null,
     assigned_manager:   payload.assignedManager  || null,
     group_id:           payload.groupId ?? payload.group_id ?? null,
@@ -225,10 +240,10 @@ export async function updateOrganization(id, payload) {
   };
 
   // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H1', location: 'organizationService.js:updateOrganization', message: 'payload to PUT body mapping', data: { orgId: Number(id), formStatus: payload.status ?? null, bodyIsActive: body.is_active }, timestamp: Date.now() }) }).catch(() => {});
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H1', location: 'organizationService.js:updateOrganization', message: 'payload to PUT body mapping', data: { orgId: Number(id), formStatus: payload.status ?? null, bodyIsActive: body.is_active, bodyOrgStatus: body.organization_status }, timestamp: Date.now() }) }).catch(() => {});
   // #endregion
   // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', hypothesisId: 'H2', location: 'organizationService.js:updateOrganization', message: 'group_id in payload and body', data: { orgId: Number(id), payloadGroup_id: payload.group_id ?? null, payloadGroupId: payload.groupId ?? null, bodyGroup_id: body.group_id ?? null }, timestamp: Date.now() }) }).catch(() => {});
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', runId: 'post-fix', hypothesisId: 'H2', location: 'organizationService.js:updateOrganization', message: 'group_id in payload and body', data: { orgId: Number(id), payloadGroup_id: payload.group_id ?? null, payloadGroupId: payload.groupId ?? null, bodyGroup_id: body.group_id ?? null }, timestamp: Date.now() }) }).catch(() => {});
   // #endregion
 
   const res = await fetch(`${API_BASE}/admin/organizations/${id}`, {
@@ -239,7 +254,7 @@ export async function updateOrganization(id, payload) {
   const data = await parseResponse(res);
   const normalized = normalizeOrg(data.data);
   // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H2', location: 'organizationService.js:updateOrganization:after', message: 'API row vs normalized status', data: { rawIsActive: data.data?.is_active ?? null, normalizedStatus: normalized.status }, timestamp: Date.now() }) }).catch(() => {});
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H2', location: 'organizationService.js:updateOrganization:after', message: 'API row vs normalized status', data: { rawIsActive: data.data?.is_active ?? null, rawOrgStatus: data.data?.organization_status ?? null, normalizedStatus: normalized.status }, timestamp: Date.now() }) }).catch(() => {});
   // #endregion
   return normalized;
 }

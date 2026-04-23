@@ -39,6 +39,34 @@ class ClientGroupModel
     }
 
     /**
+     * Type-ahead search by group name (or exact id when query is numeric).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function search(string $q, int $limit = 20): array
+    {
+        $trim = trim($q);
+        if ($trim === '') {
+            return [];
+        }
+
+        $stmt = $this->db->prepare(
+            "SELECT g.id, g.name
+             FROM client_groups g
+             WHERE g.name ILIKE :q
+                OR (CAST(g.id AS TEXT) = :exact AND :exact <> '')
+             ORDER BY g.name ASC
+             LIMIT :limit"
+        );
+        $stmt->bindValue(':q', '%' . $trim . '%');
+        $stmt->bindValue(':exact', ctype_digit($trim) ? $trim : '');
+        $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+
+        return $stmt->fetchAll();
+    }
+
+    /**
      * Find a single group by ID.
      *
      * @return array<string, mixed>|null

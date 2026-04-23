@@ -21,6 +21,24 @@ class ClientGroupController extends BaseController
         $this->groups = new ClientGroupModel();
     }
 
+    // ── GET /api/admin/client-groups/search ─────────────────────────────────
+
+    /**
+     * Type-ahead search for client groups. Query params: q, limit
+     */
+    public function search(): never
+    {
+        $q     = trim((string)$this->query('q', ''));
+        $limit = min(50, max(1, (int)$this->query('limit', 20)));
+
+        if ($q === '') {
+            $this->success([], 'No query provided');
+        }
+
+        $results = $this->groups->search($q, $limit);
+        $this->success($results, 'Groups found');
+    }
+
     // ── GET /api/admin/client-groups ────────────────────────────────────────
 
     /**
