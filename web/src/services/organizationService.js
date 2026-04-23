@@ -9,6 +9,21 @@ import { API_BASE_URL } from '../constants/config';
 
 const API_BASE = API_BASE_URL;
 
+/** Thrown on non-OK API responses; includes HTTP status and parsed JSON body. */
+export class ApiError extends Error {
+  /**
+   * @param {string} message
+   * @param {number} status
+   * @param {Record<string, unknown>} body
+   */
+  constructor(message, status, body) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+  }
+}
+
 function authHeaders() {
   const token = localStorage.getItem('auth_token');
   return {
@@ -20,7 +35,7 @@ function authHeaders() {
 async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(json.message || `Request failed (${res.status})`);
+    throw new ApiError(json.message || `Request failed (${res.status})`, res.status, json);
   }
   return json;
 }
@@ -36,6 +51,7 @@ function normalizeOrg(o) {
     constitution:     o.type        || '',
     pan:              o.pan         || '',
     gstin:            o.gstin       || '',
+    cin:              o.cin         || '',
     email:            o.email       || '',
     phone:            o.phone       || '',
     website:          o.website     || '',
@@ -55,6 +71,7 @@ function normalizeOrg(o) {
     status:           o.is_active === false ? 'inactive' : (o.is_active === true ? 'active' : (o.status || 'active')),
     createdAt:        o.created_at  || '',
     groupId:          o.group_id ?? null,
+    groupName:        o.group_name || '',
     referringAffiliateUserId: o.referring_affiliate_user_id ?? null,
     referralStartDate: o.referral_start_date || '',
     commissionMode: o.commission_mode || 'referral_only',
@@ -135,6 +152,7 @@ export async function createOrganization(payload) {
     type:                payload.constitution || payload.type || null,
     gstin:               payload.gstin       || null,
     pan:                 payload.pan         || null,
+    cin:                 payload.cin         || null,
     email:               payload.email       || null,
     phone:               payload.phone       || null,
     address:             payload.addressLine1 ? [payload.addressLine1, payload.addressLine2].filter(Boolean).join(', ') : (payload.address || null),
@@ -177,6 +195,7 @@ export async function updateOrganization(id, payload) {
     type:               payload.constitution || payload.type || null,
     gstin:              payload.gstin   || null,
     pan:                payload.pan     || null,
+    cin:                payload.cin     || null,
     email:              payload.email   || null,
     phone:              payload.phone   || null,
     address:            payload.addressLine1 ? [payload.addressLine1, payload.addressLine2].filter(Boolean).join(', ') : (payload.address || null),
@@ -205,4 +224,28 @@ export async function updateOrganization(id, payload) {
   });
   const data = await parseResponse(res);
   return normalizeOrg(data.data);
+}
+
+/** POST — super admin receives OTP email to authorize organization delete */
+export async function requestOrganizationDeleteOtp(id) {
+  const res = await fetch(`${API_BASE}/admin/organizations/${id}/request-delete-otp`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify({}),
+  });
+  const data = await parseResponse(res);
+  return data.data || {};
+}
+
+/** DELETE — requires superadminOtp in header (same pattern as invoice delete) */
+export async function deleteOrganization(id, { superadminOtp } = {}) {
+  const headers = { ...authHeaders() };
+  if (superadminOtp) {
+    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
+  }
+  const res = await fetch(`${API_BASE}/admin/organizations/${id}`, {
+    method:  'DELETE',
+    headers,
+  });
+  await parseResponse(res);
 }

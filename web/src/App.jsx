@@ -26,6 +26,8 @@ import Settings from './pages/Settings';
 import UserManagement from './pages/UserManagement';
 import ClientGroups from './pages/ClientGroups';
 import TimesheetsReport from './pages/TimesheetsReport';
+import ContactExceptionsReport from './pages/ContactExceptionsReport';
+import OrganizationExceptionsReport from './pages/OrganizationExceptionsReport';
 import GlobalSearchPage from './pages/GlobalSearchPage';
 import Profile from './pages/Profile';
 import AdminAffiliates from './pages/AdminAffiliates';
@@ -64,7 +66,9 @@ const pageTitles = {
   '/services/files':            '📂 Engagement Files',
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
-  '/reports/timesheets':        '🕐 Timesheet report',
+  '/reports/timesheets':                 '🕐 Timesheet report',
+  '/reports/exceptions/contacts':      '📋 Contact data exceptions',
+  '/reports/exceptions/organizations': '📋 Organization data exceptions',
   '/calendar':                  '📅 Calendar & Appointments',
   '/settings/appointment-fees': '💳 Appointment fee rules',
   '/credentials':               '🔑 Credentials Vault',
@@ -125,6 +129,16 @@ export default function App() {
           <Route path="/reports/timesheets" element={
             <ProtectedRoute staffOnly requiredPermission="services.view">
               <Layout routePath="/reports/timesheets"><TimesheetsReport /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/reports/exceptions/contacts" element={
+            <ProtectedRoute staffOnly requiredPermission="clients.view">
+              <Layout routePath="/reports/exceptions/contacts"><ContactExceptionsReport /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/reports/exceptions/organizations" element={
+            <ProtectedRoute staffOnly requiredPermission="clients.view">
+              <Layout routePath="/reports/exceptions/organizations"><OrganizationExceptionsReport /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/calendar" element={<ProtectedRoute staffOnly><Layout routePath="/calendar"><Calendar /></Layout></ProtectedRoute>} />

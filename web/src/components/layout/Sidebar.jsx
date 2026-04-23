@@ -5,9 +5,9 @@ import { useAuth } from '../../auth/AuthContext';
 import { getInitials } from '../../utils/getInitials';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
-  Receipt, CalendarDays, KeyRound, BookOpen, Clock, Coins,
+  Receipt, CalendarDays, KeyRound, BookOpen, Clock,
   Target, Settings, ChevronRight, ChevronDown,
-  UserRound, Building2, ShieldCheck, Layers, Handshake,
+  UserRound, Building2, ShieldCheck, Layers, Handshake, BarChart3,
 } from 'lucide-react';
 
 const navSections = [
@@ -18,10 +18,21 @@ const navSections = [
       {
         label: 'Clients',
         icon: Users,
+        navKey: 'clients',
         children: [
           { to: '/clients/contacts', label: 'Contacts', icon: UserRound },
           { to: '/clients/organizations', label: 'Organizations', icon: Building2 },
           { to: '/clients/groups', label: 'Groups', icon: Layers },
+        ],
+      },
+      {
+        label: 'Reports',
+        icon: BarChart3,
+        navKey: 'reports',
+        children: [
+          { to: '/reports/timesheets', label: 'Timesheet report', icon: Clock, permission: 'services.view' },
+          { to: '/reports/exceptions/contacts', label: 'Contact exceptions', icon: UserRound, permission: 'clients.view' },
+          { to: '/reports/exceptions/organizations', label: 'Organization exceptions', icon: Building2, permission: 'clients.view' },
         ],
       },
       { to: '/services', label: 'Services & Tasks', icon: ClipboardList },
@@ -32,9 +43,7 @@ const navSections = [
     label: 'FINANCE',
     items: [
       { to: '/invoices', label: 'Invoices & Ledger', icon: Receipt },
-      { to: '/reports/timesheets', label: 'Timesheet report', icon: Clock, permission: 'services.view' },
       { to: '/calendar', label: 'Calendar', icon: CalendarDays },
-      { to: '/settings/appointment-fees', label: 'Appointment fees', icon: Coins },
       { to: '/credentials', label: 'Credentials Vault', icon: KeyRound },
       { to: '/registers', label: 'Registers', icon: BookOpen },
       { to: '/leads', label: 'Leads & Quotations', icon: Target },
@@ -42,9 +51,7 @@ const navSections = [
   },
   {
     label: 'SYSTEM',
-    items: [
-      { to: '/settings', label: 'Settings', icon: Settings },
-    ],
+    items: [{ to: '/settings', label: 'Settings', icon: Settings }],
   },
 ];
 
@@ -58,7 +65,9 @@ export default function Sidebar() {
   const loc = useLocation();
   const { session, hasPermission, hasAnyPermission } = useAuth();
   const isClientsActive = loc.pathname.startsWith('/clients');
+  const isReportsActive = loc.pathname.startsWith('/reports');
   const [clientsOpen, setClientsOpen] = useState(isClientsActive);
+  const [reportsOpen, setReportsOpen] = useState(isReportsActive);
 
   const user = session?.user;
   const displayName = user?.name || 'CA Rahul Gupta';
@@ -69,6 +78,10 @@ export default function Sidebar() {
   useEffect(() => {
     if (isClientsActive) setClientsOpen(true);
   }, [isClientsActive]);
+
+  useEffect(() => {
+    if (isReportsActive) setReportsOpen(true);
+  }, [isReportsActive]);
 
   // Build admin section if user has any admin items visible
   const visibleAdminItems = adminNavItems.filter((item) => {
@@ -96,11 +109,21 @@ export default function Sidebar() {
 
               // Clients: render as expandable parent with sub-items
               if (item.children) {
-                const parentActive = isClientsActive;
+                const navKey = item.navKey || 'clients';
+                const parentActive = navKey === 'reports' ? isReportsActive : isClientsActive;
+                const subOpen = navKey === 'reports' ? reportsOpen : clientsOpen;
+                const setSubOpen = navKey === 'reports' ? setReportsOpen : setClientsOpen;
+                const visibleChildren = item.children.filter(
+                  (ch) => !ch.permission || hasPermission(ch.permission),
+                );
+                if (visibleChildren.length === 0) {
+                  return null;
+                }
                 return (
                   <div key={item.label}>
                     <button
-                      onClick={() => setClientsOpen(v => !v)}
+                      type="button"
+                      onClick={() => setSubOpen((v) => !v)}
                       style={{
                         ...styles.navLink,
                         width: '100%',
@@ -115,19 +138,20 @@ export default function Sidebar() {
                         <Icon size={15} />
                       </span>
                       <span style={styles.navText}>{item.label}</span>
-                      {clientsOpen
+                      {subOpen
                         ? <ChevronDown size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
                         : <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
                       }
                     </button>
-                    {clientsOpen && (
+                    {subOpen && (
                       <div style={{ paddingLeft: 16 }}>
-                        {item.children.map((child) => {
+                        {visibleChildren.map((child) => {
                           const ChildIcon = child.icon;
                           return (
                             <NavLink
                               key={child.to}
                               to={child.to}
+                              end={Boolean(child.exact)}
                               style={({ isActive }) => ({
                                 ...styles.navLink,
                                 fontSize: 12,

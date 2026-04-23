@@ -72,9 +72,10 @@ class ClientModel
     public function find(int $id): ?array
     {
         $stmt = $this->db->prepare(
-            'SELECT c.*, u.name AS created_by_name
+            'SELECT c.*, u.name AS created_by_name, cg.name AS group_name
              FROM clients c
              LEFT JOIN users u ON u.id = c.created_by
+             LEFT JOIN client_groups cg ON cg.id = c.group_id
              WHERE c.id = :id
              LIMIT 1'
         );
@@ -118,8 +119,8 @@ class ClientModel
             $params[':search'] = "%{$search}%";
         }
         if ($status !== '') {
-            $where[]             = 'c.is_active = :is_active';
-            $params[':is_active'] = ($status === 'active') ? 'true' : 'false';
+            $where[]                  = 'c.contact_status = :contact_status';
+            $params[':contact_status'] = $status;
         }
 
         $whereClause = implode(' AND ', $where);
@@ -132,9 +133,10 @@ class ClientModel
         $total = (int)$countStmt->fetchColumn();
 
         $stmt = $this->db->prepare(
-            "SELECT c.*, u.name AS created_by_name
+            "SELECT c.*, u.name AS created_by_name, cg.name AS group_name
              FROM clients c
              LEFT JOIN users u ON u.id = c.created_by
+             LEFT JOIN client_groups cg ON cg.id = c.group_id
              WHERE {$whereClause}
              ORDER BY c.created_at DESC
              LIMIT :limit OFFSET :offset"
@@ -189,6 +191,20 @@ class ClientModel
     }
 
     /**
+     * @param mixed $status   Raw contact_status from API / form.
+     * @param mixed $isActive Fallback when $status is empty / unknown.
+     */
+    private static function normalizeContactStatus($status, $isActive = true): string
+    {
+        $s = is_string($status) ? strtolower(trim($status)) : '';
+        if ($s === 'inactive' || $s === 'prospect' || $s === 'active') {
+            return $s;
+        }
+
+        return ((bool)$isActive) ? 'active' : 'inactive';
+    }
+
+    /**
      * Create a new client record.
      *
      * @param array<string, mixed> $data
@@ -199,19 +215,20 @@ class ClientModel
         $stmt = $this->db->prepare(
             'INSERT INTO clients (
                 type, first_name, last_name, organization_name,
-                email, secondary_email, phone, secondary_phone, pan, gstin,
+                email, secondary_email, phone, secondary_phone, pan, gstin, website,
                 address_line1, address_line2, city, state, pincode, country,
-                notes, reference, group_id, is_active, created_by,
+                notes, reference, group_id, is_active, contact_status, created_by,
                 referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
              ) VALUES (
                 :type, :first_name, :last_name, :organization_name,
-                :email, :secondary_email, :phone, :secondary_phone, :pan, :gstin,
+                :email, :secondary_email, :phone, :secondary_phone, :pan, :gstin, :website,
                 :address_line1, :address_line2, :city, :state, :pincode, :country,
-                :notes, :reference, :group_id, :is_active, :created_by,
+                :notes, :reference, :group_id, :is_active, :contact_status, :created_by,
                 :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted
              ) RETURNING id'
         );
         $refAff = isset($data['referring_affiliate_user_id']) ? (int)$data['referring_affiliate_user_id'] : 0;
+        $contactStatus = self::normalizeContactStatus($data['contact_status'] ?? null, $data['is_active'] ?? true);
         $stmt->execute([
             ':type'              => $data['type']              ?? 'individual',
             ':first_name'        => $data['first_name']        ?? null,
@@ -223,6 +240,7 @@ class ClientModel
             ':secondary_phone'   => $data['secondary_phone']   ?? null,
             ':pan'               => $data['pan']               ?? null,
             ':gstin'             => $data['gstin']             ?? null,
+            ':website'           => $data['website']           ?? null,
             ':address_line1'     => $data['address_line1']     ?? null,
             ':address_line2'     => $data['address_line2']     ?? null,
             ':city'              => $data['city']              ?? null,
@@ -232,7 +250,8 @@ class ClientModel
             ':notes'             => $data['notes']             ?? null,
             ':reference'         => $data['reference']         ?? null,
             ':group_id'          => isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null,
-            ':is_active'         => ((bool)($data['is_active'] ?? true)) ? 'true' : 'false',
+            ':is_active'         => ($contactStatus !== 'inactive') ? 'true' : 'false',
+            ':contact_status'    => $contactStatus,
             ':created_by'        => $data['created_by']        ?? null,
             ':referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
             ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
@@ -254,7 +273,7 @@ class ClientModel
 
         $allowed = [
             'type', 'first_name', 'last_name', 'organization_name',
-            'email', 'secondary_email', 'phone', 'secondary_phone', 'pan', 'gstin',
+            'email', 'secondary_email', 'phone', 'secondary_phone', 'pan', 'gstin', 'website',
             'address_line1', 'address_line2', 'city', 'state', 'pincode', 'country',
             'notes', 'reference',
             'referral_start_date', 'commission_mode',
@@ -274,9 +293,18 @@ class ClientModel
             $setClauses[]                       = 'client_facing_restricted = :client_facing_restricted';
             $params[':client_facing_restricted'] = ((bool)$data['client_facing_restricted']) ? 'true' : 'false';
         }
-        if (array_key_exists('is_active', $data)) {
-            $setClauses[]       = 'is_active = :is_active';
-            $params[':is_active'] = ((bool)$data['is_active']) ? 'true' : 'false';
+        if (array_key_exists('contact_status', $data)) {
+            $cs                        = self::normalizeContactStatus($data['contact_status'], true);
+            $setClauses[]              = 'contact_status = :contact_status';
+            $params[':contact_status'] = $cs;
+            $setClauses[]              = 'is_active = :is_active_sync';
+            $params[':is_active_sync']  = ($cs !== 'inactive') ? 'true' : 'false';
+        } elseif (array_key_exists('is_active', $data)) {
+            $active               = (bool)$data['is_active'];
+            $setClauses[]         = 'is_active = :is_active';
+            $params[':is_active'] = $active ? 'true' : 'false';
+            $setClauses[]         = 'contact_status = :contact_status_ia';
+            $params[':contact_status_ia'] = $active ? 'active' : 'inactive';
         }
         if (array_key_exists('group_id', $data)) {
             $setClauses[]      = 'group_id = :group_id';
@@ -300,9 +328,15 @@ class ClientModel
     public function updateStatus(int $id, bool $isActive): bool
     {
         $stmt = $this->db->prepare(
-            'UPDATE clients SET is_active = :is_active, updated_at = NOW() WHERE id = :id'
+            'UPDATE clients SET is_active = :is_active,
+                contact_status = :contact_status,
+                updated_at = NOW() WHERE id = :id'
         );
-        return $stmt->execute([':is_active' => $isActive ? 'true' : 'false', ':id' => $id]);
+        return $stmt->execute([
+            ':is_active'        => $isActive ? 'true' : 'false',
+            ':contact_status'   => $isActive ? 'active' : 'inactive',
+            ':id'               => $id,
+        ]);
     }
 
     /**
@@ -384,5 +418,109 @@ class ClientModel
             $client['last_name']  ?? '',
         ]);
         return implode(' ', $parts) ?: 'Unknown';
+    }
+
+    /**
+     * Allowed keys for contact exception reports (subset of columns).
+     *
+     * @return list<string>
+     */
+    public static function exceptionReportAllowedKeys(): array
+    {
+        return ['gstin', 'pan', 'email', 'website'];
+    }
+
+    /**
+     * Paginated contacts where ANY selected field is missing (NULL or blank).
+     *
+     * @param list<string> $missingKeys validated keys from exceptionReportAllowedKeys()
+     *
+     * @return array{total: int, rows: array<int, array<string, mixed>>}
+     */
+    public function exceptionPaginate(
+        int $page,
+        int $perPage,
+        array $missingKeys,
+        bool $activeOnly = true
+    ): array {
+        $where  = [];
+        $params = [];
+
+        if ($activeOnly) {
+            $where[] = 'c.is_active = true';
+        }
+
+        $orParts = [];
+        $colMap  = [
+            'gstin'   => 'c.gstin',
+            'pan'     => 'c.pan',
+            'email'   => 'c.email',
+            'website' => 'c.website',
+        ];
+        foreach ($missingKeys as $i => $key) {
+            $col = $colMap[$key] ?? null;
+            if ($col === null) {
+                continue;
+            }
+            $orParts[] = "({$col} IS NULL OR TRIM({$col}) = '')";
+        }
+        if ($orParts === []) {
+            return ['total' => 0, 'rows' => []];
+        }
+        $where[] = '(' . implode(' OR ', $orParts) . ')';
+        $whereClause = implode(' AND ', $where);
+
+        $offset = ($page - 1) * $perPage;
+
+        $countStmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM clients c WHERE {$whereClause}"
+        );
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+
+        $stmt = $this->db->prepare(
+            "SELECT c.id, c.first_name, c.last_name, c.organization_name,
+                    c.email, c.pan, c.gstin, c.website, c.is_active, c.contact_status,
+                    cg.name AS group_name
+             FROM clients c
+             LEFT JOIN client_groups cg ON cg.id = c.group_id
+             WHERE {$whereClause}
+             ORDER BY c.created_at DESC
+             LIMIT :limit OFFSET :offset"
+        );
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll();
+
+        foreach ($rows as &$row) {
+            $row['display_name'] = self::displayName($row);
+            $row['missing_fields'] = self::computeMissingFields($row, $missingKeys);
+        }
+        unset($row);
+
+        return ['total' => $total, 'rows' => $rows];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param list<string>         $keys
+     *
+     * @return list<string>
+     */
+    private static function computeMissingFields(array $row, array $keys): array
+    {
+        $out = [];
+        foreach ($keys as $key) {
+            $v = $row[$key] ?? null;
+            if ($v === null || (is_string($v) && trim($v) === '')) {
+                $out[] = $key;
+            }
+        }
+
+        return $out;
     }
 }

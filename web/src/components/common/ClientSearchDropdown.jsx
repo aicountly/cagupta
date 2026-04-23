@@ -25,6 +25,9 @@ function authHeaders() {
  *   style         {object}         Extra styles for the input element.
  *   allowAll      {boolean}        If true, shows an "All Clients" option when no query.
  *   onAllClients  {function}       Called when "All Clients" is selected (requires allowAll).
+ *   minQueryLength {number}       Minimum trimmed characters before searching (default 1).
+ *   searchLimit   {number}        Max results from /contacts/search (default 20, max 50).
+ *   clearSelectionWhenInputEmpty {boolean} If true, clearing the input calls onChange({ id:'', displayName:'' }).
  */
 export default function ClientSearchDropdown({
   value,
@@ -34,6 +37,9 @@ export default function ClientSearchDropdown({
   style = {},
   allowAll = false,
   onAllClients,
+  minQueryLength = 1,
+  searchLimit = 20,
+  clearSelectionWhenInputEmpty = false,
 }) {
   const [query, setQuery]           = useState(displayValue || '');
   const [suggestions, setSuggestions] = useState([]);
@@ -59,14 +65,16 @@ export default function ClientSearchDropdown({
   }, []);
 
   const doSearch = useCallback(async (q) => {
-    if (!q.trim()) {
+    const trimmed = q.trim();
+    if (!trimmed || trimmed.length < minQueryLength) {
       setSuggestions([]);
       setOpen(false);
       return;
     }
+    const limit = Math.min(50, Math.max(1, searchLimit));
     setLoading(true);
     try {
-      const params = new URLSearchParams({ q: q.trim(), limit: 20 });
+      const params = new URLSearchParams({ q: trimmed, limit: String(limit) });
       const res = await fetch(`${API_BASE}/admin/contacts/search?${params}`, {
         headers: authHeaders(),
       });
@@ -87,7 +95,7 @@ export default function ClientSearchDropdown({
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [minQueryLength, searchLimit]);
 
   function handleInput(e) {
     const val = e.target.value;
@@ -97,11 +105,15 @@ export default function ClientSearchDropdown({
     if (!val.trim()) {
       setSuggestions([]);
       setOpen(false);
+      if (clearSelectionWhenInputEmpty && onChange) {
+        onChange({ id: '', displayName: '' });
+      }
     }
   }
 
   function handleFocus() {
-    if (query.trim()) {
+    const t = query.trim();
+    if (t.length >= minQueryLength) {
       doSearch(query);
     } else if (allowAll) {
       setOpen(true);
@@ -182,7 +194,7 @@ export default function ClientSearchDropdown({
               All Clients
             </div>
           )}
-          {suggestions.length === 0 && !loading && query.trim() && (
+          {suggestions.length === 0 && !loading && query.trim().length >= minQueryLength && (
             <div style={{ padding:'8px 12px', fontSize:12, color:'#94a3b8' }}>No clients found</div>
           )}
           {suggestions.map(c => (

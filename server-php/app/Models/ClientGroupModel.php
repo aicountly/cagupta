@@ -59,6 +59,35 @@ class ClientGroupModel
     }
 
     /**
+     * Find another group's id with the same normalized name (trim + case-insensitive).
+     *
+     * @param string   $trimmedName Name after trim(); used for SQL LOWER(TRIM(:name)).
+     * @param int|null $excludeId   When updating, exclude this group id.
+     */
+    public function findIdByConflictingName(string $trimmedName, ?int $excludeId = null): ?int
+    {
+        if ($trimmedName === '') {
+            return null;
+        }
+
+        $sql = 'SELECT id FROM client_groups WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name))';
+        $params = [':name' => $trimmedName];
+
+        if ($excludeId !== null) {
+            $sql .= ' AND id <> :exclude';
+            $params[':exclude'] = $excludeId;
+        }
+
+        $sql .= ' LIMIT 1';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+
+        return $row ? (int)$row['id'] : null;
+    }
+
+    /**
      * Return the contacts and organizations belonging to a group.
      *
      * @return array{contacts: array<int, array<string, mixed>>, organizations: array<int, array<string, mixed>>}
@@ -140,7 +169,7 @@ class ClientGroupModel
     }
 
     /**
-     * Delete a group. The FK ON DELETE SET NULL ensures members' group_id is nulled.
+     * Delete a group. Callers must ensure no clients or organizations still reference it.
      */
     public function delete(int $id): bool
     {

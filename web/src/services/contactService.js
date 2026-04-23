@@ -75,6 +75,15 @@ function coerceNameArray(val) {
   return [];
 }
 
+/** Derive list/edit status from API row (`contact_status` + legacy `is_active`). */
+function lifecycleStatusFromApi(c) {
+  const cs = String(c.contact_status ?? c.status ?? '').trim().toLowerCase();
+  if (cs === 'active' || cs === 'inactive' || cs === 'prospect') {
+    return cs;
+  }
+  return c.is_active === false ? 'inactive' : 'active';
+}
+
 /**
  * Map an API contact row to the shape expected by the UI.
  * @param {object} c  Raw row from the backend.
@@ -102,6 +111,7 @@ function normalizeContact(c) {
     email:         c.email  || '',
     pan:           c.pan    || '',
     gstin:         c.gstin  || '',
+    website:       c.website || '',
     addressLine1:  c.address_line1 || '',
     addressLine2:  c.address_line2 || '',
     city:          c.city   || '',
@@ -118,9 +128,10 @@ function normalizeContact(c) {
     linkedOrgsCount,
     organisation,
     assignedManager: c.assigned_manager || c.created_by_name || '',
-    status:        c.is_active === false ? 'inactive' : (c.is_active === true ? 'active' : (c.status || 'active')),
+    status:        lifecycleStatusFromApi(c),
     createdAt:     c.created_at || '',
     groupId:       c.group_id ?? null,
+    groupName:     c.group_name || '',
     referringAffiliateUserId: c.referring_affiliate_user_id ?? null,
     referralStartDate: c.referral_start_date || '',
     commissionMode: c.commission_mode || 'referral_only',
@@ -142,6 +153,67 @@ export async function getContacts({ page = 1, perPage = 100, search = '', status
   });
   const data = await parseResponse(res);
   return (data.data || []).map(normalizeContact);
+}
+
+/**
+ * Type-ahead contact search (GET /admin/contacts/search?q=&limit=).
+ * @param {string} q
+ * @param {number} limit  Capped at 50 server-side.
+ * @returns {Promise<{ id: number, displayName: string }[]>}
+ */
+export async function searchContactsQuick(q, limit = 20) {
+  const trimmed = (q || '').trim();
+  if (!trimmed) return [];
+  const cap = Math.min(50, Math.max(1, limit));
+  try {
+    const params = new URLSearchParams({ q: trimmed, limit: String(cap) });
+    const res = await fetch(`${API_BASE}/admin/contacts/search?${params}`, {
+      headers: authHeaders(),
+    });
+    const data = await parseResponse(res);
+    return (data.data || []).map((c) => {
+      const parts = [c.first_name, c.last_name].filter(Boolean);
+      return {
+        id: Number(c.id),
+        displayName: c.organization_name || parts.join(' ') || 'Unknown',
+      };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Merge paginated list search + quick search, deduped by id (for large directories).
+ * @param {string} q
+ * @param {number} perPage
+ * @returns {Promise<{ id: number, displayName: string }[]>}
+ */
+export async function getContactsForSearch(q, perPage = 50) {
+  const trimmed = (q || '').trim();
+  if (trimmed.length < 1) return [];
+  const listCap = Math.min(100, Math.max(1, perPage));
+  const quickCap = Math.min(50, Math.max(1, perPage));
+  const [fromList, fromQuick] = await Promise.all([
+    getContacts({ search: trimmed, perPage: listCap }).catch(() => []),
+    searchContactsQuick(trimmed, quickCap).catch(() => []),
+  ]);
+  const map = new Map();
+  for (const c of fromList) {
+    if (c && c.id != null) {
+      const id = Number(c.id);
+      if (Number.isFinite(id) && id > 0) {
+        map.set(id, { id, displayName: c.displayName || 'Unknown' });
+      }
+    }
+  }
+  for (const c of fromQuick) {
+    if (c && c.id != null) {
+      const id = Number(c.id);
+      if (Number.isFinite(id) && id > 0) map.set(id, c);
+    }
+  }
+  return [...map.values()];
 }
 
 /**
@@ -173,11 +245,13 @@ export async function createContact(payload) {
     phone:             payload.mobile  || payload.phone || null,
     pan:               payload.pan     || null,
     gstin:             payload.gstin   || null,
+    website:           payload.website || null,
     city:              payload.city    || null,
     state:             payload.state   || null,
     country:           payload.country || 'India',
     notes:             payload.notes   || null,
     reference:         payload.reference || null,
+    contact_status:    payload.status ?? null,
     is_active:         payload.status !== 'inactive',
     assigned_manager:  payload.assignedManager || null,
     linked_org_ids:    payload.linkedOrgIds    || [],
@@ -224,12 +298,14 @@ export async function updateContact(id, payload) {
   }
   if (hasOwn(payload, 'pan')) body.pan = payload.pan ?? null;
   if (hasOwn(payload, 'gstin')) body.gstin = payload.gstin ?? null;
+  if (hasOwn(payload, 'website')) body.website = payload.website ?? null;
   if (hasOwn(payload, 'city')) body.city = payload.city ?? null;
   if (hasOwn(payload, 'state')) body.state = payload.state ?? null;
   if (hasOwn(payload, 'country')) body.country = payload.country ?? 'India';
   if (hasOwn(payload, 'notes')) body.notes = payload.notes ?? null;
   if (hasOwn(payload, 'reference')) body.reference = payload.reference ?? null;
   if (hasOwn(payload, 'status')) {
+    body.contact_status = payload.status;
     body.is_active = payload.status !== 'inactive';
   } else if (hasOwn(payload, 'is_active')) {
     body.is_active = Boolean(payload.is_active);

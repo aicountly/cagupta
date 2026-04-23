@@ -35,7 +35,8 @@ export default function Contacts() {
       c.displayName.toLowerCase().includes(search.toLowerCase()) ||
       (c.mobile || '').includes(search) ||
       (c.pan || '').includes(search.toUpperCase()) ||
-      (c.clientCode || '').toLowerCase().includes(search.toLowerCase());
+      (c.clientCode || '').toLowerCase().includes(search.toLowerCase()) ||
+      (c.groupName || '').toLowerCase().includes(search.toLowerCase());
     const matchFilter = filter === 'all' || c.status === filter;
     return matchSearch && matchFilter;
   });
@@ -46,7 +47,7 @@ export default function Contacts() {
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center' }}>
         <input
-          placeholder="🔍 Search contact by name, mobile, PAN, code…"
+          placeholder="🔍 Search contact by name, mobile, PAN, code, group…"
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={inputStyle}
@@ -65,16 +66,16 @@ export default function Contacts() {
         <table style={tableStyle}>
           <thead>
             <tr>
-              {['Code', 'Name', 'Organisation', 'Mobile', 'PAN', 'Manager', 'City', 'Status', 'Actions'].map(h => (
+              {['Code', 'Name', 'Organisation', 'Group', 'Mobile', 'PAN', 'Manager', 'City', 'Status', 'Actions'].map(h => (
                 <th key={h} style={thStyle}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>Loading contacts…</td></tr>
+              <tr><td colSpan={10} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>Loading contacts…</td></tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No contacts found.</td></tr>
+              <tr><td colSpan={10} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No contacts found.</td></tr>
             ) : filtered.map(c => (
               <tr key={c.id} style={trStyle}>
                 <td style={tdStyle}>
@@ -99,6 +100,13 @@ export default function Contacts() {
                     </button>
                   ) : c.organisation ? (
                     <span style={orgChipStyle}>{c.organisation}</span>
+                  ) : (
+                    <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>
+                  )}
+                </td>
+                <td style={tdStyle}>
+                  {c.groupName ? (
+                    <span style={groupChipStyle}>{c.groupName}</span>
                   ) : (
                     <span style={{ color: '#94a3b8', fontSize: 12 }}>—</span>
                   )}
@@ -172,6 +180,7 @@ export default function Contacts() {
             ['Organisation', selected.organisation || (selected.linkedOrgsCount > 0
               ? `${selected.linkedOrgsCount} organization${selected.linkedOrgsCount > 1 ? 's' : ''}`
               : '—')],
+            ['Group', selected.groupName ? <span key="g" style={groupChipStyle}>{selected.groupName}</span> : '—'],
             ['Mobile', selected.mobile],
             ['Email', selected.email || '—'],
             ['PAN', selected.pan || '—'],
@@ -205,6 +214,7 @@ const btnPrimary = { padding: '8px 16px', background: '#F37920', color: '#fff', 
 const btnOutline = { padding: '8px 12px', background: '#fff', color: '#F37920', border: '1px solid #F37920', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
 const iconBtn = { background: 'none', border: 'none', cursor: 'pointer', fontSize: 15, padding: '2px 4px' };
 const orgChipStyle = { display: 'inline-block', background: '#EFF6FF', color: '#3B82F6', borderRadius: 12, padding: '2px 8px', fontSize: 11, fontWeight: 600 };
+const groupChipStyle = { display: 'inline-block', background: '#FFF7ED', color: '#C2410C', borderRadius: 12, padding: '2px 8px', fontSize: 11, fontWeight: 600 };
 const orgEyeBtnStyle = { ...iconBtn, verticalAlign: 'middle' };
 const modalOverlayStyle = {
   position: 'fixed',

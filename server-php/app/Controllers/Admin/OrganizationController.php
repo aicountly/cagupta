@@ -3,9 +3,12 @@ declare(strict_types=1);
 
 namespace App\Controllers\Admin;
 
+use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
-use App\Models\OrganizationModel;
 use App\Libraries\BrevoMailer;
+use App\Libraries\OtpService;
+use App\Models\OrganizationModel;
+use App\Models\UserModel;
 
 /**
  * OrganizationController — CRUD for the `organizations` table.
@@ -13,16 +16,19 @@ use App\Libraries\BrevoMailer;
  * Sends an alert email to the Superadmin on every create, update,
  * or status-change operation (best-effort; failures do not block the response).
  *
- * All endpoints require Bearer token + role: super_admin or admin
- * (enforced by RoleFilter in Routes.php).
+ * Most routes use permission-based middleware (e.g. clients.view / clients.edit).
+ * Permanent delete and delete-OTP request require role super_admin or admin
+ * plus a valid superadmin OTP on DELETE (see Routes.php).
  */
 class OrganizationController extends BaseController
 {
     private OrganizationModel $orgs;
+    private UserModel $users;
 
     public function __construct()
     {
-        $this->orgs = new OrganizationModel();
+        $this->orgs   = new OrganizationModel();
+        $this->users = new UserModel();
     }
 
     // ── GET /api/admin/organizations/search ──────────────────────────────────
@@ -76,7 +82,7 @@ class OrganizationController extends BaseController
     /**
      * Create a new organization.
      *
-     * Body: { name, type?, gstin?, pan?, email?, phone?,
+     * Body: { name, type?, gstin?, pan?, cin?, email?, phone?,
      *         address?, city?, state?, pincode?, website?, notes?, is_active? }
      */
     public function store(): never
@@ -90,12 +96,28 @@ class OrganizationController extends BaseController
 
         $actingUser = $this->authUser();
 
+        $panNorm   = $this->normalizeTaxId($body['pan'] ?? '');
+        $gstinNorm = $this->normalizeTaxId($body['gstin'] ?? '');
+        $cinNorm   = $this->normalizeTaxId($body['cin'] ?? '');
+
+        $conflictRow = $this->orgs->findConflictingByIdentifiers($panNorm, $gstinNorm, $cinNorm, null);
+        if ($conflictRow !== null) {
+            $fields = $this->matchedIdentifiers($panNorm, $gstinNorm, $cinNorm, $conflictRow);
+            $this->error(
+                'An organization already uses this PAN, GSTIN, or CIN.',
+                409,
+                [],
+                ['fields' => $fields, 'existing' => $this->organizationConflictPayload($conflictRow)]
+            );
+        }
+
         $referral = $this->referralFieldsFromBody($body);
         $newId = $this->orgs->create(array_merge([
             'name'               => $name,
             'type'               => $body['type']    ?? null,
-            'gstin'              => strtoupper(trim((string)($body['gstin'] ?? ''))) ?: null,
-            'pan'                => strtoupper(trim((string)($body['pan']   ?? ''))) ?: null,
+            'gstin'              => $gstinNorm === '' ? null : $gstinNorm,
+            'pan'                => $panNorm === '' ? null : $panNorm,
+            'cin'                => $cinNorm === '' ? null : $cinNorm,
             'email'              => trim((string)($body['email']   ?? '')) ?: null,
             'secondary_email'    => trim((string)($body['secondary_email'] ?? '')) ?: null,
             'phone'              => trim((string)($body['phone']   ?? '')) ?: null,
@@ -154,12 +176,18 @@ class OrganizationController extends BaseController
         $data = [];
 
         $textFields = [
-            'name', 'type', 'gstin', 'pan', 'email', 'secondary_email', 'phone', 'secondary_phone',
+            'name', 'type', 'gstin', 'pan', 'cin', 'email', 'secondary_email', 'phone', 'secondary_phone',
             'address', 'city', 'state', 'country', 'pincode', 'website', 'notes', 'reference',
         ];
         foreach ($textFields as $field) {
             if (array_key_exists($field, $body)) {
                 $data[$field] = $body[$field];
+            }
+        }
+        foreach (['gstin', 'pan', 'cin'] as $taxField) {
+            if (array_key_exists($taxField, $data)) {
+                $n = $this->normalizeTaxId($data[$taxField]);
+                $data[$taxField] = $n === '' ? null : $n;
             }
         }
         if (array_key_exists('country', $data)) {
@@ -187,6 +215,29 @@ class OrganizationController extends BaseController
         }
         if (array_key_exists('client_facing_restricted', $body)) {
             $data['client_facing_restricted'] = (bool)$body['client_facing_restricted'];
+        }
+
+        $effPan = array_key_exists('pan', $data)
+            ? $this->normalizeTaxId($data['pan'])
+            : $this->normalizeTaxId($org['pan'] ?? '');
+        $effGstin = array_key_exists('gstin', $data)
+            ? $this->normalizeTaxId($data['gstin'])
+            : $this->normalizeTaxId($org['gstin'] ?? '');
+        $effCin = array_key_exists('cin', $data)
+            ? $this->normalizeTaxId($data['cin'])
+            : $this->normalizeTaxId($org['cin'] ?? '');
+
+        if ($effPan !== '' || $effGstin !== '' || $effCin !== '') {
+            $conflictRow = $this->orgs->findConflictingByIdentifiers($effPan, $effGstin, $effCin, $id);
+            if ($conflictRow !== null) {
+                $fields = $this->matchedIdentifiers($effPan, $effGstin, $effCin, $conflictRow);
+                $this->error(
+                    'An organization already uses this PAN, GSTIN, or CIN.',
+                    409,
+                    [],
+                    ['fields' => $fields, 'existing' => $this->organizationConflictPayload($conflictRow)]
+                );
+            }
         }
 
         $this->orgs->update($id, $data);
@@ -227,10 +278,60 @@ class OrganizationController extends BaseController
         $this->success($updated, 'Organization status updated');
     }
 
+    // ── POST /api/admin/organizations/:id/request-delete-otp ─────────────────
+
+    /**
+     * Send a superadmin OTP email to authorize deleting this organization.
+     */
+    public function requestDeleteOtp(int $id): never
+    {
+        $org = $this->orgs->find($id);
+        if ($org === null) {
+            $this->error('Organization not found.', 404);
+        }
+
+        $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
+        if ($super === null || !$super['is_active']) {
+            $this->error('Super admin account is not provisioned.', 500);
+        }
+        $superId = (int)$super['id'];
+        $email   = trim((string)($super['email'] ?? ''));
+        if ($email === '') {
+            $this->error('Super admin has no email.', 500);
+        }
+
+        $otp = OtpService::generate($superId);
+        $orgName = (string)($org['name'] ?? 'Unknown');
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('organization-delete-otp', [
+                'userName'      => (string)($super['name'] ?? $email),
+                'otpCode'       => $otp,
+                'expiryMinutes' => (string)OtpService::expiryMinutes(),
+                'orgId'         => (string)$id,
+                'orgName'       => $orgName,
+            ]);
+            if ($htmlBody !== '') {
+                BrevoMailer::send(
+                    $email,
+                    (string)($super['name'] ?? $email),
+                    'Organization delete OTP - CA Rahul Gupta',
+                    $htmlBody
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[OrganizationController] Delete OTP email failed: ' . $e->getMessage());
+        }
+
+        $this->success([
+            'otp_sent'     => true,
+            'masked_email' => $this->maskEmail($email),
+        ], 'OTP sent.');
+    }
+
     // ── DELETE /api/admin/organizations/:id ──────────────────────────────────
 
     /**
-     * Permanently delete an organization.
+     * Permanently delete an organization (requires valid X-Superadmin-Otp).
      */
     public function destroy(int $id): never
     {
@@ -239,11 +340,80 @@ class OrganizationController extends BaseController
             $this->error('Organization not found.', 404);
         }
 
+        $otp = $this->readSuperadminOtpFromRequest();
+        if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
+            $this->error('Valid superadmin OTP is required to delete an organization. Request a code first.', 403);
+        }
+
+        $actingUser = $this->authUser();
+        $this->sendSuperadminAlert('Deleted', $org, $actingUser);
+
         $this->orgs->delete($id);
         $this->success(null, 'Organization deleted');
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    private function maskEmail(string $email): string
+    {
+        $parts = explode('@', $email, 2);
+        if (count($parts) !== 2) {
+            return '***@***.***';
+        }
+        $local  = $parts[0];
+        $domain = $parts[1];
+        $len    = strlen($local);
+        if ($len <= 2) {
+            $masked = $local[0] . str_repeat('*', max(1, $len - 1));
+        } else {
+            $masked = $local[0] . str_repeat('*', $len - 2) . $local[$len - 1];
+        }
+
+        return $masked . '@' . $domain;
+    }
+
+    private function normalizeTaxId(mixed $v): string
+    {
+        return strtoupper(trim((string)($v ?? '')));
+    }
+
+    /**
+     * @param array<string, mixed> $row Database row (pan / gstin / cin may be null).
+     * @return list<string>
+     */
+    private function matchedIdentifiers(string $pan, string $gstin, string $cin, array $row): array
+    {
+        $fields = [];
+        if ($pan !== '' && $this->normalizeTaxId($row['pan'] ?? '') === $pan) {
+            $fields[] = 'pan';
+        }
+        if ($gstin !== '' && $this->normalizeTaxId($row['gstin'] ?? '') === $gstin) {
+            $fields[] = 'gstin';
+        }
+        if ($cin !== '' && $this->normalizeTaxId($row['cin'] ?? '') === $cin) {
+            $fields[] = 'cin';
+        }
+
+        return $fields;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     *
+     * @return array<string, mixed>
+     */
+    private function organizationConflictPayload(array $row): array
+    {
+        return [
+            'id'    => (int)($row['id'] ?? 0),
+            'name'  => (string)($row['name'] ?? ''),
+            'pan'   => isset($row['pan']) && $row['pan'] !== null && $row['pan'] !== '' ? (string)$row['pan'] : null,
+            'gstin' => isset($row['gstin']) && $row['gstin'] !== null && $row['gstin'] !== '' ? (string)$row['gstin'] : null,
+            'cin'   => isset($row['cin']) && $row['cin'] !== null && $row['cin'] !== '' ? (string)$row['cin'] : null,
+            'city'  => isset($row['city']) && $row['city'] !== null && $row['city'] !== '' ? (string)$row['city'] : null,
+            'state' => isset($row['state']) && $row['state'] !== null && $row['state'] !== '' ? (string)$row['state'] : null,
+        ];
+    }
 
     /**
      * @param array<string, mixed> $body

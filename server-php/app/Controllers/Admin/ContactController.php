@@ -110,6 +110,7 @@ class ContactController extends BaseController
                 'secondary_phone'   => trim((string)($body['secondary_phone'] ?? '')) ?: null,
                 'pan'               => strtoupper(trim((string)($body['pan'] ?? ''))) ?: null,
                 'gstin'             => strtoupper(trim((string)($body['gstin'] ?? ''))) ?: null,
+                'website'           => trim((string)($body['website'] ?? '')) ?: null,
                 'address_line1'     => $body['address_line1'] ?? null,
                 'address_line2'     => $body['address_line2'] ?? null,
                 'city'              => $body['city']     ?? null,
@@ -120,6 +121,7 @@ class ContactController extends BaseController
                 'reference'         => $body['reference'] ?? null,
                 'group_id'          => $body['group_id']  ?? null,
                 'is_active'         => $body['is_active'] ?? true,
+                'contact_status'    => $body['contact_status'] ?? $body['status'] ?? null,
                 'created_by'        => $actingUser ? (int)$actingUser['id'] : null,
             ], $referral));
         } catch (\Throwable $e) {
@@ -184,7 +186,7 @@ class ContactController extends BaseController
 
         $textFields = [
             'type', 'first_name', 'last_name', 'organization_name',
-            'email', 'secondary_email', 'phone', 'secondary_phone', 'pan', 'gstin',
+            'email', 'secondary_email', 'phone', 'secondary_phone', 'pan', 'gstin', 'website',
             'address_line1', 'address_line2', 'city', 'state', 'pincode', 'country',
             'notes', 'reference',
         ];
@@ -193,7 +195,14 @@ class ContactController extends BaseController
                 $data[$field] = $body[$field];
             }
         }
-        if (isset($body['is_active'])) {
+        if (array_key_exists('contact_status', $body) || array_key_exists('status', $body)) {
+            $raw = array_key_exists('contact_status', $body) ? $body['contact_status'] : $body['status'];
+            $cs  = strtolower(trim((string)$raw));
+            if (!in_array($cs, ['active', 'inactive', 'prospect'], true)) {
+                $this->error('contact_status must be one of: active, inactive, prospect.', 422);
+            }
+            $data['contact_status'] = $cs;
+        } elseif (isset($body['is_active'])) {
             $data['is_active'] = (bool)$body['is_active'];
         }
         if (array_key_exists('group_id', $body)) {

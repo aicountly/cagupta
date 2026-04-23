@@ -35,14 +35,15 @@ if (!function_exists('App\Helpers\api_error')) {
      * Send an error JSON response and exit.
      *
      * @param array<string, string[]> $errors Field-level validation errors.
+     * @param mixed                   $data  Optional structured payload (e.g. duplicate conflict details).
      */
-    function api_error(string $message, int $status = 400, array $errors = []): never
+    function api_error(string $message, int $status = 400, array $errors = [], mixed $data = null): never
     {
         http_response_code($status);
         echo json_encode([
             'success' => false,
             'message' => $message,
-            'data'    => null,
+            'data'    => $data,
             'errors'  => $errors,
         ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
         exit;

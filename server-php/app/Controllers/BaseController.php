@@ -80,10 +80,11 @@ abstract class BaseController
      * Shortcut — send an error response.
      *
      * @param array<string, string[]> $errors
+     * @param mixed                   $data   Optional structured payload (e.g. duplicate conflict details).
      */
-    protected function error(string $message, int $status = 400, array $errors = []): never
+    protected function error(string $message, int $status = 400, array $errors = [], mixed $data = null): never
     {
-        api_error($message, $status, $errors);
+        api_error($message, $status, $errors, $data);
     }
 
     /**

@@ -63,6 +63,7 @@ CREATE TABLE IF NOT EXISTS clients (
     secondary_phone   VARCHAR(30),
     pan               VARCHAR(20),
     gstin             VARCHAR(20),
+    website           VARCHAR(255),
     address_line1     TEXT,
     address_line2     TEXT,
     city              VARCHAR(100),
@@ -71,6 +72,8 @@ CREATE TABLE IF NOT EXISTS clients (
     country           VARCHAR(100)  DEFAULT 'India',
     notes             TEXT,
     is_active         BOOLEAN       DEFAULT TRUE,
+    contact_status    VARCHAR(20)   NOT NULL DEFAULT 'active'
+                          CHECK (contact_status IN ('active', 'inactive', 'prospect')),
     created_by        INTEGER       REFERENCES users(id),
     created_at        TIMESTAMPTZ   DEFAULT NOW(),
     updated_at        TIMESTAMPTZ   DEFAULT NOW()
@@ -85,6 +88,7 @@ CREATE TABLE IF NOT EXISTS organizations (
     type       VARCHAR(50),
     gstin      VARCHAR(20),
     pan        VARCHAR(20),
+    cin        VARCHAR(25),
     email      VARCHAR(255),
     secondary_email VARCHAR(255),
     phone      VARCHAR(30),
@@ -103,6 +107,8 @@ CREATE TABLE IF NOT EXISTS organizations (
 );
 
 ALTER TABLE organizations ADD COLUMN IF NOT EXISTS primary_contact_id INT REFERENCES clients(id) ON DELETE SET NULL;
+
+ALTER TABLE organizations ADD COLUMN IF NOT EXISTS cin VARCHAR(25);
 
 CREATE TABLE IF NOT EXISTS contact_organization (
     id              SERIAL PRIMARY KEY,
@@ -295,6 +301,7 @@ CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions(token);
 CREATE INDEX IF NOT EXISTS idx_user_sessions_user  ON user_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_clients_email       ON clients(email);
 CREATE INDEX IF NOT EXISTS idx_clients_secondary_email ON clients(secondary_email);
+CREATE INDEX IF NOT EXISTS idx_clients_contact_status ON clients (contact_status);
 CREATE INDEX IF NOT EXISTS idx_services_client     ON services(client_id);
 CREATE INDEX IF NOT EXISTS idx_services_assigned   ON services(assigned_to);
 CREATE INDEX IF NOT EXISTS idx_invoices_client     ON invoices(client_id);

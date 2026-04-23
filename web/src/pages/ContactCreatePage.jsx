@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import { createContact, updateContact as updateContactApi, getContact } from '../services/contactService';
-import { getOrganizations } from '../services/organizationService';
+import OrganizationMultiSelect from '../components/common/OrganizationMultiSelect';
 import { getGroups } from '../services/clientGroupService';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
@@ -75,6 +75,8 @@ function validatePAN(val) {
   return !val || /^[A-Z]{5}\d{4}[A-Z]$/.test(val.toUpperCase());
 }
 
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
 /** Return true if every word in val starts with an uppercase letter. */
 function isTitleCase(val) {
   if (!val.trim()) return true;
@@ -88,6 +90,8 @@ function emptyForm(defaultManager = '') {
     mobile: '',
     email: '',
     pan: '',
+    gstin: '',
+    website: '',
     city: '',
     country: 'India',
     state: '',
@@ -119,7 +123,7 @@ export default function ContactCreatePage() {
   const [toast, setToast] = useState(null);
   const [code, setCode] = useState('Auto-generated');
   const [contactId, setContactId] = useState(null);
-  const [organizations, setOrganizations] = useState([]);
+  const [linkedOrgNameById, setLinkedOrgNameById] = useState({});
   const [groups, setGroups] = useState([]);
   const [contactLoading, setContactLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
@@ -142,11 +146,6 @@ export default function ContactCreatePage() {
   // Track WA Mobile "same as primary" sync
   const [waMobileSameAsPrimary, setWaMobileSameAsPrimary] = useState(false);
 
-  // Load organizations for the link panel
-  useEffect(() => {
-    getOrganizations().then(setOrganizations).catch(() => setOrganizations([]));
-  }, []);
-
   // Load groups for the group selector
   useEffect(() => {
     getGroups().then(setGroups).catch(() => setGroups([]));
@@ -163,11 +162,22 @@ export default function ContactCreatePage() {
         if (cancelled) return;
         setCode(existing.clientCode || `CLT-${String(existing.id).padStart(4, '0')}`);
         setContactId(existing.id);
+        const ids = existing.linkedOrgIds || [];
+        const names = existing.linkedOrgNames || [];
+        const nameMap = {};
+        ids.forEach((oid, i) => {
+          const id = Number(oid);
+          if (!Number.isFinite(id) || id <= 0) return;
+          nameMap[id] = names[i] || `Organization #${id}`;
+        });
+        setLinkedOrgNameById(nameMap);
         setForm({
           displayName:     existing.displayName     || '',
           mobile:          existing.mobile          || '',
           email:           existing.email           || '',
           pan:             existing.pan             || '',
+          gstin:           existing.gstin           || '',
+          website:         existing.website         || '',
           city:            existing.city            || '',
           country:         existing.country         || 'India',
           state:           existing.state           || '',
@@ -176,7 +186,7 @@ export default function ContactCreatePage() {
           waMobile:        existing.waMobile         || '',
           status:          existing.status          || 'active',
           assignedManager: existing.assignedManager || '',
-          linkedOrgIds:    existing.linkedOrgIds    || [],
+          linkedOrgIds:    ids,
           notes:           existing.notes           || '',
           groupId:         existing.groupId || existing.group_id || '',
           reference:       existing.reference || '',
@@ -190,6 +200,7 @@ export default function ContactCreatePage() {
         if (cancelled) return;
         setLoadError(err.message || 'Contact could not be loaded.');
         setContactId(null);
+        setLinkedOrgNameById({});
       })
       .finally(() => {
         if (!cancelled) setContactLoading(false);
@@ -232,13 +243,9 @@ export default function ContactCreatePage() {
     }
   }
 
-  function toggleOrg(orgId) {
-    setForm(prev => {
-      const ids = prev.linkedOrgIds.includes(orgId)
-        ? prev.linkedOrgIds.filter(id => id !== orgId)
-        : [...prev.linkedOrgIds, orgId];
-      return { ...prev, linkedOrgIds: ids };
-    });
+  function handleLinkedOrgsChange({ ids, namesById }) {
+    setForm(prev => ({ ...prev, linkedOrgIds: ids }));
+    setLinkedOrgNameById(namesById);
     setDirty(true);
   }
 
@@ -268,6 +275,9 @@ export default function ContactCreatePage() {
     if (form.pan.trim() && !validatePAN(form.pan.trim())) {
       errs.pan = 'PAN must be in format: 5 letters + 4 digits + 1 letter (e.g. ABCDE1234F).';
     }
+    if (form.gstin.trim() && !GSTIN_REGEX.test(form.gstin.trim().toUpperCase())) {
+      errs.gstin = 'GSTIN must be 15 characters (e.g. 27ABCDE1234F1Z5).';
+    }
 
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
@@ -279,6 +289,8 @@ export default function ContactCreatePage() {
       mobile:          form.mobile.trim()          || undefined,
       email:           form.email.trim()           || undefined,
       pan:             form.pan.trim().toUpperCase() || undefined,
+      gstin:           form.gstin.trim().toUpperCase() || undefined,
+      website:         form.website.trim() || undefined,
       city:            form.city.trim()            || undefined,
       country:         form.country                || 'India',
       state:           form.state                  || undefined,
@@ -332,6 +344,7 @@ export default function ContactCreatePage() {
       await createContact(contact);
       setDirty(false);
       setForm(emptyForm(form.assignedManager)); // keep manager prefilled
+      setLinkedOrgNameById({});
       setErrors({});
       setToast('Contact saved! Ready for another entry.');
     } catch (err) {
@@ -492,6 +505,29 @@ export default function ContactCreatePage() {
             <FieldError msg={errors.pan} />
           </FormField>
 
+          {/* GSTIN */}
+          <FormField label="GSTIN" error={errors.gstin}>
+            <input
+              value={form.gstin}
+              onChange={e => update('gstin', e.target.value.toUpperCase())}
+              placeholder="e.g. 27ABCDE1234F1Z5"
+              maxLength={15}
+              style={{ ...inputStyle, fontFamily: 'monospace', textTransform: 'uppercase', borderColor: errors.gstin ? '#dc2626' : '#E6E8F0' }}
+            />
+            <FieldError msg={errors.gstin} />
+          </FormField>
+
+          {/* Website */}
+          <FormField label="Website" hint="Optional">
+            <input
+              type="text"
+              value={form.website}
+              onChange={e => update('website', e.target.value)}
+              placeholder="https://example.com"
+              style={inputStyle}
+            />
+          </FormField>
+
           {/* City */}
           <FormField label="City">
             <input
@@ -584,43 +620,11 @@ export default function ContactCreatePage() {
         {/* ── Section: Linked Organizations ── */}
         <SectionHeader title="Linked Organizations" style={{ marginTop: 24 }} />
         <div style={{ padding: '0 0 8px' }}>
-          {(() => {
-            if (organizations.length === 0) {
-              return <p style={{ fontSize: 13, color: '#94a3b8', margin: 0 }}>No organizations available yet.</p>;
-            }
-            return (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {organizations.map(org => {
-                  const selected = form.linkedOrgIds.includes(org.id);
-                  return (
-                    <button
-                      key={org.id}
-                      type="button"
-                      onClick={() => toggleOrg(org.id)}
-                      style={{
-                        padding: '5px 12px',
-                        borderRadius: 20,
-                        fontSize: 12,
-                        fontWeight: 600,
-                        cursor: 'pointer',
-                        border: `1.5px solid ${selected ? '#F37920' : '#E6E8F0'}`,
-                        background: selected ? '#FEF0E6' : '#fff',
-                        color: selected ? '#C25A0A' : '#64748b',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      {selected ? '✓ ' : ''}{org.displayName}
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })()}
-          {form.linkedOrgIds.length > 0 && (
-            <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>
-              {form.linkedOrgIds.length} organization{form.linkedOrgIds.length > 1 ? 's' : ''} selected
-            </div>
-          )}
+          <OrganizationMultiSelect
+            selectedIds={form.linkedOrgIds}
+            namesById={linkedOrgNameById}
+            onChange={handleLinkedOrgsChange}
+          />
         </div>
 
         {/* ── Section: Referral & commission ── */}

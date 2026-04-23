@@ -217,10 +217,30 @@ class Routes
                 'middleware' => ['auth', 'permission:clients.edit'],
             ],
             [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/organizations/:id/request-delete-otp',
+                'handler'    => 'Admin\OrganizationController@requestDeleteOtp',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/organizations/:id',
                 'handler'    => 'Admin\OrganizationController@destroy',
-                'middleware' => ['auth', 'permission:clients.edit'],
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+
+            // ── Admin — Data exception reports ─────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/reports/contact-exceptions',
+                'handler'    => 'Admin\ExceptionReportController@contactExceptions',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/reports/organization-exceptions',
+                'handler'    => 'Admin\ExceptionReportController@organizationExceptions',
+                'middleware' => ['auth', 'permission:clients.view'],
             ],
 
             // ── Admin — Services (Engagements) ────────────────────────────────

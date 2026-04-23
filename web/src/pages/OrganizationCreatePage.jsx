@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
-import { getContacts, createContact } from '../services/contactService';
+import { createContact } from '../services/contactService';
 import {
+  ApiError,
   createOrganization,
   updateOrganization as updateOrganizationApi,
   getOrganization,
@@ -12,6 +13,8 @@ import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useAuth } from '../auth/AuthContext';
 import DateInput from '../components/common/DateInput';
+import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
+import ContactMultiSelect from '../components/common/ContactMultiSelect';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ORG_TYPES = ['Company', 'LLP', 'Partnership', 'Proprietorship', 'Trust', 'Society', 'Other'];
@@ -163,8 +166,8 @@ export default function OrganizationCreatePage() {
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState(null);
 
-  // Live contacts list
-  const [contacts, setContacts] = useState([]);
+  const [primaryContactDisplayName, setPrimaryContactDisplayName] = useState('');
+  const [secondaryContactNamesById, setSecondaryContactNamesById] = useState({});
   // Groups list
   const [groups, setGroups] = useState([]);
 
@@ -173,6 +176,8 @@ export default function OrganizationCreatePage() {
   const [newContactForm, setNewContactForm] = useState({ displayName: '', mobile: '', email: '' });
   const [newContactErrors, setNewContactErrors] = useState({});
   const [savingNewContact, setSavingNewContact] = useState(false);
+
+  const [duplicateConflict, setDuplicateConflict] = useState(null);
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -186,11 +191,6 @@ export default function OrganizationCreatePage() {
       .then(setApprovedAffiliates)
       .catch(() => setApprovedAffiliates([]));
   }, [canListAffiliates]);
-
-  // Load contacts list
-  useEffect(() => {
-    getContacts().then(setContacts).catch(() => setContacts([]));
-  }, []);
 
   // Load groups list
   useEffect(() => {
@@ -207,6 +207,8 @@ export default function OrganizationCreatePage() {
         const rawCountry = existing.country || deriveCountryFromLegacyState(existing.state);
         const country = COUNTRIES.includes(rawCountry) ? rawCountry : 'India';
         const state = normalizeOrgStateForCountry(existing.state || '', country);
+        setPrimaryContactDisplayName(existing.primaryContact || '');
+        setSecondaryContactNamesById({});
         setForm({
           displayName:        existing.displayName        || '',
           constitution:       existing.constitution       || '',
@@ -248,6 +250,35 @@ export default function OrganizationCreatePage() {
     const formatted = (field === 'displayName' || field === 'city') ? toTitleCase(value) : value;
     setForm(prev => ({ ...prev, [field]: formatted }));
     if (errors[field]) setErrors(prev => ({ ...prev, [field]: '' }));
+  }
+
+  function handlePrimaryClientSelect({ id, displayName }) {
+    const pid = id === '' || id == null ? '' : String(id);
+    const numPid = Number(pid);
+    setPrimaryContactDisplayName(displayName || '');
+    setForm(prev => {
+      const sec = (prev.secondaryContactIds || [])
+        .map((x) => Number(x))
+        .filter((n) => Number.isFinite(n) && n > 0);
+      let nextSec = sec;
+      if (Number.isFinite(numPid) && numPid > 0 && sec.includes(numPid)) {
+        nextSec = sec.filter((x) => x !== numPid);
+      }
+      return { ...prev, primaryContactId: pid, secondaryContactIds: nextSec };
+    });
+    setSecondaryContactNamesById((prev) => {
+      if (!Number.isFinite(numPid) || numPid <= 0) return prev;
+      const n = { ...prev };
+      delete n[numPid];
+      delete n[String(numPid)];
+      return n;
+    });
+    if (errors.primaryContactId) setErrors((prev) => ({ ...prev, primaryContactId: '' }));
+  }
+
+  function handleSecondaryContactsChange({ ids, namesById: nextNames }) {
+    setSecondaryContactNamesById(nextNames);
+    setField('secondaryContactIds', ids);
   }
 
   function handleCountryChange(country) {
@@ -328,7 +359,14 @@ export default function OrganizationCreatePage() {
       }
       afterSave();
     } catch (err) {
-      setToast({ message: '❌ Error: ' + (err.message || 'Failed to save.'), type: 'error' });
+      if (err instanceof ApiError && err.status === 409 && err.body?.data?.existing) {
+        setDuplicateConflict({
+          fields: Array.isArray(err.body.data.fields) ? err.body.data.fields : [],
+          existing: err.body.data.existing,
+        });
+      } else {
+        setToast({ message: '❌ Error: ' + (err.message || 'Failed to save.'), type: 'error' });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -342,6 +380,8 @@ export default function OrganizationCreatePage() {
     const manager = form.assignedManager;
     handleSave(() => {
       setForm(blankForm(manager));
+      setPrimaryContactDisplayName('');
+      setSecondaryContactNamesById({});
     });
   }
 
@@ -385,10 +425,8 @@ export default function OrganizationCreatePage() {
       email:       newContactForm.email.trim()  || undefined,
       status:      'active',
     }).then(newContact => {
-      getContacts().then(refreshed => {
-        setContacts(refreshed);
-        setField('primaryContactId', newContact.id);
-      }).catch(() => {});
+      setPrimaryContactDisplayName(newContact.displayName || '');
+      setField('primaryContactId', String(newContact.id));
       setSavingNewContact(false);
       setShowNewContactModal(false);
       setToast({ message: `✅ Contact "${newContact.displayName}" created and set as Primary Contact.`, type: 'success' });
@@ -514,21 +552,19 @@ export default function OrganizationCreatePage() {
 
           <div style={{ marginTop: 14 }}>
             <FieldLabel label="Primary Contact" />
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <select
-                value={form.primaryContactId}
-                onChange={e => setField('primaryContactId', e.target.value)}
-                style={{ ...selectStyle, flex: 1 }}
-              >
-                <option value="">— None —</option>
-                {contacts.length === 0 ? (
-                  <option disabled value="">No contacts available yet</option>
-                ) : (
-                  contacts.map(c => (
-                    <option key={c.id} value={c.id}>{c.displayName}</option>
-                  ))
-                )}
-              </select>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <ClientSearchDropdown
+                  value={form.primaryContactId}
+                  displayValue={primaryContactDisplayName}
+                  onChange={handlePrimaryClientSelect}
+                  placeholder="Type at least 2 characters to search contacts…"
+                  minQueryLength={2}
+                  searchLimit={50}
+                  clearSelectionWhenInputEmpty
+                  style={{ ...selectStyle, borderRadius: 8 }}
+                />
+              </div>
               <button
                 type="button"
                 onClick={openNewContactModal}
@@ -552,48 +588,12 @@ export default function OrganizationCreatePage() {
           {/* Secondary Contacts */}
           <div style={{ marginTop: 14 }}>
             <FieldLabel label="Secondary Contacts" />
-            {contacts.filter(c => c.id !== form.primaryContactId).length === 0 ? (
-              <div style={{ fontSize: 13, color: '#94a3b8' }}>No other contacts available.</div>
-            ) : (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
-                {contacts
-                  .filter(c => c.id !== form.primaryContactId)
-                  .map(c => {
-                    const selected = (form.secondaryContactIds || []).includes(c.id);
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        onClick={() => {
-                          const current = form.secondaryContactIds || [];
-                          const updated = selected
-                            ? current.filter(x => x !== c.id)
-                            : [...current, c.id];
-                          setField('secondaryContactIds', updated);
-                        }}
-                        style={{
-                          padding: '5px 12px',
-                          borderRadius: 20,
-                          fontSize: 12,
-                          fontWeight: 600,
-                          cursor: 'pointer',
-                          border: `1.5px solid ${selected ? '#F37920' : '#E6E8F0'}`,
-                          background: selected ? '#FEF0E6' : '#fff',
-                          color: selected ? '#C25A0A' : '#64748b',
-                          transition: 'all 0.15s',
-                        }}
-                      >
-                        {selected ? '✓ ' : ''}{c.displayName}
-                      </button>
-                    );
-                  })}
-              </div>
-            )}
-            {(form.secondaryContactIds || []).length > 0 && (
-              <div style={{ fontSize: 11, color: '#64748b', marginTop: 6 }}>
-                {form.secondaryContactIds.length} secondary contact{form.secondaryContactIds.length > 1 ? 's' : ''} selected
-              </div>
-            )}
+            <ContactMultiSelect
+              selectedIds={form.secondaryContactIds || []}
+              namesById={secondaryContactNamesById}
+              onChange={handleSecondaryContactsChange}
+              excludeIds={form.primaryContactId ? [form.primaryContactId] : []}
+            />
           </div>
         </FormSection>
 
@@ -801,6 +801,76 @@ export default function OrganizationCreatePage() {
       </div>
 
       {/* ── Inline Create New Contact Modal ─────────────────────────────────── */}
+      {duplicateConflict && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 10000, padding: 16,
+        }}>
+          <div style={{
+            background: '#fff', borderRadius: 14, padding: 24,
+            width: '100%', maxWidth: 480,
+            boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#0B1F3B' }}>Duplicate identifiers</div>
+              <button type="button" onClick={() => setDuplicateConflict(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <X size={18} color="#64748b" />
+              </button>
+            </div>
+            <p style={{ margin: '0 0 14px', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+              Another organization is already using the same{' '}
+              {duplicateConflict.fields.length > 0
+                ? duplicateConflict.fields.map(f => (f === 'pan' ? 'PAN' : f === 'gstin' ? 'GSTIN' : f === 'cin' ? 'CIN' : f)).join(', ')
+                : 'PAN, GSTIN, or CIN'}
+              . You cannot create or save this record until those values are unique.
+            </p>
+            <div style={{
+              background: '#f8fafc', borderRadius: 10, padding: 14, marginBottom: 16,
+              border: '1px solid #e2e8f0', fontSize: 13,
+            }}>
+              <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: 8 }}>{duplicateConflict.existing.name || 'Existing organization'}</div>
+              <div style={{ display: 'grid', gap: 6, color: '#334155' }}>
+                {duplicateConflict.existing.id != null && (
+                  <div><span style={{ color: '#64748b', fontWeight: 600 }}>ID</span>{' '}{String(duplicateConflict.existing.id)}</div>
+                )}
+                {duplicateConflict.existing.pan && (
+                  <div style={{ fontFamily: 'monospace', fontSize: 12 }}><span style={{ color: '#64748b', fontWeight: 600 }}>PAN</span>{' '}{duplicateConflict.existing.pan}</div>
+                )}
+                {duplicateConflict.existing.gstin && (
+                  <div style={{ fontFamily: 'monospace', fontSize: 12 }}><span style={{ color: '#64748b', fontWeight: 600 }}>GSTIN</span>{' '}{duplicateConflict.existing.gstin}</div>
+                )}
+                {duplicateConflict.existing.cin && (
+                  <div style={{ fontFamily: 'monospace', fontSize: 12 }}><span style={{ color: '#64748b', fontWeight: 600 }}>CIN</span>{' '}{duplicateConflict.existing.cin}</div>
+                )}
+                {(duplicateConflict.existing.city || duplicateConflict.existing.state) && (
+                  <div style={{ fontSize: 12 }}>
+                    <span style={{ color: '#64748b', fontWeight: 600 }}>Location</span>{' '}
+                    {[duplicateConflict.existing.city, duplicateConflict.existing.state].filter(Boolean).join(', ')}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setDuplicateConflict(null)} style={btnCancel}>
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const eid = duplicateConflict.existing.id;
+                  setDuplicateConflict(null);
+                  if (eid != null) navigate(`/clients/organizations/${eid}/edit`);
+                }}
+                style={btnPrimary}
+              >
+                Open existing organization
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showNewContactModal && (
         <div style={{
           position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)',

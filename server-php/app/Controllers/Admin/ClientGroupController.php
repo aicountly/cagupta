@@ -47,6 +47,10 @@ class ClientGroupController extends BaseController
             $this->error('Group name is required.', 422);
         }
 
+        if ($this->groups->findIdByConflictingName($name) !== null) {
+            $this->error('A group with this name already exists.', 409);
+        }
+
         $user  = $this->authUser();
         $group = $this->groups->create([
             'name'        => $name,
@@ -91,7 +95,33 @@ class ClientGroupController extends BaseController
         }
 
         $body = $this->getJsonBody();
-        $this->groups->update($id, $body);
+        $data = [];
+
+        if (array_key_exists('name', $body)) {
+            $name = trim((string)$body['name']);
+            if ($name === '') {
+                $this->error('Group name cannot be empty.', 422);
+            }
+            if ($this->groups->findIdByConflictingName($name, $id) !== null) {
+                $this->error('A group with this name already exists.', 409);
+            }
+            $data['name'] = $name;
+        }
+        if (array_key_exists('description', $body)) {
+            $desc = $body['description'];
+            $data['description'] = $desc === null || $desc === ''
+                ? null
+                : trim((string)$desc);
+        }
+        if (array_key_exists('color', $body)) {
+            $data['color'] = (string)$body['color'];
+        }
+
+        if ($data === []) {
+            $this->error('No valid fields to update.', 422);
+        }
+
+        $this->groups->update($id, $data);
 
         $this->success($this->groups->find($id), 'Group updated');
     }
@@ -99,13 +129,24 @@ class ClientGroupController extends BaseController
     // ── DELETE /api/admin/client-groups/:id ─────────────────────────────────
 
     /**
-     * Delete a group (members' group_id is set to NULL via FK cascade).
+     * Delete a group only when no contacts or organizations reference it.
      */
     public function destroy(int $id): never
     {
         $group = $this->groups->find($id);
         if ($group === null) {
             $this->error('Group not found.', 404);
+        }
+
+        $contactCount = (int)($group['contact_count'] ?? 0);
+        $orgCount      = (int)($group['org_count'] ?? 0);
+
+        if ($contactCount > 0 || $orgCount > 0) {
+            $this->error(
+                'This group cannot be deleted while contacts or organizations are assigned to it. '
+                . 'Reassign those records to another group or clear the group on each record, then try again.',
+                409
+            );
         }
 
         $this->groups->delete($id);

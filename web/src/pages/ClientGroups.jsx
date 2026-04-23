@@ -23,6 +23,10 @@ export default function ClientGroups() {
   const [modalErrors, setModalErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
+  /** In-app delete flow: blocked when members exist, otherwise confirm then delete. */
+  const [deleteDialog, setDeleteDialog] = useState(null); // { mode: 'blocked'|'confirm', group } | null
+  const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+
   function loadGroups() {
     setLoading(true);
     getGroups()
@@ -55,33 +59,64 @@ export default function ClientGroups() {
 
   async function handleSave() {
     const errs = {};
-    if (!modalForm.name.trim()) errs.name = 'Group name is required.';
+    const trimmedName = modalForm.name.trim();
+    if (!trimmedName) errs.name = 'Group name is required.';
+    const nameNorm = trimmedName.toLowerCase();
+    const duplicate = groups.some(
+      g => g.id !== editingGroup?.id && (g.name || '').trim().toLowerCase() === nameNorm
+    );
+    if (duplicate) errs.name = 'A group with this name already exists.';
     if (Object.keys(errs).length > 0) { setModalErrors(errs); return; }
     setSaving(true);
     try {
       if (editingGroup) {
-        await updateGroup(editingGroup.id, { name: modalForm.name.trim(), description: modalForm.description.trim() || null, color: modalForm.color });
+        await updateGroup(editingGroup.id, { name: trimmedName, description: modalForm.description.trim() || null, color: modalForm.color });
       } else {
-        await createGroup({ name: modalForm.name.trim(), description: modalForm.description.trim() || null, color: modalForm.color });
+        await createGroup({ name: trimmedName, description: modalForm.description.trim() || null, color: modalForm.color });
       }
       closeModal();
       loadGroups();
     } catch (err) {
-      setModalErrors({ general: err.message || 'Failed to save group.' });
+      const msg = err.message || 'Failed to save group.';
+      if (/already exists/i.test(msg)) {
+        setModalErrors({ name: msg });
+      } else {
+        setModalErrors({ general: msg });
+      }
     } finally {
       setSaving(false);
     }
   }
 
-  async function handleDelete(g, e) {
+  function groupMemberTotals(g) {
+    const contacts = Number(g.contact_count ?? g.contacts_count ?? 0) || 0;
+    const orgs = Number(g.org_count ?? g.organizations_count ?? 0) || 0;
+    return { contacts, orgs };
+  }
+
+  function handleDeleteClick(g, e) {
     e.stopPropagation();
-    if (!window.confirm(`Delete group "${g.name}"? This will not delete its members.`)) return;
+    const { contacts, orgs } = groupMemberTotals(g);
+    if (contacts > 0 || orgs > 0) {
+      setDeleteDialog({ mode: 'blocked', group: g, contacts, orgs });
+      return;
+    }
+    setDeleteDialog({ mode: 'confirm', group: g });
+  }
+
+  async function confirmDeleteGroup() {
+    const g = deleteDialog?.group;
+    if (!g) return;
+    setDeleteSubmitting(true);
     try {
       await deleteGroup(g.id);
+      setDeleteDialog(null);
       if (selected?.id === g.id) setSelected(null);
       loadGroups();
     } catch (err) {
-      alert('Failed to delete group: ' + (err.message || 'Unknown error'));
+      alert(err.message || 'Failed to delete group.');
+    } finally {
+      setDeleteSubmitting(false);
     }
   }
 
@@ -94,10 +129,22 @@ export default function ClientGroups() {
       .finally(() => setMembersLoading(false));
   }
 
+  function decrementGroupCounts(groupId, { contacts: decC, orgs: decO }) {
+    setGroups(prev =>
+      prev.map(g => {
+        if (g.id !== groupId) return g;
+        const c = Math.max(0, (Number(g.contact_count ?? g.contacts_count ?? 0) || 0) - (decC ? 1 : 0));
+        const o = Math.max(0, (Number(g.org_count ?? g.organizations_count ?? 0) || 0) - (decO ? 1 : 0));
+        return { ...g, contact_count: c, org_count: o };
+      })
+    );
+  }
+
   async function removeContact(contactId) {
     try {
       await updateContact(contactId, { group_id: null });
       setMembers(prev => ({ ...prev, contacts: prev.contacts.filter(c => c.id !== contactId) }));
+      if (selected?.id != null) decrementGroupCounts(selected.id, { contacts: true, orgs: false });
     } catch (err) {
       alert('Failed to remove contact: ' + (err.message || 'Unknown error'));
     }
@@ -107,6 +154,7 @@ export default function ClientGroups() {
     try {
       await updateOrganization(orgId, { group_id: null });
       setMembers(prev => ({ ...prev, organizations: prev.organizations.filter(o => o.id !== orgId) }));
+      if (selected?.id != null) decrementGroupCounts(selected.id, { contacts: false, orgs: true });
     } catch (err) {
       alert('Failed to remove organization: ' + (err.message || 'Unknown error'));
     }
@@ -177,7 +225,7 @@ export default function ClientGroups() {
                         title="Edit group"
                       >✏️</button>
                       <button
-                        onClick={e => handleDelete(g, e)}
+                        onClick={e => handleDeleteClick(g, e)}
                         style={iconBtn}
                         title="Delete group"
                       >🗑️</button>
@@ -285,6 +333,70 @@ export default function ClientGroups() {
           >
             Close
           </button>
+        </div>
+      )}
+
+      {/* Delete: cannot delete (linked records) or confirm empty group */}
+      {deleteDialog && (
+        <div
+          style={modalOverlay}
+          onClick={() => !deleteSubmitting && setDeleteDialog(null)}
+          role="presentation"
+        >
+          <div
+            style={modalBox}
+            onClick={e => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-dialog-title"
+          >
+            {deleteDialog.mode === 'blocked' ? (
+              <>
+                <div id="delete-dialog-title" style={{ fontSize: 17, fontWeight: 700, color: '#0B1F3B', marginBottom: 12 }}>
+                  Cannot delete “{deleteDialog.group.name}”
+                </div>
+                <p style={{ margin: '0 0 16px', fontSize: 14, color: '#475569', lineHeight: 1.5 }}>
+                  This group still has{' '}
+                  <strong>{deleteDialog.contacts}</strong> contact{deleteDialog.contacts !== 1 ? 's' : ''} and{' '}
+                  <strong>{deleteDialog.orgs}</strong> organization{deleteDialog.orgs !== 1 ? 's' : ''} assigned.
+                  Reassign each contact or organization to another group, or clear the group on those records (set to no group).
+                  After nothing is linked to this group, you can delete it.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button type="button" onClick={() => setDeleteDialog(null)} style={btnPrimary}>
+                    OK
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div id="delete-dialog-title" style={{ fontSize: 17, fontWeight: 700, color: '#0B1F3B', marginBottom: 12 }}>
+                  Delete group?
+                </div>
+                <p style={{ margin: '0 0 20px', fontSize: 14, color: '#475569', lineHeight: 1.5 }}>
+                  Delete “<strong>{deleteDialog.group.name}</strong>”? This only removes the group; contacts and organizations are not deleted.
+                </p>
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    onClick={() => setDeleteDialog(null)}
+                    style={btnOutline}
+                    disabled={deleteSubmitting}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmDeleteGroup}
+                    style={{ ...btnPrimary, background: '#dc2626' }}
+                    disabled={deleteSubmitting}
+                  >
+                    {deleteSubmitting ? 'Deleting…' : 'Delete group'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 

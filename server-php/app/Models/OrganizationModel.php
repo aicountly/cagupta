@@ -31,10 +31,12 @@ class OrganizationModel
             'SELECT o.*, u.name AS created_by_name,
                     COALESCE(pc.organization_name,
                              TRIM(CONCAT(COALESCE(pc.first_name,\'\'),\' \',COALESCE(pc.last_name,\'\'))),
-                             NULL) AS primary_contact_name
+                             NULL) AS primary_contact_name,
+                    cg.name AS group_name
              FROM organizations o
              LEFT JOIN users u ON u.id = o.created_by
              LEFT JOIN clients pc ON pc.id = o.primary_contact_id
+             LEFT JOIN client_groups cg ON cg.id = o.group_id
              WHERE o.id = :id
              LIMIT 1'
         );
@@ -59,7 +61,7 @@ class OrganizationModel
 
         if ($search !== '') {
             $where[]           = "(o.name ILIKE :search OR o.gstin ILIKE :search
-                                   OR o.pan ILIKE :search OR o.email ILIKE :search)";
+                                   OR o.pan ILIKE :search OR o.cin ILIKE :search OR o.email ILIKE :search)";
             $params[':search'] = "%{$search}%";
         }
         if ($status !== '') {
@@ -80,10 +82,12 @@ class OrganizationModel
             "SELECT o.*, u.name AS created_by_name,
                     COALESCE(pc.organization_name,
                              TRIM(CONCAT(COALESCE(pc.first_name,''),' ',COALESCE(pc.last_name,''))),
-                             NULL) AS primary_contact_name
+                             NULL) AS primary_contact_name,
+                    cg.name AS group_name
              FROM organizations o
              LEFT JOIN users u ON u.id = o.created_by
              LEFT JOIN clients pc ON pc.id = o.primary_contact_id
+             LEFT JOIN client_groups cg ON cg.id = o.group_id
              WHERE {$whereClause}
              ORDER BY o.created_at DESC
              LIMIT :limit OFFSET :offset"
@@ -108,12 +112,12 @@ class OrganizationModel
     {
         $stmt = $this->db->prepare(
             'INSERT INTO organizations (
-                name, type, gstin, pan, email, secondary_email, phone, secondary_phone,
+                name, type, gstin, pan, cin, email, secondary_email, phone, secondary_phone,
                 address, city, state, country, pincode, website, notes,
                 reference, group_id, primary_contact_id, is_active, created_by,
                 referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
              ) VALUES (
-                :name, :type, :gstin, :pan, :email, :secondary_email, :phone, :secondary_phone,
+                :name, :type, :gstin, :pan, :cin, :email, :secondary_email, :phone, :secondary_phone,
                 :address, :city, :state, :country, :pincode, :website, :notes,
                 :reference, :group_id, :primary_contact_id, :is_active, :created_by,
                 :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted
@@ -125,6 +129,7 @@ class OrganizationModel
             ':type'               => $data['type']       ?? null,
             ':gstin'              => $data['gstin']      ?? null,
             ':pan'                => $data['pan']        ?? null,
+            ':cin'                => $data['cin']        ?? null,
             ':email'              => $data['email']      ?? null,
             ':secondary_email'    => $data['secondary_email'] ?? null,
             ':phone'              => $data['phone']      ?? null,
@@ -160,7 +165,7 @@ class OrganizationModel
         $params     = [':id' => $id];
 
         $allowed = [
-            'name', 'type', 'gstin', 'pan', 'email', 'secondary_email', 'phone', 'secondary_phone',
+            'name', 'type', 'gstin', 'pan', 'cin', 'email', 'secondary_email', 'phone', 'secondary_phone',
             'address', 'city', 'state', 'country', 'pincode', 'website', 'notes', 'reference',
             'referral_start_date', 'commission_mode',
         ];
@@ -222,10 +227,10 @@ class OrganizationModel
     public function search(string $q, int $limit = 20): array
     {
         $stmt = $this->db->prepare(
-            "SELECT id, name, pan, gstin, email, phone
+            "SELECT id, name, pan, gstin, cin, email, phone
              FROM organizations
              WHERE is_active = TRUE
-               AND (name ILIKE :q OR pan ILIKE :q OR gstin ILIKE :q OR email ILIKE :q)
+               AND (name ILIKE :q OR pan ILIKE :q OR gstin ILIKE :q OR cin ILIKE :q OR email ILIKE :q)
              ORDER BY name ASC
              LIMIT :limit"
         );
@@ -236,11 +241,154 @@ class OrganizationModel
     }
 
     /**
+     * Find another organization that already uses the same PAN, GSTIN, or CIN (case-insensitive, trimmed).
+     * Empty-string inputs are ignored (not compared).
+     *
+     * @return array<string, mixed>|null Row with id, name, pan, gstin, cin, city, state or null if no conflict.
+     */
+    public function findConflictingByIdentifiers(string $pan, string $gstin, string $cin, ?int $excludeOrgId): ?array
+    {
+        $clauses = [];
+        $params  = [];
+
+        if ($pan !== '') {
+            $clauses[]              = "NULLIF(TRIM(UPPER(COALESCE(pan, ''))), '') = :match_pan";
+            $params[':match_pan'] = $pan;
+        }
+        if ($gstin !== '') {
+            $clauses[]                 = "NULLIF(TRIM(UPPER(COALESCE(gstin, ''))), '') = :match_gstin";
+            $params[':match_gstin'] = $gstin;
+        }
+        if ($cin !== '') {
+            $clauses[]              = "NULLIF(TRIM(UPPER(COALESCE(cin, ''))), '') = :match_cin";
+            $params[':match_cin'] = $cin;
+        }
+
+        if ($clauses === []) {
+            return null;
+        }
+
+        $where = '(' . implode(' OR ', $clauses) . ')';
+        if ($excludeOrgId !== null) {
+            $where .= ' AND id <> :exclude_id';
+            $params[':exclude_id'] = $excludeOrgId;
+        }
+
+        $sql  = "SELECT id, name, pan, gstin, cin, city, state FROM organizations WHERE {$where} LIMIT 1";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
+    }
+
+    /**
      * Delete an organization record permanently.
      */
     public function delete(int $id): bool
     {
         $stmt = $this->db->prepare('DELETE FROM organizations WHERE id = :id');
         return $stmt->execute([':id' => $id]);
+    }
+
+    /**
+     * @return list<string>
+     */
+    public static function exceptionReportAllowedKeys(): array
+    {
+        return ['gstin', 'pan', 'cin', 'email', 'website'];
+    }
+
+    /**
+     * Paginated organizations where ANY selected field is missing.
+     *
+     * @param list<string> $missingKeys validated keys from exceptionReportAllowedKeys()
+     *
+     * @return array{total: int, rows: array<int, array<string, mixed>>}
+     */
+    public function exceptionPaginate(
+        int $page,
+        int $perPage,
+        array $missingKeys,
+        bool $activeOnly = true
+    ): array {
+        $where  = [];
+        $params = [];
+
+        if ($activeOnly) {
+            $where[] = 'o.is_active = true';
+        }
+
+        $orParts = [];
+        $colMap  = [
+            'gstin'   => 'o.gstin',
+            'pan'     => 'o.pan',
+            'cin'     => 'o.cin',
+            'email'   => 'o.email',
+            'website' => 'o.website',
+        ];
+        foreach ($missingKeys as $key) {
+            $col = $colMap[$key] ?? null;
+            if ($col === null) {
+                continue;
+            }
+            $orParts[] = "({$col} IS NULL OR TRIM({$col}) = '')";
+        }
+        if ($orParts === []) {
+            return ['total' => 0, 'rows' => []];
+        }
+        $where[] = '(' . implode(' OR ', $orParts) . ')';
+        $whereClause = implode(' AND ', $where);
+
+        $offset = ($page - 1) * $perPage;
+
+        $countStmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM organizations o WHERE {$whereClause}"
+        );
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+
+        $stmt = $this->db->prepare(
+            "SELECT o.id, o.name, o.email, o.pan, o.gstin, o.cin, o.website, o.is_active,
+                    cg.name AS group_name
+             FROM organizations o
+             LEFT JOIN client_groups cg ON cg.id = o.group_id
+             WHERE {$whereClause}
+             ORDER BY o.created_at DESC
+             LIMIT :limit OFFSET :offset"
+        );
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
+        $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll();
+
+        foreach ($rows as &$row) {
+            $row['missing_fields'] = self::computeMissingOrgFields($row, $missingKeys);
+        }
+        unset($row);
+
+        return ['total' => $total, 'rows' => $rows];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param list<string>         $keys
+     *
+     * @return list<string>
+     */
+    private static function computeMissingOrgFields(array $row, array $keys): array
+    {
+        $out = [];
+        foreach ($keys as $key) {
+            $v = $row[$key] ?? null;
+            if ($v === null || (is_string($v) && trim($v) === '')) {
+                $out[] = $key;
+            }
+        }
+
+        return $out;
     }
 }
