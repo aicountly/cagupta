@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
-import { createContact, updateContact as updateContactApi, getContact } from '../services/contactService';
+import { createContact, updateContact as updateContactApi, getContact, getContactsForSearch } from '../services/contactService';
 import OrganizationMultiSelect from '../components/common/OrganizationMultiSelect';
 import { getGroups } from '../services/clientGroupService';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
@@ -208,6 +208,26 @@ export default function ContactCreatePage() {
     return () => { cancelled = true; };
   }, [isEdit, id]);
 
+  // #region agent log
+  useEffect(() => {
+    const q = (form.displayName || '').trim();
+    if (q.length < 1) return undefined;
+    if (isEdit && (contactId == null || !Number.isFinite(Number(contactId)))) return undefined;
+    const t = setTimeout(() => {
+      getContactsForSearch(q, 50)
+        .then((rows) => {
+          const curId = contactId != null ? Number(contactId) : NaN;
+          const others = (rows || []).filter((c) => c && (!Number.isFinite(curId) || curId <= 0 || Number(c.id) !== curId));
+          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'pre-fix', hypothesisId: 'H2', location: 'ContactCreatePage.jsx:nameSearchProbe', message: 'contact name typeahead counts', data: { isEdit, currentEntityId: Number.isFinite(curId) ? curId : null, queryLen: q.length, apiRowCount: (rows || []).length, afterExcludeCount: others.length, apiReturnsPeers: others.length > 0 }, timestamp: Date.now() }) }).catch(() => {});
+        })
+        .catch(() => {
+          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'pre-fix', hypothesisId: 'H4', location: 'ContactCreatePage.jsx:nameSearchProbe', message: 'contact name search request failed', data: { isEdit }, timestamp: Date.now() }) }).catch(() => {});
+        });
+    }, 450);
+    return () => clearTimeout(t);
+  }, [form.displayName, isEdit, contactId]);
+  // #endregion
+
   function update(field, value) {
     const formatted =
       (field === 'displayName' || field === 'city')
@@ -318,10 +338,16 @@ export default function ContactCreatePage() {
       setToast('Error: Contact is not loaded. Refresh the page and try again.');
       return;
     }
+    // #region agent log
+    fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '21cedb' }, body: JSON.stringify({ sessionId: '21cedb', location: 'ContactCreatePage.jsx:handleSaveQuit', message: 'contact save start', data: { isEdit, contactId, displayNameLen: (contact.displayName || '').length, preSaveNameCheck: false }, timestamp: Date.now(), hypothesisId: 'H1' }) }).catch(() => {});
+    // #endregion
     setSaving(true);
     try {
       if (isEdit && contactId) {
         await updateContactApi(contactId, contact);
+        // #region agent log
+        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '21cedb' }, body: JSON.stringify({ sessionId: '21cedb', location: 'ContactCreatePage.jsx:handleSaveQuit', message: 'contact update ok', data: { contactId }, timestamp: Date.now(), hypothesisId: 'H1' }) }).catch(() => {});
+        // #endregion
         setToast('Contact updated successfully!');
       } else {
         await createContact(contact);

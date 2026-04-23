@@ -182,6 +182,28 @@ class ContactController extends BaseController
         }
 
         $body = $this->getJsonBody();
+        // #region agent log
+        @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-3b3d32.log', json_encode(['sessionId' => '3b3d32', 'hypothesisId' => 'H5', 'location' => 'ContactController.php:update', 'message' => 'contact update name keys', 'data' => ['id' => $id, 'has_first_name' => array_key_exists('first_name', $body), 'first_len' => strlen(trim((string)($body['first_name'] ?? ''))), 'runs_server_name_duplicate_check' => false], 'timestamp' => (int) round(microtime(true) * 1000)], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
+        // #endregion
+        // #region agent log
+        @file_put_contents(
+            '/Users/rahulgupta/cagupta/.cursor/debug-21cedb.log',
+            json_encode([
+                'sessionId'    => '21cedb',
+                'hypothesisId' => 'H2',
+                'location'     => 'ContactController.php:update',
+                'message'      => 'contact update handler',
+                'data'         => [
+                    'id'               => $id,
+                    'has_first_name'   => array_key_exists('first_name', $body),
+                    'has_last_name'    => array_key_exists('last_name', $body),
+                    'name_collision_chk' => false,
+                ],
+                'timestamp'    => (int) round(microtime(true) * 1000),
+            ], JSON_UNESCAPED_UNICODE) . "\n",
+            FILE_APPEND | LOCK_EX
+        );
+        // #endregion
         $data = [];
 
         $textFields = [

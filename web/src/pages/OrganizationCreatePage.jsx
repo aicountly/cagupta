@@ -7,6 +7,7 @@ import {
   createOrganization,
   updateOrganization as updateOrganizationApi,
   getOrganization,
+  getOrganizationsForSearch,
 } from '../services/organizationService';
 import { getGroups } from '../services/clientGroupService';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
@@ -194,7 +195,14 @@ export default function OrganizationCreatePage() {
 
   // Load groups list
   useEffect(() => {
-    getGroups().then(setGroups).catch(() => setGroups([]));
+    getGroups()
+      .then((rows) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', hypothesisId: 'H5', location: 'OrganizationCreatePage.jsx:getGroups', message: 'groups list loaded', data: { count: Array.isArray(rows) ? rows.length : -1 }, timestamp: Date.now() }) }).catch(() => {});
+        // #endregion
+        setGroups(rows);
+      })
+      .catch(() => setGroups([]));
   }, []);
 
   // Load existing org in edit mode
@@ -209,6 +217,9 @@ export default function OrganizationCreatePage() {
         const state = normalizeOrgStateForCountry(existing.state || '', country);
         setPrimaryContactDisplayName(existing.primaryContact || '');
         setSecondaryContactNamesById({});
+        // #region agent log
+        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', hypothesisId: 'H1', location: 'OrganizationCreatePage.jsx:loadOrg', message: 'existing keys for group hydrate', data: { existing_group_id: existing.group_id ?? 'MISSING', existing_groupId: existing.groupId ?? 'MISSING', existing_groupName: (existing.groupName || '').slice(0, 40) }, timestamp: Date.now() }) }).catch(() => {});
+        // #endregion
         setForm({
           displayName:        existing.displayName        || '',
           constitution:       existing.constitution       || '',
@@ -238,6 +249,26 @@ export default function OrganizationCreatePage() {
       })
       .catch(() => {});
   }, [isEdit, id]);
+
+  // #region agent log
+  useEffect(() => {
+    const q = (form.displayName || '').trim();
+    if (q.length < 2) return undefined;
+    if (isEdit && (orgId == null || !Number.isFinite(Number(orgId)))) return undefined;
+    const t = setTimeout(() => {
+      getOrganizationsForSearch(q, 50)
+        .then((rows) => {
+          const curId = orgId != null ? Number(orgId) : NaN;
+          const others = (rows || []).filter((o) => o && (!Number.isFinite(curId) || curId <= 0 || Number(o.id) !== curId));
+          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'pre-fix', hypothesisId: 'H1', location: 'OrganizationCreatePage.jsx:nameSearchProbe', message: 'org name typeahead counts', data: { isEdit, currentEntityId: Number.isFinite(curId) ? curId : null, queryLen: q.length, apiRowCount: (rows || []).length, afterExcludeCount: others.length, apiReturnsPeers: others.length > 0 }, timestamp: Date.now() }) }).catch(() => {});
+        })
+        .catch(() => {
+          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'pre-fix', hypothesisId: 'H4', location: 'OrganizationCreatePage.jsx:nameSearchProbe', message: 'org name search request failed', data: { isEdit }, timestamp: Date.now() }) }).catch(() => {});
+        });
+    }, 450);
+    return () => clearTimeout(t);
+  }, [form.displayName, isEdit, orgId]);
+  // #endregion
 
   // Close toast automatically after 3 s
   useEffect(() => {
@@ -351,6 +382,12 @@ export default function OrganizationCreatePage() {
 
     try {
       if (isEdit && orgId) {
+        // #region agent log
+        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H5', location: 'OrganizationCreatePage.jsx:handleSave', message: 'edit save submit', data: { orgId, formStatus: form.status }, timestamp: Date.now() }) }).catch(() => {});
+        // #endregion
+        // #region agent log
+        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', hypothesisId: 'H2', location: 'OrganizationCreatePage.jsx:handleSave', message: 'form.group_id before buildOrg', data: { orgId, form_group_id: form.group_id ?? null, built_group_id: buildOrg(form).group_id ?? null }, timestamp: Date.now() }) }).catch(() => {});
+        // #endregion
         await updateOrganizationApi(orgId, buildOrg(form));
         setToast({ message: '✅ Organization updated successfully!', type: 'success' });
       } else {

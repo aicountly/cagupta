@@ -173,6 +173,15 @@ class OrganizationController extends BaseController
         }
 
         $body = $this->getJsonBody();
+        // #region agent log
+        @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-3b3d32.log', json_encode(['sessionId' => '3b3d32', 'hypothesisId' => 'H5', 'location' => 'OrganizationController.php:update', 'message' => 'org update name keys', 'data' => ['id' => $id, 'has_name' => array_key_exists('name', $body), 'name_len' => strlen(trim((string)($body['name'] ?? ''))), 'runs_server_name_duplicate_check' => false], 'timestamp' => (int) round(microtime(true) * 1000)], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
+        // #endregion
+        // #region agent log
+        @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-b2a687.log', json_encode(['sessionId' => 'b2a687', 'hypothesisId' => 'H3', 'location' => 'OrganizationController.php:update', 'message' => 'PUT body snapshot', 'data' => ['id' => $id, 'has_is_active' => array_key_exists('is_active', $body), 'is_active' => $body['is_active'] ?? null, 'body_keys' => array_keys($body)], 'timestamp' => (int) round(microtime(true) * 1000)], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
+        // #endregion
+        // #region agent log
+        @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-6abbad.log', json_encode(['sessionId' => '6abbad', 'hypothesisId' => 'H3', 'location' => 'OrganizationController.php:update', 'message' => 'PUT group_id', 'data' => ['id' => $id, 'has_group_id_key' => array_key_exists('group_id', $body), 'body_group_id' => $body['group_id'] ?? null], 'timestamp' => (int) round(microtime(true) * 1000)], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
+        // #endregion
         $data = [];
 
         $textFields = [
@@ -242,6 +251,9 @@ class OrganizationController extends BaseController
 
         $this->orgs->update($id, $data);
         $updated    = $this->orgs->find($id);
+        // #region agent log
+        @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-6abbad.log', json_encode(['sessionId' => '6abbad', 'hypothesisId' => 'H3', 'location' => 'OrganizationController.php:update:after', 'message' => 'row group_id after update', 'data' => ['id' => $id, 'updated_group_id' => $updated['group_id'] ?? null], 'timestamp' => (int) round(microtime(true) * 1000)], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
+        // #endregion
         $actingUser = $this->authUser();
 
         // ── Superadmin alert (best-effort) ────────────────────────────────────

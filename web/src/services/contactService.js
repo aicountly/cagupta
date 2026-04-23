@@ -332,6 +332,24 @@ export async function updateContact(id, payload) {
     headers: authHeaders(),
     body:    JSON.stringify(body),
   });
+  // #region agent log
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '21cedb' }, body: JSON.stringify({ sessionId: '21cedb', location: 'contactService.js:updateContact', message: 'PUT contacts response', data: { id: String(id), ok: res.ok, status: res.status }, timestamp: Date.now(), hypothesisId: 'H2' }) }).catch(() => {});
+  // #endregion
   const data = await parseResponse(res);
   return normalizeContact(data.data);
+}
+
+/**
+ * Permanently delete a contact (DELETE /admin/contacts/:id).
+ * @param {number|string} id
+ */
+export async function deleteContact(id) {
+  const res = await fetch(`${API_BASE}/admin/contacts/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  // #region agent log
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2098b5' }, body: JSON.stringify({ sessionId: '2098b5', location: 'contactService.js:deleteContact', message: 'DELETE contact response', data: { id: String(id), ok: res.ok, status: res.status }, timestamp: Date.now(), hypothesisId: 'H2' }) }).catch(() => {});
+  // #endregion
+  await parseResponse(res);
 }

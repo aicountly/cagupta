@@ -105,7 +105,14 @@ export async function getOrganization(id) {
     headers: authHeaders(),
   });
   const data = await parseResponse(res);
-  return normalizeOrg(data.data);
+  const normalized = normalizeOrg(data.data);
+  // #region agent log
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H2', location: 'organizationService.js:getOrganization', message: 'load org for edit', data: { orgId: Number(id), rawIsActive: data.data?.is_active ?? null, rawStatusField: data.data?.status ?? null, normalizedStatus: normalized.status }, timestamp: Date.now() }) }).catch(() => {});
+  // #endregion
+  // #region agent log
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', hypothesisId: 'H1', location: 'organizationService.js:getOrganization', message: 'group fields raw vs normalized', data: { orgId: Number(id), rawGroupId: data.data?.group_id ?? null, normalizedGroupId: normalized.groupId ?? null, normalizedHasGroup_id: Object.prototype.hasOwnProperty.call(normalized, 'group_id') }, timestamp: Date.now() }) }).catch(() => {});
+  // #endregion
+  return normalized;
 }
 
 /**
@@ -217,13 +224,24 @@ export async function updateOrganization(id, payload) {
     client_facing_restricted: Boolean(payload.clientFacingRestricted),
   };
 
+  // #region agent log
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H1', location: 'organizationService.js:updateOrganization', message: 'payload to PUT body mapping', data: { orgId: Number(id), formStatus: payload.status ?? null, bodyIsActive: body.is_active }, timestamp: Date.now() }) }).catch(() => {});
+  // #endregion
+  // #region agent log
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', hypothesisId: 'H2', location: 'organizationService.js:updateOrganization', message: 'group_id in payload and body', data: { orgId: Number(id), payloadGroup_id: payload.group_id ?? null, payloadGroupId: payload.groupId ?? null, bodyGroup_id: body.group_id ?? null }, timestamp: Date.now() }) }).catch(() => {});
+  // #endregion
+
   const res = await fetch(`${API_BASE}/admin/organizations/${id}`, {
     method:  'PUT',
     headers: authHeaders(),
     body:    JSON.stringify(body),
   });
   const data = await parseResponse(res);
-  return normalizeOrg(data.data);
+  const normalized = normalizeOrg(data.data);
+  // #region agent log
+  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H2', location: 'organizationService.js:updateOrganization:after', message: 'API row vs normalized status', data: { rawIsActive: data.data?.is_active ?? null, normalizedStatus: normalized.status }, timestamp: Date.now() }) }).catch(() => {});
+  // #endregion
+  return normalized;
 }
 
 /** POST — super admin receives OTP email to authorize organization delete */

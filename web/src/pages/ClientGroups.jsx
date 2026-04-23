@@ -289,6 +289,9 @@ export default function ClientGroups() {
                 ) : (
                   members.contacts.map(c => {
                     const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || c.organization_name || c.displayName || 'Unknown';
+                    // #region agent log
+                    if (c === members.contacts[0]) fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '984c9c' }, body: JSON.stringify({ sessionId: '984c9c', runId: 'pre-fix', hypothesisId: 'H2', location: 'ClientGroups.jsx:contacts.map', message: 'UI resolved contact label', data: { resolvedName: name, has_display_name: typeof c.display_name === 'string', display_name_len: (c.display_name && String(c.display_name).length) || 0 }, timestamp: Date.now() }) }).catch(() => {});
+                    // #endregion
                     return (
                       <div key={c.id} style={memberRow}>
                         <span style={{ fontSize: 13, color: '#1e293b' }}>{name}</span>
@@ -311,6 +314,9 @@ export default function ClientGroups() {
                 ) : (
                   members.organizations.map(o => {
                     const name = o.name || o.displayName || 'Unknown';
+                    // #region agent log
+                    if (o === members.organizations[0]) fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '984c9c' }, body: JSON.stringify({ sessionId: '984c9c', runId: 'pre-fix', hypothesisId: 'H2', location: 'ClientGroups.jsx:orgs.map', message: 'UI resolved org label', data: { resolvedName: name, has_display_name: typeof o.display_name === 'string', display_name_len: (o.display_name && String(o.display_name).length) || 0 }, timestamp: Date.now() }) }).catch(() => {});
+                    // #endregion
                     return (
                       <div key={o.id} style={memberRow}>
                         <span style={{ fontSize: 13, color: '#1e293b' }}>{name}</span>
