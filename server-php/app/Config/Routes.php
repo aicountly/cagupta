@@ -305,6 +305,12 @@ class Routes
                 'middleware' => ['auth', 'permission:services.edit'],
             ],
             [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/services/:id/request-delete-otp',
+                'handler'    => 'Admin\ServiceController@requestDeleteOtp',
+                'middleware' => ['auth', 'permission:services.delete'],
+            ],
+            [
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/services/:id/time-entries',
                 'handler'    => 'Admin\TimeEntryController@indexForService',

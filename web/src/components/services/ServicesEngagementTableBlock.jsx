@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createTask, deleteEngagement, updateEngagement } from '../../services/engagementService';
+import { createTask, deleteEngagement, requestServiceDeleteOtp, updateEngagement } from '../../services/engagementService';
 import StatusBadge from '../common/StatusBadge';
 import DateInput from '../common/DateInput';
 import { isEngagementOverdue } from '../../utils/serviceKpiFilters';
@@ -101,6 +101,12 @@ export default function ServicesEngagementTableBlock({
   const [selectedService, setSelectedService] = useState(null);
   const [hoverRow, setHoverRow] = useState(null);
   const [showAddTask, setShowAddTask] = useState(false);
+  const [serviceToDelete, setServiceToDelete] = useState(null);
+  const [deleteOtp, setDeleteOtp] = useState('');
+  const [deleteOtpSent, setDeleteOtpSent] = useState(false);
+  const [deleteErr, setDeleteErr] = useState('');
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [requestingDeleteOtp, setRequestingDeleteOtp] = useState(false);
 
   useEffect(() => {
     if (expandServiceId == null) return;
@@ -138,14 +144,44 @@ export default function ServicesEngagementTableBlock({
     }
   }
 
-  async function handleDeleteServiceRow(s) {
-    if (!window.confirm(`Permanently delete this engagement for ${s.clientName} — ${s.type || 'service'}?`)) return;
+  function openDeleteModal(s) {
+    setServiceToDelete(s);
+    setDeleteOtp('');
+    setDeleteOtpSent(false);
+    setDeleteErr('');
+  }
+
+  async function sendRowDeleteOtp() {
+    if (!serviceToDelete) return;
+    setRequestingDeleteOtp(true);
+    setDeleteErr('');
     try {
-      await deleteEngagement(s.id);
-      setAllServices((prev) => prev.filter((x) => x.id !== s.id));
-      setSelectedService((cur) => (cur && cur.id === s.id ? null : cur));
-    } catch {
-      /* toast optional */
+      await requestServiceDeleteOtp(serviceToDelete.id);
+      setDeleteOtpSent(true);
+    } catch (e) {
+      setDeleteErr(e.message || 'Failed to send OTP.');
+    } finally {
+      setRequestingDeleteOtp(false);
+    }
+  }
+
+  async function confirmRowDelete() {
+    if (!serviceToDelete) return;
+    if (!deleteOtp.trim()) {
+      setDeleteErr('Enter the superadmin OTP.');
+      return;
+    }
+    setDeleteBusy(true);
+    setDeleteErr('');
+    try {
+      await deleteEngagement(serviceToDelete.id, { superadminOtp: deleteOtp.trim() });
+      setAllServices((prev) => prev.filter((x) => x.id !== serviceToDelete.id));
+      setSelectedService((cur) => (cur && cur.id === serviceToDelete.id ? null : cur));
+      setServiceToDelete(null);
+    } catch (e) {
+      setDeleteErr(e.message || 'Delete failed.');
+    } finally {
+      setDeleteBusy(false);
     }
   }
 
@@ -159,6 +195,49 @@ export default function ServicesEngagementTableBlock({
     <>
       {showAddTask && selectedService && (
         <AddTaskModal onClose={() => setShowAddTask(false)} onSave={handleAddTask} />
+      )}
+      {serviceToDelete && (
+        <div style={deleteEngOverlayStyle}>
+          <div style={deleteEngModalStyle}>
+            <div style={deleteEngHeaderStyle}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#b91c1c' }}>Delete service engagement</span>
+              <button type="button" onClick={() => setServiceToDelete(null)} style={deleteEngCloseStyle}>✕</button>
+            </div>
+            <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+                Permanently delete <strong>{serviceToDelete.clientName}</strong> — {serviceToDelete.type || 'service'}? This cannot be undone.
+              </p>
+              <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>Request a superadmin OTP, then enter it to confirm.</p>
+              {deleteErr && <div style={{ color: '#dc2626', fontSize: 13 }}>{deleteErr}</div>}
+              <button type="button" style={deleteEngBtnSecondary} disabled={requestingDeleteOtp} onClick={sendRowDeleteOtp}>
+                {requestingDeleteOtp && !deleteOtpSent ? 'Sending…' : 'Request superadmin OTP'}
+              </button>
+              {deleteOtpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent</span>}
+              <label style={deleteEngLabelStyle}>
+                Superadmin OTP *
+                <input
+                  type="text"
+                  style={deleteEngInputStyle}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={deleteOtp}
+                  onChange={(e) => setDeleteOtp(e.target.value.replace(/\s/g, ''))}
+                />
+              </label>
+            </div>
+            <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => setServiceToDelete(null)} style={deleteEngBtnSecondary}>Cancel</button>
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={confirmRowDelete}
+                style={{ ...deleteEngBtnPrimary, background: '#b91c1c' }}
+              >
+                {deleteBusy ? 'Deleting…' : 'Delete'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       <div style={{ display: 'grid', gridTemplateColumns: selectedService ? '1fr 380px' : '1fr', gap: 16 }}>
         <div style={tableCard}>
@@ -226,7 +305,7 @@ export default function ServicesEngagementTableBlock({
                           <ActionBtn icon={Pencil} title="Manage" onClick={() => navigate(`/services/${s.id}`)} />
                           <ActionBtn icon={FolderOpen} title="View Files" onClick={() => navigate(`/services/${s.id}/files`)} />
                           {canDeleteService && (
-                            <ActionBtn icon={Trash2} title="Delete" onClick={() => handleDeleteServiceRow(s)} />
+                            <ActionBtn icon={Trash2} title="Delete" onClick={() => openDeleteModal(s)} />
                           )}
                         </div>
                       </td>
@@ -371,3 +450,12 @@ const taskLabelStyle = { display: 'flex', flexDirection: 'column', gap: 4, fontS
 const taskInputStyle = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, color: '#334155', outline: 'none' };
 const taskBtnPrimary = { padding: '7px 14px', background: '#F37920', color: '#fff', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
 const taskBtnSecondary = { padding: '7px 14px', background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
+
+const deleteEngOverlayStyle = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', zIndex: 1001, display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const deleteEngModalStyle = { background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', minWidth: 400, maxWidth: 480, width: '100%' };
+const deleteEngHeaderStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #F0F2F8' };
+const deleteEngCloseStyle = { background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' };
+const deleteEngLabelStyle = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#475569' };
+const deleteEngInputStyle = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, color: '#334155', outline: 'none', width: '100%', boxSizing: 'border-box' };
+const deleteEngBtnSecondary = { padding: '8px 14px', background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
+const deleteEngBtnPrimary = { padding: '8px 14px', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 };

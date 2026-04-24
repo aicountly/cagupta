@@ -11,6 +11,7 @@ import {
   createTask,
   deleteEngagement,
   requestServiceClientFacingOtp,
+  requestServiceDeleteOtp,
   getServiceAuditLog,
   ApiError,
 } from '../services/engagementService';
@@ -152,6 +153,12 @@ export default function ServiceEngagementManage() {
   }));
   const [showAddTask, setShowAddTask] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteOtp, setDeleteOtp] = useState('');
+  const [deleteOtpSent, setDeleteOtpSent] = useState(false);
+  const [deleteModalErr, setDeleteModalErr] = useState('');
+  const [requestingDeleteOtp, setRequestingDeleteOtp] = useState(false);
+  const [persistedTaskIds, setPersistedTaskIds] = useState([]);
 
   const [referringAffiliateUserId, setReferringAffiliateUserId] = useState('');
   const [commissionMode, setCommissionMode] = useState('referral_only');
@@ -213,7 +220,9 @@ export default function ServiceEngagementManage() {
         setInitialDueDate(d0);
         setFee(eng.feeAgreed != null && !Number.isNaN(Number(eng.feeAgreed)) ? String(eng.feeAgreed) : '');
         setNotes(eng.notes || '');
-        setTasks(Array.isArray(eng.tasks) ? eng.tasks.map(t => ({ ...t })) : []);
+        const loadedTasks = Array.isArray(eng.tasks) ? eng.tasks.map(t => ({ ...t })) : [];
+        setTasks(loadedTasks);
+        setPersistedTaskIds(loadedTasks.filter((t) => t && t.id).map((t) => String(t.id)));
         setBillingClosure(eng.billingClosure != null && eng.billingClosure !== '' ? eng.billingClosure : null);
         setReferringAffiliateUserId(eng.referringAffiliateUserId != null ? String(eng.referringAffiliateUserId) : '');
         setCommissionMode(eng.commissionMode || 'referral_only');
@@ -292,9 +301,15 @@ export default function ServiceEngagementManage() {
         type: serviceType.trim(),
         financialYear: fy.trim(),
       };
-      let updated;
-      if (clientFacingRestricted !== initialClientFacing) {
+      const cfrChange = clientFacingRestricted !== initialClientFacing;
+      if (cfrChange) {
         payload.clientFacingRestricted = clientFacingRestricted;
+      }
+      const currentIdSet = new Set(tasks.filter((t) => t && t.id).map((t) => String(t.id)));
+      const tasksRemoved = persistedTaskIds.some((pid) => !currentIdSet.has(pid));
+      const needSuperOtp = cfrChange || tasksRemoved;
+      let updated;
+      if (needSuperOtp) {
         updated = await updateEngagement(id, payload, { superadminOtp: cfOtp.trim() });
       } else {
         updated = await updateEngagement(id, payload);
@@ -304,6 +319,8 @@ export default function ServiceEngagementManage() {
       }
       setInitialClientFacing(clientFacingRestricted);
       setCfOtp('');
+      const savedTasks = Array.isArray(updated.tasks) ? updated.tasks : [];
+      setPersistedTaskIds(savedTasks.filter((t) => t && t.id).map((t) => String(t.id)));
       setInitialDueDate(updated.dueDate || '');
       setToast('Engagement saved');
       setTimeout(() => setToast(''), 2000);
@@ -321,8 +338,10 @@ export default function ServiceEngagementManage() {
   function handleAddTask(taskData) {
     if (!id) return;
     createTask(id, taskData)
-      .then(updated => {
-        setTasks(Array.isArray(updated.tasks) ? updated.tasks.map(t => ({ ...t })) : []);
+      .then((updated) => {
+        const list = Array.isArray(updated.tasks) ? updated.tasks.map(t => ({ ...t })) : [];
+        setTasks(list);
+        setPersistedTaskIds(list.filter((t) => t && t.id).map((t) => String(t.id)));
         setToast('Task added');
         setTimeout(() => setToast(''), 1500);
       })
@@ -397,16 +416,41 @@ export default function ServiceEngagementManage() {
     }
   }
 
-  async function handleDeleteEngagement() {
+  function openDeleteEngagementModal() {
+    setDeleteModalOpen(true);
+    setDeleteOtp('');
+    setDeleteOtpSent(false);
+    setDeleteModalErr('');
+  }
+
+  async function sendDeleteOtp() {
     if (!id) return;
-    if (!window.confirm('Delete this service engagement permanently? Assigned users will be notified by email.')) return;
-    setDeleting(true);
-    setError('');
+    setRequestingDeleteOtp(true);
+    setDeleteModalErr('');
     try {
-      await deleteEngagement(id);
+      await requestServiceDeleteOtp(id);
+      setDeleteOtpSent(true);
+    } catch (e) {
+      setDeleteModalErr(e.message || 'Failed to send OTP.');
+    } finally {
+      setRequestingDeleteOtp(false);
+    }
+  }
+
+  async function confirmDeleteEngagement() {
+    if (!id) return;
+    if (!deleteOtp.trim()) {
+      setDeleteModalErr('Enter the superadmin OTP.');
+      return;
+    }
+    setDeleting(true);
+    setDeleteModalErr('');
+    try {
+      await deleteEngagement(id, { superadminOtp: deleteOtp.trim() });
+      setDeleteModalOpen(false);
       navigate('/services');
     } catch (e) {
-      setError(e.message || 'Delete failed.');
+      setDeleteModalErr(e.message || 'Delete failed.');
     } finally {
       setDeleting(false);
     }
@@ -441,6 +485,51 @@ export default function ServiceEngagementManage() {
         onClose={() => setOpenEngagementConflict(null)}
       />
       {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} onSave={handleAddTask} />}
+      {deleteModalOpen && (
+        <div style={deleteOverlayStyle}>
+          <div style={deleteModalStyle}>
+            <div style={deleteModalHeaderStyle}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#b91c1c' }}>Delete service engagement</span>
+              <button type="button" onClick={() => setDeleteModalOpen(false)} style={deleteCloseBtnStyle}>✕</button>
+            </div>
+            <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+                Permanently delete this engagement for <strong>{clientName || 'this client'}</strong> ({serviceType || 'service'})? Assigned users will be notified by email. This cannot be undone.
+              </p>
+              <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+                Request a superadmin OTP, then enter it to confirm.
+              </p>
+              {deleteModalErr && <div style={{ color: '#dc2626', fontSize: 13 }}>{deleteModalErr}</div>}
+              <button type="button" style={deleteBtnSecondaryStyle} disabled={requestingDeleteOtp} onClick={sendDeleteOtp}>
+                {requestingDeleteOtp && !deleteOtpSent ? 'Sending…' : 'Request superadmin OTP'}
+              </button>
+              {deleteOtpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent to superadmin email</span>}
+              <label style={deleteLabelStyle}>
+                Superadmin OTP *
+                <input
+                  type="text"
+                  style={deleteInputStyle}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={deleteOtp}
+                  onChange={(e) => setDeleteOtp(e.target.value.replace(/\s/g, ''))}
+                />
+              </label>
+            </div>
+            <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button type="button" onClick={() => setDeleteModalOpen(false)} style={deleteBtnSecondaryStyle}>Cancel</button>
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={confirmDeleteEngagement}
+                style={{ ...deleteBtnPrimaryStyle, background: '#b91c1c' }}
+              >
+                {deleting ? 'Deleting…' : 'Delete engagement'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {toast && <div style={toastBar}>{toast}</div>}
 
       <div style={breadcrumbRow}>
@@ -512,7 +601,7 @@ export default function ServiceEngagementManage() {
         <section style={sectionCard}>
           <div style={sectionTitle}>Referral &amp; commission</div>
           <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px', lineHeight: 1.45 }}>
-            Referring affiliate and commission mode are fixed for this engagement. Referral start date is maintained on the client record. To change the client-facing flag, request a superadmin OTP and enter it before saving.
+            Referring affiliate and commission mode are fixed for this engagement. Referral start date is maintained on the client record. To change the client-facing flag, or to match removing tasks on the Tasks tab, request a superadmin OTP and enter it before saving.
           </p>
           <label style={fieldLabel}>
             Referring affiliate
@@ -533,7 +622,7 @@ export default function ServiceEngagementManage() {
               <span>Client-facing restricted (reporting flag)</span>
             </label>
             <p style={{ fontSize: 12, color: '#64748b', margin: '10px 0 8px', lineHeight: 1.45 }}>
-              Superadmin receives a one-time code by email. Request the code, then enter it below before saving if you change this flag.
+              Superadmin receives a one-time code by email. Request the code, then enter it below before saving if you change this flag, or if you remove any task.
             </p>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
               <button type="button" style={btnSecondary} disabled={requestingCfOtp} onClick={handleRequestCfOtp}>
@@ -547,7 +636,7 @@ export default function ServiceEngagementManage() {
                 style={inputStyle}
                 inputMode="numeric"
                 autoComplete="one-time-code"
-                placeholder="Enter code if you changed the flag above"
+                placeholder="Enter code if the flag or tasks changed"
                 value={cfOtp}
                 onChange={e => setCfOtp(e.target.value.replace(/\s/g, ''))}
               />
@@ -762,11 +851,19 @@ export default function ServiceEngagementManage() {
 
         {tab === 'tasks' && (
         <section style={sectionCard}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
             <div style={sectionTitle}>Tasks</div>
-            <button type="button" style={btnSmall} onClick={() => setShowAddTask(true)}><Plus size={14} /> Add task</button>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+              <button type="button" style={btnSecondary} disabled={requestingCfOtp} onClick={handleRequestCfOtp}>
+                {requestingCfOtp ? 'Sending…' : 'Request superadmin OTP'}
+              </button>
+              <button type="button" style={btnSmall} onClick={() => setShowAddTask(true)}><Plus size={14} /> Add task</button>
+            </div>
           </div>
-          <p style={hint}>Check off items locally, then click <strong>Save changes</strong> to persist task status. New tasks are saved immediately.</p>
+          <p style={hint}>
+            Check off items locally, then click <strong>Save changes</strong> to persist task status. New tasks are saved immediately.
+            <strong> Removing a task</strong> requires a superadmin OTP (request above, or on Overview) and the code in the Overview field, then <strong>Save changes</strong>.
+          </p>
           {tasks.length === 0 && <div style={{ color: '#94a3b8', fontSize: 13 }}>No tasks yet.</div>}
           {tasks.map((t, i) => (
             <div
@@ -850,7 +947,7 @@ export default function ServiceEngagementManage() {
           <button
             type="button"
             disabled={deleting}
-            onClick={handleDeleteEngagement}
+            onClick={openDeleteEngagementModal}
             style={{
               padding: '10px 18px',
               background: '#fff',
@@ -862,7 +959,7 @@ export default function ServiceEngagementManage() {
               fontWeight: 600,
             }}
           >
-            {deleting ? 'Deleting…' : 'Delete engagement'}
+            Delete engagement
           </button>
         )}
         <div style={{ display: 'flex', gap: 10, marginLeft: 'auto' }}>
@@ -987,6 +1084,15 @@ const toastBar = {
   position: 'fixed', bottom: 24, right: 24, zIndex: 1000,
   background: '#0B1F3B', color: '#fff', padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
 };
+
+const deleteOverlayStyle = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', zIndex: 1001, display: 'flex', alignItems: 'center', justifyContent: 'center' };
+const deleteModalStyle = { background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', minWidth: 400, maxWidth: 480, width: '100%' };
+const deleteModalHeaderStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #F0F2F8' };
+const deleteCloseBtnStyle = { background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' };
+const deleteLabelStyle = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#475569' };
+const deleteInputStyle = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, color: '#334155', outline: 'none', width: '100%', boxSizing: 'border-box' };
+const deleteBtnSecondaryStyle = { padding: '8px 14px', background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
+const deleteBtnPrimaryStyle = { padding: '8px 14px', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
 
 const overlayStyle = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const taskModalStyle = { background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', minWidth: 400, maxWidth: 480, width: '100%' };

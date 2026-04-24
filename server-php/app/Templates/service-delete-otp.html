@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Service change OTP – CA Rahul Gupta</title>
+  <title>Service delete OTP – CA Rahul Gupta</title>
   <style>
     body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
     .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
@@ -22,18 +22,18 @@
   <div class="container">
     <div class="header">
       <h1>CA Rahul Gupta</h1>
-      <p>Office Portal – Sensitive service change</p>
+      <p>Office Portal – Service engagement delete</p>
     </div>
     <div class="body">
       <p>Dear <strong>{{userName}}</strong>,</p>
-      <p>A team member requested authorization for a <strong>sensitive change</strong> on service engagement <strong>#{{serviceId}}</strong> (for example: toggling <strong>client-facing restricted</strong>, or <strong>removing tasks</strong>). Use this one-time password in the portal when you save:</p>
+      <p>A team member requested authorization to <strong>permanently delete</strong> service engagement <strong>#{{serviceId}}</strong> (<strong>{{clientName}}</strong> — <strong>{{serviceType}}</strong>). Use this one-time password in the portal to approve the action:</p>
       <div class="otp-box">
         <div class="otp-code">{{otpCode}}</div>
       </div>
       <p class="expiry">This OTP is valid for <strong>{{expiryMinutes}} minutes</strong> only.</p>
       <p>Do not share this code. If you did not expect this request, review activity in the portal.</p>
       <div class="warning">
-        <strong>Security note:</strong> Each change requires a new code. This OTP is separate from login OTP.
+        <strong>Security note:</strong> Each delete requires a new code. This OTP is separate from login OTP.
       </div>
     </div>
     <div class="footer">

@@ -300,7 +300,7 @@ class ServiceController extends BaseController
     // ── POST /api/admin/services/:id/request-client-facing-otp ───────────────
 
     /**
-     * Send a superadmin OTP to authorize toggling client_facing_restricted on a service.
+     * Send a superadmin OTP to authorize client_facing_restricted changes and/or removing tasks (PUT).
      */
     public function requestClientFacingOtp(int $id): never
     {
@@ -331,12 +331,64 @@ class ServiceController extends BaseController
                 BrevoMailer::send(
                     $email,
                     (string)($super['name'] ?? $email),
-                    'Service client-facing OTP - CA Rahul Gupta',
+                    'Service change OTP - CA Rahul Gupta',
                     $htmlBody
                 );
             }
         } catch (\Throwable $e) {
             error_log('[ServiceController] Client-facing OTP email failed: ' . $e->getMessage());
+        }
+
+        $this->success([
+            'otp_sent'     => true,
+            'masked_email' => $this->maskEmail($email),
+        ], 'OTP sent.');
+    }
+
+    // ── POST /api/admin/services/:id/request-delete-otp ──────────────────────
+
+    /**
+     * Send a superadmin OTP email to authorize permanently deleting this service engagement.
+     */
+    public function requestDeleteOtp(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
+        if ($super === null || !$super['is_active']) {
+            $this->error('Super admin account is not provisioned.', 500);
+        }
+        $superId = (int)$super['id'];
+        $email   = trim((string)($super['email'] ?? ''));
+        if ($email === '') {
+            $this->error('Super admin has no email.', 500);
+        }
+
+        $otp = OtpService::generate($superId);
+        $clientName = (string)($service['client_name'] ?? 'Unknown');
+        $serviceType = (string)($service['service_type'] ?? '—');
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('service-delete-otp', [
+                'userName'      => (string)($super['name'] ?? $email),
+                'otpCode'       => $otp,
+                'expiryMinutes' => (string)OtpService::expiryMinutes(),
+                'serviceId'     => (string)$id,
+                'clientName'    => $clientName,
+                'serviceType'   => $serviceType,
+            ]);
+            if ($htmlBody !== '') {
+                BrevoMailer::send(
+                    $email,
+                    (string)($super['name'] ?? $email),
+                    'Service delete OTP - CA Rahul Gupta',
+                    $htmlBody
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Delete OTP email failed: ' . $e->getMessage());
         }
 
         $this->success([
@@ -503,13 +555,32 @@ class ServiceController extends BaseController
         }
 
         $oldCfr = (bool)($service['client_facing_restricted'] ?? false);
+        $newCfrIfPresent = array_key_exists('client_facing_restricted', $body)
+            ? (bool)$body['client_facing_restricted']
+            : $oldCfr;
+        $cfrChange = array_key_exists('client_facing_restricted', $body) && $newCfrIfPresent !== $oldCfr;
+
+        $oldTasksDecoded = $this->decodeTasksJson($service['tasks'] ?? null);
+        $tasksRemoved    = false;
+        if (array_key_exists('tasks', $body)) {
+            $newTasksRaw = $body['tasks'];
+            $newTasksArr = is_array($newTasksRaw) ? $newTasksRaw : [];
+            $tasksRemoved = $this->taskListHasRemoval($oldTasksDecoded, $newTasksArr);
+        }
+
+        if ($cfrChange || $tasksRemoved) {
+            $otp = $this->readSuperadminOtpFromRequest();
+            if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
+                $this->error(
+                    'Valid superadmin OTP is required for this change (client-facing restricted and/or removing tasks). Request a code first.',
+                    403
+                );
+            }
+        }
+
         if (array_key_exists('client_facing_restricted', $body)) {
             $newCfr = (bool)$body['client_facing_restricted'];
             if ($newCfr !== $oldCfr) {
-                $otp = $this->readSuperadminOtpFromRequest();
-                if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
-                    $this->error('Valid superadmin OTP is required to change client-facing restricted. Request a code first.', 403);
-                }
                 $data['client_facing_restricted'] = $newCfr;
             }
         }
@@ -544,6 +615,11 @@ class ServiceController extends BaseController
         $service = $this->services->find($id);
         if ($service === null) {
             $this->error('Service not found.', 404);
+        }
+
+        $otp = $this->readSuperadminOtpFromRequest();
+        if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
+            $this->error('Valid superadmin OTP is required to delete a service engagement. Request a code first.', 403);
         }
 
         $beforeSnap = $this->serviceAuditSnapshot($service);
@@ -659,6 +735,52 @@ class ServiceController extends BaseController
         }
 
         return [];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function decodeTasksJson(mixed $raw): array
+    {
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+        if (is_array($raw)) {
+            return $raw;
+        }
+        if (is_string($raw)) {
+            $decoded = json_decode($raw, true);
+
+            return is_array($decoded) ? $decoded : [];
+        }
+
+        return [];
+    }
+
+    /**
+     * True if any task id in $before is absent from $after (task removed).
+     *
+     * @param array<int, array<string, mixed>> $before
+     * @param array<int, array<string, mixed>> $after
+     */
+    private function taskListHasRemoval(array $before, array $after): bool
+    {
+        $idsAfter = [];
+        foreach ($after as $t) {
+            if (is_array($t) && isset($t['id'])) {
+                $idsAfter[(string)$t['id']] = true;
+            }
+        }
+        foreach ($before as $t) {
+            if (is_array($t) && isset($t['id'])) {
+                $tid = (string)$t['id'];
+                if (!isset($idsAfter[$tid])) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

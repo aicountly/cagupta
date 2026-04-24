@@ -270,7 +270,7 @@ export async function createEngagement(payload) {
  * Update an existing service engagement.
  * @param {number|string} id
  * @param {object} payload
- * @param {{ superadminOtp?: string }} [opts] Pass superadminOtp when changing clientFacingRestricted.
+ * @param {{ superadminOtp?: string }} [opts] Pass when changing clientFacingRestricted and/or when removing tasks (compared to last server state).
  * @returns {Promise<object>}
  */
 export async function updateEngagement(id, payload, { superadminOtp } = {}) {
@@ -324,7 +324,7 @@ export async function getServiceAuditLog(id, { limit = 50, offset = 0 } = {}) {
 }
 
 /**
- * Request superadmin OTP to toggle client-facing restricted on a service engagement.
+ * Request superadmin OTP for sensitive service updates (client-facing flag and/or removing tasks).
  * @param {number|string} id
  */
 export async function requestServiceClientFacingOtp(id) {
@@ -336,6 +336,17 @@ export async function requestServiceClientFacingOtp(id) {
   return parseResponse(res);
 }
 
+/** POST — super admin receives OTP email to authorize deleting this service engagement. */
+export async function requestServiceDeleteOtp(id) {
+  const res = await fetch(`${API_BASE}/admin/services/${id}/request-delete-otp`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify({}),
+  });
+  const data = await parseResponse(res);
+  return data.data || {};
+}
+
 /**
  * Add a task to an existing service engagement.
  * @param {number|string} engagementId
@@ -343,13 +354,18 @@ export async function requestServiceClientFacingOtp(id) {
  * @returns {Promise<object>} Updated engagement after adding the task.
  */
 /**
- * Delete a service engagement permanently.
+ * Delete a service engagement permanently (requires requestServiceDeleteOtp + superadminOtp in header).
  * @param {number|string} id
+ * @param {{ superadminOtp?: string }} [opts]
  */
-export async function deleteEngagement(id) {
+export async function deleteEngagement(id, { superadminOtp } = {}) {
+  const headers = { ...authHeaders() };
+  if (superadminOtp) {
+    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
+  }
   const res = await fetch(`${API_BASE}/admin/services/${id}`, {
     method:  'DELETE',
-    headers: authHeaders(),
+    headers,
   });
   await parseResponse(res);
 }

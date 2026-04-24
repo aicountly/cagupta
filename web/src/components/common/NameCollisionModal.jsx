@@ -120,6 +120,21 @@ export default function NameCollisionModal({
         </div>
       );
     }
+    if (!collisionProfile && kind === 'similar' && blockingReason === 'save') {
+      return (
+        <div style={{ margin: '8px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
+          <p style={{ margin: '0 0 8px', fontWeight: 700, color: '#92400e' }}>Your changes are not saved yet.</p>
+          <p style={{ margin: '0 0 10px' }}>
+            {`Other ${entityNoun}s in the directory closely match this name (one contains the other). Review the records below — this is not proof they are the same entity.`}
+          </p>
+          {typeof onConfirm === 'function' ? (
+            <p style={{ margin: 0 }}>
+              If you have verified this is a genuinely different {entityNoun}, click <strong>{confirmLabel}</strong> below to save.
+            </p>
+          ) : null}
+        </div>
+      );
+    }
     return (
       <p style={{ margin: '8px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
         {isOrgIdentical
@@ -129,7 +144,12 @@ export default function NameCollisionModal({
     );
   }
 
-  const showConfirm = typeof onConfirm === 'function' && isContactNameDup && !isContactPan;
+  const isOrgSimilar = !collisionProfile && kind === 'similar';
+  const showConfirm =
+    typeof onConfirm === 'function' &&
+    !isContactPan &&
+    !isOrgIdentical &&
+    (isContactNameDup || (isOrgSimilar && blockingReason === 'save'));
   const closeLabel = (() => {
     if (showConfirm) return 'Cancel';
     if (isBlocking && !isContactNameDup) return 'Close';
