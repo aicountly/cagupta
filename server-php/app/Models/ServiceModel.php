@@ -289,7 +289,7 @@ SQL;
                 ? (int)$data['referring_affiliate_user_id'] : null,
             ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
             ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
-            ':client_facing_restricted' => !empty($data['client_facing_restricted']),
+            ':client_facing_restricted' => !empty($data['client_facing_restricted']) ? 'true' : 'false',
         ];
         $stmt->execute($params);
         return (int)$stmt->fetchColumn();
