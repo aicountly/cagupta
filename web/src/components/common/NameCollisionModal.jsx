@@ -8,6 +8,8 @@ export default function NameCollisionModal({
   entityNoun,
   matches,
   onOpenRecord,
+  /** When `'save'`, identical duplicate was detected on save — show explicit “not saved” copy. */
+  blockingReason = null,
 }) {
   if (!open || !kind || !Array.isArray(matches) || matches.length === 0) return null;
 
@@ -49,11 +51,20 @@ export default function NameCollisionModal({
             <div id="name-collision-title" style={{ fontSize: 16, fontWeight: 700, color: isIdentical ? '#991b1b' : '#92400e' }}>
               {isIdentical ? `Duplicate ${entityNoun} name` : `Similar ${entityNoun} name(s)`}
             </div>
-            <p style={{ margin: '8px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-              {isIdentical
-                ? `Another ${entityNoun} already uses this exact name. Change the name before saving, or open the existing record.`
-                : `Other ${entityNoun}s in the directory closely match this name (one contains the other). You may still save if they are genuinely different parties.`}
-            </p>
+            {isIdentical && blockingReason === 'save' ? (
+              <div style={{ margin: '10px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
+                <p style={{ margin: '0 0 8px', fontWeight: 700, color: '#991b1b' }}>Your changes were not saved.</p>
+                <p style={{ margin: 0 }}>
+                  {`Another ${entityNoun} already uses this exact name. Use a different name in the form, or open an existing record below.`}
+                </p>
+              </div>
+            ) : (
+              <p style={{ margin: '8px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+                {isIdentical
+                  ? `Another ${entityNoun} already uses this exact name. Change the name before saving, or open the existing record.`
+                  : `Other ${entityNoun}s in the directory closely match this name (one contains the other). You may still save if they are genuinely different parties.`}
+              </p>
+            )}
           </div>
           <button
             type="button"

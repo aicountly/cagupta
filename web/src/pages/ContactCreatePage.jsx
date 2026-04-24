@@ -164,6 +164,7 @@ export default function ContactCreatePage() {
   const [loadError, setLoadError] = useState(null);
   const [nameDuplicateInfo, setNameDuplicateInfo] = useState(null);
   const [nameCollisionModalOpen, setNameCollisionModalOpen] = useState(false);
+  const [nameCollisionBlockingReason, setNameCollisionBlockingReason] = useState(null);
   const nameCollisionSigRef = useRef('');
 
   // Dynamic staff/manager list
@@ -272,12 +273,14 @@ export default function ContactCreatePage() {
     if (!nameDuplicateInfo) {
       nameCollisionSigRef.current = '';
       setNameCollisionModalOpen(false);
+      setNameCollisionBlockingReason(null);
       return;
     }
     const sig = `${nameDuplicateInfo.kind}:${nameDuplicateInfo.matches.map((m) => m.id).join(',')}`;
     if (sig !== nameCollisionSigRef.current) {
       nameCollisionSigRef.current = sig;
       setNameCollisionModalOpen(true);
+      setNameCollisionBlockingReason(null);
     }
   }, [nameDuplicateInfo]);
 
@@ -400,7 +403,10 @@ export default function ContactCreatePage() {
         const dup = classifyContactNameDuplicates(trimmedName, others);
         setNameDuplicateInfo(dup);
         if (dup?.kind === 'identical') {
-          setToast('Another contact already uses this exact name. Change the name to save.');
+          const sig = `identical:${dup.matches.map((m) => m.id).join(',')}`;
+          nameCollisionSigRef.current = sig;
+          setNameCollisionBlockingReason('save');
+          setNameCollisionModalOpen(true);
           return;
         }
       } catch {
@@ -435,7 +441,10 @@ export default function ContactCreatePage() {
         const dup = classifyContactNameDuplicates(trimmedName, rows || []);
         setNameDuplicateInfo(dup);
         if (dup?.kind === 'identical') {
-          setToast('Another contact already uses this exact name. Change the name to save.');
+          const sig = `identical:${dup.matches.map((m) => m.id).join(',')}`;
+          nameCollisionSigRef.current = sig;
+          setNameCollisionBlockingReason('save');
+          setNameCollisionModalOpen(true);
           return;
         }
       } catch {
@@ -493,11 +502,15 @@ export default function ContactCreatePage() {
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
       <NameCollisionModal
         open={nameCollisionModalOpen && Boolean(nameDuplicateInfo)}
-        onClose={() => setNameCollisionModalOpen(false)}
+        onClose={() => {
+          setNameCollisionModalOpen(false);
+          setNameCollisionBlockingReason(null);
+        }}
         kind={nameDuplicateInfo?.kind}
         entityNoun="contact"
         matches={nameDuplicateInfo?.matches || []}
         onOpenRecord={(rid) => navigate(`/clients/contacts/${rid}/edit`)}
+        blockingReason={nameCollisionBlockingReason}
       />
 
       {/* Breadcrumb */}
@@ -833,8 +846,8 @@ export default function ContactCreatePage() {
             <button
               type="button"
               onClick={handleSaveAddNew}
-              style={saving || nameDuplicateInfo?.kind === 'identical' ? { ...btnOutline, opacity: 0.6, cursor: 'not-allowed' } : btnOutline}
-              disabled={saving || nameDuplicateInfo?.kind === 'identical'}
+              style={saving ? { ...btnOutline, opacity: 0.6, cursor: 'not-allowed' } : btnOutline}
+              disabled={saving}
             >
               {saving && <Spinner />} Save &amp; Add New
             </button>
@@ -842,8 +855,8 @@ export default function ContactCreatePage() {
           <button
             type="button"
             onClick={handleSaveQuit}
-            style={saving || nameDuplicateInfo?.kind === 'identical' ? { ...btnPrimary, opacity: 0.6, cursor: 'not-allowed' } : btnPrimary}
-            disabled={saving || nameDuplicateInfo?.kind === 'identical'}
+            style={saving ? { ...btnPrimary, opacity: 0.6, cursor: 'not-allowed' } : btnPrimary}
+            disabled={saving}
           >
             {saving && <Spinner />} {isEdit ? 'Save Changes' : 'Save & Quit'}
           </button>

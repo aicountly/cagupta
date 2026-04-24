@@ -221,6 +221,8 @@ export default function OrganizationCreatePage() {
   /** Inline name duplicate / similarity (from search API; not persisted server-side). */
   const [nameDuplicateInfo, setNameDuplicateInfo] = useState(null);
   const [nameCollisionModalOpen, setNameCollisionModalOpen] = useState(false);
+  /** Set to `'save'` when identical duplicate blocked a save attempt (modal copy). */
+  const [nameCollisionBlockingReason, setNameCollisionBlockingReason] = useState(null);
   const nameCollisionSigRef = useRef('');
 
   // Dynamic staff/manager list
@@ -311,12 +313,14 @@ export default function OrganizationCreatePage() {
     if (!nameDuplicateInfo) {
       nameCollisionSigRef.current = '';
       setNameCollisionModalOpen(false);
+      setNameCollisionBlockingReason(null);
       return;
     }
     const sig = `${nameDuplicateInfo.kind}:${nameDuplicateInfo.matches.map((m) => m.id).join(',')}`;
     if (sig !== nameCollisionSigRef.current) {
       nameCollisionSigRef.current = sig;
       setNameCollisionModalOpen(true);
+      setNameCollisionBlockingReason(null);
     }
   }, [nameDuplicateInfo]);
 
@@ -439,7 +443,10 @@ export default function OrganizationCreatePage() {
         const dup = classifyNameDuplicates(trimmedName, others);
         setNameDuplicateInfo(dup);
         if (dup?.kind === 'identical') {
-          setToast({ message: '❌ Another organization already uses this exact name. Change the name to save.', type: 'error' });
+          const sig = `identical:${dup.matches.map((m) => m.id).join(',')}`;
+          nameCollisionSigRef.current = sig;
+          setNameCollisionBlockingReason('save');
+          setNameCollisionModalOpen(true);
           setSubmitting(false);
           return;
         }
@@ -543,11 +550,15 @@ export default function OrganizationCreatePage() {
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       <NameCollisionModal
         open={nameCollisionModalOpen && Boolean(nameDuplicateInfo)}
-        onClose={() => setNameCollisionModalOpen(false)}
+        onClose={() => {
+          setNameCollisionModalOpen(false);
+          setNameCollisionBlockingReason(null);
+        }}
         kind={nameDuplicateInfo?.kind}
         entityNoun="organization"
         matches={nameDuplicateInfo?.matches || []}
         onOpenRecord={(rid) => navigate(`/clients/organizations/${rid}/edit`)}
+        blockingReason={nameCollisionBlockingReason}
       />
 
       {/* Breadcrumb */}
@@ -920,16 +931,16 @@ export default function OrganizationCreatePage() {
           {!isEdit && (
             <button
               onClick={handleSaveNew}
-              style={{ ...btnSecondary, opacity: submitting || nameDuplicateInfo?.kind === 'identical' ? 0.7 : 1 }}
-              disabled={submitting || nameDuplicateInfo?.kind === 'identical'}
+              style={{ ...btnSecondary, opacity: submitting ? 0.7 : 1 }}
+              disabled={submitting}
             >
               {submitting ? '⏳ Saving…' : '💾 Save & Add New'}
             </button>
           )}
           <button
             onClick={handleSaveQuit}
-            style={{ ...btnPrimary, opacity: submitting || nameDuplicateInfo?.kind === 'identical' ? 0.7 : 1 }}
-            disabled={submitting || nameDuplicateInfo?.kind === 'identical'}
+            style={{ ...btnPrimary, opacity: submitting ? 0.7 : 1 }}
+            disabled={submitting}
           >
             {submitting ? '⏳ Saving…' : isEdit ? '✅ Save Changes' : '✅ Save & Quit'}
           </button>
