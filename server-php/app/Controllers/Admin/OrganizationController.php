@@ -314,7 +314,10 @@ class OrganizationController extends BaseController
             if (str_contains($msg, 'foreign key') || str_contains($msg, '23503') || $state === '23503') {
                 $this->error('Invalid link: choose a valid client group or primary contact, or clear those fields.', 422);
             }
-            $this->error('Could not save organization.', 500);
+            $this->error('Could not save organization.', 500, [], [
+                'sql_state'   => $state !== '' ? $state : null,
+                'driver_code' => is_array($ei) ? ($ei[1] ?? null) : null,
+            ]);
         }
 
         $updated    = $this->orgs->find($id);

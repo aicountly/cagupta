@@ -115,6 +115,7 @@ export default function App() {
           <Route path="/clients/groups" element={<ProtectedRoute staffOnly><Layout routePath="/clients/groups"><ClientGroups /></Layout></ProtectedRoute>} />
           <Route path="/services" element={<ProtectedRoute staffOnly><Layout routePath="/services"><Services /></Layout></ProtectedRoute>} />
           <Route path="/services/new" element={<ProtectedRoute staffOnly><Layout routePath="/services/new"><NewServiceEngagement /></Layout></ProtectedRoute>} />
+          <Route path="/services/focus" element={<ProtectedRoute staffOnly><Navigate to="/services" replace /></ProtectedRoute>} />
           <Route path="/services/focus/:kpiSlug" element={<ProtectedRoute staffOnly><Layout routePath="/services/focus"><ServicesKpiList /></Layout></ProtectedRoute>} />
           <Route path="/services/:id" element={
             <ProtectedRoute staffOnly requiredPermission="services.edit">

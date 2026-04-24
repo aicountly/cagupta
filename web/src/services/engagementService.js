@@ -6,8 +6,24 @@
  */
 
 import { API_BASE_URL } from '../constants/config';
+import { localDateKey } from '../utils/serviceKpiFilters';
 
 const API_BASE = API_BASE_URL;
+
+/** API error with HTTP status and full JSON body (success false: message, data, errors). */
+export class ApiError extends Error {
+  /**
+   * @param {string} message
+   * @param {number} status
+   * @param {Record<string, unknown>} body
+   */
+  constructor(message, status, body) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.body = body;
+  }
+}
 
 function authHeaders() {
   const token = localStorage.getItem('auth_token');
@@ -20,7 +36,11 @@ function authHeaders() {
 async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(json.message || `Request failed (${res.status})`);
+    throw new ApiError(
+      json.message || `Request failed (${res.status})`,
+      res.status,
+      json
+    );
   }
   return json;
 }
@@ -173,6 +193,20 @@ export async function getAllEngagements(options = {}) {
     rest.push(...(data.data || []).map(normalizeEngagement));
   }
   return [...rows1, ...rest];
+}
+
+/**
+ * Server-side engagement KPI counts + week lines (matches list filter rules; as_of = browser local date).
+ * @returns {Promise<{ asOf: string, counts: Record<string, number>, weekDelta: Record<string, number>, weekDeltaMode: Record<string, string> }>}
+ */
+export async function getServiceKpiSnapshot() {
+  const asOf = localDateKey(new Date());
+  const res = await fetch(
+    `${API_BASE}/admin/services/kpi-snapshot?as_of=${encodeURIComponent(asOf)}`,
+    { headers: authHeaders() }
+  );
+  const json = await parseResponse(res);
+  return json.data;
 }
 
 /**

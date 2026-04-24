@@ -21,6 +21,36 @@ class OrganizationModel
     }
 
     /**
+     * `type` is a PostgreSQL keyword; quote the column in SQL fragments.
+     */
+    private static function sqlColumn(string $field): string
+    {
+        return $field === 'type' ? '"type"' : $field;
+    }
+
+    /**
+     * Bind parameters with correct PDO types (booleans for PG BOOL, etc.).
+     *
+     * @param array<string, mixed> $params
+     */
+    private function executeWithTypedBindings(\PDOStatement $stmt, array $params): bool
+    {
+        foreach ($params as $name => $value) {
+            if ($value === null) {
+                $stmt->bindValue($name, null, PDO::PARAM_NULL);
+            } elseif (is_bool($value)) {
+                $stmt->bindValue($name, $value, PDO::PARAM_BOOL);
+            } elseif (is_int($value)) {
+                $stmt->bindValue($name, $value, PDO::PARAM_INT);
+            } else {
+                $stmt->bindValue($name, $value);
+            }
+        }
+
+        return $stmt->execute();
+    }
+
+    /**
      * Find an organization by primary key.
      *
      * @return array<string, mixed>|null
@@ -112,7 +142,7 @@ class OrganizationModel
     {
         $stmt = $this->db->prepare(
             'INSERT INTO organizations (
-                name, type, gstin, pan, cin, email, secondary_email, phone, secondary_phone,
+                name, "type", gstin, pan, cin, email, secondary_email, phone, secondary_phone,
                 address, city, state, country, pincode, website, notes,
                 reference, group_id, primary_contact_id, organization_status, is_active, created_by,
                 referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
@@ -124,7 +154,7 @@ class OrganizationModel
              ) RETURNING id'
         );
         $refAff = isset($data['referring_affiliate_user_id']) ? (int)$data['referring_affiliate_user_id'] : 0;
-        $stmt->execute([
+        $this->executeWithTypedBindings($stmt, [
             ':name'               => $data['name'],
             ':type'               => $data['type']       ?? null,
             ':gstin'              => $data['gstin']      ?? null,
@@ -172,7 +202,8 @@ class OrganizationModel
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
-                $setClauses[]       = "{$field} = :{$field}";
+                $col                 = self::sqlColumn($field);
+                $setClauses[]        = "{$col} = :{$field}";
                 $params[":{$field}"] = $data[$field];
             }
         }
@@ -234,7 +265,7 @@ class OrganizationModel
             @file_put_contents($dir . DIRECTORY_SEPARATOR . 'debug-a4583e.log', $line, FILE_APPEND);
         }
         // #endregion
-        return $stmt->execute($params);
+        return $this->executeWithTypedBindings($stmt, $params);
     }
 
     /**
@@ -260,7 +291,7 @@ class OrganizationModel
             'UPDATE organizations SET is_active = :is_active, organization_status = :organization_status, updated_at = NOW() WHERE id = :id'
         );
 
-        return $stmt->execute([
+        return $this->executeWithTypedBindings($stmt, [
             ':is_active'            => $isActive,
             ':organization_status' => $orgStatus,
             ':id'                   => $id,

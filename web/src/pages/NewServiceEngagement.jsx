@@ -2,7 +2,8 @@ import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, User, Building2, Search, X, CheckSquare, Square } from 'lucide-react';
 import { getCategories } from '../services/serviceCategoryService';
-import { createEngagement } from '../services/engagementService';
+import { createEngagement, ApiError } from '../services/engagementService';
+import OpenEngagementConflictModal from '../components/services/OpenEngagementConflictModal';
 import { getContacts, getContact } from '../services/contactService';
 import { getOrganizations, getOrganization } from '../services/organizationService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
@@ -185,6 +186,7 @@ export default function NewServiceEngagement() {
   const [errors, setErrors] = useState({});
   const [toast, setToast] = useState('');
   const [saving, setSaving] = useState(false);
+  const [openEngagementConflict, setOpenEngagementConflict] = useState(null);
 
   // Dynamic staff list
   const { staffUsers } = useStaffUsers();
@@ -325,6 +327,10 @@ export default function NewServiceEngagement() {
         setTimeout(() => navigate('/services'), 1200);
       })
       .catch(err => {
+        if (err instanceof ApiError && err.status === 409 && err.body?.data?.existing) {
+          setOpenEngagementConflict(err.body.data.existing);
+          return;
+        }
         setToast('Error: ' + (err.message || 'Failed to create engagement.'));
       })
       .finally(() => setSaving(false));
@@ -337,6 +343,11 @@ export default function NewServiceEngagement() {
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
     <div style={pageWrap}>
+      <OpenEngagementConflictModal
+        open={Boolean(openEngagementConflict)}
+        existing={openEngagementConflict}
+        onClose={() => setOpenEngagementConflict(null)}
+      />
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
       {dataError && <div style={{ background:'#fef2f2', color:'#dc2626', padding:'8px 14px', borderRadius:8, fontSize:13, marginBottom:12 }}>{dataError}</div>}
 

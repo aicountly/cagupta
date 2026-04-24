@@ -62,6 +62,26 @@ class ServiceController extends BaseController
         ]);
     }
 
+    // ── GET /api/admin/services/kpi-snapshot ─────────────────────────────────
+
+    /**
+     * Engagement-level KPI counts and week lines for Services & Tasks.
+     * Query: as_of=YYYY-MM-DD (client local “today” so counts match the browser).
+     */
+    public function kpiSnapshot(): never
+    {
+        $asOf = trim((string)$this->query('as_of', ''));
+        if ($asOf === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $asOf)) {
+            $asOf = (new \DateTimeImmutable('today'))->format('Y-m-d');
+        }
+
+        try {
+            $this->success($this->services->computeKpiSnapshot($asOf), 'KPI snapshot', 200);
+        } catch (\InvalidArgumentException) {
+            $this->error('Invalid as_of — use YYYY-MM-DD', 422);
+        }
+    }
+
     // ── POST /api/admin/services ─────────────────────────────────────────────
 
     /**
@@ -129,6 +149,31 @@ class ServiceController extends BaseController
         $dueIn = $body['due_date'] ?? null;
         $this->assertServiceDueDateAllowed($dueIn, null);
 
+        $assigneeListEarly = $this->normalizeAssigneeUserIdsFromBody($body);
+        if ($assigneeListEarly !== null) {
+            $finalAssigneesForCheck = $assigneeListEarly;
+        } elseif ($assignedTo !== null && $assignedTo > 0) {
+            $finalAssigneesForCheck = [$assignedTo];
+        } else {
+            $finalAssigneesForCheck = [];
+        }
+
+        foreach ($finalAssigneesForCheck as $uid) {
+            if ($this->users->find((int)$uid) === null) {
+                $this->error('Assigned staff user is not valid. Choose another assignee.', 422);
+            }
+        }
+
+        $engagementTypeIdForDup = isset($body['engagement_type_id']) ? (int)$body['engagement_type_id'] : 0;
+        $this->assertNoOpenEngagementDuplicateForAssignees(
+            $engagementTypeIdForDup > 0 ? $engagementTypeIdForDup : null,
+            $clientType,
+            $clientId,
+            $orgId,
+            $finalAssigneesForCheck,
+            null
+        );
+
         $newId = $this->services->create([
             'client_type'          => $body['client_type']          ?? 'contact',
             'client_id'            => isset($body['client_id'])    ? (int)$body['client_id']    : null,
@@ -171,19 +216,25 @@ class ServiceController extends BaseController
             $logPath = dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-441a9d.log';
             $payload = [
                 'sessionId'   => '441a9d',
-                'runId'       => 'pre-fix',
+                'runId'       => 'post-fix',
                 'timestamp'   => (int) round(microtime(true) * 1000),
                 'location'    => 'ServiceController.php:store',
                 'message'     => 'store() Throwable',
                 'data'        => [
-                    'hypothesisId'     => 'H2',
-                    'exceptionClass'   => $e::class,
-                    'exceptionMessage' => $e->getMessage(),
+                    'hypothesisId'       => 'H2',
+                    'exceptionClass'     => $e::class,
+                    'exceptionMessage'   => $e->getMessage(),
                 ],
             ];
             @file_put_contents($logPath, json_encode($payload) . "\n", FILE_APPEND | LOCK_EX);
             // #endregion
-            throw $e;
+            error_log('[ServiceController] store: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            $appCfg = new \App\Config\App();
+            $public = 'Failed to create service engagement.';
+            if (strtolower($appCfg->environment) === 'development') {
+                $public .= ' ' . $e->getMessage();
+            }
+            $this->error($public, 500);
         }
     }
 
@@ -411,9 +462,11 @@ class ServiceController extends BaseController
         }
 
         $assigneeList = $this->normalizeAssigneeUserIdsFromBody($body);
+        $newAssignees       = null;
+        $assigneesInRequest = false;
         if ($assigneeList !== null) {
-            $this->services->replaceAssignees($id, $assigneeList);
-            unset($data['assigned_to']);
+            $newAssignees       = $assigneeList;
+            $assigneesInRequest = true;
         } elseif (array_key_exists('assigned_to', $body) || array_key_exists('assignedTo', $body)) {
             $raw = $body['assigned_to'] ?? $body['assignedTo'] ?? null;
             $n   = null;
@@ -423,7 +476,29 @@ class ServiceController extends BaseController
                     $n = $t;
                 }
             }
-            $this->services->replaceAssignees($id, $n !== null ? [$n] : []);
+            $newAssignees       = $n !== null ? [$n] : [];
+            $assigneesInRequest = true;
+        }
+
+        if ($assigneesInRequest && is_array($newAssignees)) {
+            foreach ($newAssignees as $uid) {
+                if ($this->users->find((int)$uid) === null) {
+                    $this->error('Assigned staff user is not valid. Choose another assignee.', 422);
+                }
+            }
+            $etDup = (int)($service['engagement_type_id'] ?? 0);
+            $svcClientType = strtolower(trim((string)($service['client_type'] ?? 'contact')));
+            $svcClientId   = (int)($service['client_id'] ?? 0);
+            $svcOrgId      = (int)($service['organization_id'] ?? 0);
+            $this->assertNoOpenEngagementDuplicateForAssignees(
+                $etDup > 0 ? $etDup : null,
+                $svcClientType,
+                $svcClientId,
+                $svcOrgId,
+                $newAssignees,
+                $id
+            );
+            $this->services->replaceAssignees($id, $newAssignees);
             unset($data['assigned_to']);
         }
 
@@ -752,6 +827,51 @@ class ServiceController extends BaseController
         }
 
         return $masked . '@' . $domain;
+    }
+
+    /**
+     * Block create/update when any assignee already has an open engagement for the same type and client.
+     *
+     * @param array<int> $assigneeUserIds
+     */
+    private function assertNoOpenEngagementDuplicateForAssignees(
+        ?int $engagementTypeId,
+        string $clientType,
+        int $clientId,
+        int $orgId,
+        array $assigneeUserIds,
+        ?int $excludeServiceId
+    ): void {
+        $etid = $engagementTypeId !== null ? (int)$engagementTypeId : 0;
+        if ($etid <= 0) {
+            return;
+        }
+
+        $seen = [];
+        foreach ($assigneeUserIds as $uid) {
+            $u = (int)$uid;
+            if ($u <= 0 || isset($seen[$u])) {
+                continue;
+            }
+            $seen[$u] = true;
+
+            $conflict = $this->services->findOpenEngagementConflictForAssignee(
+                $etid,
+                $clientType,
+                $clientId > 0 ? $clientId : null,
+                $orgId > 0 ? $orgId : null,
+                $u,
+                $excludeServiceId
+            );
+            if ($conflict !== null) {
+                $this->error(
+                    'An open service engagement already exists for this engagement type, client, and assignee. Complete or cancel it before creating another.',
+                    409,
+                    [],
+                    ['code' => 'engagement_open_duplicate', 'existing' => $conflict]
+                );
+            }
+        }
     }
 
     /**

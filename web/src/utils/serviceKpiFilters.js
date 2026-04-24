@@ -1,5 +1,7 @@
 /**
- * Engagement-level KPI rules for Services & Tasks (same logic as the dashboard counters).
+ * Engagement-level KPI rules for Services & Tasks.
+ * These use engagement `due_date` and `status` — not the home dashboard’s “Pending Tasks”
+ * card, which counts JSON task rows with status != done.
  */
 
 export const KPI_SLUGS = {

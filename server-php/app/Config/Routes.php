@@ -276,6 +276,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/services/kpi-snapshot',
+                'handler'    => 'Admin\ServiceController@kpiSnapshot',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/services/:id/audit-log',
                 'handler'    => 'Admin\ServiceController@auditLog',
                 'middleware' => ['auth', 'permission:services.view'],

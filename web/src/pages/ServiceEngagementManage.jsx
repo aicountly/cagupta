@@ -12,7 +12,9 @@ import {
   deleteEngagement,
   requestServiceClientFacingOtp,
   getServiceAuditLog,
+  ApiError,
 } from '../services/engagementService';
+import OpenEngagementConflictModal from '../components/services/OpenEngagementConflictModal';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import { getTimeEntries, createTimeEntry, TIME_ACTIVITY_TYPES } from '../services/timeEntryService';
 
@@ -118,6 +120,7 @@ export default function ServiceEngagementManage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
+  const [openEngagementConflict, setOpenEngagementConflict] = useState(null);
 
   const [serviceType, setServiceType] = useState('');
   const [fy, setFy] = useState('');
@@ -305,7 +308,11 @@ export default function ServiceEngagementManage() {
       setToast('Engagement saved');
       setTimeout(() => setToast(''), 2000);
     } catch (e) {
-      setError(e.message || 'Save failed.');
+      if (e instanceof ApiError && e.status === 409 && e.body?.data?.existing) {
+        setOpenEngagementConflict(e.body.data.existing);
+      } else {
+        setError(e.message || 'Save failed.');
+      }
     } finally {
       setSaving(false);
     }
@@ -428,6 +435,11 @@ export default function ServiceEngagementManage() {
 
   return (
     <div style={pageWrap}>
+      <OpenEngagementConflictModal
+        open={Boolean(openEngagementConflict)}
+        existing={openEngagementConflict}
+        onClose={() => setOpenEngagementConflict(null)}
+      />
       {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} onSave={handleAddTask} />}
       {toast && <div style={toastBar}>{toast}</div>}
 

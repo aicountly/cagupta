@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
-import { getAllEngagements } from '../services/engagementService';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { getAllEngagements, getServiceKpiSnapshot } from '../services/engagementService';
 import { useAuth } from '../auth/AuthContext';
 import {
   Plus, Search, SlidersHorizontal,
@@ -10,12 +10,20 @@ import {
 import { KPI_SLUGS, filterEngagementsBySlug } from '../utils/serviceKpiFilters';
 import ServicesEngagementTableBlock from '../components/services/ServicesEngagementTableBlock';
 
-// ── KPI helpers (engagement-level due date; not per-task) ───────────────────
-function kpiData(services) {
-  return [
+function formatWeekLine(delta, mode) {
+  if (mode === 'activity_7d') {
+    return delta > 0 ? `+${delta} this week` : 'No change';
+  }
+  if (delta > 0) return `+${delta} this week`;
+  if (delta < 0) return `${delta} this week`;
+  return 'No change';
+}
+
+// ── KPI helpers (engagement-level due date; not per-task JSON lines) ───────
+function kpiData(services, snapshot) {
+  const defs = [
     {
       label: 'Due This Week',
-      value: filterEngagementsBySlug(services, KPI_SLUGS.DUE_WEEK).length,
       slug: KPI_SLUGS.DUE_WEEK,
       icon: Clock,
       color: '#F37920',
@@ -24,7 +32,6 @@ function kpiData(services) {
     },
     {
       label: 'Overdue',
-      value: filterEngagementsBySlug(services, KPI_SLUGS.OVERDUE).length,
       slug: KPI_SLUGS.OVERDUE,
       icon: AlertTriangle,
       color: '#EF4444',
@@ -33,7 +40,6 @@ function kpiData(services) {
     },
     {
       label: 'Pending Info',
-      value: filterEngagementsBySlug(services, KPI_SLUGS.PENDING_INFO).length,
       slug: KPI_SLUGS.PENDING_INFO,
       icon: Info,
       color: '#F37920',
@@ -42,7 +48,6 @@ function kpiData(services) {
     },
     {
       label: 'Completed',
-      value: filterEngagementsBySlug(services, KPI_SLUGS.COMPLETED).length,
       slug: KPI_SLUGS.COMPLETED,
       icon: CheckCircle2,
       color: '#55B848',
@@ -50,31 +55,40 @@ function kpiData(services) {
       subtitle: 'By engagement status',
     },
   ];
+
+  return defs.map((row) => {
+    const useApi = snapshot && typeof snapshot.counts?.[row.slug] === 'number';
+    const value = useApi
+      ? snapshot.counts[row.slug]
+      : filterEngagementsBySlug(services, row.slug).length;
+    const weekLine = snapshot
+      ? formatWeekLine(
+          snapshot.weekDelta[row.slug],
+          snapshot.weekDeltaMode[row.slug]
+        )
+      : null;
+    return { ...row, value, weekLine };
+  });
 }
 
-// ── KPI Card ─────────────────────────────────────────────────────────────────
-function KpiCard({ item, onNavigate }) {
+// ── KPI Card (Link for middle-click / reliable navigation) ───────────────────
+function KpiCard({ item, to }) {
   const Icon = item.icon;
   const [hover, setHover] = useState(false);
   return (
-    <div
+    <Link
+      to={to}
       style={{
         ...kpiCard,
+        display: 'block',
+        textDecoration: 'none',
+        color: 'inherit',
         cursor: 'pointer',
         boxShadow: hover ? '0 4px 12px rgba(0,0,0,0.08)' : '0 1px 4px rgba(0,0,0,0.05)',
         borderColor: hover ? 'rgba(243,121,32,0.35)' : '#E6E8F0',
         transition: 'box-shadow 0.15s, border-color 0.15s',
       }}
-      role="button"
-      tabIndex={0}
       aria-label={`${item.label}, ${item.value} engagements. Open list.`}
-      onClick={() => onNavigate(item.slug)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          onNavigate(item.slug);
-        }
-      }}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
     >
@@ -82,13 +96,16 @@ function KpiCard({ item, onNavigate }) {
         <div style={{ minWidth: 0, flex: 1, paddingRight: 8 }}>
           <div style={kpiLabel}>{item.label}</div>
           <div style={kpiValue}>{item.value}</div>
+          {item.weekLine != null && (
+            <div style={kpiWeekLine}>{item.weekLine}</div>
+          )}
           <div style={kpiSubtitle}>{item.subtitle}</div>
         </div>
         <div style={{ ...kpiIconWrap, background: item.bg, flexShrink: 0 }}>
           <Icon size={18} color={item.color} />
         </div>
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -102,6 +119,7 @@ export default function Services() {
   const [filterStatus, setFilterStatus] = useState('all');
   const [search, setSearch] = useState('');
   const [allServices, setAllServices] = useState([]);
+  const [kpiSnapshot, setKpiSnapshot] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expandServiceId, setExpandServiceId] = useState(null);
   const onExpandConsumed = useCallback(() => setExpandServiceId(null), []);
@@ -118,9 +136,14 @@ export default function Services() {
 
   useEffect(() => {
     setLoading(true);
-    getAllEngagements()
-      .then((data) => setAllServices(data))
-      .catch(() => setAllServices([]))
+    Promise.all([
+      getAllEngagements().catch(() => []),
+      getServiceKpiSnapshot().catch(() => null),
+    ])
+      .then(([data, snap]) => {
+        setAllServices(data);
+        setKpiSnapshot(snap);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -131,7 +154,7 @@ export default function Services() {
     return matchStatus && matchSearch;
   });
 
-  const kpis = kpiData(allServices);
+  const kpis = kpiData(allServices, kpiSnapshot);
 
   return (
     <div style={pageWrap}>
@@ -141,7 +164,7 @@ export default function Services() {
       {/* KPI row */}
       <div style={kpiRow}>
         {kpis.map((k) => (
-          <KpiCard key={k.label} item={k} onNavigate={(slug) => navigate(`/services/focus/${slug}`)} />
+          <KpiCard key={k.label} item={k} to={`/services/focus/${k.slug}`} />
         ))}
       </div>
 
@@ -200,6 +223,7 @@ const kpiCard = {
 };
 const kpiLabel = { fontSize: 12, fontWeight: 600, color: '#64748b', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' };
 const kpiValue = { fontSize: 30, fontWeight: 700, color: '#0B1F3B', lineHeight: 1 };
+const kpiWeekLine = { fontSize: 12, fontWeight: 600, color: '#0B1F3B', marginTop: 4 };
 const kpiSubtitle = { fontSize: 11, color: '#94a3b8', marginTop: 8, lineHeight: 1.35 };
 const kpiIconWrap = { width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 

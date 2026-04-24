@@ -344,6 +344,66 @@ SQL;
     }
 
     /**
+     * Find another open engagement (not completed/cancelled) with the same engagement type,
+     * same client (contact or organization), and the given staff user on the team or as lead.
+     *
+     * @return array<string, mixed>|null Service row as from find(), or null if no conflict.
+     */
+    public function findOpenEngagementConflictForAssignee(
+        int $engagementTypeId,
+        string $clientType,
+        ?int $clientId,
+        ?int $organizationId,
+        int $assigneeUserId,
+        ?int $excludeServiceId
+    ): ?array {
+        if ($engagementTypeId <= 0 || $assigneeUserId <= 0) {
+            return null;
+        }
+
+        $ct = strtolower(trim($clientType));
+        if ($ct === 'organization') {
+            $oid = ($organizationId !== null && $organizationId > 0) ? $organizationId : -1;
+            $whereClient = "s.client_type = 'organization' AND s.organization_id = :client_ref";
+            $clientRef   = $oid;
+        } else {
+            $cid = ($clientId !== null && $clientId > 0) ? $clientId : -1;
+            $whereClient = "s.client_type = 'contact' AND s.client_id = :client_ref";
+            $clientRef   = $cid;
+        }
+
+        $excl = ($excludeServiceId !== null && $excludeServiceId > 0) ? $excludeServiceId : -1;
+
+        $sql = "SELECT s.id FROM services s
+                WHERE s.engagement_type_id = :etid
+                  AND s.status NOT IN ('completed', 'cancelled')
+                  AND {$whereClient}
+                  AND (
+                    s.assigned_to = :uid
+                    OR EXISTS (
+                      SELECT 1 FROM service_assignees sa
+                      WHERE sa.service_id = s.id AND sa.user_id = :uid
+                    )
+                  )
+                  AND (:excl < 0 OR s.id <> :excl)
+                LIMIT 1";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute([
+            ':etid'        => $engagementTypeId,
+            ':client_ref' => $clientRef,
+            ':uid'        => $assigneeUserId,
+            ':excl'       => $excl,
+        ]);
+        $foundId = $stmt->fetchColumn();
+        if ($foundId === false || $foundId === null) {
+            return null;
+        }
+
+        return $this->find((int)$foundId);
+    }
+
+    /**
      * Count service engagements that reference an engagement type.
      */
     public function countByEngagementTypeId(int $engagementTypeId): int
@@ -722,5 +782,93 @@ SQL;
         }
 
         return $fallbackDate;
+    }
+
+    /**
+     * KPI counts and week movement for Services & Tasks (aligns with web serviceKpiFilters.js; uses client as_of for “today”).
+     *
+     * Due-date KPIs: weekDelta = current bucket count vs same rules with anchor = as_of minus 7 days.
+     * Status KPIs: weekDelta = engagements in that status with updated_at in the 7 days ending as_of (activity proxy).
+     *
+     * @return array{asOf: string, counts: array<string, int>, weekDelta: array<string, int>, weekDeltaMode: array<string, string>}
+     */
+    public function computeKpiSnapshot(string $asOfYmd): array
+    {
+        $d = \DateTimeImmutable::createFromFormat('Y-m-d', $asOfYmd);
+        if ($d === false) {
+            throw new \InvalidArgumentException('as_of must be YYYY-MM-DD');
+        }
+
+        $today     = $d;
+        $weekEnd   = $today->modify('+7 days');
+        $weekAgo   = $today->modify('-7 days');
+        $waEnd     = $weekAgo->modify('+7 days');
+
+        $todayS    = $today->format('Y-m-d');
+        $weekEndS  = $weekEnd->format('Y-m-d');
+        $waS       = $weekAgo->format('Y-m-d');
+        $waEndS    = $waEnd->format('Y-m-d');
+
+        $open = "status NOT IN ('completed', 'cancelled')";
+
+        $cDue = $this->scalarCount(
+            "SELECT COUNT(*) FROM services WHERE {$open}
+             AND due_date IS NOT NULL AND due_date >= :a AND due_date <= :b",
+            [':a' => $todayS, ':b' => $weekEndS]
+        );
+        $cDueThen = $this->scalarCount(
+            "SELECT COUNT(*) FROM services WHERE {$open}
+             AND due_date IS NOT NULL AND due_date >= :a AND due_date <= :b",
+            [':a' => $waS, ':b' => $waEndS]
+        );
+
+        $cOv = $this->scalarCount(
+            "SELECT COUNT(*) FROM services WHERE {$open} AND due_date IS NOT NULL AND due_date < :t",
+            [':t' => $todayS]
+        );
+        $cOvThen = $this->scalarCount(
+            "SELECT COUNT(*) FROM services WHERE {$open} AND due_date IS NOT NULL AND due_date < :t",
+            [':t' => $waS]
+        );
+
+        $cPend  = $this->scalarCount("SELECT COUNT(*) FROM services WHERE status = 'pending_info'", []);
+        $cComp  = $this->scalarCount("SELECT COUNT(*) FROM services WHERE status = 'completed'", []);
+        $actPend = $this->scalarCount(
+            "SELECT COUNT(*) FROM services WHERE status = 'pending_info' AND updated_at >= (CAST(:d AS date) - INTERVAL '7 days')",
+            [':d' => $asOfYmd]
+        );
+        $actComp = $this->scalarCount(
+            "SELECT COUNT(*) FROM services WHERE status = 'completed' AND updated_at >= (CAST(:d AS date) - INTERVAL '7 days')",
+            [':d' => $asOfYmd]
+        );
+
+        return [
+            'asOf' => $asOfYmd,
+            'counts' => [
+                'due-week'      => $cDue,
+                'overdue'       => $cOv,
+                'pending-info'  => $cPend,
+                'completed'     => $cComp,
+            ],
+            'weekDelta' => [
+                'due-week'      => $cDue - $cDueThen,
+                'overdue'       => $cOv - $cOvThen,
+                'pending-info'  => $actPend,
+                'completed'     => $actComp,
+            ],
+            'weekDeltaMode' => [
+                'due-week'      => 'net_vs_week_ago',
+                'overdue'       => 'net_vs_week_ago',
+                'pending-info'  => 'activity_7d',
+                'completed'     => 'activity_7d',
+            ],
+        ];
+    }
+
+    private function scalarCount(string $sql, array $params): int
+    {
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        return (int)$stmt->fetchColumn();
     }
 }
