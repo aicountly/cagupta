@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import {
@@ -179,9 +179,11 @@ export default function ContactCreatePage() {
   const [contactLoading, setContactLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [nameDuplicateInfo, setNameDuplicateInfo] = useState(null);
-  /** @type {null | { profile: 'contact_name_duplicate' | 'contact_pan_identical', matches: object[], blockingReason?: string | null }} */
+  /** @type {null | { profile: 'contact_name_duplicate' | 'contact_pan_identical', matches: object[], blockingReason?: string | null, confirmMode?: 'quit' | 'addNew' }} */
   const [collisionModal, setCollisionModal] = useState(null);
   const [panDuplicateInfo, setPanDuplicateInfo] = useState(null);
+  /** Pending API payload when save is gated behind suspicious name confirmation. */
+  const pendingSaveRef = useRef(/** @type {null | { contact: object, mode: 'quit' | 'addNew' }} */ (null));
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -419,6 +421,59 @@ export default function ContactCreatePage() {
     return contact;
   }, [form, isEdit]);
 
+  const executePendingSave = useCallback(async () => {
+    const p = pendingSaveRef.current;
+    if (!p) return;
+    setSaving(true);
+    try {
+      if (p.mode === 'quit') {
+        if (isEdit && contactId) {
+          await updateContactApi(contactId, p.contact);
+          setToast('Contact updated successfully!');
+        } else {
+          await createContact(p.contact);
+          setToast('Contact saved successfully!');
+        }
+        setDirty(false);
+        pendingSaveRef.current = null;
+        setCollisionModal(null);
+        setTimeout(() => navigate('/clients/contacts'), 900);
+      } else {
+        await createContact(p.contact);
+        setDirty(false);
+        setForm(emptyForm(form.assignedManager));
+        setLinkedOrgNameById({});
+        setErrors({});
+        setNameDuplicateInfo(null);
+        setPanDuplicateInfo(null);
+        pendingSaveRef.current = null;
+        setCollisionModal(null);
+        setToast('Contact saved! Ready for another entry.');
+      }
+    } catch (err) {
+      const data = err && typeof err === 'object' ? err.data : null;
+      const c = data && data.conflict;
+      if (c) {
+        pendingSaveRef.current = null;
+        setCollisionModal({
+          profile: 'contact_pan_identical',
+          matches: [{
+            id: Number(c.id),
+            label: c.display_name || '—',
+            pan: c.pan != null ? String(c.pan) : '',
+            email: c.email != null ? String(c.email) : '',
+            mobile: c.phone != null ? String(c.phone) : '',
+          }],
+          blockingReason: 'save',
+        });
+        return;
+      }
+      setToast('Error: ' + (err.message || 'Failed to save contact.'));
+    } finally {
+      setSaving(false);
+    }
+  }, [isEdit, contactId, navigate, form.assignedManager]);
+
   async function handleSaveQuit() {
     const contact = doSave();
     if (!contact) return;
@@ -426,6 +481,7 @@ export default function ContactCreatePage() {
       setToast('Error: Contact is not loaded. Refresh the page and try again.');
       return;
     }
+    let nameDupForSave = null;
     const trimmedName = (contact.displayName || '').trim();
     if (trimmedName.length >= 2) {
       try {
@@ -434,6 +490,7 @@ export default function ContactCreatePage() {
         const others = (rows || []).filter((c) => c && (!Number.isFinite(curCid) || curCid <= 0 || Number(c.id) !== curCid));
         const dup = classifyContactNameDuplicates(trimmedName, others);
         setNameDuplicateInfo(dup);
+        nameDupForSave = dup;
       } catch {
         /* ignore name hint refresh */
       }
@@ -460,6 +517,17 @@ export default function ContactCreatePage() {
       } catch {
         /* continue; API will enforce */
       }
+    }
+
+    if (nameDupForSave?.matches?.length) {
+      pendingSaveRef.current = { contact, mode: 'quit' };
+      setCollisionModal({
+        profile: 'contact_name_duplicate',
+        matches: nameDupForSave.matches,
+        blockingReason: 'save',
+        confirmMode: 'quit',
+      });
+      return;
     }
 
     setSaving(true);
@@ -499,12 +567,14 @@ export default function ContactCreatePage() {
   async function handleSaveAddNew() {
     const contact = doSave();
     if (!contact) return;
+    let nameDupForSave = null;
     const trimmedName = (contact.displayName || '').trim();
     if (trimmedName.length >= 2) {
       try {
         const rows = await getContactsForSearch(trimmedName, 50);
         const dup = classifyContactNameDuplicates(trimmedName, rows || []);
         setNameDuplicateInfo(dup);
+        nameDupForSave = dup;
       } catch {
         /* ignore */
       }
@@ -531,6 +601,17 @@ export default function ContactCreatePage() {
       } catch {
         /* continue */
       }
+    }
+
+    if (nameDupForSave?.matches?.length) {
+      pendingSaveRef.current = { contact, mode: 'addNew' };
+      setCollisionModal({
+        profile: 'contact_name_duplicate',
+        matches: nameDupForSave.matches,
+        blockingReason: 'save',
+        confirmMode: 'addNew',
+      });
+      return;
     }
 
     setSaving(true);
@@ -601,13 +682,27 @@ export default function ContactCreatePage() {
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
       <NameCollisionModal
         open={Boolean(collisionModal?.matches?.length)}
-        onClose={() => setCollisionModal(null)}
+        onClose={() => {
+          pendingSaveRef.current = null;
+          setCollisionModal(null);
+        }}
         kind="similar"
         collisionProfile={collisionModal?.profile ?? null}
         entityNoun="contact"
         matches={collisionModal?.matches || []}
         onOpenRecord={(rid) => navigate(`/clients/contacts/${rid}/edit`)}
         blockingReason={collisionModal?.blockingReason ?? null}
+        onConfirm={
+          collisionModal?.profile === 'contact_name_duplicate' && collisionModal?.blockingReason === 'save'
+            ? () => { void executePendingSave(); }
+            : undefined
+        }
+        confirmLabel={
+          isEdit && collisionModal?.confirmMode !== 'addNew'
+            ? 'Confirm update'
+            : 'Confirm save'
+        }
+        confirmBusy={saving}
       />
 
       {/* Breadcrumb */}

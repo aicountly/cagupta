@@ -19,6 +19,13 @@ export default function NameCollisionModal({
    * Organizations should omit this and pass kind identical | similar.
    */
   collisionProfile = null,
+  /**
+   * When set (e.g. contact suspicious duplicate after Save), shows a primary action to proceed.
+   * Not used for identical PAN / org name block.
+   */
+  onConfirm = null,
+  confirmLabel = 'Confirm',
+  confirmBusy = false,
 }) {
   if (!open || !Array.isArray(matches) || matches.length === 0) return null;
 
@@ -81,6 +88,21 @@ export default function NameCollisionModal({
         </p>
       );
     }
+    if (isContactNameDup && blockingReason === 'save') {
+      return (
+        <div style={{ margin: '8px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
+          <p style={{ margin: '0 0 8px', fontWeight: 700, color: '#92400e' }}>Your changes are not saved yet.</p>
+          <p style={{ margin: '0 0 10px' }}>
+            Other contacts have the same or a very similar name. This is a suspicious duplicate — not proof it is the same person. Review the records below.
+          </p>
+          {typeof onConfirm === 'function' ? (
+            <p style={{ margin: 0 }}>
+              If you have verified this is a different person, click <strong>{confirmLabel}</strong> below to save.
+            </p>
+          ) : null}
+        </div>
+      );
+    }
     if (isContactNameDup) {
       return (
         <p style={{ margin: '8px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
@@ -107,9 +129,12 @@ export default function NameCollisionModal({
     );
   }
 
-  const closeLabel = isBlocking && !isContactNameDup
-    ? 'Close'
-    : 'Close — I will save from the form if appropriate';
+  const showConfirm = typeof onConfirm === 'function' && isContactNameDup && !isContactPan;
+  const closeLabel = (() => {
+    if (showConfirm) return 'Cancel';
+    if (isBlocking && !isContactNameDup) return 'Close';
+    return 'Close — I will save from the form if appropriate';
+  })();
 
   return (
     <div
@@ -188,7 +213,21 @@ export default function NameCollisionModal({
           </ul>
         </div>
 
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
+          {showConfirm ? (
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={confirmBusy}
+              style={{
+                ...modalBtnPrimary,
+                opacity: confirmBusy ? 0.7 : 1,
+                cursor: confirmBusy ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {confirmBusy ? 'Saving…' : confirmLabel}
+            </button>
+          ) : null}
           <button type="button" onClick={onClose} style={modalBtnSecondary}>
             {closeLabel}
           </button>
@@ -197,6 +236,17 @@ export default function NameCollisionModal({
     </div>
   );
 }
+
+const modalBtnPrimary = {
+  padding: '8px 16px',
+  background: '#F37920',
+  color: '#fff',
+  border: 'none',
+  borderRadius: 8,
+  cursor: 'pointer',
+  fontSize: 13,
+  fontWeight: 600,
+};
 
 const modalBtnSecondary = {
   padding: '8px 16px',
