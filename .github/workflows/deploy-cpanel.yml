@@ -80,3 +80,19 @@ jobs:
             find ${{ secrets.CPANEL_REMOTE_ROOT }}/api -type f -exec chmod 644 {} \;
             echo "✅ Permissions fixed"
             echo "✅ Deploy complete"
+
+      # ── Superadmin daily digest — cron reminder ─────────────────────────────
+      # The digest CLI script is now deployed at:
+      #   {CPANEL_REMOTE_ROOT}/api/cli/send-digest.php
+      #
+      # A cPanel cron job must be configured MANUALLY (once) in the
+      # cPanel → Cron Jobs UI. Suggested schedule: daily at 11:00 PM IST
+      # which is 17:30 UTC:
+      #
+      #   30 17 * * *  php /home/<cpanel_user>/<CPANEL_REMOTE_ROOT>/api/cli/send-digest.php \
+      #                    >> /home/<cpanel_user>/logs/digest.log 2>&1
+      #
+      # Replace <cpanel_user> and <CPANEL_REMOTE_ROOT> with real values.
+      # You can test it any time by running the command manually via SSH:
+      #   php /home/<cpanel_user>/<CPANEL_REMOTE_ROOT>/api/cli/send-digest.php --dry-run
+      # ────────────────────────────────────────────────────────────────────────

@@ -12,15 +12,11 @@ import { localDateKey } from '../../utils/serviceKpiFilters';
  */
 export default function AddTaskModal({ assigneeUserIds, staffUsers, onClose, onSave }) {
   const teamOptions = useMemo(() => {
-    const list = Array.isArray(staffUsers) ? [...staffUsers] : [];
-    const seen = new Set(list.map((u) => String(u.id)));
-    for (const uid of assigneeUserIds || []) {
-      if (!seen.has(String(uid))) {
-        seen.add(String(uid));
-        list.push({ id: uid, name: `User #${uid}` });
-      }
-    }
-    return list;
+    const staffById = new Map((staffUsers || []).map((u) => [String(u.id), u]));
+    return (assigneeUserIds || []).map((uid) => {
+      const found = staffById.get(String(uid));
+      return found || { id: uid, name: `User #${uid}` };
+    });
   }, [assigneeUserIds, staffUsers]);
 
   const [form, setForm] = useState(() => ({

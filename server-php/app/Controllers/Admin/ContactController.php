@@ -6,6 +6,7 @@ namespace App\Controllers\Admin;
 use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
+use App\Libraries\DigestQueue;
 use App\Libraries\OtpService;
 use App\Models\ClientModel;
 use App\Models\UserModel;
@@ -13,8 +14,9 @@ use App\Models\UserModel;
 /**
  * ContactController — CRUD for the `clients` table.
  *
- * Sends an alert email to the Superadmin on every create, update,
- * or status-change operation (best-effort; failures do not block the response).
+ * Queues an activity event in `superadmin_digest_queue` on every create,
+ * update, or status-change so that the Superadmin receives one consolidated
+ * daily digest instead of a separate email per operation.
  *
  * All endpoints require Bearer token + role: super_admin or admin
  * (enforced by RoleFilter in Routes.php).
@@ -511,7 +513,10 @@ class ContactController extends BaseController
     }
 
     /**
-     * Send an alert email to the Superadmin (fire-and-forget).
+     * Queue a contact activity event in the superadmin digest (fire-and-forget).
+     *
+     * The event is stored in `superadmin_digest_queue` and batched into a
+     * single consolidated email sent by the nightly cron (cli/send-digest.php).
      *
      * @param string                     $action     Human-readable action label.
      * @param array<string, mixed>|null  $contact    The affected contact row.
@@ -519,33 +524,21 @@ class ContactController extends BaseController
      */
     private function sendSuperadminAlert(string $action, ?array $contact, ?array $actingUser): void
     {
-        try {
-            $superadminEmail = (string)(getenv('SUPERADMIN_NOTIFY_EMAIL') ?: 'office@carahulgupta.in');
-            $contactName     = $contact ? ClientModel::displayName($contact) : 'Unknown';
-            $actorName       = $actingUser['name']  ?? 'Unknown';
-            $actorEmail      = $actingUser['email'] ?? 'Unknown';
-            $timestamp       = date('d M Y, h:i A T');
-            $status          = $contact ? (((bool)$contact['is_active']) ? 'Active' : 'Inactive') : 'Unknown';
+        $contactName = $contact ? ClientModel::displayName($contact) : 'Unknown';
+        $actorName   = $actingUser['name']  ?? 'Unknown';
+        $actorEmail  = $actingUser['email'] ?? 'Unknown';
+        $status      = $contact ? (((bool)$contact['is_active']) ? 'Active' : 'Inactive') : 'Unknown';
+        $entityId    = (int)($contact['id'] ?? 0);
 
-            $htmlBody = BrevoMailer::renderTemplate('contact-activity', [
-                'action'      => $action,
-                'contactName' => $contactName,
-                'actorName'   => $actorName,
-                'actorEmail'  => $actorEmail,
-                'timestamp'   => $timestamp,
-                'status'      => $status,
-            ]);
-
-            if ($htmlBody !== '') {
-                BrevoMailer::send(
-                    $superadminEmail,
-                    'CA Rahul Gupta',
-                    "Contact {$action} Alert - CA Rahul Gupta",
-                    $htmlBody
-                );
-            }
-        } catch (\Throwable $e) {
-            error_log('[ContactController] Superadmin alert failed: ' . $e->getMessage());
-        }
+        DigestQueue::enqueue(
+            entityType:  'contact',
+            bucket:      'contact',
+            entityId:    $entityId,
+            displayName: $contactName,
+            actionLabel: $action,
+            status:      $status,
+            actorName:   $actorName,
+            actorEmail:  $actorEmail,
+        );
     }
 }

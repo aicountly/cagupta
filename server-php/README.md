@@ -103,6 +103,47 @@ server {
 
 ---
 
+## Deployment (cPanel — Production)
+
+This backend is deployed **directly to production cPanel** shared hosting. There is no separate staging environment — all testing is performed against the live production URL.
+
+### Upload procedure
+
+1. Upload the `server-php/` folder contents into the target directory on cPanel (e.g. `public_html/api/`).
+2. Copy `.env.example` → `.env` and fill in the production credentials directly on the server via the cPanel File Manager or SSH.
+3. Verify `mod_rewrite` is enabled in cPanel → **Apache Handlers** (or ask your host).
+4. Navigate to the production URL and open **DevTools → Console** to confirm the API is responding.
+
+### No server-side log files
+
+Because the application runs on shared cPanel hosting where file-system log paths are unreliable and inaccessible during live testing, **no log files are written to disk**.
+
+Instead, all debug information, errors, and batch-operation traces are returned directly in the API JSON response and surfaced to the **browser console (DevTools → Inspect Element → Console tab)**. This makes it possible to diagnose issues in real time from the production URL without SSH or log-file access.
+
+#### How logs reach the browser console
+
+Every API response envelope carries a `debug` array when `APP_ENV` is not `production`, and all caught exceptions / batch warnings are appended there:
+
+```json
+{
+  "success": false,
+  "message": "Something went wrong",
+  "data": null,
+  "errors": ["PDO error: ..."],
+  "debug": [
+    "[BATCH] Processing row 3 of 50",
+    "[WARN]  Duplicate PAN skipped: ABCDE1234F",
+    "[ERROR] Row 7 insert failed: unique constraint violation"
+  ]
+}
+```
+
+The React frontend reads `response.data.debug` on every Axios response and forwards each entry to `console.debug(...)` so they appear in the browser's Inspect → Console panel automatically.
+
+> **Tip:** Open DevTools before triggering any batch action (import, bulk-update, etc.) to capture the full trace in real time.
+
+---
+
 ## Running Migrations
 
 Instead of running `schema.sql` directly, you can use the migration:

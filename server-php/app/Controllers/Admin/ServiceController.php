@@ -212,29 +212,16 @@ class ServiceController extends BaseController
         $service = $this->services->find($newId);
         $this->success($service, 'Service engagement created', 201);
         } catch (\Throwable $e) {
-            // #region agent log
-            $logPath = dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-441a9d.log';
-            $payload = [
-                'sessionId'   => '441a9d',
-                'runId'       => 'post-fix',
-                'timestamp'   => (int) round(microtime(true) * 1000),
-                'location'    => 'ServiceController.php:store',
-                'message'     => 'store() Throwable',
-                'data'        => [
-                    'hypothesisId'       => 'H2',
-                    'exceptionClass'     => $e::class,
-                    'exceptionMessage'   => $e->getMessage(),
-                ],
-            ];
-            @file_put_contents($logPath, json_encode($payload) . "\n", FILE_APPEND | LOCK_EX);
+            // #region agent log 6724f2
+            error_log('[ServiceController][6724f2] store: ' . $e::class . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
             // #endregion
-            error_log('[ServiceController] store: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
-            $appCfg = new \App\Config\App();
-            $public = 'Failed to create service engagement.';
-            if (strtolower($appCfg->environment) === 'development') {
-                $public .= ' ' . $e->getMessage();
-            }
-            $this->error($public, 500);
+            $this->error('Failed to create service engagement.', 500, [
+                'debug_session'     => '6724f2',
+                'exception_class'   => $e::class,
+                'exception_message' => $e->getMessage(),
+                'exception_file'    => basename($e->getFile()),
+                'exception_line'    => $e->getLine(),
+            ]);
         }
     }
 

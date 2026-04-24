@@ -349,7 +349,7 @@ We use a **monorepo** (powered by **Nx** or **Turborepo**) to share common code 
 | **Data Encryption** | TLS 1.3 in transit; AES‑256 at rest for credentials vault |
 | **API Security** | Rate limiting (Redis), input validation (Zod), CORS policies, CSRF protection |
 | **Mobile Security** | Biometric authentication, certificate pinning, secure storage for tokens |
-| **Audit Trail** | Immutable logs for all create/update/delete operations |
+| **Audit Trail** | All create/update/delete operations are recorded in the database; no server-side log files are written - debug traces are surfaced to the browser console via API responses |
 | **Compliance** | Designed for Indian data residency; GST‑compliant invoicing |
 
 ---
@@ -380,6 +380,8 @@ npm run dev
 # Build for production
 npm run build
 ```
+
+> **Production deployment note:** The web app is built locally (`npm run build`) and the resulting `dist/` folder is uploaded directly to the cPanel `public_html/` directory. All testing is performed against the live production URL — there is no separate staging environment. See [`server-php/README.md`](server-php/README.md) for backend deployment details and the browser-console logging strategy used during production testing.
 
 ### Mobile Applications
 
