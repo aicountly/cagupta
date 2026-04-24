@@ -18,7 +18,10 @@ export default function ServicesKpiList() {
 
   useEffect(() => {
     // #region agent log
-    fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9e37a5' }, body: JSON.stringify({ sessionId: '9e37a5', location: 'ServicesKpiList.jsx:mount', message: 'KpiList effect', data: { kpiSlug: String(kpiSlug ?? ''), slugValid: isValidKpiSlug(String(kpiSlug ?? '')) }, timestamp: Date.now(), hypothesisId: 'C', runId: 'pre' }) }).catch(() => {});
+    const _dbgKpi = { sessionId: '9e37a5', location: 'ServicesKpiList.jsx:mount', message: 'KpiList mounted', data: { kpiSlug: String(kpiSlug ?? 'UNDEFINED'), slugValid: isValidKpiSlug(String(kpiSlug ?? '')), windowPath: typeof window !== 'undefined' ? window.location.pathname : '' }, timestamp: Date.now(), hypothesisId: 'D', runId: 'run2' };
+    console.log('[DBG-9e37a5 D] ServicesKpiList mounted', _dbgKpi.data);
+    try { sessionStorage.setItem('dbg9e37a5_kpilist_mount', JSON.stringify({ ..._dbgKpi, ts: new Date().toISOString() })); } catch {}
+    fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9e37a5' }, body: JSON.stringify(_dbgKpi) }).catch(() => {});
     // #endregion
   }, [kpiSlug]);
 
