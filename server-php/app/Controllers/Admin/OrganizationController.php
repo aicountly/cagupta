@@ -141,8 +141,8 @@ class OrganizationController extends BaseController
             'website'            => $body['website']  ?? null,
             'notes'              => $body['notes']    ?? null,
             'reference'          => $body['reference'] ?? null,
-            'group_id'           => $body['group_id']  ?? null,
-            'primary_contact_id' => $body['primary_contact_id'] ?? null,
+            'group_id'           => $this->normalizeOptionalPositiveInt($body['group_id'] ?? null),
+            'primary_contact_id' => $this->normalizeOptionalPositiveInt($body['primary_contact_id'] ?? null),
             'organization_status' => $orgStatus,
             'is_active'          => $orgStatus !== 'inactive',
             'created_by'         => $actingUser ? (int)$actingUser['id'] : null,
@@ -185,15 +185,6 @@ class OrganizationController extends BaseController
         }
 
         $body = $this->getJsonBody();
-        // #region agent log
-        @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-3b3d32.log', json_encode(['sessionId' => '3b3d32', 'hypothesisId' => 'H5', 'location' => 'OrganizationController.php:update', 'message' => 'org update name keys', 'data' => ['id' => $id, 'has_name' => array_key_exists('name', $body), 'name_len' => strlen(trim((string)($body['name'] ?? ''))), 'runs_server_name_duplicate_check' => false], 'timestamp' => (int) round(microtime(true) * 1000)], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
-        // #endregion
-        // #region agent log
-        @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-b2a687.log', json_encode(['sessionId' => 'b2a687', 'hypothesisId' => 'H3', 'location' => 'OrganizationController.php:update', 'message' => 'PUT body snapshot', 'data' => ['id' => $id, 'has_is_active' => array_key_exists('is_active', $body), 'is_active' => $body['is_active'] ?? null, 'body_keys' => array_keys($body)], 'timestamp' => (int) round(microtime(true) * 1000)], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
-        // #endregion
-        // #region agent log
-        @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-6abbad.log', json_encode(['sessionId' => '6abbad', 'hypothesisId' => 'H3', 'location' => 'OrganizationController.php:update', 'message' => 'PUT group_id', 'data' => ['id' => $id, 'has_group_id_key' => array_key_exists('group_id', $body), 'body_group_id' => $body['group_id'] ?? null], 'timestamp' => (int) round(microtime(true) * 1000)], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
-        // #endregion
         $data = [];
 
         $textFields = [
@@ -226,10 +217,10 @@ class OrganizationController extends BaseController
             $data['organization_status'] = $data['is_active'] ? 'active' : 'inactive';
         }
         if (array_key_exists('group_id', $body)) {
-            $data['group_id'] = $body['group_id'];
+            $data['group_id'] = $this->normalizeOptionalPositiveInt($body['group_id'] ?? null);
         }
         if (array_key_exists('primary_contact_id', $body)) {
-            $data['primary_contact_id'] = $body['primary_contact_id'] ? (int)$body['primary_contact_id'] : null;
+            $data['primary_contact_id'] = $this->normalizeOptionalPositiveInt($body['primary_contact_id'] ?? null);
         }
         if (array_key_exists('referring_affiliate_user_id', $body)) {
             $ra = (int)$body['referring_affiliate_user_id'];
@@ -269,11 +260,18 @@ class OrganizationController extends BaseController
             }
         }
 
-        $this->orgs->update($id, $data);
+        try {
+            $this->orgs->update($id, $data);
+        } catch (\PDOException $e) {
+            error_log('[OrganizationController] Organization update failed: ' . $e->getMessage());
+            $msg = $e->getMessage();
+            if (str_contains($msg, 'foreign key') || str_contains($msg, '23503')) {
+                $this->error('Invalid link: choose a valid client group or primary contact, or clear those fields.', 422);
+            }
+            $this->error('Could not save organization.', 500);
+        }
+
         $updated    = $this->orgs->find($id);
-        // #region agent log
-        @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-6abbad.log', json_encode(['sessionId' => '6abbad', 'hypothesisId' => 'H3', 'location' => 'OrganizationController.php:update:after', 'message' => 'row group_id after update', 'data' => ['id' => $id, 'updated_group_id' => $updated['group_id'] ?? null], 'timestamp' => (int) round(microtime(true) * 1000)], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
-        // #endregion
         $actingUser = $this->authUser();
 
         // ── Superadmin alert (best-effort) ────────────────────────────────────
@@ -385,6 +383,19 @@ class OrganizationController extends BaseController
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    /**
+     * @param mixed $v Raw JSON (may be 0, "0", "", null) — never return 0 (invalid FK).
+     */
+    private function normalizeOptionalPositiveInt(mixed $v): ?int
+    {
+        if ($v === null || $v === '' || $v === false) {
+            return null;
+        }
+        $n = (int)$v;
+
+        return $n > 0 ? $n : null;
+    }
 
     private function maskEmail(string $email): string
     {

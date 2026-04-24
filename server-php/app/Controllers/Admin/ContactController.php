@@ -124,7 +124,7 @@ class ContactController extends BaseController
                 'country'           => $body['country']  ?? 'India',
                 'notes'             => $body['notes']    ?? null,
                 'reference'         => $body['reference'] ?? null,
-                'group_id'          => $body['group_id']  ?? null,
+                'group_id'          => $this->normalizeOptionalPositiveInt($body['group_id'] ?? null),
                 'is_active'         => $body['is_active'] ?? true,
                 'contact_status'    => $body['contact_status'] ?? $body['status'] ?? null,
                 'created_by'        => $actingUser ? (int)$actingUser['id'] : null,
@@ -187,28 +187,6 @@ class ContactController extends BaseController
         }
 
         $body = $this->getJsonBody();
-        // #region agent log
-        @file_put_contents('/Users/rahulgupta/cagupta/.cursor/debug-3b3d32.log', json_encode(['sessionId' => '3b3d32', 'hypothesisId' => 'H5', 'location' => 'ContactController.php:update', 'message' => 'contact update name keys', 'data' => ['id' => $id, 'has_first_name' => array_key_exists('first_name', $body), 'first_len' => strlen(trim((string)($body['first_name'] ?? ''))), 'runs_server_name_duplicate_check' => false], 'timestamp' => (int) round(microtime(true) * 1000)], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND | LOCK_EX);
-        // #endregion
-        // #region agent log
-        @file_put_contents(
-            '/Users/rahulgupta/cagupta/.cursor/debug-21cedb.log',
-            json_encode([
-                'sessionId'    => '21cedb',
-                'hypothesisId' => 'H2',
-                'location'     => 'ContactController.php:update',
-                'message'      => 'contact update handler',
-                'data'         => [
-                    'id'               => $id,
-                    'has_first_name'   => array_key_exists('first_name', $body),
-                    'has_last_name'    => array_key_exists('last_name', $body),
-                    'name_collision_chk' => false,
-                ],
-                'timestamp'    => (int) round(microtime(true) * 1000),
-            ], JSON_UNESCAPED_UNICODE) . "\n",
-            FILE_APPEND | LOCK_EX
-        );
-        // #endregion
         $data = [];
 
         $textFields = [
@@ -233,7 +211,7 @@ class ContactController extends BaseController
             $data['is_active'] = (bool)$body['is_active'];
         }
         if (array_key_exists('group_id', $body)) {
-            $data['group_id'] = $body['group_id'];
+            $data['group_id'] = $this->normalizeOptionalPositiveInt($body['group_id'] ?? null);
         }
         if (array_key_exists('referring_affiliate_user_id', $body)) {
             $ra = (int)$body['referring_affiliate_user_id'];
@@ -253,6 +231,13 @@ class ContactController extends BaseController
         if ($data !== []) {
             try {
                 $this->clients->update($id, $data);
+            } catch (\PDOException $e) {
+                error_log('[ContactController] Update failed for contact ' . $id . ': ' . $e->getMessage());
+                $msg = $e->getMessage();
+                if (str_contains($msg, 'foreign key') || str_contains($msg, '23503')) {
+                    $this->error('Invalid link: choose a valid client group or linked organizations.', 422);
+                }
+                $this->error('Failed to update contact. Please try again.', 500);
             } catch (\Throwable $e) {
                 error_log('[ContactController] Update failed for contact ' . $id . ': ' . $e->getMessage());
                 $this->error('Failed to update contact. Please try again.', 500);
@@ -396,6 +381,19 @@ class ContactController extends BaseController
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    /**
+     * @param mixed $v Raw JSON (may be 0, "0", "", null).
+     */
+    private function normalizeOptionalPositiveInt(mixed $v): ?int
+    {
+        if ($v === null || $v === '' || $v === false) {
+            return null;
+        }
+        $n = (int)$v;
+
+        return $n > 0 ? $n : null;
+    }
 
     private function maskEmail(string $email): string
     {

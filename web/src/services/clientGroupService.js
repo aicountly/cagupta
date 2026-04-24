@@ -58,11 +58,5 @@ export async function deleteGroup(id) {
 export async function getGroupMembers(id) {
   const res = await fetch(`${API_BASE}/admin/client-groups/${id}`, { headers: authHeaders() });
   const data = await parseResponse(res);
-  const members = data.data?.members || { contacts: [], organizations: [] };
-  // #region agent log
-  const c0 = members.contacts?.[0];
-  const o0 = members.organizations?.[0];
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '984c9c' }, body: JSON.stringify({ sessionId: '984c9c', runId: 'post-fix', hypothesisId: 'H1', location: 'clientGroupService.js:getGroupMembers', message: 'API member row keys and name fields', data: { groupId: id, nContacts: members.contacts?.length ?? 0, nOrgs: members.organizations?.length ?? 0, contactKeys: c0 ? Object.keys(c0) : null, orgKeys: o0 ? Object.keys(o0) : null, contactNameFields: c0 ? { display_name: c0.display_name, displayName: c0.displayName, first_name: c0.first_name, last_name: c0.last_name, organization_name: c0.organization_name } : null, orgNameFields: o0 ? { display_name: o0.display_name, displayName: o0.displayName, name: o0.name } : null }, timestamp: Date.now() }) }).catch(() => {});
-  // #endregion
-  return members;
+  return data.data?.members || { contacts: [], organizations: [] };
 }

@@ -25,6 +25,12 @@ async function parseResponse(res) {
   return json;
 }
 
+function toPositiveIntOrNull(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 /** @param {unknown} val */
 function coerceIdArray(val) {
   if (val == null) return [];
@@ -255,7 +261,7 @@ export async function createContact(payload) {
     is_active:         payload.status !== 'inactive',
     assigned_manager:  payload.assignedManager || null,
     linked_org_ids:    payload.linkedOrgIds    || [],
-    group_id:          payload.groupId ?? null,
+    group_id:          toPositiveIntOrNull(payload.groupId ?? payload.group_id),
     referring_affiliate_user_id: payload.referringAffiliateUserId != null && payload.referringAffiliateUserId !== ''
       ? Number(payload.referringAffiliateUserId) : null,
     referral_start_date: payload.referralStartDate || null,
@@ -317,7 +323,7 @@ export async function updateContact(id, payload) {
     body.linked_org_ids = payload.linkedOrgIds ?? [];
   }
   if (hasOwn(payload, 'groupId') || hasOwn(payload, 'group_id')) {
-    body.group_id = payload.groupId ?? payload.group_id ?? null;
+    body.group_id = toPositiveIntOrNull(payload.groupId ?? payload.group_id);
   }
   if (hasOwn(payload, 'referringAffiliateUserId')) {
     const v = payload.referringAffiliateUserId;
@@ -332,9 +338,6 @@ export async function updateContact(id, payload) {
     headers: authHeaders(),
     body:    JSON.stringify(body),
   });
-  // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '21cedb' }, body: JSON.stringify({ sessionId: '21cedb', location: 'contactService.js:updateContact', message: 'PUT contacts response', data: { id: String(id), ok: res.ok, status: res.status }, timestamp: Date.now(), hypothesisId: 'H2' }) }).catch(() => {});
-  // #endregion
   const data = await parseResponse(res);
   return normalizeContact(data.data);
 }
@@ -365,8 +368,5 @@ export async function deleteContact(id, { superadminOtp } = {}) {
     method: 'DELETE',
     headers,
   });
-  // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2098b5' }, body: JSON.stringify({ sessionId: '2098b5', location: 'contactService.js:deleteContact', message: 'DELETE contact response', data: { id: String(id), ok: res.ok, status: res.status, otpSent: Boolean(superadminOtp && String(superadminOtp).trim()) }, timestamp: Date.now(), hypothesisId: 'H2' }) }).catch(() => {});
-  // #endregion
   await parseResponse(res);
 }

@@ -142,8 +142,8 @@ class OrganizationModel
             ':website'            => $data['website']    ?? null,
             ':notes'              => $data['notes']      ?? null,
             ':reference'          => $data['reference']  ?? null,
-            ':group_id'           => isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null,
-            ':primary_contact_id' => isset($data['primary_contact_id']) && $data['primary_contact_id'] !== '' ? (int)$data['primary_contact_id'] : null,
+            ':group_id'           => self::optionalPositiveInt($data['group_id'] ?? null),
+            ':primary_contact_id' => self::optionalPositiveInt($data['primary_contact_id'] ?? null),
             ':organization_status' => $data['organization_status'] ?? 'active',
             ':is_active'          => ((bool)($data['is_active'] ?? true)) ? 'true' : 'false',
             ':created_by'         => $data['created_by'] ?? null,
@@ -186,16 +186,16 @@ class OrganizationModel
             $params[':client_facing_restricted'] = ((bool)$data['client_facing_restricted']) ? 'true' : 'false';
         }
         if (array_key_exists('primary_contact_id', $data)) {
-            $setClauses[]               = 'primary_contact_id = :primary_contact_id';
-            $params[':primary_contact_id'] = isset($data['primary_contact_id']) && $data['primary_contact_id'] !== '' ? (int)$data['primary_contact_id'] : null;
+            $setClauses[]                   = 'primary_contact_id = :primary_contact_id';
+            $params[':primary_contact_id'] = self::optionalPositiveInt($data['primary_contact_id'] ?? null);
         }
         if (array_key_exists('is_active', $data)) {
             $setClauses[]       = 'is_active = :is_active';
             $params[':is_active'] = ((bool)$data['is_active']) ? 'true' : 'false';
         }
         if (array_key_exists('group_id', $data)) {
-            $setClauses[]      = 'group_id = :group_id';
-            $params[':group_id'] = isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null;
+            $setClauses[]        = 'group_id = :group_id';
+            $params[':group_id'] = self::optionalPositiveInt($data['group_id'] ?? null);
         }
 
         if (empty($setClauses)) {
@@ -207,6 +207,19 @@ class OrganizationModel
 
         $stmt = $this->db->prepare("UPDATE organizations SET {$setClause} WHERE id = :id");
         return $stmt->execute($params);
+    }
+
+    /**
+     * @param mixed $v Raw JSON / form value (may be 0, "0", "", null).
+     */
+    private static function optionalPositiveInt(mixed $v): ?int
+    {
+        if ($v === null || $v === '' || $v === false) {
+            return null;
+        }
+        $n = (int)$v;
+
+        return $n > 0 ? $n : null;
     }
 
     /**

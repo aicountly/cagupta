@@ -58,13 +58,6 @@ export default function Contacts() {
     return () => window.removeEventListener('keydown', onKey);
   }, [deleteTarget, deleteSubmitting, deleteOtpSending]);
 
-  useEffect(() => {
-    if (loading) return;
-    // #region agent log
-    fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2098b5' }, body: JSON.stringify({ sessionId: '2098b5', location: 'Contacts.jsx:tableReady', message: 'Contacts list ready', data: { rowCount: contacts.length, canDeleteContact, deleteControlExpected: true }, timestamp: Date.now(), hypothesisId: 'H1' }) }).catch(() => {});
-    // #endregion
-  }, [loading, contacts.length, canDeleteContact]);
-
   async function sendDeleteOtp() {
     const c = deleteTarget;
     if (!c) return;
@@ -89,22 +82,13 @@ export default function Contacts() {
     }
     setDeleteModalErr('');
     setDeleteSubmitting(true);
-    // #region agent log
-    fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2098b5' }, body: JSON.stringify({ sessionId: '2098b5', location: 'Contacts.jsx:confirmDeleteContact', message: 'Delete confirm invoked', data: { contactId: c.id }, timestamp: Date.now(), hypothesisId: 'H3' }) }).catch(() => {});
-    // #endregion
     try {
       await deleteContact(c.id, { superadminOtp: deleteOtp.trim() });
       setContacts(prev => prev.filter(x => x.id !== c.id));
       if (selected?.id === c.id) setSelected(null);
       if (orgModalContact?.id === c.id) setOrgModalContact(null);
       setDeleteTarget(null);
-      // #region agent log
-      fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2098b5' }, body: JSON.stringify({ sessionId: '2098b5', location: 'Contacts.jsx:confirmDeleteContact', message: 'Delete completed', data: { contactId: c.id }, timestamp: Date.now(), runId: 'post-fix', hypothesisId: 'H3' }) }).catch(() => {});
-      // #endregion
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2098b5' }, body: JSON.stringify({ sessionId: '2098b5', location: 'Contacts.jsx:confirmDeleteContact', message: 'Delete failed', data: { contactId: c.id, err: String(err?.message || err) }, timestamp: Date.now(), hypothesisId: 'H3' }) }).catch(() => {});
-      // #endregion
       alert(err.message || 'Failed to delete contact.');
     } finally {
       setDeleteSubmitting(false);

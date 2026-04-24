@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import { createContact } from '../services/contactService';
@@ -16,6 +16,7 @@ import { useAuth } from '../auth/AuthContext';
 import DateInput from '../components/common/DateInput';
 import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
 import ContactMultiSelect from '../components/common/ContactMultiSelect';
+import NameCollisionModal from '../components/common/NameCollisionModal';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ORG_TYPES = ['Company', 'LLP', 'Partnership', 'Proprietorship', 'Trust', 'Society', 'Other'];
@@ -219,6 +220,8 @@ export default function OrganizationCreatePage() {
   const [duplicateConflict, setDuplicateConflict] = useState(null);
   /** Inline name duplicate / similarity (from search API; not persisted server-side). */
   const [nameDuplicateInfo, setNameDuplicateInfo] = useState(null);
+  const [nameCollisionModalOpen, setNameCollisionModalOpen] = useState(false);
+  const nameCollisionSigRef = useRef('');
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -252,9 +255,6 @@ export default function OrganizationCreatePage() {
               ? String(existing.group_id)
               : '';
         setGroupDisplayName(existing.groupName || '');
-        // #region agent log
-        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', runId: 'post-fix', hypothesisId: 'H1', location: 'OrganizationCreatePage.jsx:loadOrg', message: 'group hydrate', data: { existing_group_id: existing.group_id ?? 'MISSING', existing_groupId: existing.groupId ?? 'MISSING', nextGroupIdStr, existing_groupName: (existing.groupName || '').slice(0, 40) }, timestamp: Date.now() }) }).catch(() => {});
-        // #endregion
         setForm({
           displayName:        existing.displayName        || '',
           constitution:       existing.constitution       || '',
@@ -285,7 +285,6 @@ export default function OrganizationCreatePage() {
       .catch(() => {});
   }, [isEdit, id]);
 
-  // #region agent log
   useEffect(() => {
     const q = (form.displayName || '').trim();
     if (q.length < 2) {
@@ -300,16 +299,26 @@ export default function OrganizationCreatePage() {
           const others = (rows || []).filter((o) => o && (!Number.isFinite(curId) || curId <= 0 || Number(o.id) !== curId));
           const dup = classifyNameDuplicates(q, others);
           setNameDuplicateInfo(dup);
-          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'post-fix', hypothesisId: 'H1', location: 'OrganizationCreatePage.jsx:nameSearchProbe', message: 'org name typeahead counts', data: { isEdit, currentEntityId: Number.isFinite(curId) ? curId : null, queryLen: q.length, apiRowCount: (rows || []).length, afterExcludeCount: others.length, apiReturnsPeers: others.length > 0, resolvedKind: dup?.kind ?? null, identicalCount: dup?.kind === 'identical' ? dup.matches.length : 0, similarCount: dup?.kind === 'similar' ? dup.matches.length : 0 }, timestamp: Date.now() }) }).catch(() => {});
         })
         .catch(() => {
           setNameDuplicateInfo(null);
-          fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'post-fix', hypothesisId: 'H4', location: 'OrganizationCreatePage.jsx:nameSearchProbe', message: 'org name search request failed', data: { isEdit }, timestamp: Date.now() }) }).catch(() => {});
         });
     }, 450);
     return () => clearTimeout(t);
   }, [form.displayName, isEdit, orgId]);
-  // #endregion
+
+  useEffect(() => {
+    if (!nameDuplicateInfo) {
+      nameCollisionSigRef.current = '';
+      setNameCollisionModalOpen(false);
+      return;
+    }
+    const sig = `${nameDuplicateInfo.kind}:${nameDuplicateInfo.matches.map((m) => m.id).join(',')}`;
+    if (sig !== nameCollisionSigRef.current) {
+      nameCollisionSigRef.current = sig;
+      setNameCollisionModalOpen(true);
+    }
+  }, [nameDuplicateInfo]);
 
   // Close toast automatically after 3 s
   useEffect(() => {
@@ -429,9 +438,6 @@ export default function OrganizationCreatePage() {
         const others = (rows || []).filter((o) => o && (!Number.isFinite(curOid) || curOid <= 0 || Number(o.id) !== curOid));
         const dup = classifyNameDuplicates(trimmedName, others);
         setNameDuplicateInfo(dup);
-        // #region agent log
-        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '3b3d32' }, body: JSON.stringify({ sessionId: '3b3d32', runId: 'post-fix', hypothesisId: 'H1', location: 'OrganizationCreatePage.jsx:handleSave', message: 'org save name gate', data: { saveBlockedByIdenticalName: dup?.kind === 'identical' }, timestamp: Date.now() }) }).catch(() => {});
-        // #endregion
         if (dup?.kind === 'identical') {
           setToast({ message: '❌ Another organization already uses this exact name. Change the name to save.', type: 'error' });
           setSubmitting(false);
@@ -444,12 +450,6 @@ export default function OrganizationCreatePage() {
 
     try {
       if (isEdit && orgId) {
-        // #region agent log
-        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H5', location: 'OrganizationCreatePage.jsx:handleSave', message: 'edit save submit', data: { orgId, formStatus: form.status }, timestamp: Date.now() }) }).catch(() => {});
-        // #endregion
-        // #region agent log
-        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', runId: 'post-fix', hypothesisId: 'H2', location: 'OrganizationCreatePage.jsx:handleSave', message: 'form.group_id before buildOrg', data: { orgId, form_group_id: form.group_id ?? null, built_group_id: buildOrg(form).group_id ?? null }, timestamp: Date.now() }) }).catch(() => {});
-        // #endregion
         await updateOrganizationApi(orgId, buildOrg(form));
         setToast({ message: '✅ Organization updated successfully!', type: 'success' });
       } else {
@@ -541,6 +541,14 @@ export default function OrganizationCreatePage() {
   return (
     <div style={pageWrap}>
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      <NameCollisionModal
+        open={nameCollisionModalOpen && Boolean(nameDuplicateInfo)}
+        onClose={() => setNameCollisionModalOpen(false)}
+        kind={nameDuplicateInfo?.kind}
+        entityNoun="organization"
+        matches={nameDuplicateInfo?.matches || []}
+        onOpenRecord={(rid) => navigate(`/clients/organizations/${rid}/edit`)}
+      />
 
       {/* Breadcrumb */}
       <div style={breadcrumbRow}>
@@ -582,54 +590,27 @@ export default function OrganizationCreatePage() {
               style={{ ...inputStyle, borderColor: errors.displayName ? '#ef4444' : '#E6E8F0' }}
             />
             {errors.displayName && <ErrorMsg msg={errors.displayName} />}
-            {nameDuplicateInfo && (
-              <div
+            {nameDuplicateInfo && !nameCollisionModalOpen && (
+              <button
+                type="button"
+                onClick={() => setNameCollisionModalOpen(true)}
                 style={{
                   marginTop: 10,
-                  padding: 12,
-                  borderRadius: 8,
-                  fontSize: 13,
-                  lineHeight: 1.45,
-                  border: nameDuplicateInfo.kind === 'identical' ? '1px solid #fecaca' : '1px solid #fde68a',
-                  background: nameDuplicateInfo.kind === 'identical' ? '#fef2f2' : '#fffbeb',
+                  display: 'inline-block',
+                  padding: '8px 12px',
+                  fontSize: 12,
+                  fontWeight: 600,
                   color: nameDuplicateInfo.kind === 'identical' ? '#991b1b' : '#92400e',
+                  background: nameDuplicateInfo.kind === 'identical' ? '#fef2f2' : '#fffbeb',
+                  border: nameDuplicateInfo.kind === 'identical' ? '1px solid #fecaca' : '1px solid #fde68a',
+                  borderRadius: 8,
+                  cursor: 'pointer',
                 }}
               >
-                <div style={{ fontWeight: 700, marginBottom: 6 }}>
-                  {nameDuplicateInfo.kind === 'identical'
-                    ? 'Duplicate name — cannot save'
-                    : 'Similar name(s) — please confirm'}
-                </div>
-                <div style={{ marginBottom: 8, fontSize: 12, opacity: 0.95 }}>
-                  {nameDuplicateInfo.kind === 'identical'
-                    ? 'Another organization already has this exact name. Use a distinct name or edit the existing record.'
-                    : 'These organizations match closely (one name contains the other). You can still save if they are genuinely different.'}
-                </div>
-                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12 }}>
-                  {nameDuplicateInfo.matches.map((m) => (
-                    <li key={m.id} style={{ marginBottom: 4 }}>
-                      <strong>{m.label}</strong>
-                      {' '}(ID {m.id})
-                      <button
-                        type="button"
-                        onClick={() => navigate(`/clients/organizations/${m.id}/edit`)}
-                        style={{
-                          marginLeft: 8,
-                          padding: '2px 8px',
-                          fontSize: 11,
-                          borderRadius: 6,
-                          border: '1px solid rgba(0,0,0,0.12)',
-                          background: '#fff',
-                          cursor: 'pointer',
-                          fontWeight: 600,
-                        }}
-                      >
-                        Open
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
+                {nameDuplicateInfo.kind === 'identical'
+                  ? 'View duplicate name — cannot save until resolved'
+                  : 'View similar organization name(s)…'}
+              </button>
             )}
           </div>
         </FormSection>

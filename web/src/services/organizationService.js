@@ -40,6 +40,13 @@ async function parseResponse(res) {
   return json;
 }
 
+/** Avoid sending 0 / invalid FK ids to the API. */
+function toPositiveIntOrNull(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 /** Tri-state org status from API row (`organization_status` + legacy `is_active`). */
 function organizationTriStatus(o) {
   const s = String(o.organization_status ?? '').trim().toLowerCase();
@@ -118,14 +125,7 @@ export async function getOrganization(id) {
     headers: authHeaders(),
   });
   const data = await parseResponse(res);
-  const normalized = normalizeOrg(data.data);
-  // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H2', location: 'organizationService.js:getOrganization', message: 'load org for edit', data: { orgId: Number(id), rawIsActive: data.data?.is_active ?? null, rawStatusField: data.data?.status ?? null, normalizedStatus: normalized.status }, timestamp: Date.now() }) }).catch(() => {});
-  // #endregion
-  // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', runId: 'post-fix', hypothesisId: 'H1', location: 'organizationService.js:getOrganization', message: 'group fields raw vs normalized', data: { orgId: Number(id), rawGroupId: data.data?.group_id ?? null, normalizedGroupId: normalized.groupId ?? null, normalizedHasGroup_id: Object.prototype.hasOwnProperty.call(normalized, 'group_id') }, timestamp: Date.now() }) }).catch(() => {});
-  // #endregion
-  return normalized;
+  return normalizeOrg(data.data);
 }
 
 /**
@@ -185,9 +185,9 @@ export async function createOrganization(payload) {
     reference:           payload.reference   || null,
     organization_status: payloadOrganizationStatus(payload),
     is_active:           payloadOrganizationStatus(payload) !== 'inactive',
-    primary_contact_id:  payload.primaryContactId  || null,
+    primary_contact_id:  toPositiveIntOrNull(payload.primaryContactId ?? payload.primary_contact_id),
     assigned_manager:    payload.assignedManager   || null,
-    group_id:            payload.groupId ?? payload.group_id ?? null,
+    group_id:            toPositiveIntOrNull(payload.groupId ?? payload.group_id),
     referring_affiliate_user_id: payload.referringAffiliateUserId != null && payload.referringAffiliateUserId !== ''
       ? Number(payload.referringAffiliateUserId) : null,
     referral_start_date: payload.referralStartDate || null,
@@ -229,9 +229,9 @@ export async function updateOrganization(id, payload) {
     reference:          payload.reference || null,
     organization_status: payloadOrganizationStatus(payload),
     is_active:          payloadOrganizationStatus(payload) !== 'inactive',
-    primary_contact_id: payload.primaryContactId || null,
+    primary_contact_id: toPositiveIntOrNull(payload.primaryContactId ?? payload.primary_contact_id),
     assigned_manager:   payload.assignedManager  || null,
-    group_id:           payload.groupId ?? payload.group_id ?? null,
+    group_id:           toPositiveIntOrNull(payload.groupId ?? payload.group_id),
     referring_affiliate_user_id: payload.referringAffiliateUserId != null && payload.referringAffiliateUserId !== ''
       ? Number(payload.referringAffiliateUserId) : null,
     referral_start_date: payload.referralStartDate || null,
@@ -239,24 +239,13 @@ export async function updateOrganization(id, payload) {
     client_facing_restricted: Boolean(payload.clientFacingRestricted),
   };
 
-  // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H1', location: 'organizationService.js:updateOrganization', message: 'payload to PUT body mapping', data: { orgId: Number(id), formStatus: payload.status ?? null, bodyIsActive: body.is_active, bodyOrgStatus: body.organization_status }, timestamp: Date.now() }) }).catch(() => {});
-  // #endregion
-  // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '6abbad' }, body: JSON.stringify({ sessionId: '6abbad', runId: 'post-fix', hypothesisId: 'H2', location: 'organizationService.js:updateOrganization', message: 'group_id in payload and body', data: { orgId: Number(id), payloadGroup_id: payload.group_id ?? null, payloadGroupId: payload.groupId ?? null, bodyGroup_id: body.group_id ?? null }, timestamp: Date.now() }) }).catch(() => {});
-  // #endregion
-
   const res = await fetch(`${API_BASE}/admin/organizations/${id}`, {
     method:  'PUT',
     headers: authHeaders(),
     body:    JSON.stringify(body),
   });
   const data = await parseResponse(res);
-  const normalized = normalizeOrg(data.data);
-  // #region agent log
-  fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'b2a687' }, body: JSON.stringify({ sessionId: 'b2a687', hypothesisId: 'H2', location: 'organizationService.js:updateOrganization:after', message: 'API row vs normalized status', data: { rawIsActive: data.data?.is_active ?? null, rawOrgStatus: data.data?.organization_status ?? null, normalizedStatus: normalized.status }, timestamp: Date.now() }) }).catch(() => {});
-  // #endregion
-  return normalized;
+  return normalizeOrg(data.data);
 }
 
 /** POST — super admin receives OTP email to authorize organization delete */

@@ -249,7 +249,7 @@ class ClientModel
             ':country'           => $data['country']           ?? 'India',
             ':notes'             => $data['notes']             ?? null,
             ':reference'         => $data['reference']         ?? null,
-            ':group_id'          => isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null,
+            ':group_id'          => self::optionalPositiveInt($data['group_id'] ?? null),
             ':is_active'         => ($contactStatus !== 'inactive') ? 'true' : 'false',
             ':contact_status'    => $contactStatus,
             ':created_by'        => $data['created_by']        ?? null,
@@ -307,8 +307,8 @@ class ClientModel
             $params[':contact_status_ia'] = $active ? 'active' : 'inactive';
         }
         if (array_key_exists('group_id', $data)) {
-            $setClauses[]      = 'group_id = :group_id';
-            $params[':group_id'] = isset($data['group_id']) && $data['group_id'] !== '' ? (int)$data['group_id'] : null;
+            $setClauses[]        = 'group_id = :group_id';
+            $params[':group_id'] = self::optionalPositiveInt($data['group_id'] ?? null);
         }
 
         if (empty($setClauses)) {
@@ -401,6 +401,19 @@ class ClientModel
         );
         $stmt->execute([':cid' => $clientId]);
         return $stmt->fetchAll();
+    }
+
+    /**
+     * @param mixed $v Raw JSON / form value (may be 0, "0", "", null).
+     */
+    private static function optionalPositiveInt(mixed $v): ?int
+    {
+        if ($v === null || $v === '' || $v === false) {
+            return null;
+        }
+        $n = (int)$v;
+
+        return $n > 0 ? $n : null;
     }
 
     /**
