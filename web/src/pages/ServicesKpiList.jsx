@@ -17,6 +17,12 @@ export default function ServicesKpiList() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9e37a5' }, body: JSON.stringify({ sessionId: '9e37a5', location: 'ServicesKpiList.jsx:mount', message: 'KpiList effect', data: { kpiSlug: String(kpiSlug ?? ''), slugValid: isValidKpiSlug(String(kpiSlug ?? '')) }, timestamp: Date.now(), hypothesisId: 'C', runId: 'pre' }) }).catch(() => {});
+    // #endregion
+  }, [kpiSlug]);
+
+  useEffect(() => {
     setLoading(true);
     getAllEngagements()
       .then((data) => setAllServices(data))

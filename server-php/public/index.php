@@ -58,6 +58,45 @@ spl_autoload_register(function (string $class): void {
 // ── Load helpers ──────────────────────────────────────────────────────────────
 require_once dirname(__DIR__) . '/app/Helpers/response_helper.php';
 
+// Uncaught exceptions (e.g. in controller constructor) must return JSON; otherwise clients see 500 with an empty body.
+set_exception_handler(static function (\Throwable $e): void {
+    error_log('[API] uncaught: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+    $debugLog = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'debug-441a9d.log';
+    $agentPayload = [
+        'sessionId'   => '441a9d',
+        'runId'       => 'pre-fix',
+        'timestamp'   => (int) round(microtime(true) * 1000),
+        'location'    => 'index.php:exception_handler',
+        'message'     => 'uncaught',
+        'data'        => [
+            'hypothesisId'     => 'H0',
+            'exceptionClass'   => $e::class,
+            'exceptionMessage' => $e->getMessage(),
+        ],
+    ];
+    @file_put_contents($debugLog, json_encode($agentPayload) . "\n", FILE_APPEND | LOCK_EX);
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=UTF-8');
+    }
+    $env = strtolower((string)(getenv('APP_ENV') ?: 'development'));
+    $msg = 'Internal server error.';
+    if (in_array($env, ['development', 'local', 'dev'], true)) {
+        $msg = $e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine();
+    }
+    $json = json_encode([
+        'success' => false,
+        'message' => $msg,
+        'data'    => null,
+        'errors'  => [],
+    ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($json === false) {
+        $json = '{"success":false,"message":"Internal server error.","data":null,"errors":[]}';
+    }
+    echo $json;
+    exit(1);
+});
+
 use App\Config\App as AppConfig;
 use App\Config\Routes;
 use App\Filters\AuthFilter;

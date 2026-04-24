@@ -28,6 +28,12 @@ class OrganizationModel
         return $field === 'type' ? '"type"' : $field;
     }
 
+    /** PostgreSQL boolean literal (avoids PDO BOOL binding quirks on some hosts). */
+    private static function sqlBoolLiteral(bool $b): string
+    {
+        return $b ? 'TRUE' : 'FALSE';
+    }
+
     /**
      * Bind parameters with correct PDO types (booleans for PG BOOL, etc.).
      *
@@ -140,18 +146,20 @@ class OrganizationModel
      */
     public function create(array $data): int
     {
-        $stmt = $this->db->prepare(
-            'INSERT INTO organizations (
-                name, "type", gstin, pan, cin, email, secondary_email, phone, secondary_phone,
+        $isActiveLit = self::sqlBoolLiteral((bool)($data['is_active'] ?? true));
+        $cfLit       = self::sqlBoolLiteral((bool)($data['client_facing_restricted'] ?? false));
+        $stmt        = $this->db->prepare(
+            "INSERT INTO organizations (
+                name, \"type\", gstin, pan, cin, email, secondary_email, phone, secondary_phone,
                 address, city, state, country, pincode, website, notes,
                 reference, group_id, primary_contact_id, organization_status, is_active, created_by,
                 referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
              ) VALUES (
                 :name, :type, :gstin, :pan, :cin, :email, :secondary_email, :phone, :secondary_phone,
                 :address, :city, :state, :country, :pincode, :website, :notes,
-                :reference, :group_id, :primary_contact_id, :organization_status, :is_active, :created_by,
-                :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted
-             ) RETURNING id'
+                :reference, :group_id, :primary_contact_id, :organization_status, {$isActiveLit}, :created_by,
+                :referring_affiliate_user_id, :referral_start_date, :commission_mode, {$cfLit}
+             ) RETURNING id"
         );
         $refAff = isset($data['referring_affiliate_user_id']) ? (int)$data['referring_affiliate_user_id'] : 0;
         $this->executeWithTypedBindings($stmt, [
@@ -175,12 +183,10 @@ class OrganizationModel
             ':group_id'           => self::optionalPositiveInt($data['group_id'] ?? null),
             ':primary_contact_id' => self::optionalPositiveInt($data['primary_contact_id'] ?? null),
             ':organization_status' => $data['organization_status'] ?? 'active',
-            ':is_active'          => (bool)($data['is_active'] ?? true),
             ':created_by'         => $data['created_by'] ?? null,
             ':referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
             ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
             ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
-            ':client_facing_restricted' => (bool)($data['client_facing_restricted'] ?? false),
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -213,16 +219,14 @@ class OrganizationModel
             $params[':referring_affiliate_user_id'] = $ra > 0 ? $ra : null;
         }
         if (array_key_exists('client_facing_restricted', $data)) {
-            $setClauses[]                       = 'client_facing_restricted = :client_facing_restricted';
-            $params[':client_facing_restricted'] = (bool) $data['client_facing_restricted'];
+            $setClauses[] = 'client_facing_restricted = ' . self::sqlBoolLiteral((bool) $data['client_facing_restricted']);
         }
         if (array_key_exists('primary_contact_id', $data)) {
             $setClauses[]                   = 'primary_contact_id = :primary_contact_id';
             $params[':primary_contact_id'] = self::optionalPositiveInt($data['primary_contact_id'] ?? null);
         }
         if (array_key_exists('is_active', $data)) {
-            $setClauses[]       = 'is_active = :is_active';
-            $params[':is_active'] = (bool) $data['is_active'];
+            $setClauses[] = 'is_active = ' . self::sqlBoolLiteral((bool) $data['is_active']);
         }
         if (array_key_exists('group_id', $data)) {
             $setClauses[]        = 'group_id = :group_id';
@@ -286,13 +290,13 @@ class OrganizationModel
      */
     public function updateStatus(int $id, bool $isActive): bool
     {
-        $orgStatus = $isActive ? 'active' : 'inactive';
-        $stmt      = $this->db->prepare(
-            'UPDATE organizations SET is_active = :is_active, organization_status = :organization_status, updated_at = NOW() WHERE id = :id'
+        $orgStatus  = $isActive ? 'active' : 'inactive';
+        $activeLit  = self::sqlBoolLiteral($isActive);
+        $stmt       = $this->db->prepare(
+            "UPDATE organizations SET is_active = {$activeLit}, organization_status = :organization_status, updated_at = NOW() WHERE id = :id"
         );
 
         return $this->executeWithTypedBindings($stmt, [
-            ':is_active'            => $isActive,
             ':organization_status' => $orgStatus,
             ':id'                   => $id,
         ]);

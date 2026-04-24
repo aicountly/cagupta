@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import ProtectedRoute from './auth/ProtectedRoute';
@@ -83,6 +84,16 @@ const pageTitles = {
   '/profile':                   '👤 My Profile',
 };
 
+function DebugLocationLogger() {
+  const loc = useLocation();
+  useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9e37a5' }, body: JSON.stringify({ sessionId: '9e37a5', location: 'App.jsx:DebugLocationLogger', message: 'router pathname', data: { pathname: loc.pathname, baseUrl: import.meta.env.BASE_URL }, timestamp: Date.now(), hypothesisId: 'B', runId: 'pre' }) }).catch(() => {});
+    // #endregion
+  }, [loc.pathname, loc.search]);
+  return null;
+}
+
 function Layout({ routePath, children }) {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -100,6 +111,7 @@ function Layout({ routePath, children }) {
 export default function App() {
   return (
     <BrowserRouter basename={ROUTER_BASENAME}>
+      <DebugLocationLogger />
       <AuthProvider>
         <NotificationProvider>
         <Routes>
