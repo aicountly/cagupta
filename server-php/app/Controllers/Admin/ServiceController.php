@@ -212,16 +212,8 @@ class ServiceController extends BaseController
         $service = $this->services->find($newId);
         $this->success($service, 'Service engagement created', 201);
         } catch (\Throwable $e) {
-            // #region agent log 6724f2
-            error_log('[ServiceController][6724f2] store: ' . $e::class . ': ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
-            // #endregion
-            $this->error('Failed to create service engagement.', 500, [
-                'debug_session'     => '6724f2',
-                'exception_class'   => $e::class,
-                'exception_message' => $e->getMessage(),
-                'exception_file'    => basename($e->getFile()),
-                'exception_line'    => $e->getLine(),
-            ]);
+            error_log('[ServiceController] store: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+            $this->error('Failed to create service engagement.', 500);
         }
     }
 
