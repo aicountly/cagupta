@@ -105,6 +105,8 @@ export default function ServiceEngagementManage() {
     userId: '',
   }));
   const [showAddTask, setShowAddTask] = useState(false);
+  const [showAddMemberSelect, setShowAddMemberSelect] = useState(false);
+  const [replacingMemberId, setReplacingMemberId] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteOtp, setDeleteOtp] = useState('');
@@ -158,6 +160,13 @@ export default function ServiceEngagementManage() {
       if (has) return prev.filter((x) => String(x) !== idStr);
       return [...prev, Number(userId)];
     });
+  }
+
+  function handleReplaceMember(oldId, newId) {
+    setAssigneeUserIds((prev) =>
+      prev.map((x) => (String(x) === String(oldId) ? Number(newId) : x)),
+    );
+    setReplacingMemberId(null);
   }
 
   useEffect(() => {
@@ -648,38 +657,121 @@ export default function ServiceEngagementManage() {
 
         {tab === 'team' && (
           <section style={sectionCard}>
-            <div style={sectionTitle}>Team</div>
-            <p style={hint}>Select everyone who should appear on this engagement. Click <strong>Save changes</strong> to apply.</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto' }}>
-              {staffOptionsForTeam.map((u) => {
-                const checked = assigneeUserIds.some((x) => String(x) === String(u.id));
-                return (
-                  <label
-                    key={u.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 10,
-                      padding: '10px 12px',
-                      borderRadius: 8,
-                      border: checked ? '1px solid rgba(243,121,32,0.45)' : '1px solid #E6E8F0',
-                      background: checked ? '#FEF0E6' : '#fff',
-                      cursor: 'pointer',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      color: '#0B1F3B',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleTeamMember(u.id)}
-                    />
-                    {u.name}
-                  </label>
-                );
-              })}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+              <div style={sectionTitle}>Team ({assigneeUserIds.length})</div>
             </div>
+            <p style={hint}>
+              Manage everyone assigned to this engagement. The first member is treated as the primary owner in legacy reports.
+              Click <strong>Save changes</strong> to apply.
+            </p>
+
+            {assigneeUserIds.length === 0 ? (
+              <div style={{ color: '#94a3b8', fontSize: 13, padding: '12px 0' }}>No team members assigned yet.</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                {assigneeUserIds.map((uid, idx) => {
+                  const u = staffOptionsForTeam.find((x) => String(x.id) === String(uid)) || { id: uid, name: `User #${uid}` };
+                  const isReplacing = replacingMemberId === uid;
+                  const availableForReplace = staffUsers.filter(
+                    (s) => !assigneeUserIds.some((x) => String(x) === String(s.id)),
+                  );
+                  return (
+                    <div key={uid} style={teamMemberRow}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                        <div style={memberAvatar}>{u.name.charAt(0).toUpperCase()}</div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1F3B' }}>{u.name}</div>
+                          {idx === 0 && (
+                            <div style={{ fontSize: 11, color: '#F37920', fontWeight: 500 }}>Primary owner</div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
+                        {isReplacing ? (
+                          <>
+                            <select
+                              style={teamPickerSelect}
+                              defaultValue=""
+                              onChange={(e) => {
+                                if (!e.target.value) return;
+                                handleReplaceMember(uid, Number(e.target.value));
+                              }}
+                            >
+                              <option value="">Pick replacement…</option>
+                              {availableForReplace.map((s) => (
+                                <option key={s.id} value={s.id}>{s.name}</option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              style={teamBtnCancel}
+                              onClick={() => setReplacingMemberId(null)}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              style={teamBtnReplace}
+                              onClick={() => { setReplacingMemberId(uid); setShowAddMemberSelect(false); }}
+                            >
+                              Replace
+                            </button>
+                            <button
+                              type="button"
+                              style={teamBtnRemove}
+                              onClick={() => toggleTeamMember(uid)}
+                            >
+                              Remove
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {showAddMemberSelect ? (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+                <select
+                  style={{ ...teamPickerSelect, flex: 1 }}
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (!e.target.value) return;
+                    toggleTeamMember(Number(e.target.value));
+                    setShowAddMemberSelect(false);
+                  }}
+                >
+                  <option value="">Select a member to add…</option>
+                  {staffUsers
+                    .filter((s) => !assigneeUserIds.some((x) => String(x) === String(s.id)))
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                </select>
+                <button
+                  type="button"
+                  style={teamBtnCancel}
+                  onClick={() => setShowAddMemberSelect(false)}
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              staffUsers.some((s) => !assigneeUserIds.some((x) => String(x) === String(s.id))) && (
+                <button
+                  type="button"
+                  style={btnSmall}
+                  onClick={() => { setShowAddMemberSelect(true); setReplacingMemberId(null); }}
+                >
+                  <Plus size={13} /> Add Member
+                </button>
+              )
+            )}
           </section>
         )}
 
@@ -1054,6 +1146,31 @@ const toastBar = {
   background: '#0B1F3B', color: '#fff', padding: '10px 16px', borderRadius: 8, fontSize: 13, fontWeight: 600,
 };
 
+const teamMemberRow = {
+  display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+  padding: '10px 14px', borderRadius: 10, border: '1px solid #E6E8F0', background: '#fff',
+};
+const memberAvatar = {
+  width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, #F37920 0%, #C25A0A 100%)',
+  color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  fontSize: 13, fontWeight: 700, flexShrink: 0,
+};
+const teamBtnRemove = {
+  padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
+  background: '#fff5f5', color: '#b91c1c', border: '1px solid #fecaca',
+};
+const teamBtnReplace = {
+  padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
+  background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0',
+};
+const teamBtnCancel = {
+  padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
+  background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0',
+};
+const teamPickerSelect = {
+  padding: '6px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 12,
+  color: '#334155', outline: 'none', cursor: 'pointer', background: '#fff',
+};
 const deleteOverlayStyle = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', zIndex: 1001, display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const deleteModalStyle = { background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', minWidth: 400, maxWidth: 480, width: '100%' };
 const deleteModalHeaderStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #F0F2F8' };

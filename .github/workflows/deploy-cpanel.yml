@@ -68,7 +68,7 @@ jobs:
             server-php/ \
             ${{ secrets.CPANEL_SSH_USER }}@${{ secrets.CPANEL_SSH_HOST }}:${{ secrets.CPANEL_REMOTE_ROOT }}/api/
 
-      - name: Fix file permissions via SSH
+      - name: Fix file permissions and run DB migrations via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.CPANEL_SSH_HOST }}
@@ -79,6 +79,8 @@ jobs:
             find ${{ secrets.CPANEL_REMOTE_ROOT }}/api -type d -exec chmod 755 {} \;
             find ${{ secrets.CPANEL_REMOTE_ROOT }}/api -type f -exec chmod 644 {} \;
             echo "✅ Permissions fixed"
+            echo "▶  Running database migrations…"
+            php ${{ secrets.CPANEL_REMOTE_ROOT }}/api/database/migrate.php
             echo "✅ Deploy complete"
 
       # ── Superadmin daily digest — cron reminder ─────────────────────────────

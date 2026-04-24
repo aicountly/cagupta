@@ -250,17 +250,11 @@ export async function createEngagement(payload) {
     tasks:                payload.tasks               || [],
   };
 
-  // #region agent log 6724f2
-  fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6724f2'},body:JSON.stringify({sessionId:'6724f2',location:'engagementService.js:createEngagement',message:'request payload',data:{hypothesisId:'H1-H5',assignedTo:body.assigned_to,engagementTypeId:body.engagement_type_id,clientType:body.client_type,clientId:body.client_id},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   const res = await fetch(`${API_BASE}/admin/services`, {
     method:  'POST',
     headers: authHeaders(),
     body:    JSON.stringify(body),
   });
-  // #region agent log 6724f2
-  res.clone().json().then((j)=>{fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'6724f2'},body:JSON.stringify({sessionId:'6724f2',location:'engagementService.js:createEngagement',message:'response body',data:{hypothesisId:'H1-H5',status:res.status,ok:res.ok,errors:j.errors,message:j.message},timestamp:Date.now()})}).catch(()=>{});}).catch(()=>{});
-  // #endregion
   const data = await parseResponse(res);
   return normalizeEngagement(data.data);
 }

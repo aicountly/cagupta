@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, createElement } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createTask, deleteEngagement, requestServiceDeleteOtp, updateEngagement } from '../../services/engagementService';
+import { createTask, deleteEngagement, requestServiceDeleteOtp, updateEngagement, getEngagement } from '../../services/engagementService';
 import StatusBadge from '../common/StatusBadge';
 import DateInput from '../common/DateInput';
 import { isEngagementOverdue } from '../../utils/serviceKpiFilters';
@@ -61,6 +61,7 @@ export default function ServicesEngagementTableBlock({
   const [deleteErr, setDeleteErr] = useState('');
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [requestingDeleteOtp, setRequestingDeleteOtp] = useState(false);
+  const [hydratedAssigneeIds, setHydratedAssigneeIds] = useState(null);
   const { staffUsers } = useStaffUsers();
 
   const staffOptionsForTeam = useMemo(() => {
@@ -82,6 +83,36 @@ export default function ServicesEngagementTableBlock({
     for (const u of staffOptionsForTeam) o[u.id] = u.name;
     return o;
   }, [staffOptionsForTeam]);
+
+  // Reset hydrated assignees when the selected service changes.
+  useEffect(() => {
+    setHydratedAssigneeIds(null);
+  }, [selectedService?.id]);
+
+  // When a service is selected from the list and its assigneeUserIds is empty
+  // (e.g. legacy row where the field was not populated), fetch the full record
+  // so that the Add Task modal can show the correct team-member options.
+  useEffect(() => {
+    if (!selectedService) return;
+    const ids = Array.isArray(selectedService.assigneeUserIds) ? selectedService.assigneeUserIds : [];
+    if (ids.length > 0) return; // already populated — no fetch needed
+    let cancelled = false;
+    getEngagement(selectedService.id)
+      .then((full) => {
+        if (!cancelled) {
+          const freshIds = Array.isArray(full.assigneeUserIds) ? full.assigneeUserIds : [];
+          setHydratedAssigneeIds(freshIds);
+        }
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selectedService]);
+
+  // Effective assignee IDs to pass to the Add Task modal: prefer hydrated, fall back to list data.
+  const effectiveAssigneeIds = useMemo(() => {
+    if (hydratedAssigneeIds !== null) return hydratedAssigneeIds;
+    return Array.isArray(selectedService?.assigneeUserIds) ? selectedService.assigneeUserIds : [];
+  }, [hydratedAssigneeIds, selectedService]);
 
   useEffect(() => {
     if (expandServiceId == null) return;
@@ -170,7 +201,7 @@ export default function ServicesEngagementTableBlock({
     <>
       {showAddTask && selectedService && (
         <AddTaskModal
-          assigneeUserIds={Array.isArray(selectedService.assigneeUserIds) ? selectedService.assigneeUserIds : []}
+          assigneeUserIds={effectiveAssigneeIds}
           staffUsers={staffUsers}
           onClose={() => setShowAddTask(false)}
           onSave={handleAddTask}
