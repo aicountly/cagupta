@@ -78,14 +78,6 @@ function KpiCard({ item, to }) {
   return (
     <Link
       to={to}
-      onClick={(e) => {
-        // #region agent log
-        const _dbgPayload = { sessionId: '9e37a5', location: 'Services.jsx:KpiCard:click', message: 'KPI Link click', data: { to, defaultPrevented: e.defaultPrevented, tag: (e.target && e.target instanceof Element) ? e.target.tagName : String(e.target) }, timestamp: Date.now(), hypothesisId: 'A', runId: 'run2' };
-        console.log('[DBG-9e37a5 A] KPI card clicked', _dbgPayload.data);
-        try { sessionStorage.setItem('dbg9e37a5_kpi_click', JSON.stringify({ ..._dbgPayload, ts: new Date().toISOString() })); } catch {}
-        fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9e37a5' }, body: JSON.stringify(_dbgPayload) }).catch(() => {});
-        // #endregion
-      }}
       style={{
         ...kpiCard,
         display: 'block',
