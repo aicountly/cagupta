@@ -105,6 +105,30 @@ function normalizeEngagement(s) {
 export async function getEngagements({
   page = 1, perPage = 100, search = '', status = '', clientId = null, organizationId = null,
 } = {}) {
+  const params = buildServicesListParams({
+    page, perPage, search, status, clientId, organizationId,
+  });
+
+  const res = await fetch(`${API_BASE}/admin/services?${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return (data.data || []).map(normalizeEngagement);
+}
+
+/**
+ * Build query params for the services list (shared by getEngagements / getAllEngagements).
+ * @param {object} opts
+ * @param {number} [opts.page]
+ * @param {number} [opts.perPage]
+ * @param {string} [opts.search]
+ * @param {string} [opts.status]
+ * @param {number|null} [opts.clientId]
+ * @param {number|null} [opts.organizationId]
+ */
+function buildServicesListParams({
+  page = 1, perPage = 100, search = '', status = '', clientId = null, organizationId = null,
+} = {}) {
   const params = new URLSearchParams({ page, per_page: perPage });
   if (search) params.set('search', search);
   if (status && status !== 'all') params.set('status', status);
@@ -114,12 +138,41 @@ export async function getEngagements({
   if (organizationId != null && organizationId !== '' && Number(organizationId) > 0) {
     params.set('organization_id', String(organizationId));
   }
+  return params;
+}
 
-  const res = await fetch(`${API_BASE}/admin/services?${params}`, {
+/**
+ * Fetch every service engagement page (100 rows per request, per API cap) and concatenate.
+ * Use for UIs that need global counts or a full list (e.g. Services KPIs + table).
+ *
+ * @param {Omit<Parameters<typeof getEngagements>[0], 'page' | 'perPage'>} [options]
+ * @returns {Promise<object[]>}
+ */
+export async function getAllEngagements(options = {}) {
+  const perPage = 100;
+  const base = buildServicesListParams({ ...options, perPage, page: 1 });
+  const res1 = await fetch(`${API_BASE}/admin/services?${base}`, {
     headers: authHeaders(),
   });
-  const data = await parseResponse(res);
-  return (data.data || []).map(normalizeEngagement);
+  const data1 = await parseResponse(res1);
+  const rows1 = (data1.data || []).map(normalizeEngagement);
+  const pagination = data1.pagination;
+  const lastPage = pagination && typeof pagination.last_page === 'number'
+    ? pagination.last_page
+    : 1;
+  if (lastPage <= 1) {
+    return rows1;
+  }
+  const rest = [];
+  for (let page = 2; page <= lastPage; page += 1) {
+    const params = buildServicesListParams({ ...options, perPage, page });
+    const res = await fetch(`${API_BASE}/admin/services?${params}`, {
+      headers: authHeaders(),
+    });
+    const data = await parseResponse(res);
+    rest.push(...(data.data || []).map(normalizeEngagement));
+  }
+  return [...rows1, ...rest];
 }
 
 /**
@@ -163,11 +216,18 @@ export async function createEngagement(payload) {
     tasks:                payload.tasks               || [],
   };
 
+  // #region agent log
+  const st = body.service_type != null ? String(body.service_type) : '';
+  fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '441a9d' }, body: JSON.stringify({ sessionId: '441a9d', runId: 'pre-fix', location: 'engagementService.js:createEngagement', message: 'createEngagement request body summary', data: { hypothesisId: 'H1', serviceTypeLen: st.length, hasAssignedTo: body.assigned_to != null && body.assigned_to !== '', etId: body.engagement_type_id, clientType: body.client_type }, timestamp: Date.now() }) }).catch(() => { });
+  // #endregion
   const res = await fetch(`${API_BASE}/admin/services`, {
     method:  'POST',
     headers: authHeaders(),
     body:    JSON.stringify(body),
   });
+  // #region agent log
+  fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '441a9d' }, body: JSON.stringify({ sessionId: '441a9d', runId: 'pre-fix', location: 'engagementService.js:createEngagement', message: 'createEngagement response', data: { hypothesisId: 'H2', status: res.status, ok: res.ok }, timestamp: Date.now() }) }).catch(() => { });
+  // #endregion
   const data = await parseResponse(res);
   return normalizeEngagement(data.data);
 }

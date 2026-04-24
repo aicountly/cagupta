@@ -145,12 +145,12 @@ class OrganizationModel
             ':group_id'           => self::optionalPositiveInt($data['group_id'] ?? null),
             ':primary_contact_id' => self::optionalPositiveInt($data['primary_contact_id'] ?? null),
             ':organization_status' => $data['organization_status'] ?? 'active',
-            ':is_active'          => ((bool)($data['is_active'] ?? true)) ? 'true' : 'false',
+            ':is_active'          => (bool)($data['is_active'] ?? true),
             ':created_by'         => $data['created_by'] ?? null,
             ':referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
             ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
             ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
-            ':client_facing_restricted' => ((bool)($data['client_facing_restricted'] ?? false)) ? 'true' : 'false',
+            ':client_facing_restricted' => (bool)($data['client_facing_restricted'] ?? false),
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -183,7 +183,7 @@ class OrganizationModel
         }
         if (array_key_exists('client_facing_restricted', $data)) {
             $setClauses[]                       = 'client_facing_restricted = :client_facing_restricted';
-            $params[':client_facing_restricted'] = ((bool)$data['client_facing_restricted']) ? 'true' : 'false';
+            $params[':client_facing_restricted'] = (bool) $data['client_facing_restricted'];
         }
         if (array_key_exists('primary_contact_id', $data)) {
             $setClauses[]                   = 'primary_contact_id = :primary_contact_id';
@@ -191,7 +191,7 @@ class OrganizationModel
         }
         if (array_key_exists('is_active', $data)) {
             $setClauses[]       = 'is_active = :is_active';
-            $params[':is_active'] = ((bool)$data['is_active']) ? 'true' : 'false';
+            $params[':is_active'] = (bool) $data['is_active'];
         }
         if (array_key_exists('group_id', $data)) {
             $setClauses[]        = 'group_id = :group_id';
@@ -200,15 +200,17 @@ class OrganizationModel
 
         if (empty($setClauses)) {
             // #region agent log
-            $p = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'debug-a4583e.log';
-            file_put_contents($p, json_encode([
+            foreach ([dirname(__DIR__, 3), dirname(__DIR__, 2)] as $dir) {
+                $p = $dir . DIRECTORY_SEPARATOR . 'debug-a4583e.log';
+                @file_put_contents($p, json_encode([
                 'sessionId'    => 'a4583e',
                 'hypothesisId' => 'H_empty_set',
                 'location'     => 'OrganizationModel.php:update',
                 'message'      => 'no SET clauses; update skipped',
                 'data'         => ['id' => $id, 'incomingKeys' => array_keys($data)],
                 'timestamp'    => (int) round(microtime(true) * 1000),
-            ], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+                ], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+            }
             // #endregion
             return false;
         }
@@ -218,8 +220,7 @@ class OrganizationModel
 
         $stmt = $this->db->prepare("UPDATE organizations SET {$setClause} WHERE id = :id");
         // #region agent log
-        $p = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'debug-a4583e.log';
-        file_put_contents($p, json_encode([
+        $line = json_encode([
             'sessionId'    => 'a4583e',
             'hypothesisId' => 'H_model_execute',
             'location'     => 'OrganizationModel.php:update:before_execute',
@@ -228,7 +229,10 @@ class OrganizationModel
                 return trim(explode('=', $c)[0] ?? '');
             }, array_slice($setClauses, 0, -1))],
             'timestamp'    => (int) round(microtime(true) * 1000),
-        ], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+        ], JSON_UNESCAPED_UNICODE) . "\n";
+        foreach ([dirname(__DIR__, 3), dirname(__DIR__, 2)] as $dir) {
+            @file_put_contents($dir . DIRECTORY_SEPARATOR . 'debug-a4583e.log', $line, FILE_APPEND);
+        }
         // #endregion
         return $stmt->execute($params);
     }
@@ -257,7 +261,7 @@ class OrganizationModel
         );
 
         return $stmt->execute([
-            ':is_active'            => $isActive ? 'true' : 'false',
+            ':is_active'            => $isActive,
             ':organization_status' => $orgStatus,
             ':id'                   => $id,
         ]);

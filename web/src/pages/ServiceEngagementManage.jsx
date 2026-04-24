@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, Plus, X, CheckSquare, Square, Trash2, FolderOpen, History } from 'lucide-react';
 import DateInput from '../components/common/DateInput';
+import { localDateKey, engagementDueDateKey } from '../utils/serviceKpiFilters';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -128,6 +129,7 @@ export default function ServiceEngagementManage() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState('');
   const [dueDate, setDueDate] = useState('');
+  const [initialDueDate, setInitialDueDate] = useState('');
   const [fee, setFee] = useState('');
   const [notes, setNotes] = useState('');
   const [tasks, setTasks] = useState([]);
@@ -203,7 +205,9 @@ export default function ServiceEngagementManage() {
           ? eng.assigneeUserIds.map(Number)
           : (eng.assignedToUserId != null ? [eng.assignedToUserId] : []);
         setAssigneeUserIds(ids);
-        setDueDate(eng.dueDate || '');
+        const d0 = eng.dueDate || '';
+        setDueDate(d0);
+        setInitialDueDate(d0);
         setFee(eng.feeAgreed != null && !Number.isNaN(Number(eng.feeAgreed)) ? String(eng.feeAgreed) : '');
         setNotes(eng.notes || '');
         setTasks(Array.isArray(eng.tasks) ? eng.tasks.map(t => ({ ...t })) : []);
@@ -264,6 +268,13 @@ export default function ServiceEngagementManage() {
 
   async function handleSave() {
     if (!id) return;
+    const todayKey = localDateKey(new Date());
+    const dueKey = engagementDueDateKey(dueDate);
+    const initialKey = engagementDueDateKey(initialDueDate);
+    if (dueKey && dueKey < todayKey && dueKey !== initialKey) {
+      setError('Due date cannot be in the past.');
+      return;
+    }
     setSaving(true);
     setError('');
     setToast('');
@@ -290,6 +301,7 @@ export default function ServiceEngagementManage() {
       }
       setInitialClientFacing(clientFacingRestricted);
       setCfOtp('');
+      setInitialDueDate(updated.dueDate || '');
       setToast('Engagement saved');
       setTimeout(() => setToast(''), 2000);
     } catch (e) {

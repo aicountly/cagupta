@@ -227,7 +227,7 @@ class OrganizationController extends BaseController
             $data['referring_affiliate_user_id'] = $ra > 0 ? $ra : null;
         }
         if (array_key_exists('referral_start_date', $body)) {
-            $data['referral_start_date'] = !empty($body['referral_start_date']) ? trim((string)$body['referral_start_date']) : null;
+            $data['referral_start_date'] = $this->normalizeDateColumnOrNull($body['referral_start_date'] ?? null);
         }
         if (array_key_exists('commission_mode', $body)) {
             $m = (string)($body['commission_mode'] ?? 'referral_only');
@@ -261,11 +261,14 @@ class OrganizationController extends BaseController
         }
 
         // #region agent log
-        $agentLogPath = dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-a4583e.log';
-        $agentLog      = static function (array $payload) use ($agentLogPath): void {
-            $payload['sessionId']  = 'a4583e';
-            $payload['timestamp'] = (int) round(microtime(true) * 1000);
-            file_put_contents($agentLogPath, json_encode($payload, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+        $agentLogDirs = [dirname(__DIR__, 4), dirname(__DIR__, 3)];
+        $agentLog     = static function (array $payload) use ($agentLogDirs): void {
+            $payload['sessionId']   = 'a4583e';
+            $payload['timestamp']   = (int) round(microtime(true) * 1000);
+            $line                   = json_encode($payload, JSON_UNESCAPED_UNICODE) . "\n";
+            foreach ($agentLogDirs as $dir) {
+                @file_put_contents($dir . DIRECTORY_SEPARATOR . 'debug-a4583e.log', $line, FILE_APPEND);
+            }
         };
         $nameForLog = array_key_exists('name', $data) ? (is_string($data['name']) ? strlen($data['name']) : -1) : -2;
         $agentLog([
@@ -302,8 +305,13 @@ class OrganizationController extends BaseController
                 ],
             ]);
             // #endregion
-            $msg = $e->getMessage();
-            if (str_contains($msg, 'foreign key') || str_contains($msg, '23503')) {
+            error_log('[OrganizationController] org-update-debug ' . json_encode([
+                'sqlState' => is_array($ei) ? ($ei[0] ?? null) : null,
+                'message'  => $e->getMessage(),
+            ], JSON_UNESCAPED_UNICODE));
+            $msg   = $e->getMessage();
+            $state = is_array($ei) ? (string) ($ei[0] ?? '') : '';
+            if (str_contains($msg, 'foreign key') || str_contains($msg, '23503') || $state === '23503') {
                 $this->error('Invalid link: choose a valid client group or primary contact, or clear those fields.', 422);
             }
             $this->error('Could not save organization.', 500);
@@ -459,6 +467,25 @@ class OrganizationController extends BaseController
     }
 
     /**
+     * Coerce API / JSON date strings to YYYY-MM-DD for PostgreSQL DATE columns.
+     */
+    private function normalizeDateColumnOrNull(mixed $v): ?string
+    {
+        if ($v === null || $v === '') {
+            return null;
+        }
+        $s = trim((string) $v);
+        if ($s === '') {
+            return null;
+        }
+        if (preg_match('/^(\d{4}-\d{2}-\d{2})/', $s, $m)) {
+            return $m[1];
+        }
+
+        return null;
+    }
+
+    /**
      * @param array<string, mixed> $row Database row (pan / gstin / cin may be null).
      * @return list<string>
      */
@@ -509,7 +536,7 @@ class OrganizationController extends BaseController
 
         return [
             'referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
-            'referral_start_date'         => !empty($body['referral_start_date']) ? trim((string)$body['referral_start_date']) : null,
+            'referral_start_date'         => $this->normalizeDateColumnOrNull($body['referral_start_date'] ?? null),
             'commission_mode'             => $mode,
             'client_facing_restricted'    => !empty($body['client_facing_restricted']),
         ];

@@ -9,6 +9,7 @@ import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useNotification } from '../context/NotificationContext';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import DateInput from '../components/common/DateInput';
+import { localDateKey, engagementDueDateKey } from '../utils/serviceKpiFilters';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -266,6 +267,11 @@ export default function NewServiceEngagement() {
     if (!engagementTypeId) e.engagementTypeId = 'Engagement Type is required.';
     if (!assignedTo) e.assignedTo = 'Assigned To is required.';
     if (!dueDate) e.dueDate = 'Due Date is required.';
+    else {
+      const dk = engagementDueDateKey(dueDate);
+      const todayKey = localDateKey(new Date());
+      if (dk && dk < todayKey) e.dueDate = 'Due date cannot be in the past.';
+    }
     return e;
   }
 
@@ -491,6 +497,7 @@ export default function NewServiceEngagement() {
               <div>
                 <FieldLabel label="Due Date" required />
                 <DateInput
+                  min={localDateKey(new Date())}
                   value={dueDate}
                   onChange={e => { setDueDate(e.target.value); setErrors(prev => ({ ...prev, dueDate: '' })); }}
                   style={{ ...inputStyle, borderColor: errors.dueDate ? '#ef4444' : '#E6E8F0' }}

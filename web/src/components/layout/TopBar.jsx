@@ -11,6 +11,7 @@ import { getEngagements } from '../../services/engagementService';
 import { getLeads } from '../../services/leadService';
 import { getTxns } from '../../services/txnService';
 import { getAppointments } from '../../services/appointmentService';
+import { kpiLabelFromSlug } from '../../utils/serviceKpiFilters';
 
 const breadcrumbMap = {
   '/':                       ['Home'],
@@ -51,6 +52,10 @@ export default function TopBar({ title }) {
   const crumbs = (() => {
     const p = loc.pathname;
     if (breadcrumbMap[p]) return breadcrumbMap[p];
+    if (/^\/services\/focus\//.test(p)) {
+      const slug = p.split('/').pop() || '';
+      return ['Home', 'Services & Tasks', kpiLabelFromSlug(slug)];
+    }
     if (/^\/services\/[^/]+\/edit$/.test(p)) return ['Home', 'Services & Tasks', 'Edit engagement'];
     if (/^\/services\/[^/]+\/files$/.test(p)) return ['Home', 'Services & Tasks', 'Engagement files'];
     if (/^\/services\/[^/]+$/.test(p) && p !== '/services/new') {

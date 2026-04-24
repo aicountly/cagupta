@@ -11,6 +11,7 @@ import ContactCreatePage from './pages/ContactCreatePage';
 import Organizations from './pages/Organizations';
 import OrganizationCreatePage from './pages/OrganizationCreatePage';
 import Services from './pages/Services';
+import ServicesKpiList from './pages/ServicesKpiList';
 import NewServiceEngagement from './pages/NewServiceEngagement';
 import ServiceEngagementEdit from './pages/ServiceEngagementEdit';
 import ServiceEngagementManage from './pages/ServiceEngagementManage';
@@ -60,6 +61,7 @@ const pageTitles = {
   '/clients/organizations/edit':'🏢 Edit Organization',
   '/clients/groups':            '🗂️ Groups',
   '/services':                  '📋 Services & Tasks',
+  '/services/focus':            '📋 Services & Tasks',
   '/services/new':              '➕ New Service Engagement',
   '/services/edit':             '✏️ Edit Service Engagement',
   '/services/manage':          '📋 Manage Service Engagement',
@@ -113,6 +115,7 @@ export default function App() {
           <Route path="/clients/groups" element={<ProtectedRoute staffOnly><Layout routePath="/clients/groups"><ClientGroups /></Layout></ProtectedRoute>} />
           <Route path="/services" element={<ProtectedRoute staffOnly><Layout routePath="/services"><Services /></Layout></ProtectedRoute>} />
           <Route path="/services/new" element={<ProtectedRoute staffOnly><Layout routePath="/services/new"><NewServiceEngagement /></Layout></ProtectedRoute>} />
+          <Route path="/services/focus/:kpiSlug" element={<ProtectedRoute staffOnly><Layout routePath="/services/focus"><ServicesKpiList /></Layout></ProtectedRoute>} />
           <Route path="/services/:id" element={
             <ProtectedRoute staffOnly requiredPermission="services.edit">
               <Layout routePath="/services/manage"><ServiceEngagementManage /></Layout>

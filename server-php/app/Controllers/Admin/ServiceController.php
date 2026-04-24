@@ -75,6 +75,7 @@ class ServiceController extends BaseController
      */
     public function store(): never
     {
+        try {
         $body        = $this->getJsonBody();
         $serviceType = trim((string)($body['service_type'] ?? ''));
 
@@ -125,6 +126,9 @@ class ServiceController extends BaseController
             $clientFacing   = !empty($row['client_facing_restricted']);
         }
 
+        $dueIn = $body['due_date'] ?? null;
+        $this->assertServiceDueDateAllowed($dueIn, null);
+
         $newId = $this->services->create([
             'client_type'          => $body['client_type']          ?? 'contact',
             'client_id'            => isset($body['client_id'])    ? (int)$body['client_id']    : null,
@@ -162,6 +166,25 @@ class ServiceController extends BaseController
 
         $service = $this->services->find($newId);
         $this->success($service, 'Service engagement created', 201);
+        } catch (\Throwable $e) {
+            // #region agent log
+            $logPath = dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-441a9d.log';
+            $payload = [
+                'sessionId'   => '441a9d',
+                'runId'       => 'pre-fix',
+                'timestamp'   => (int) round(microtime(true) * 1000),
+                'location'    => 'ServiceController.php:store',
+                'message'     => 'store() Throwable',
+                'data'        => [
+                    'hypothesisId'     => 'H2',
+                    'exceptionClass'   => $e::class,
+                    'exceptionMessage' => $e->getMessage(),
+                ],
+            ];
+            @file_put_contents($logPath, json_encode($payload) . "\n", FILE_APPEND | LOCK_EX);
+            // #endregion
+            throw $e;
+        }
     }
 
     // ── GET /api/admin/services/billing-report ───────────────────────────────
@@ -416,6 +439,10 @@ class ServiceController extends BaseController
             }
         }
 
+        if (array_key_exists('due_date', $data)) {
+            $this->assertServiceDueDateAllowed($data['due_date'], isset($service['due_date']) ? (string)$service['due_date'] : null);
+        }
+
         if ($data !== []) {
             $this->services->update($id, $data);
         }
@@ -650,6 +677,56 @@ class ServiceController extends BaseController
         } catch (\Throwable $e) {
             error_log('[ServiceController] Deletion notify email failed: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Due date must be today or later on create. On update, a date before today is only allowed
+     * when it matches the existing stored value (unchanged legacy engagements).
+     *
+     * @param mixed $incoming    Y-m-d, null, or empty
+     * @param mixed $existingDue prior DB value (Y-m-d or datetime string)
+     */
+    private function assertServiceDueDateAllowed(mixed $incoming, mixed $existingDue = null): void
+    {
+        if ($incoming === null || $incoming === '') {
+            return;
+        }
+        $s = trim((string)$incoming);
+        if ($s === '') {
+            return;
+        }
+        $d = \DateTimeImmutable::createFromFormat('Y-m-d', $s);
+        if ($d === false || $d->format('Y-m-d') !== $s) {
+            $this->error('due_date must be a valid calendar date (YYYY-MM-DD).', 422);
+        }
+        $today = new \DateTimeImmutable('today');
+        if ($d >= $today) {
+            return;
+        }
+        $exNorm = $this->normalizeServiceDueDateForCompare($existingDue !== null ? (string)$existingDue : null);
+        if ($exNorm !== null && $exNorm === $s) {
+            return;
+        }
+        $this->error('Due date cannot be in the past.', 422);
+    }
+
+    private function normalizeServiceDueDateForCompare(?string $v): ?string
+    {
+        if ($v === null || $v === '') {
+            return null;
+        }
+        $t = trim($v);
+        $d = \DateTimeImmutable::createFromFormat('Y-m-d', $t);
+        if ($d !== false && $d->format('Y-m-d') === $t) {
+            return $t;
+        }
+        $d2 = \DateTimeImmutable::createFromFormat('Y-m-d H:i:s', $t);
+        if ($d2 !== false) {
+            return $d2->format('Y-m-d');
+        }
+        $parsed = date_create_immutable($t);
+
+        return $parsed !== false ? $parsed->format('Y-m-d') : null;
     }
 
     private function normalizeCommissionMode(mixed $v): string
