@@ -348,12 +348,6 @@ export async function requestServiceDeleteOtp(id) {
 }
 
 /**
- * Add a task to an existing service engagement.
- * @param {number|string} engagementId
- * @param {object} taskData  { title, assignedTo?, dueDate?, priority? }
- * @returns {Promise<object>} Updated engagement after adding the task.
- */
-/**
  * Delete a service engagement permanently (requires requestServiceDeleteOtp + superadminOtp in header).
  * @param {number|string} id
  * @param {{ superadminOtp?: string }} [opts]
@@ -370,13 +364,22 @@ export async function deleteEngagement(id, { superadminOtp } = {}) {
   await parseResponse(res);
 }
 
+/**
+ * Add a task to an existing service engagement.
+ * @param {number|string} engagementId
+ * @param {object} taskData  { title, assignedToUserId?, dueDate?, priority? } — when assignedToUserId is set, the server sets display name
+ * @returns {Promise<object>} Updated engagement after adding the task.
+ */
 export async function createTask(engagementId, taskData) {
   const body = {
-    title:      taskData.title      || '',
-    assignedTo: taskData.assignedTo || null,
-    dueDate:    taskData.dueDate    || null,
-    priority:   taskData.priority   || 'medium',
+    title:   taskData.title    || '',
+    dueDate: taskData.dueDate  || null,
+    priority: taskData.priority || 'medium',
   };
+  const taskUid = positiveIntOrNull(taskData.assignedToUserId);
+  if (taskUid != null) {
+    body.assignedToUserId = taskUid;
+  }
 
   const res = await fetch(`${API_BASE}/admin/services/${engagementId}/tasks`, {
     method:  'POST',

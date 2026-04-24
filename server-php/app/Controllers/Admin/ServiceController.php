@@ -639,7 +639,9 @@ class ServiceController extends BaseController
     /**
      * Add a task to an existing service engagement.
      *
-     * Body: { title, assignedTo?, dueDate?, priority? }
+     * Body: { title, assignedToUserId?|assigned_to_user_id?, assignedTo?|assigned_to?, dueDate?, priority? }
+     * When assignedToUserId > 0, it must be in this engagement’s service_assignees; display name is taken from users.
+     * When assignedToUserId is absent/0, legacy string assignedTo|assigned_to is stored if present.
      */
     public function addTask(int $id): never
     {
@@ -656,10 +658,43 @@ class ServiceController extends BaseController
             $this->error('title is required.', 422);
         }
 
+        $assigneeIds = $service['assignee_user_ids'] ?? [];
+        if (!is_array($assigneeIds)) {
+            $assigneeIds = [];
+        }
+        $assigneeIds = array_map('intval', $assigneeIds);
+
+        $rawUid = $body['assignedToUserId'] ?? $body['assigned_to_user_id'] ?? null;
+        $uid    = (is_numeric($rawUid) ? (int) $rawUid : 0);
+
+        $legacyAssigned = $body['assignedTo'] ?? $body['assigned_to'] ?? null;
+        $legacyAssigned = is_string($legacyAssigned) ? trim($legacyAssigned) : null;
+        if ($legacyAssigned === '') {
+            $legacyAssigned = null;
+        }
+
+        $assignedToUserId = null;
+        $finalAssignedTo  = null;
+        if ($uid > 0) {
+            if (!in_array($uid, $assigneeIds, true)) {
+                $this->error('assignedToUserId must be a user on this engagement’s team.', 422);
+            }
+            $u = $this->users->find($uid);
+            if ($u === null) {
+                $this->error('User not found.', 422);
+            }
+            $assignedToUserId = $uid;
+            $finalAssignedTo  = isset($u['name']) && (string) $u['name'] !== ''
+                ? (string) $u['name']
+                : 'User #' . $uid;
+        } else {
+            $finalAssignedTo = $legacyAssigned;
+        }
+
         // Decode existing tasks
         $tasks = [];
         if (!empty($service['tasks'])) {
-            $decoded = json_decode((string)$service['tasks'], true);
+            $decoded = json_decode((string) $service['tasks'], true);
             if (is_array($decoded)) {
                 $tasks = $decoded;
             }
@@ -669,11 +704,14 @@ class ServiceController extends BaseController
         $newTask = [
             'id'         => uniqid('task_', true),
             'title'      => $title,
-            'assignedTo' => $body['assignedTo'] ?? $body['assigned_to'] ?? null,
-            'dueDate'    => $body['dueDate']    ?? $body['due_date']    ?? null,
-            'priority'   => $body['priority']   ?? 'medium',
+            'assignedTo' => $finalAssignedTo,
+            'dueDate'    => $body['dueDate'] ?? $body['due_date'] ?? null,
+            'priority'   => $body['priority'] ?? 'medium',
             'status'     => 'pending',
         ];
+        if ($assignedToUserId !== null) {
+            $newTask['assignedToUserId'] = $assignedToUserId;
+        }
 
         $tasks[] = $newTask;
 

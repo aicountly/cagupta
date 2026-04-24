@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronRight, Plus, X, CheckSquare, Square, Trash2, FolderOpen, History } from 'lucide-react';
+import { ChevronRight, Plus, CheckSquare, Square, Trash2, FolderOpen, History } from 'lucide-react';
 import DateInput from '../components/common/DateInput';
 import { localDateKey, engagementDueDateKey } from '../utils/serviceKpiFilters';
 import { useStaffUsers } from '../hooks/useStaffUsers';
@@ -16,6 +16,7 @@ import {
   ApiError,
 } from '../services/engagementService';
 import OpenEngagementConflictModal from '../components/services/OpenEngagementConflictModal';
+import AddTaskModal from '../components/services/AddTaskModal';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import { getTimeEntries, createTimeEntry, TIME_ACTIVITY_TYPES } from '../services/timeEntryService';
 
@@ -49,54 +50,6 @@ function AuditMetaDetails({ row }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-function AddTaskModal({ onClose, onSave }) {
-  const [form, setForm] = useState({ title: '', assignedTo: '', dueDate: '', priority: 'medium' });
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
-  const handleSave = () => {
-    if (!form.title.trim()) return;
-    onSave(form);
-    onClose();
-  };
-  return (
-    <div style={overlayStyle}>
-      <div style={taskModalStyle}>
-        <div style={taskModalHeader}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#0B1F3B' }}>➕ Add Task</span>
-          <button type="button" onClick={onClose} style={taskModalClose}><X size={14} /></button>
-        </div>
-        <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <label style={taskLabelStyle}>
-            Task Title *
-            <input type="text" style={taskInputStyle} placeholder="e.g. Collect Form 16" value={form.title} onChange={e => set('title', e.target.value)} />
-          </label>
-          <label style={taskLabelStyle}>
-            Assigned To
-            <input type="text" style={taskInputStyle} placeholder="Staff name" value={form.assignedTo} onChange={e => set('assignedTo', e.target.value)} />
-          </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <label style={taskLabelStyle}>
-              Due Date
-              <DateInput style={taskInputStyle} value={form.dueDate} onChange={e => set('dueDate', e.target.value)} />
-            </label>
-            <label style={taskLabelStyle}>
-              Priority
-              <select style={taskInputStyle} value={form.priority} onChange={e => set('priority', e.target.value)}>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        <div style={{ padding: '10px 20px 16px', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-          <button type="button" onClick={onClose} style={taskBtnSecondary}>Cancel</button>
-          <button type="button" onClick={handleSave} style={taskBtnPrimary}>Add Task</button>
-        </div>
-      </div>
-    </div>
   );
 }
 
@@ -191,6 +144,12 @@ export default function ServiceEngagementManage() {
     }
     return list;
   }, [staffUsers, assigneeUserIds]);
+
+  const assigneeNameById = useMemo(() => {
+    const o = Object.create(null);
+    for (const u of staffOptionsForTeam) o[u.id] = u.name;
+    return o;
+  }, [staffOptionsForTeam]);
 
   function toggleTeamMember(userId) {
     const idStr = String(userId);
@@ -484,7 +443,14 @@ export default function ServiceEngagementManage() {
         existing={openEngagementConflict}
         onClose={() => setOpenEngagementConflict(null)}
       />
-      {showAddTask && <AddTaskModal onClose={() => setShowAddTask(false)} onSave={handleAddTask} />}
+      {showAddTask && (
+        <AddTaskModal
+          assigneeUserIds={assigneeUserIds}
+          staffUsers={staffUsers}
+          onClose={() => setShowAddTask(false)}
+          onSave={handleAddTask}
+        />
+      )}
       {deleteModalOpen && (
         <div style={deleteOverlayStyle}>
           <div style={deleteModalStyle}>
@@ -556,9 +522,6 @@ export default function ServiceEngagementManage() {
           <button type="button" style={hubBtnSecondary} onClick={() => navigate(`/services/${id}/files`)}>
             <FolderOpen size={16} />
             Engagement files
-          </button>
-          <button type="button" style={btnPrimary} disabled={saving} onClick={handleSave}>
-            {saving ? 'Saving…' : 'Save changes'}
           </button>
         </div>
       </header>
@@ -658,7 +621,7 @@ export default function ServiceEngagementManage() {
           <div style={{ ...twoCol, marginTop: 14 }}>
             <label style={fieldLabel}>
               Due date
-              <DateInput value={dueDate} onChange={e => setDueDate(e.target.value)} style={inputStyle} />
+              <DateInput min={localDateKey(new Date())} value={dueDate} onChange={e => setDueDate(e.target.value)} style={inputStyle} />
             </label>
             <label style={fieldLabel}>
               Fee (₹)
@@ -885,7 +848,13 @@ export default function ServiceEngagementManage() {
                     {t.title}
                   </div>
                   <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
-                    {[t.assignedTo, t.dueDate ? `Due ${t.dueDate}` : null].filter(Boolean).join(' · ') || ' '}
+                    {[
+                      t.assignedTo
+                        || (t.assignedToUserId != null
+                          ? (assigneeNameById[t.assignedToUserId] || `User #${t.assignedToUserId}`)
+                          : null),
+                      t.dueDate ? `Due ${t.dueDate}` : null,
+                    ].filter(Boolean).join(' · ') || ' '}
                   </div>
                 </div>
               </div>
@@ -1093,12 +1062,3 @@ const deleteLabelStyle = { display: 'flex', flexDirection: 'column', gap: 4, fon
 const deleteInputStyle = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, color: '#334155', outline: 'none', width: '100%', boxSizing: 'border-box' };
 const deleteBtnSecondaryStyle = { padding: '8px 14px', background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
 const deleteBtnPrimaryStyle = { padding: '8px 14px', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
-
-const overlayStyle = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' };
-const taskModalStyle = { background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', minWidth: 400, maxWidth: 480, width: '100%' };
-const taskModalHeader = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #F0F2F8' };
-const taskModalClose = { background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' };
-const taskLabelStyle = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#475569' };
-const taskInputStyle = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, color: '#334155', outline: 'none' };
-const taskBtnPrimary = { padding: '7px 14px', background: '#F37920', color: '#fff', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
-const taskBtnSecondary = { padding: '7px 14px', background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 };

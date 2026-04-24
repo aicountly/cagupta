@@ -160,6 +160,17 @@ function normalizeDisplayNameKey(s) {
   return String(s || '').trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+/** Stable key so save-time vs debounced duplicate hints do not fight the collision effect. */
+function nameDuplicateSignature(dup) {
+  if (!dup?.matches?.length) return '';
+  const ids = dup.matches.map((m) => m.id).sort((a, b) => a - b);
+  return `${dup.kind}:${ids.join(',')}`;
+}
+
+function sortDupMatches(matches) {
+  return [...matches].sort((a, b) => a.id - b.id);
+}
+
 /**
  * Classify other-directory rows vs the typed name.
  * `peers` must already exclude the record being edited (if any).
@@ -188,8 +199,8 @@ function classifyNameDuplicates(trimmedInput, peers) {
       }
     }
   }
-  if (identical.length) return { kind: 'identical', matches: identical };
-  if (similar.length) return { kind: 'similar', matches: similar };
+  if (identical.length) return { kind: 'identical', matches: sortDupMatches(identical) };
+  if (similar.length) return { kind: 'similar', matches: sortDupMatches(similar) };
   return null;
 }
 
@@ -319,11 +330,15 @@ export default function OrganizationCreatePage() {
       setNameCollisionBlockingReason(null);
       return;
     }
-    const sig = `${nameDuplicateInfo.kind}:${nameDuplicateInfo.matches.map((m) => m.id).join(',')}`;
+    const sig = nameDuplicateSignature(nameDuplicateInfo);
     if (sig !== nameCollisionSigRef.current) {
       nameCollisionSigRef.current = sig;
       setNameCollisionModalOpen(true);
-      setNameCollisionBlockingReason(null);
+      // Do not clear a save-driven confirmation (`blockingReason === 'save'`) when the user
+      // clicked Save and we set `pendingOrgSaveRef`; only typing-driven sig changes clear it.
+      if (!pendingOrgSaveRef.current) {
+        setNameCollisionBlockingReason(null);
+      }
     }
   }, [nameDuplicateInfo]);
 
@@ -475,12 +490,27 @@ export default function OrganizationCreatePage() {
       try {
         const rows = await getOrganizationsForSearch(trimmedName, 50);
         const curOid = isEdit && orgId ? Number(orgId) : NaN;
-        const others = (rows || []).filter((o) => o && (!Number.isFinite(curOid) || curOid <= 0 || Number(o.id) !== curOid));
+        const fromApi = (rows || []).filter(
+          (o) => o && (!Number.isFinite(curOid) || curOid <= 0 || Number(o.id) !== curOid),
+        );
+        const hintPeers = (nameDuplicateInfo?.matches || []).map((m) => ({
+          id: m.id,
+          displayName: m.label,
+        }));
+        const mergedById = new Map();
+        for (const o of fromApi) {
+          if (o && o.id != null) mergedById.set(Number(o.id), o);
+        }
+        for (const h of hintPeers) {
+          const hid = Number(h.id);
+          if (!Number.isFinite(hid) || hid <= 0) continue;
+          if (!mergedById.has(hid)) mergedById.set(hid, h);
+        }
+        const others = [...mergedById.values()];
         const dup = classifyNameDuplicates(trimmedName, others);
         setNameDuplicateInfo(dup);
         if (dup?.kind === 'identical') {
-          const sig = `identical:${dup.matches.map((m) => m.id).join(',')}`;
-          nameCollisionSigRef.current = sig;
+          nameCollisionSigRef.current = nameDuplicateSignature(dup);
           setNameCollisionBlockingReason('save');
           setNameCollisionModalOpen(true);
           setSubmitting(false);
@@ -488,13 +518,40 @@ export default function OrganizationCreatePage() {
         }
         if (dup?.kind === 'similar') {
           pendingOrgSaveRef.current = { afterSave };
+          nameCollisionSigRef.current = nameDuplicateSignature(dup);
           setNameCollisionBlockingReason('save');
           setNameCollisionModalOpen(true);
           setSubmitting(false);
           return;
         }
       } catch {
-        /* allow save if search fails */
+        const hintPeers = (nameDuplicateInfo?.matches || []).map((m) => ({
+          id: m.id,
+          displayName: m.label,
+        }));
+        if (hintPeers.length) {
+          const curOid = isEdit && orgId ? Number(orgId) : NaN;
+          const peers = hintPeers.filter(
+            (h) => h && (!Number.isFinite(curOid) || curOid <= 0 || Number(h.id) !== curOid),
+          );
+          const dup = classifyNameDuplicates(trimmedName, peers);
+          setNameDuplicateInfo(dup);
+          if (dup?.kind === 'identical') {
+            nameCollisionSigRef.current = nameDuplicateSignature(dup);
+            setNameCollisionBlockingReason('save');
+            setNameCollisionModalOpen(true);
+            setSubmitting(false);
+            return;
+          }
+          if (dup?.kind === 'similar') {
+            pendingOrgSaveRef.current = { afterSave };
+            nameCollisionSigRef.current = nameDuplicateSignature(dup);
+            setNameCollisionBlockingReason('save');
+            setNameCollisionModalOpen(true);
+            setSubmitting(false);
+            return;
+          }
+        }
       }
     }
 
