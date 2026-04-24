@@ -260,10 +260,48 @@ class OrganizationController extends BaseController
             }
         }
 
+        // #region agent log
+        $agentLogPath = dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'debug-a4583e.log';
+        $agentLog      = static function (array $payload) use ($agentLogPath): void {
+            $payload['sessionId']  = 'a4583e';
+            $payload['timestamp'] = (int) round(microtime(true) * 1000);
+            file_put_contents($agentLogPath, json_encode($payload, JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+        };
+        $nameForLog = array_key_exists('name', $data) ? (is_string($data['name']) ? strlen($data['name']) : -1) : -2;
+        $agentLog([
+            'hypothesisId' => 'H_payload',
+            'location'     => 'OrganizationController.php:update',
+            'message'      => 'prepared org update data',
+            'data'         => [
+                'id'                => $id,
+                'dataKeys'          => array_keys($data),
+                'nameLenOrSentinel' => $nameForLog,
+                'hasOrgStatus'      => array_key_exists('organization_status', $data),
+                'orgStatusVal'      => $data['organization_status'] ?? null,
+                'referralDateLen'   => isset($data['referral_start_date']) && is_string($data['referral_start_date'])
+                    ? strlen($data['referral_start_date']) : null,
+            ],
+        ]);
+        // #endregion
+
         try {
             $this->orgs->update($id, $data);
         } catch (\PDOException $e) {
             error_log('[OrganizationController] Organization update failed: ' . $e->getMessage());
+            // #region agent log
+            $ei = $e->errorInfo ?? null;
+            $agentLog([
+                'hypothesisId' => 'H_pdo',
+                'location'     => 'OrganizationController.php:update:catch',
+                'message'      => 'PDOException on org update',
+                'data'         => [
+                    'exceptionMessage' => $e->getMessage(),
+                    'exceptionCode'    => $e->getCode(),
+                    'errorInfo'        => is_array($ei) ? $ei : null,
+                    'fkHeuristicMatch' => str_contains($e->getMessage(), 'foreign key') || str_contains((string) $e->getMessage(), '23503'),
+                ],
+            ]);
+            // #endregion
             $msg = $e->getMessage();
             if (str_contains($msg, 'foreign key') || str_contains($msg, '23503')) {
                 $this->error('Invalid link: choose a valid client group or primary contact, or clear those fields.', 422);

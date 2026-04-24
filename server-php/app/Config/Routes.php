@@ -144,6 +144,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/contacts/check-pan',
+                'handler'    => 'Admin\ContactController@checkPan',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/contacts',
                 'handler'    => 'Admin\ContactController@index',
                 'middleware' => ['auth', 'permission:clients.view'],

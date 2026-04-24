@@ -20,7 +20,11 @@ function authHeaders() {
 async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(json.message || `Request failed (${res.status})`);
+    const err = new Error(json.message || `Request failed (${res.status})`);
+    if (json.data !== undefined && json.data !== null) {
+      err.data = json.data;
+    }
+    throw err;
   }
   return json;
 }
@@ -182,6 +186,9 @@ export async function searchContactsQuick(q, limit = 20) {
       return {
         id: Number(c.id),
         displayName: c.organization_name || parts.join(' ') || 'Unknown',
+        pan: c.pan != null ? String(c.pan) : '',
+        email: c.email != null ? String(c.email) : '',
+        mobile: c.phone != null ? String(c.phone) : '',
       };
     });
   } catch {
@@ -193,7 +200,7 @@ export async function searchContactsQuick(q, limit = 20) {
  * Merge paginated list search + quick search, deduped by id (for large directories).
  * @param {string} q
  * @param {number} perPage
- * @returns {Promise<{ id: number, displayName: string }[]>}
+ * @returns {Promise<{ id: number, displayName: string, pan?: string, email?: string, mobile?: string }[]>}
  */
 export async function getContactsForSearch(q, perPage = 50) {
   const trimmed = (q || '').trim();
@@ -209,17 +216,70 @@ export async function getContactsForSearch(q, perPage = 50) {
     if (c && c.id != null) {
       const id = Number(c.id);
       if (Number.isFinite(id) && id > 0) {
-        map.set(id, { id, displayName: c.displayName || 'Unknown' });
+        map.set(id, {
+          id,
+          displayName: c.displayName || 'Unknown',
+          pan: c.pan != null ? String(c.pan) : '',
+          email: c.email != null ? String(c.email) : '',
+          mobile: c.mobile != null ? String(c.mobile) : '',
+        });
       }
     }
   }
   for (const c of fromQuick) {
     if (c && c.id != null) {
       const id = Number(c.id);
-      if (Number.isFinite(id) && id > 0) map.set(id, c);
+      if (!Number.isFinite(id) || id <= 0) continue;
+      const prev = map.get(id);
+      if (prev) {
+        map.set(id, {
+          ...prev,
+          displayName: prev.displayName || c.displayName || 'Unknown',
+          pan: prev.pan || c.pan || '',
+          email: prev.email || c.email || '',
+          mobile: prev.mobile || c.mobile || '',
+        });
+      } else {
+        map.set(id, {
+          id,
+          displayName: c.displayName || 'Unknown',
+          pan: c.pan || '',
+          email: c.email || '',
+          mobile: c.mobile || '',
+        });
+      }
     }
   }
   return [...map.values()];
+}
+
+/**
+ * GET /admin/contacts/check-pan — another contact with this PAN (normalized)?
+ * @param {string} pan
+ * @param {number|string|null} excludeId  Current contact id when editing
+ * @returns {Promise<null | { id: number, label: string, pan: string, email: string, mobile: string }>}
+ */
+export async function checkContactPanConflict(pan, excludeId = null) {
+  const p = (pan || '').trim().toUpperCase();
+  if (!/^[A-Z]{5}\d{4}[A-Z]$/.test(p)) return null;
+  const params = new URLSearchParams({ pan: p });
+  const ex = excludeId != null && excludeId !== '' ? Number(excludeId) : NaN;
+  if (Number.isFinite(ex) && ex > 0) {
+    params.set('exclude_id', String(ex));
+  }
+  const res = await fetch(`${API_BASE}/admin/contacts/check-pan?${params}`, {
+    headers: authHeaders(),
+  });
+  const envelope = await parseResponse(res);
+  const conflict = envelope.data && envelope.data.conflict;
+  if (!conflict) return null;
+  return {
+    id: Number(conflict.id),
+    label: conflict.display_name || '—',
+    pan: conflict.pan != null ? String(conflict.pan) : '',
+    email: conflict.email != null ? String(conflict.email) : '',
+    mobile: conflict.phone != null ? String(conflict.phone) : '',
+  };
 }
 
 /**

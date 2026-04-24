@@ -1,5 +1,9 @@
 /**
- * Modal for duplicate (identical) or similar directory names (orgs / contacts).
+ * Modal for duplicate / similar directory names (organizations) or
+ * suspicious name duplicates vs identical PAN (contacts).
+ *
+ * @param {'org'|'contact_name_duplicate'|'contact_pan_identical'|null} [collisionProfile]
+ *        When null, uses legacy `kind` identical/similar (organizations).
  */
 export default function NameCollisionModal({
   open,
@@ -8,12 +12,36 @@ export default function NameCollisionModal({
   entityNoun,
   matches,
   onOpenRecord,
-  /** When `'save'`, identical duplicate was detected on save — show explicit “not saved” copy. */
+  /** When `'save'`, blocking duplicate was detected on save — show explicit “not saved” copy. */
   blockingReason = null,
+  /**
+   * Contact-specific UX; when set, overrides title/body/buttons vs org `kind`.
+   * Organizations should omit this and pass kind identical | similar.
+   */
+  collisionProfile = null,
 }) {
-  if (!open || !kind || !Array.isArray(matches) || matches.length === 0) return null;
+  if (!open || !Array.isArray(matches) || matches.length === 0) return null;
 
-  const isIdentical = kind === 'identical';
+  const isOrgIdentical = !collisionProfile && kind === 'identical';
+  const isContactNameDup = collisionProfile === 'contact_name_duplicate';
+  const isContactPan = collisionProfile === 'contact_pan_identical';
+
+  if (!collisionProfile && kind !== 'identical' && kind !== 'similar') return null;
+
+  const isBlocking = isOrgIdentical || isContactPan;
+  const titleColor = isBlocking ? '#991b1b' : '#92400e';
+
+  let title = '';
+  if (isContactPan) {
+    title = 'Identical PAN';
+  } else if (isContactNameDup) {
+    title = `Suspicious duplicate ${entityNoun} name`;
+  } else if (isOrgIdentical) {
+    title = `Duplicate ${entityNoun} name`;
+  } else {
+    title = `Similar ${entityNoun} name(s)`;
+  }
+
   const overlay = {
     position: 'fixed',
     inset: 0,
@@ -35,6 +63,54 @@ export default function NameCollisionModal({
     overflowY: 'auto',
   };
 
+  function renderBody() {
+    if (isContactPan && blockingReason === 'save') {
+      return (
+        <div style={{ margin: '10px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
+          <p style={{ margin: '0 0 8px', fontWeight: 700, color: '#991b1b' }}>Your changes were not saved.</p>
+          <p style={{ margin: 0 }}>
+            Another contact already uses this PAN. Change the PAN, or open the existing record below. Two different people may share the same name, but not the same PAN.
+          </p>
+        </div>
+      );
+    }
+    if (isContactPan) {
+      return (
+        <p style={{ margin: '8px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+          Another contact already uses this PAN. Change the PAN before saving, or open the existing record.
+        </p>
+      );
+    }
+    if (isContactNameDup) {
+      return (
+        <p style={{ margin: '8px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+          Other contacts have the same or a very similar name. This is a suspicious duplicate — not proof it is the same person. Review the records below; you can still save if they are different parties.
+        </p>
+      );
+    }
+    if (isOrgIdentical && blockingReason === 'save') {
+      return (
+        <div style={{ margin: '10px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
+          <p style={{ margin: '0 0 8px', fontWeight: 700, color: '#991b1b' }}>Your changes were not saved.</p>
+          <p style={{ margin: 0 }}>
+            {`Another ${entityNoun} already uses this exact name. Use a different name in the form, or open an existing record below.`}
+          </p>
+        </div>
+      );
+    }
+    return (
+      <p style={{ margin: '8px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
+        {isOrgIdentical
+          ? `Another ${entityNoun} already uses this exact name. Change the name before saving, or open the existing record.`
+          : `Other ${entityNoun}s in the directory closely match this name (one contains the other). You may still save if they are genuinely different parties.`}
+      </p>
+    );
+  }
+
+  const closeLabel = isBlocking && !isContactNameDup
+    ? 'Close'
+    : 'Close — I will save from the form if appropriate';
+
   return (
     <div
       style={overlay}
@@ -48,23 +124,10 @@ export default function NameCollisionModal({
       <div style={panel} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
           <div>
-            <div id="name-collision-title" style={{ fontSize: 16, fontWeight: 700, color: isIdentical ? '#991b1b' : '#92400e' }}>
-              {isIdentical ? `Duplicate ${entityNoun} name` : `Similar ${entityNoun} name(s)`}
+            <div id="name-collision-title" style={{ fontSize: 16, fontWeight: 700, color: titleColor }}>
+              {title}
             </div>
-            {isIdentical && blockingReason === 'save' ? (
-              <div style={{ margin: '10px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
-                <p style={{ margin: '0 0 8px', fontWeight: 700, color: '#991b1b' }}>Your changes were not saved.</p>
-                <p style={{ margin: 0 }}>
-                  {`Another ${entityNoun} already uses this exact name. Use a different name in the form, or open an existing record below.`}
-                </p>
-              </div>
-            ) : (
-              <p style={{ margin: '8px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-                {isIdentical
-                  ? `Another ${entityNoun} already uses this exact name. Change the name before saving, or open the existing record.`
-                  : `Other ${entityNoun}s in the directory closely match this name (one contains the other). You may still save if they are genuinely different parties.`}
-              </p>
-            )}
+            {renderBody()}
           </div>
           <button
             type="button"
@@ -94,6 +157,15 @@ export default function NameCollisionModal({
               <li key={m.id} style={{ marginBottom: 10 }}>
                 <div style={{ fontWeight: 700 }}>{m.label}</div>
                 <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>ID {m.id}</div>
+                {m.pan ? (
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>PAN {m.pan}</div>
+                ) : null}
+                {m.email ? (
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{m.email}</div>
+                ) : null}
+                {m.mobile ? (
+                  <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{m.mobile}</div>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => onOpenRecord(m.id)}
@@ -118,7 +190,7 @@ export default function NameCollisionModal({
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button type="button" onClick={onClose} style={modalBtnSecondary}>
-            {isIdentical ? 'Close' : 'Close — I will save from the form if appropriate'}
+            {closeLabel}
           </button>
         </div>
       </div>

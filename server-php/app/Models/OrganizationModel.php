@@ -199,6 +199,17 @@ class OrganizationModel
         }
 
         if (empty($setClauses)) {
+            // #region agent log
+            $p = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'debug-a4583e.log';
+            file_put_contents($p, json_encode([
+                'sessionId'    => 'a4583e',
+                'hypothesisId' => 'H_empty_set',
+                'location'     => 'OrganizationModel.php:update',
+                'message'      => 'no SET clauses; update skipped',
+                'data'         => ['id' => $id, 'incomingKeys' => array_keys($data)],
+                'timestamp'    => (int) round(microtime(true) * 1000),
+            ], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+            // #endregion
             return false;
         }
 
@@ -206,6 +217,19 @@ class OrganizationModel
         $setClause    = implode(', ', $setClauses);
 
         $stmt = $this->db->prepare("UPDATE organizations SET {$setClause} WHERE id = :id");
+        // #region agent log
+        $p = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'debug-a4583e.log';
+        file_put_contents($p, json_encode([
+            'sessionId'    => 'a4583e',
+            'hypothesisId' => 'H_model_execute',
+            'location'     => 'OrganizationModel.php:update:before_execute',
+            'message'      => 'about to execute org UPDATE',
+            'data'         => ['id' => $id, 'setFields' => array_map(static function (string $c): string {
+                return trim(explode('=', $c)[0] ?? '');
+            }, array_slice($setClauses, 0, -1))],
+            'timestamp'    => (int) round(microtime(true) * 1000),
+        ], JSON_UNESCAPED_UNICODE) . "\n", FILE_APPEND);
+        // #endregion
         return $stmt->execute($params);
     }
 

@@ -52,6 +52,36 @@ class ContactController extends BaseController
         $this->success($results, 'Clients found');
     }
 
+    // ── GET /api/admin/contacts/check-pan ───────────────────────────────────
+
+    /**
+     * Return whether another contact already uses this PAN (normalized).
+     *
+     * Query: pan (required for lookup), exclude_id (optional, when editing).
+     */
+    public function checkPan(): never
+    {
+        $pan        = strtoupper(trim((string)$this->query('pan', '')));
+        $excludeRaw = $this->query('exclude_id', null);
+        $excludeId  = ($excludeRaw !== null && $excludeRaw !== '') ? (int)$excludeRaw : null;
+        if ($excludeId !== null && $excludeId <= 0) {
+            $excludeId = null;
+        }
+
+        if ($pan === '') {
+            $this->success(['conflict' => null], 'No PAN provided');
+        }
+
+        $other = $this->clients->findOtherByPan($pan, $excludeId);
+        if ($other === null) {
+            $this->success(['conflict' => null], 'PAN available');
+        }
+
+        $this->success([
+            'conflict' => $this->panConflictArray($other),
+        ], 'PAN already in use');
+    }
+
     // ── GET /api/admin/contacts ──────────────────────────────────────────────
 
     /**
@@ -100,6 +130,19 @@ class ContactController extends BaseController
             $this->error('At least one of first_name, last_name, or organization_name is required.', 422);
         }
 
+        $pan = strtoupper(trim((string)($body['pan'] ?? ''))) ?: null;
+        if ($pan !== null && $pan !== '') {
+            $other = $this->clients->findOtherByPan($pan, null);
+            if ($other !== null) {
+                $this->error(
+                    'A contact with this PAN already exists.',
+                    422,
+                    [],
+                    ['conflict' => $this->panConflictArray($other)]
+                );
+            }
+        }
+
         $actingUser = $this->authUser();
 
         try {
@@ -113,7 +156,7 @@ class ContactController extends BaseController
                 'secondary_email'   => trim((string)($body['secondary_email'] ?? '')) ?: null,
                 'phone'             => trim((string)($body['phone']         ?? '')) ?: null,
                 'secondary_phone'   => trim((string)($body['secondary_phone'] ?? '')) ?: null,
-                'pan'               => strtoupper(trim((string)($body['pan'] ?? ''))) ?: null,
+                'pan'               => $pan,
                 'gstin'             => strtoupper(trim((string)($body['gstin'] ?? ''))) ?: null,
                 'website'           => trim((string)($body['website'] ?? '')) ?: null,
                 'address_line1'     => $body['address_line1'] ?? null,
@@ -226,6 +269,23 @@ class ContactController extends BaseController
         }
         if (array_key_exists('client_facing_restricted', $body)) {
             $data['client_facing_restricted'] = (bool)$body['client_facing_restricted'];
+        }
+
+        if (array_key_exists('pan', $data)) {
+            $rawPan = $data['pan'];
+            $norm   = is_string($rawPan) ? strtoupper(trim($rawPan)) : '';
+            if ($norm !== '') {
+                $other = $this->clients->findOtherByPan($norm, $id);
+                if ($other !== null) {
+                    $this->error(
+                        'A contact with this PAN already exists.',
+                        422,
+                        [],
+                        ['conflict' => $this->panConflictArray($other)]
+                    );
+                }
+            }
+            $data['pan'] = $norm !== '' ? $norm : null;
         }
 
         if ($data !== []) {
@@ -381,6 +441,22 @@ class ContactController extends BaseController
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    /**
+     * @param array<string, mixed> $row Row from findOtherByPan
+     *
+     * @return array{id: int, display_name: string, pan: string, email: string, phone: string}
+     */
+    private function panConflictArray(array $row): array
+    {
+        return [
+            'id'           => (int)$row['id'],
+            'display_name' => ClientModel::displayName($row),
+            'pan'          => (string)($row['pan'] ?? ''),
+            'email'        => (string)($row['email'] ?? ''),
+            'phone'        => (string)($row['phone'] ?? ''),
+        ];
+    }
 
     /**
      * @param mixed $v Raw JSON (may be 0, "0", "", null).

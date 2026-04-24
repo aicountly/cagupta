@@ -38,6 +38,7 @@ class ClientModel
                     last_name,
                     organization_name,
                     email,
+                    phone,
                     pan,
                     is_active
              FROM clients
@@ -62,6 +63,42 @@ class ClientModel
         $stmt->execute();
 
         return $stmt->fetchAll();
+    }
+
+    /**
+     * Find another client with the same normalized PAN (trim + uppercase).
+     * Empty PAN is not considered; callers should skip when $normalizedPan is ''.
+     *
+     * @return array<string, mixed>|null  id, first_name, last_name, organization_name, pan, email, phone
+     */
+    public function findOtherByPan(string $normalizedPan, ?int $excludeClientId = null): ?array
+    {
+        $pan = strtoupper(trim($normalizedPan));
+        if ($pan === '') {
+            return null;
+        }
+
+        $sql = 'SELECT id, first_name, last_name, organization_name, pan, email, phone
+                FROM clients
+                WHERE UPPER(TRIM(pan)) = :pan
+                  AND pan IS NOT NULL
+                  AND TRIM(pan) <> \'\'';
+        $params = [':pan' => $pan];
+        if ($excludeClientId !== null && $excludeClientId > 0) {
+            $sql .= ' AND id <> :exclude';
+            $params[':exclude'] = $excludeClientId;
+        }
+        $sql .= ' LIMIT 1';
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':pan', $pan);
+        if (isset($params[':exclude'])) {
+            $stmt->bindValue(':exclude', $params[':exclude'], PDO::PARAM_INT);
+        }
+        $stmt->execute();
+        $row = $stmt->fetch();
+
+        return $row ?: null;
     }
 
     /**

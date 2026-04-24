@@ -188,6 +188,27 @@ The migration is idempotent — safe to run multiple times.
 
 ---
 
+## Contacts (clients) — duplicate vs identical records
+
+The admin UI distinguishes two ideas for **people contacts** (the `clients` table):
+
+| Term | Meaning | API / behaviour |
+|------|---------|-----------------|
+| **Duplicate record** (suspicious) | Same or very similar **name** (or other soft signals in the UI). Not proof of the same person. | Informational only. Create and update **are allowed**. |
+| **Identical record** | Same **PAN** after normalization (`TRIM` + uppercase). Treats the record as the same tax identity. | Create and update **are rejected** with HTTP **422** and a payload `data.conflict` describing the existing row. |
+
+**Parameters today:** identical matching uses **PAN only**. Other fields (e.g. name) may be used later for suspicious duplicate hints only.
+
+**Endpoints:**
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/admin/contacts/check-pan?pan=…&exclude_id=…` | Returns `{ conflict: null }` or `{ conflict: { id, display_name, pan, email, phone } }`. Use `exclude_id` when editing an existing contact so its own PAN is ignored. |
+
+On `POST /api/admin/contacts` and `PUT /api/admin/contacts/:id`, a non-empty PAN that matches another client triggers the same 422 + `data.conflict` shape.
+
+---
+
 ## Role & Permission Matrix
 
 | Role | Permissions |

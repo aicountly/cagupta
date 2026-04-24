@@ -1,7 +1,13 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
-import { createContact, updateContact as updateContactApi, getContact, getContactsForSearch } from '../services/contactService';
+import {
+  createContact,
+  updateContact as updateContactApi,
+  getContact,
+  getContactsForSearch,
+  checkContactPanConflict,
+} from '../services/contactService';
 import OrganizationMultiSelect from '../components/common/OrganizationMultiSelect';
 import { getGroups } from '../services/clientGroupService';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
@@ -37,13 +43,6 @@ function toTitleCase(str) {
   return str.replace(/\w\S*/g, (word) =>
     word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
   );
-}
-
-function generateId() {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return 'ct-' + crypto.randomUUID();
-  }
-  return 'ct-' + Date.now() + '-' + Math.random().toString(36).slice(2, 9);
 }
 
 // ── Toast component ───────────────────────────────────────────────────────────
@@ -117,14 +116,16 @@ function normalizeContactNameKey(s) {
 }
 
 /**
+ * Suspicious name duplicate (warning only — save allowed). Merges exact + substring matches, deduped by id.
+ *
  * @param {string} trimmedInput
- * @param {Array<{ id: unknown, displayName?: string }>} peers  — already excludes self when editing
- * @returns {null | { kind: 'identical' | 'similar', matches: { id: number, label: string }[] }}
+ * @param {Array<{ id: unknown, displayName?: string, pan?: string, email?: string, mobile?: string }>} peers
+ * @returns {null | { exactName: boolean, matches: { id: number, label: string, pan: string, email: string, mobile: string }[] }}
  */
 function classifyContactNameDuplicates(trimmedInput, peers) {
   const t = normalizeContactNameKey(trimmedInput);
-  const identical = [];
-  const similar = [];
+  /** @type {Map<number, { id: number, label: string, pan: string, email: string, mobile: string, nameMatchExact: boolean }>} */
+  const byId = new Map();
   for (const p of peers || []) {
     if (!p) continue;
     const label = String(p.displayName || '').trim() || '—';
@@ -132,18 +133,33 @@ function classifyContactNameDuplicates(trimmedInput, peers) {
     if (!t || !pNorm) continue;
     const cid = Number(p.id);
     if (!Number.isFinite(cid) || cid <= 0) continue;
+    const pan = p.pan != null ? String(p.pan) : '';
+    const email = p.email != null ? String(p.email) : '';
+    const mobile = p.mobile != null ? String(p.mobile) : '';
+    const row = { id: cid, label, pan, email, mobile, nameMatchExact: false };
     if (t === pNorm) {
-      identical.push({ id: cid, label });
+      byId.set(cid, { ...row, nameMatchExact: true });
     } else {
       const [shorter, longer] = t.length <= pNorm.length ? [t, pNorm] : [pNorm, t];
       if (shorter.length >= 3 && longer.includes(shorter)) {
-        similar.push({ id: cid, label });
+        const prev = byId.get(cid);
+        if (!prev) byId.set(cid, { ...row, nameMatchExact: false });
       }
     }
   }
-  if (identical.length) return { kind: 'identical', matches: identical };
-  if (similar.length) return { kind: 'similar', matches: similar };
-  return null;
+  const merged = [...byId.values()];
+  if (!merged.length) return null;
+  const exactName = merged.some((m) => m.nameMatchExact);
+  return {
+    exactName,
+    matches: merged.map((m) => ({
+      id: m.id,
+      label: m.label,
+      pan: m.pan,
+      email: m.email,
+      mobile: m.mobile,
+    })),
+  };
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -163,9 +179,9 @@ export default function ContactCreatePage() {
   const [contactLoading, setContactLoading] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [nameDuplicateInfo, setNameDuplicateInfo] = useState(null);
-  const [nameCollisionModalOpen, setNameCollisionModalOpen] = useState(false);
-  const [nameCollisionBlockingReason, setNameCollisionBlockingReason] = useState(null);
-  const nameCollisionSigRef = useRef('');
+  /** @type {null | { profile: 'contact_name_duplicate' | 'contact_pan_identical', matches: object[], blockingReason?: string | null }} */
+  const [collisionModal, setCollisionModal] = useState(null);
+  const [panDuplicateInfo, setPanDuplicateInfo] = useState(null);
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -270,19 +286,35 @@ export default function ContactCreatePage() {
   }, [form.displayName, isEdit, contactId]);
 
   useEffect(() => {
-    if (!nameDuplicateInfo) {
-      nameCollisionSigRef.current = '';
-      setNameCollisionModalOpen(false);
-      setNameCollisionBlockingReason(null);
-      return;
+    const raw = (form.pan || '').trim().toUpperCase();
+    if (!validatePAN(raw)) {
+      setPanDuplicateInfo(null);
+      return undefined;
     }
-    const sig = `${nameDuplicateInfo.kind}:${nameDuplicateInfo.matches.map((m) => m.id).join(',')}`;
-    if (sig !== nameCollisionSigRef.current) {
-      nameCollisionSigRef.current = sig;
-      setNameCollisionModalOpen(true);
-      setNameCollisionBlockingReason(null);
+    if (isEdit && (contactId == null || !Number.isFinite(Number(contactId)))) {
+      return undefined;
     }
-  }, [nameDuplicateInfo]);
+    const t = setTimeout(() => {
+      checkContactPanConflict(raw, isEdit ? contactId : null)
+        .then((conflict) => {
+          if (!conflict) {
+            setPanDuplicateInfo(null);
+            return;
+          }
+          setPanDuplicateInfo({
+            matches: [{
+              id: conflict.id,
+              label: conflict.label,
+              pan: conflict.pan,
+              email: conflict.email,
+              mobile: conflict.mobile,
+            }],
+          });
+        })
+        .catch(() => setPanDuplicateInfo(null));
+    }, 450);
+    return () => clearTimeout(t);
+  }, [form.pan, isEdit, contactId]);
 
   function update(field, value) {
     const formatted =
@@ -402,17 +434,34 @@ export default function ContactCreatePage() {
         const others = (rows || []).filter((c) => c && (!Number.isFinite(curCid) || curCid <= 0 || Number(c.id) !== curCid));
         const dup = classifyContactNameDuplicates(trimmedName, others);
         setNameDuplicateInfo(dup);
-        if (dup?.kind === 'identical') {
-          const sig = `identical:${dup.matches.map((m) => m.id).join(',')}`;
-          nameCollisionSigRef.current = sig;
-          setNameCollisionBlockingReason('save');
-          setNameCollisionModalOpen(true);
+      } catch {
+        /* ignore name hint refresh */
+      }
+    }
+
+    const panVal = (contact.pan || '').trim().toUpperCase();
+    if (panVal && validatePAN(panVal)) {
+      try {
+        const conflict = await checkContactPanConflict(panVal, isEdit ? contactId : null);
+        if (conflict) {
+          setCollisionModal({
+            profile: 'contact_pan_identical',
+            matches: [{
+              id: conflict.id,
+              label: conflict.label,
+              pan: conflict.pan,
+              email: conflict.email,
+              mobile: conflict.mobile,
+            }],
+            blockingReason: 'save',
+          });
           return;
         }
       } catch {
-        /* allow save if search fails */
+        /* continue; API will enforce */
       }
     }
+
     setSaving(true);
     try {
       if (isEdit && contactId) {
@@ -425,6 +474,22 @@ export default function ContactCreatePage() {
       setDirty(false);
       setTimeout(() => navigate('/clients/contacts'), 900);
     } catch (err) {
+      const data = err && typeof err === 'object' ? err.data : null;
+      const c = data && data.conflict;
+      if (c) {
+        setCollisionModal({
+          profile: 'contact_pan_identical',
+          matches: [{
+            id: Number(c.id),
+            label: c.display_name || '—',
+            pan: c.pan != null ? String(c.pan) : '',
+            email: c.email != null ? String(c.email) : '',
+            mobile: c.phone != null ? String(c.phone) : '',
+          }],
+          blockingReason: 'save',
+        });
+        return;
+      }
       setToast('Error: ' + (err.message || 'Failed to save contact.'));
     } finally {
       setSaving(false);
@@ -440,17 +505,34 @@ export default function ContactCreatePage() {
         const rows = await getContactsForSearch(trimmedName, 50);
         const dup = classifyContactNameDuplicates(trimmedName, rows || []);
         setNameDuplicateInfo(dup);
-        if (dup?.kind === 'identical') {
-          const sig = `identical:${dup.matches.map((m) => m.id).join(',')}`;
-          nameCollisionSigRef.current = sig;
-          setNameCollisionBlockingReason('save');
-          setNameCollisionModalOpen(true);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const panVal = (contact.pan || '').trim().toUpperCase();
+    if (panVal && validatePAN(panVal)) {
+      try {
+        const conflict = await checkContactPanConflict(panVal, null);
+        if (conflict) {
+          setCollisionModal({
+            profile: 'contact_pan_identical',
+            matches: [{
+              id: conflict.id,
+              label: conflict.label,
+              pan: conflict.pan,
+              email: conflict.email,
+              mobile: conflict.mobile,
+            }],
+            blockingReason: 'save',
+          });
           return;
         }
       } catch {
-        /* allow save if search fails */
+        /* continue */
       }
     }
+
     setSaving(true);
     try {
       await createContact(contact);
@@ -459,8 +541,25 @@ export default function ContactCreatePage() {
       setLinkedOrgNameById({});
       setErrors({});
       setNameDuplicateInfo(null);
+      setPanDuplicateInfo(null);
       setToast('Contact saved! Ready for another entry.');
     } catch (err) {
+      const data = err && typeof err === 'object' ? err.data : null;
+      const c = data && data.conflict;
+      if (c) {
+        setCollisionModal({
+          profile: 'contact_pan_identical',
+          matches: [{
+            id: Number(c.id),
+            label: c.display_name || '—',
+            pan: c.pan != null ? String(c.pan) : '',
+            email: c.email != null ? String(c.email) : '',
+            mobile: c.phone != null ? String(c.phone) : '',
+          }],
+          blockingReason: 'save',
+        });
+        return;
+      }
       setToast('Error: ' + (err.message || 'Failed to save contact.'));
     } finally {
       setSaving(false);
@@ -501,16 +600,14 @@ export default function ContactCreatePage() {
     <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
       <NameCollisionModal
-        open={nameCollisionModalOpen && Boolean(nameDuplicateInfo)}
-        onClose={() => {
-          setNameCollisionModalOpen(false);
-          setNameCollisionBlockingReason(null);
-        }}
-        kind={nameDuplicateInfo?.kind}
+        open={Boolean(collisionModal?.matches?.length)}
+        onClose={() => setCollisionModal(null)}
+        kind="similar"
+        collisionProfile={collisionModal?.profile ?? null}
         entityNoun="contact"
-        matches={nameDuplicateInfo?.matches || []}
+        matches={collisionModal?.matches || []}
         onOpenRecord={(rid) => navigate(`/clients/contacts/${rid}/edit`)}
-        blockingReason={nameCollisionBlockingReason}
+        blockingReason={collisionModal?.blockingReason ?? null}
       />
 
       {/* Breadcrumb */}
@@ -593,26 +690,32 @@ export default function ContactCreatePage() {
               style={{ ...inputStyle, borderColor: errors.displayName ? '#dc2626' : '#E6E8F0' }}
             />
             <FieldError msg={errors.displayName} />
-            {nameDuplicateInfo && !nameCollisionModalOpen && (
+            {nameDuplicateInfo && !collisionModal && (
               <button
                 type="button"
-                onClick={() => setNameCollisionModalOpen(true)}
+                onClick={() => {
+                  setCollisionModal({
+                    profile: 'contact_name_duplicate',
+                    matches: nameDuplicateInfo.matches,
+                    blockingReason: null,
+                  });
+                }}
                 style={{
                   marginTop: 8,
                   display: 'inline-block',
                   padding: '8px 12px',
                   fontSize: 12,
                   fontWeight: 600,
-                  color: nameDuplicateInfo.kind === 'identical' ? '#991b1b' : '#92400e',
-                  background: nameDuplicateInfo.kind === 'identical' ? '#fef2f2' : '#fffbeb',
-                  border: nameDuplicateInfo.kind === 'identical' ? '1px solid #fecaca' : '1px solid #fde68a',
+                  color: '#92400e',
+                  background: '#fffbeb',
+                  border: '1px solid #fde68a',
                   borderRadius: 8,
                   cursor: 'pointer',
                 }}
               >
-                {nameDuplicateInfo.kind === 'identical'
-                  ? 'View duplicate name — cannot save until resolved'
-                  : 'View similar contact name(s)…'}
+                {nameDuplicateInfo.exactName
+                  ? 'View suspicious duplicate — same name as other record(s)…'
+                  : 'View suspicious duplicate — similar name(s)…'}
               </button>
             )}
           </FormField>
@@ -650,6 +753,32 @@ export default function ContactCreatePage() {
               style={{ ...inputStyle, fontFamily: 'monospace', textTransform: 'uppercase', borderColor: errors.pan ? '#dc2626' : '#E6E8F0' }}
             />
             <FieldError msg={errors.pan} />
+            {panDuplicateInfo && !collisionModal && validatePAN((form.pan || '').trim()) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setCollisionModal({
+                    profile: 'contact_pan_identical',
+                    matches: panDuplicateInfo.matches,
+                    blockingReason: null,
+                  });
+                }}
+                style={{
+                  marginTop: 8,
+                  display: 'inline-block',
+                  padding: '8px 12px',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: '#991b1b',
+                  background: '#fef2f2',
+                  border: '1px solid #fecaca',
+                  borderRadius: 8,
+                  cursor: 'pointer',
+                }}
+              >
+                This PAN is already on file — view existing contact
+              </button>
+            )}
           </FormField>
 
           {/* GSTIN */}
