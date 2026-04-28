@@ -11,6 +11,8 @@ use PDO;
  */
 class TimeEntryModel
 {
+    public const SHIFT_TARGET_MINUTES = 510;
+
     public const ACTIVITY_TYPES = [
         'client_work',
         'internal_review',
@@ -556,6 +558,48 @@ class TimeEntryModel
             'is_below_planned'              => $isBelow,
             'variance_amount'               => $variance,
         ];
+    }
+
+    /**
+     * Daily user-wise punched summary with billable/non-billable split.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listDailyUserPunchedSummary(string $workDate, int $shiftTargetMinutes = self::SHIFT_TARGET_MINUTES): array
+    {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $workDate)) {
+            return [];
+        }
+        if ($shiftTargetMinutes <= 0) {
+            $shiftTargetMinutes = self::SHIFT_TARGET_MINUTES;
+        }
+
+        $stmt = $this->db->prepare(
+            "SELECT
+                u.id AS user_id,
+                COALESCE(NULLIF(TRIM(u.name), ''), TRIM(u.email), 'User') AS user_name,
+                TRIM(u.email) AS user_email,
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE te.is_billable), 0) AS billable_minutes,
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE NOT te.is_billable), 0) AS non_billable_minutes,
+                COALESCE(SUM(te.duration_minutes), 0) AS total_punched_minutes,
+                GREATEST(0, :target_minutes - COALESCE(SUM(te.duration_minutes), 0)) AS idle_minutes
+            FROM users u
+            LEFT JOIN time_entries te
+                ON te.user_id = u.id
+               AND te.work_date = :work_date
+               AND te.timer_status <> :running
+            WHERE u.is_active = TRUE
+              AND TRIM(COALESCE(u.email, '')) <> ''
+            GROUP BY u.id, u.name, u.email
+            ORDER BY u.name ASC, u.id ASC"
+        );
+        $stmt->execute([
+            ':work_date' => $workDate,
+            ':running' => 'running',
+            ':target_minutes' => $shiftTargetMinutes,
+        ]);
+
+        return $stmt->fetchAll();
     }
 
     /**

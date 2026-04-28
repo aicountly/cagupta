@@ -156,6 +156,26 @@ The migration is idempotent — safe to run multiple times.
 
 ---
 
+## Cron Jobs
+
+The project uses standalone CLI scripts for scheduled notifications.
+
+### Daily low-timesheet intimation (6:00 AM)
+
+This checks each active user's **previous day** timesheet and sends an email only when punched time is below `510` minutes.
+
+```bash
+0 6 * * * php /absolute/path/to/server-php/cli/send-timesheet-intimation.php >> /absolute/path/to/logs/timesheet-intimation.log 2>&1
+```
+
+Optional dry run:
+
+```bash
+php cli/send-timesheet-intimation.php --dry-run
+```
+
+---
+
 ## API Endpoint Reference
 
 ### Authentication
