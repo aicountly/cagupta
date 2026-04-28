@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { getContactsWithMeta, deleteContact, requestContactDeleteOtp } from '../services/contactService';
 import StatusBadge from '../components/common/StatusBadge';
+import ListPaginationBar from '../components/common/ListPaginationBar';
 
 const PER_PAGE = 100;
 
@@ -144,6 +145,16 @@ export default function Contacts() {
 
       {/* Table */}
       <div style={cardStyle}>
+        <ListPaginationBar
+          placement="top"
+          total={serverTotal}
+          page={page}
+          totalPages={totalPages}
+          perPage={PER_PAGE}
+          loading={loading}
+          setPage={setPage}
+          entityPlural="contacts"
+        />
         <table style={tableStyle}>
           <thead>
             <tr>
@@ -228,32 +239,16 @@ export default function Contacts() {
             ))}
           </tbody>
         </table>
-        <div style={paginationBarStyle}>
-          <span style={{ color: '#64748b' }}>
-            {serverTotal === 0
-              ? 'No contacts'
-              : `${(page - 1) * PER_PAGE + 1}–${Math.min(page * PER_PAGE, serverTotal)} of ${serverTotal} contacts`}
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <button
-              style={pageBtn(page <= 1)}
-              disabled={page <= 1 || loading}
-              onClick={() => setPage(p => p - 1)}
-            >
-              ‹ Prev
-            </button>
-            <span style={{ fontSize: 12, color: '#475569', fontWeight: 600, minWidth: 80, textAlign: 'center' }}>
-              Page {page} of {totalPages}
-            </span>
-            <button
-              style={pageBtn(page >= totalPages)}
-              disabled={page >= totalPages || loading}
-              onClick={() => setPage(p => p + 1)}
-            >
-              Next ›
-            </button>
-          </div>
-        </div>
+        <ListPaginationBar
+          placement="bottom"
+          total={serverTotal}
+          page={page}
+          totalPages={totalPages}
+          perPage={PER_PAGE}
+          loading={loading}
+          setPage={setPage}
+          entityPlural="contacts"
+        />
       </div>
       {orgModalContact && (
         <div
@@ -444,6 +439,3 @@ const modalCloseBtnStyle = { background: 'none', border: 'none', fontSize: 20, c
 const modalListStyle = { margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 };
 const modalListItemStyle = { margin: 0 };
 const panel = { position:'fixed', right:0, top:56, width:360, height:'calc(100vh - 56px)', background:'#fff', boxShadow:'-4px 0 20px rgba(0,0,0,.12)', padding:24, overflowY:'auto', zIndex:100 };
-const paginationBarStyle = { padding: '10px 16px', fontSize: 12, borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, background: '#FAFBFD' };
-/** @param {boolean} disabled */
-const pageBtn = (disabled) => ({ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: '1px solid #E6E8F0', background: disabled ? '#f1f5f9' : '#fff', color: disabled ? '#94a3b8' : '#F37920', cursor: disabled ? 'not-allowed' : 'pointer' });

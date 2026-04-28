@@ -64,6 +64,31 @@ class TimeEntryModel
     }
 
     /**
+     * @return array<string, mixed>|null
+     */
+    public function getActiveForUser(int $userId): ?array
+    {
+        if ($userId <= 0) {
+            return null;
+        }
+        $stmt = $this->db->prepare(
+            'SELECT te.*, u.name AS user_name
+             FROM time_entries te
+             JOIN users u ON u.id = te.user_id
+             WHERE te.user_id = :uid AND te.timer_status = :status
+             ORDER BY te.id DESC
+             LIMIT 1'
+        );
+        $stmt->execute([
+            ':uid' => $userId,
+            ':status' => 'running',
+        ]);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
+    }
+
+    /**
      * @param array<string, mixed> $service Row from ServiceModel::find
      * @param array<string, mixed> $data user_id, service_id, task_id?, work_date, duration_minutes, activity_type, is_billable, notes?
      *
@@ -120,10 +145,10 @@ class TimeEntryModel
         $stmt = $this->db->prepare(
             'INSERT INTO time_entries (
                 user_id, service_id, task_id, work_date, duration_minutes,
-                activity_type, is_billable, notes
+                activity_type, is_billable, notes, timer_status, source
              ) VALUES (
                 :uid, :sid, :task_id, :work_date, :dur,
-                :activity, :billable, :notes
+                :activity, :billable, :notes, :timer_status, :source
              ) RETURNING id'
         );
         $stmt->execute([
@@ -135,10 +160,251 @@ class TimeEntryModel
             ':activity' => $activity,
             ':billable' => $isBillable ? 'true' : 'false',
             ':notes'    => $notes,
+            ':timer_status' => 'submitted',
+            ':source' => 'manual',
         ]);
         $newId = (int)$stmt->fetchColumn();
 
         return $this->find($newId);
+    }
+
+    /**
+     * @param array<string, mixed> $service
+     * @param array<string, mixed> $data user_id, task_id?, activity_type, is_billable?, notes?
+     *
+     * @return array<string, mixed>|null
+     */
+    public function startTimerWithValidation(array $service, array $data): ?array
+    {
+        if ($this->isServiceClosedForTime($service)) {
+            return null;
+        }
+        $userId = (int)($data['user_id'] ?? 0);
+        if ($userId <= 0) {
+            return null;
+        }
+        if ($this->getActiveForUser($userId) !== null) {
+            return null;
+        }
+        $taskId = isset($data['task_id']) && $data['task_id'] !== '' && $data['task_id'] !== null
+            ? trim((string)$data['task_id'])
+            : null;
+        if ($taskId !== null && !$this->isTaskOpen($service, $taskId)) {
+            return null;
+        }
+        $activity = strtolower(trim((string)($data['activity_type'] ?? 'client_work')));
+        if (!in_array($activity, self::ACTIVITY_TYPES, true)) {
+            return null;
+        }
+        $isBillable = array_key_exists('is_billable', $data)
+            ? (bool)$data['is_billable']
+            : true;
+        $notes = isset($data['notes']) ? trim((string)$data['notes']) : null;
+        if ($notes === '') {
+            $notes = null;
+        }
+        $serviceId = (int)($service['id'] ?? 0);
+        if ($serviceId <= 0) {
+            return null;
+        }
+        $now = gmdate('Y-m-d H:i:sP');
+        $workDate = gmdate('Y-m-d');
+
+        $stmt = $this->db->prepare(
+            'INSERT INTO time_entries (
+                user_id, service_id, task_id, work_date, duration_minutes,
+                activity_type, is_billable, notes, started_at, ended_at, timer_status, source
+             ) VALUES (
+                :uid, :sid, :task_id, :work_date, :dur,
+                :activity, :billable, :notes, :started_at, NULL, :timer_status, :source
+             ) RETURNING id'
+        );
+        $stmt->execute([
+            ':uid'      => $userId,
+            ':sid'      => $serviceId,
+            ':task_id'  => $taskId,
+            ':work_date'=> $workDate,
+            ':dur'      => 1,
+            ':activity' => $activity,
+            ':billable' => $isBillable ? 'true' : 'false',
+            ':notes'    => $notes,
+            ':started_at' => $now,
+            ':timer_status' => 'running',
+            ':source' => 'timer',
+        ]);
+        $newId = (int)$stmt->fetchColumn();
+
+        return $this->find($newId);
+    }
+
+    /**
+     * @param array<string, mixed> $service
+     * @param array<string, mixed> $data activity_type?, is_billable?, task_id?, notes?
+     *
+     * @return array<string, mixed>|null
+     */
+    public function stopTimerWithValidation(array $service, int $entryId, int $actorUserId, array $data = []): ?array
+    {
+        if ($this->isServiceClosedForTime($service)) {
+            return null;
+        }
+        $row = $this->find($entryId);
+        if ($row === null || (int)$row['service_id'] !== (int)$service['id']) {
+            return null;
+        }
+        if ((int)$row['user_id'] !== $actorUserId) {
+            return null;
+        }
+        if ((string)($row['timer_status'] ?? '') !== 'running') {
+            return null;
+        }
+        $taskId = isset($data['task_id']) && $data['task_id'] !== '' && $data['task_id'] !== null
+            ? trim((string)$data['task_id'])
+            : ($row['task_id'] ?? null);
+        if ($taskId !== null && !$this->isTaskOpen($service, (string)$taskId)) {
+            return null;
+        }
+        $activity = isset($data['activity_type'])
+            ? strtolower(trim((string)$data['activity_type']))
+            : strtolower(trim((string)($row['activity_type'] ?? 'client_work')));
+        if (!in_array($activity, self::ACTIVITY_TYPES, true)) {
+            return null;
+        }
+        $isBillable = array_key_exists('is_billable', $data)
+            ? (bool)$data['is_billable']
+            : (bool)($row['is_billable'] ?? true);
+        $notes = array_key_exists('notes', $data)
+            ? trim((string)$data['notes'])
+            : (($row['notes'] ?? null) !== null ? trim((string)$row['notes']) : null);
+        if ($notes === '') {
+            $notes = null;
+        }
+        $startTs = isset($row['started_at']) ? strtotime((string)$row['started_at']) : false;
+        if ($startTs === false) {
+            return null;
+        }
+        $endTs = time();
+        $mins = (int)floor(($endTs - $startTs) / 60);
+        if ($mins < 1) {
+            $mins = 1;
+        }
+        $endAt = gmdate('Y-m-d H:i:sP', $endTs);
+        $workDate = gmdate('Y-m-d', $startTs);
+
+        $stmt = $this->db->prepare(
+            'UPDATE time_entries
+             SET ended_at = :ended_at,
+                 duration_minutes = :dur,
+                 work_date = :work_date,
+                 task_id = :task_id,
+                 activity_type = :activity,
+                 is_billable = :billable,
+                 notes = :notes,
+                 timer_status = :status,
+                 updated_at = NOW()
+             WHERE id = :id'
+        );
+        $stmt->execute([
+            ':ended_at' => $endAt,
+            ':dur' => $mins,
+            ':work_date' => $workDate,
+            ':task_id' => $taskId,
+            ':activity' => $activity,
+            ':billable' => $isBillable ? 'true' : 'false',
+            ':notes' => $notes,
+            ':status' => 'stopped',
+            ':id' => $entryId,
+        ]);
+
+        return $this->find($entryId);
+    }
+
+    /**
+     * @param array<string, mixed> $service
+     * @param array<string, mixed> $data
+     *
+     * @return array<string, mixed>|null
+     */
+    public function updateWithValidation(array $service, int $entryId, int $actorUserId, bool $canManageAll, array $data): ?array
+    {
+        if ($this->isServiceClosedForTime($service)) {
+            return null;
+        }
+        $row = $this->find($entryId);
+        if ($row === null || (int)$row['service_id'] !== (int)$service['id']) {
+            return null;
+        }
+        if ((int)$row['user_id'] !== $actorUserId && !$canManageAll) {
+            return null;
+        }
+        if ((string)($row['timer_status'] ?? '') === 'running') {
+            return null;
+        }
+
+        $duration = array_key_exists('duration_minutes', $data)
+            ? (int)$data['duration_minutes']
+            : (int)$row['duration_minutes'];
+        if ($duration <= 0 || $duration > 1440) {
+            return null;
+        }
+        $workDate = array_key_exists('work_date', $data)
+            ? trim((string)$data['work_date'])
+            : trim((string)$row['work_date']);
+        if ($workDate === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $workDate)) {
+            return null;
+        }
+        $taskId = array_key_exists('task_id', $data)
+            ? (($data['task_id'] !== '' && $data['task_id'] !== null) ? trim((string)$data['task_id']) : null)
+            : ($row['task_id'] ?? null);
+        if ($taskId !== null && !$this->isTaskOpen($service, (string)$taskId)) {
+            return null;
+        }
+        $activity = array_key_exists('activity_type', $data)
+            ? strtolower(trim((string)$data['activity_type']))
+            : strtolower(trim((string)$row['activity_type']));
+        if (!in_array($activity, self::ACTIVITY_TYPES, true)) {
+            return null;
+        }
+        $isBillable = array_key_exists('is_billable', $data)
+            ? (bool)$data['is_billable']
+            : (bool)$row['is_billable'];
+        $notes = array_key_exists('notes', $data)
+            ? trim((string)$data['notes'])
+            : (($row['notes'] ?? null) !== null ? trim((string)$row['notes']) : null);
+        if ($notes === '') {
+            $notes = null;
+        }
+        $timerStatus = array_key_exists('timer_status', $data)
+            ? strtolower(trim((string)$data['timer_status']))
+            : strtolower(trim((string)($row['timer_status'] ?? 'submitted')));
+        if (!in_array($timerStatus, ['stopped', 'submitted'], true)) {
+            return null;
+        }
+
+        $stmt = $this->db->prepare(
+            'UPDATE time_entries
+             SET work_date = :work_date,
+                 duration_minutes = :dur,
+                 task_id = :task_id,
+                 activity_type = :activity,
+                 is_billable = :billable,
+                 notes = :notes,
+                 timer_status = :timer_status,
+                 updated_at = NOW()
+             WHERE id = :id'
+        );
+        $stmt->execute([
+            ':work_date' => $workDate,
+            ':dur' => $duration,
+            ':task_id' => $taskId,
+            ':activity' => $activity,
+            ':billable' => $isBillable ? 'true' : 'false',
+            ':notes' => $notes,
+            ':timer_status' => $timerStatus,
+            ':id' => $entryId,
+        ]);
+
+        return $this->find($entryId);
     }
 
     /**
@@ -201,9 +467,10 @@ class TimeEntryModel
                     SUM(te.duration_minutes) FILTER (WHERE NOT te.is_billable) AS non_billable_mins
              FROM time_entries te
              WHERE te.service_id = :sid
+               AND te.timer_status <> :running
              GROUP BY te.user_id"
         );
-        $stmt->execute([':sid' => $serviceId]);
+        $stmt->execute([':sid' => $serviceId, ':running' => 'running']);
         $perUser = $stmt->fetchAll();
 
         $billableHoursTotal = 0.0;
@@ -300,9 +567,10 @@ class TimeEntryModel
                 LEFT JOIN clients c ON c.id = s.client_id
                 LEFT JOIN organizations o ON o.id = s.organization_id
                 LEFT JOIN client_groups cg ON cg.id = COALESCE(c.group_id, o.group_id)
-                WHERE te.work_date >= :df AND te.work_date <= :dt";
+                WHERE te.work_date >= :df AND te.work_date <= :dt
+                  AND te.timer_status <> :running";
 
-        $params = [':df' => $dateFrom, ':dt' => $dateTo];
+        $params = [':df' => $dateFrom, ':dt' => $dateTo, ':running' => 'running'];
         if ($userId !== null && $userId > 0) {
             $sql               .= ' AND te.user_id = :uid';
             $params[':uid'] = $userId;

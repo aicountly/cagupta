@@ -5,4 +5,8 @@ export default defineConfig(({ mode }) => ({
   plugins: [react()],
   // Use /cagupta/ for GitHub Pages, and / for cPanel (custom domain root)
   base: mode === "github" ? "/cagupta/" : "/",
+  test: {
+    environment: "jsdom",
+    setupFiles: "./src/test/setupTests.js",
+  },
 }));

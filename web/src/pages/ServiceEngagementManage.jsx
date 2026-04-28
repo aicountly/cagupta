@@ -19,6 +19,8 @@ import OpenEngagementConflictModal from '../components/services/OpenEngagementCo
 import AddTaskModal from '../components/services/AddTaskModal';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import { getTimeEntries, createTimeEntry, TIME_ACTIVITY_TYPES } from '../services/timeEntryService';
+import { useServiceTimer } from '../hooks/useServiceTimer';
+import TimerHandoffModal from '../components/services/TimerHandoffModal';
 
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'pending_info', 'review', 'completed', 'cancelled'];
 
@@ -105,6 +107,9 @@ export default function ServiceEngagementManage() {
     userId: '',
   }));
   const [showAddTask, setShowAddTask] = useState(false);
+  const [showTimerModal, setShowTimerModal] = useState(false);
+  const [pendingStartService, setPendingStartService] = useState(null);
+  const [stoppedEntryDraft, setStoppedEntryDraft] = useState(null);
   const [showAddMemberSelect, setShowAddMemberSelect] = useState(false);
   const [replacingMemberId, setReplacingMemberId] = useState(null);
   const [deleting, setDeleting] = useState(false);
@@ -129,6 +134,14 @@ export default function ServiceEngagementManage() {
     if (['built', 'non_billable'].includes(bc)) return false;
     return true;
   }, [status, billingClosure]);
+  const {
+    activeTimer,
+    busy: timerBusy,
+    refreshActiveTimer,
+    startForService,
+    stopForService,
+    saveStoppedEntry,
+  } = useServiceTimer();
 
   const openTasksForTime = useMemo(
     () => tasks.filter((t) => t.id && t.status !== 'done'),
@@ -202,6 +215,11 @@ export default function ServiceEngagementManage() {
       .catch(e => setError(e.message || 'Could not load engagement.'))
       .finally(() => setLoading(false));
   }, [id]);
+
+  useEffect(() => {
+    if (!id) return;
+    refreshActiveTimer().catch(() => {});
+  }, [id, refreshActiveTimer]);
 
   useEffect(() => {
     getApprovedAffiliates()
@@ -351,9 +369,17 @@ export default function ServiceEngagementManage() {
       if (canManageTeamRates && timeForm.userId && String(timeForm.userId) !== String(session?.user?.id)) {
         payload.user_id = parseInt(timeForm.userId, 10);
       }
-      await createTimeEntry(id, payload);
+      if (stoppedEntryDraft && String(stoppedEntryDraft.serviceId) === String(id)) {
+        await saveStoppedEntry(id, stoppedEntryDraft.id, {
+          ...payload,
+          timer_status: 'submitted',
+        });
+      } else {
+        await createTimeEntry(id, payload);
+      }
       const list = await getTimeEntries(id);
       setTimeEntries(list);
+      setStoppedEntryDraft(null);
       setTimeForm((f) => ({
         ...f,
         durationMinutes: '60',
@@ -366,6 +392,75 @@ export default function ServiceEngagementManage() {
       setTimeError(err.message || 'Could not save time entry.');
     } finally {
       setTimeSaving(false);
+    }
+  }
+
+  async function refreshTimeList() {
+    if (!id) return;
+    const list = await getTimeEntries(id);
+    setTimeEntries(list);
+  }
+
+  async function handleStartTimerFromManage() {
+    if (!id || !canLogTimePermission || !canLogTime) return;
+    setTimeError('');
+    const myActive = activeTimer;
+    if (myActive && String(myActive.serviceId) !== String(id)) {
+      setPendingStartService({ id: Number(id) });
+      setShowTimerModal(true);
+      return;
+    }
+    if (myActive && String(myActive.serviceId) === String(id)) {
+      setTimeError('A timer is already running for this service.');
+      return;
+    }
+    try {
+      await startForService(id, {
+        task_id: timeForm.taskId || null,
+        activity_type: timeForm.activityType,
+        is_billable: timeForm.isBillable,
+        notes: timeForm.notes.trim() || undefined,
+      });
+      setToast('Timer started');
+      setTimeout(() => setToast(''), 1500);
+      await refreshTimeList();
+    } catch (e) {
+      const extra = e?.data?.active_timer;
+      if (extra) {
+        setPendingStartService({ id: Number(id) });
+        setShowTimerModal(true);
+      } else {
+        setTimeError(e.message || 'Could not start timer.');
+      }
+    }
+  }
+
+  async function handleStopCurrentTimer() {
+    if (!id || !activeTimer || String(activeTimer.serviceId) !== String(id)) return;
+    setTimeError('');
+    try {
+      const stopped = await stopForService(id, activeTimer.id, {
+        task_id: timeForm.taskId || null,
+        activity_type: timeForm.activityType,
+        is_billable: timeForm.isBillable,
+        notes: timeForm.notes.trim() || undefined,
+      });
+      setStoppedEntryDraft(stopped);
+      setTimeForm((f) => ({
+        ...f,
+        workDate: stopped.workDate || f.workDate,
+        durationMinutes: String(stopped.durationMinutes || 1),
+        activityType: stopped.activityType || f.activityType,
+        isBillable: stopped.isBillable !== false,
+        notes: stopped.notes || '',
+        taskId: stopped.taskId || '',
+      }));
+      setToast('Timer stopped. Review and submit the prefilled entry.');
+      setTimeout(() => setToast(''), 1500);
+      await refreshTimeList();
+      await refreshActiveTimer();
+    } catch (e) {
+      setTimeError(e.message || 'Could not stop timer.');
     }
   }
 
@@ -460,6 +555,32 @@ export default function ServiceEngagementManage() {
           onSave={handleAddTask}
         />
       )}
+      <TimerHandoffModal
+        open={showTimerModal}
+        activeTimer={activeTimer}
+        openTasks={openTasksForTime}
+        defaultUserId={session?.user?.id}
+        canManageTeamRates={canManageTeamRates}
+        staffUsers={staffUsers}
+        pendingStartService={pendingStartService}
+        onClose={() => {
+          setShowTimerModal(false);
+          setPendingStartService(null);
+          refreshTimeList().catch(() => {});
+          refreshActiveTimer().catch(() => {});
+        }}
+        onStopAndPrefill={(timer) => stopForService(timer.serviceId, timer.id)}
+        onSubmitStopped={async (entry, payload) => {
+          await saveStoppedEntry(entry.serviceId, entry.id, payload);
+          await refreshTimeList();
+        }}
+        onStartNext={(svc) => startForService(svc.id, {
+          task_id: timeForm.taskId || null,
+          activity_type: timeForm.activityType,
+          is_billable: timeForm.isBillable,
+          notes: timeForm.notes.trim() || undefined,
+        })}
+      />
       {deleteModalOpen && (
         <div style={deleteOverlayStyle}>
           <div style={deleteModalStyle}>
@@ -787,6 +908,22 @@ export default function ServiceEngagementManage() {
           ) : null}
           {canLogTimePermission && canLogTime ? (
             <form onSubmit={handleSaveTimeEntry} style={{ display: 'grid', gap: 12, marginBottom: 16, padding: 14, background: '#f8fafc', borderRadius: 10, border: '1px solid #e2e8f0' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {activeTimer && String(activeTimer.serviceId) === String(id) ? (
+                  <button type="button" onClick={handleStopCurrentTimer} disabled={timerBusy} style={btnSecondary}>
+                    {timerBusy ? 'Stopping...' : 'Stop timer'}
+                  </button>
+                ) : (
+                  <button type="button" onClick={handleStartTimerFromManage} disabled={timerBusy} style={btnSecondary}>
+                    {timerBusy ? 'Starting...' : 'Start timer'}
+                  </button>
+                )}
+                {activeTimer ? (
+                  <span style={{ fontSize: 12, color: '#64748b', alignSelf: 'center' }}>
+                    Running: {activeTimer.clientName || `Service #${activeTimer.serviceId}`} {activeTimer.serviceType ? `(${activeTimer.serviceType})` : ''}
+                  </span>
+                ) : null}
+              </div>
               <div style={{ ...twoCol, marginTop: 0 }}>
                 <label style={fieldLabel}>
                   Work date
@@ -864,7 +1001,7 @@ export default function ServiceEngagementManage() {
                 />
               </label>
               <button type="submit" disabled={timeSaving} style={{ ...btnPrimary, justifySelf: 'start' }}>
-                {timeSaving ? 'Saving…' : 'Add time entry'}
+                {timeSaving ? 'Saving…' : stoppedEntryDraft ? 'Submit prefilled time' : 'Add time entry'}
               </button>
             </form>
           ) : (

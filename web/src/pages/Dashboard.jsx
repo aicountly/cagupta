@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getDashboardStats } from '../services/dashboardService';
 import { getEngagements } from '../services/engagementService';
@@ -6,15 +6,30 @@ import { getInvoices } from '../services/invoiceService';
 import { getAppointments } from '../services/appointmentService';
 import StatusBadge from '../components/common/StatusBadge';
 
-const StatCard = ({ icon, label, value, sub, color, bg }) => (
-  <div style={{ background: '#fff', borderRadius: 14, padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: '1px solid #E6E8F0', display: 'flex', alignItems: 'center', gap: 16 }}>
+const METRIC_CARD_CONFIG = [
+  { key: 'activeClients', label: 'Active Clients', icon: '👥', color: '#2563eb', bg: '#EFF6FF', to: '/clients/contacts' },
+  { key: 'activeServices', label: 'Active Services', icon: '📋', color: '#7c3aed', bg: '#F5F3FF', to: '/services' },
+  { key: 'pendingTasks', label: 'Pending Tasks', icon: '✅', color: '#d97706', bg: '#FFFBEB', sub: 'across all engagements', to: '/services' },
+  { key: 'outstandingAmount', label: 'Outstanding Amount', icon: '💰', color: '#dc2626', bg: '#FEF2F2', sub: 'total receivable (txn ledger)', to: '/invoices' },
+  { key: 'documentsThisMonth', label: 'Documents This Month', icon: '📂', color: '#0891b2', bg: '#ECFEFF', to: '/documents' },
+  { key: 'appointmentsToday', label: 'Appointments Today', icon: '📅', color: '#16a34a', bg: '#F0FDF4', to: '/calendar' },
+];
+
+const StatCard = ({ icon, label, value, sub, color, bg, to, onNavigate }) => (
+  <button
+    type="button"
+    onClick={() => onNavigate(to)}
+    style={{ ...statCardStyle, cursor: 'pointer' }}
+    title={`Open ${label}`}
+    aria-label={`${label}: ${value}`}
+  >
     <div style={{ width: 48, height: 48, borderRadius: 12, background: bg || '#F6F7FB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{icon}</div>
-    <div style={{ flex: 1, minWidth: 0 }}>
+    <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
       <div style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>{label}</div>
       <div style={{ fontSize: 26, fontWeight: 700, color: '#1e293b', lineHeight: 1 }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: color, marginTop: 4, fontWeight: 600 }}>{sub}</div>}
     </div>
-  </div>
+  </button>
 );
 
 const QUICK_ACTIONS = [
@@ -61,17 +76,40 @@ export default function Dashboard() {
   const outstandingFmt = typeof stats.totalOutstanding === 'number'
     ? `₹${stats.totalOutstanding.toLocaleString('en-IN')}`
     : stats.totalOutstanding;
+  const metricValues = useMemo(() => ({
+    activeClients: loading ? '…' : stats.activeClients,
+    activeServices: loading ? '…' : stats.activeServices,
+    pendingTasks: loading ? '…' : stats.pendingTasks,
+    outstandingAmount: loading ? '…' : outstandingFmt,
+    documentsThisMonth: loading ? '…' : stats.documentsThisMonth,
+    appointmentsToday: loading ? '…' : stats.appointmentsToday,
+  }), [loading, stats, outstandingFmt]);
+
+  const handleMetricNavigate = (to) => {
+    if (to) {
+      navigate(to);
+      return;
+    }
+    navigate('/dashboard/metrics/general');
+  };
 
   return (
     <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))', gap: 16, marginBottom: 28 }}>
-        <StatCard icon="👥" label="Active Clients"        value={loading ? '…' : stats.activeClients}      color="#2563eb" bg="#EFF6FF" />
-        <StatCard icon="📋" label="Active Services"       value={loading ? '…' : stats.activeServices}     color="#7c3aed" bg="#F5F3FF" />
-        <StatCard icon="✅" label="Pending Tasks"         value={loading ? '…' : stats.pendingTasks}       sub="across all engagements" color="#d97706" bg="#FFFBEB" />
-        <StatCard icon="💰" label="Outstanding Amount"    value={loading ? '…' : outstandingFmt}           sub="total receivable (txn ledger)" color="#dc2626" bg="#FEF2F2" />
-        <StatCard icon="📂" label="Documents This Month"  value={loading ? '…' : stats.documentsThisMonth} color="#0891b2" bg="#ECFEFF" />
-        <StatCard icon="📅" label="Appointments Today"    value={loading ? '…' : stats.appointmentsToday}  color="#16a34a" bg="#F0FDF4" />
+        {METRIC_CARD_CONFIG.map((card) => (
+          <StatCard
+            key={card.key}
+            icon={card.icon}
+            label={card.label}
+            value={metricValues[card.key]}
+            sub={card.sub}
+            color={card.color}
+            bg={card.bg}
+            to={card.to}
+            onNavigate={handleMetricNavigate}
+          />
+        ))}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -156,6 +194,17 @@ export default function Dashboard() {
 }
 
 const cardStyle = { background: '#fff', borderRadius: 14, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,.06)', border: '1px solid #E6E8F0' };
+const statCardStyle = {
+  width: '100%',
+  background: '#fff',
+  borderRadius: 14,
+  padding: '20px',
+  boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
+  border: '1px solid #E6E8F0',
+  display: 'flex',
+  alignItems: 'center',
+  gap: 16,
+};
 const cardTitle = { margin: '0 0 14px 0', fontSize: 15, fontWeight: 700, color: '#1e293b' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
 const thStyle = { textAlign: 'left', padding: '8px 10px', color: '#64748b', fontWeight: 600, fontSize: 11, borderBottom: '1px solid #F0F2F8', background: '#F8FAFC', textTransform: 'uppercase', letterSpacing: '0.04em' };

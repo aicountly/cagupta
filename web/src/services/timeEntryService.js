@@ -17,7 +17,10 @@ function authHeaders() {
 async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(json.message || `Request failed (${res.status})`);
+    const err = new Error(json.message || `Request failed (${res.status})`);
+    err.status = res.status;
+    err.data = json.data;
+    throw err;
   }
   return json;
 }
@@ -32,6 +35,29 @@ export const TIME_ACTIVITY_TYPES = [
   { value: 'other', label: 'Other' },
 ];
 
+function mapTimeEntry(r) {
+  if (!r) return null;
+  return {
+    id: r.id,
+    userId: r.user_id,
+    userName: r.user_name || '',
+    serviceId: r.service_id,
+    serviceType: r.service_type || '',
+    clientName: r.client_name || '',
+    taskId: r.task_id || null,
+    workDate: r.work_date || '',
+    durationMinutes: Number(r.duration_minutes) || 0,
+    activityType: r.activity_type || '',
+    isBillable: Boolean(r.is_billable),
+    notes: r.notes || '',
+    startedAt: r.started_at || '',
+    endedAt: r.ended_at || '',
+    timerStatus: r.timer_status || 'submitted',
+    source: r.source || 'manual',
+    createdAt: r.created_at || '',
+  };
+}
+
 /**
  * @param {number|string} serviceId
  * @returns {Promise<object[]>}
@@ -41,19 +67,7 @@ export async function getTimeEntries(serviceId) {
     headers: authHeaders(),
   });
   const json = await parseResponse(res);
-  return (json.data || []).map((r) => ({
-    id: r.id,
-    userId: r.user_id,
-    userName: r.user_name || '',
-    serviceId: r.service_id,
-    taskId: r.task_id || null,
-    workDate: r.work_date || '',
-    durationMinutes: Number(r.duration_minutes) || 0,
-    activityType: r.activity_type || '',
-    isBillable: Boolean(r.is_billable),
-    notes: r.notes || '',
-    createdAt: r.created_at || '',
-  }));
+  return (json.data || []).map(mapTimeEntry);
 }
 
 /**
@@ -68,7 +82,65 @@ export async function createTimeEntry(serviceId, payload) {
     body: JSON.stringify(payload),
   });
   const json = await parseResponse(res);
-  return json.data;
+  return mapTimeEntry(json.data);
+}
+
+/**
+ * @returns {Promise<object|null>}
+ */
+export async function getActiveTimer() {
+  const res = await fetch(`${API_BASE}/admin/time-entries/active`, {
+    headers: authHeaders(),
+  });
+  const json = await parseResponse(res);
+  return mapTimeEntry(json.data);
+}
+
+/**
+ * @param {number|string} serviceId
+ * @param {object} payload
+ * @returns {Promise<object>}
+ */
+export async function startTimer(serviceId, payload = {}) {
+  const res = await fetch(`${API_BASE}/admin/services/${serviceId}/time-entries/start`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const json = await parseResponse(res);
+  return mapTimeEntry(json.data);
+}
+
+/**
+ * @param {number|string} serviceId
+ * @param {number|string} entryId
+ * @param {object} payload
+ * @returns {Promise<object>}
+ */
+export async function stopTimer(serviceId, entryId, payload = {}) {
+  const res = await fetch(`${API_BASE}/admin/services/${serviceId}/time-entries/${entryId}/stop`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const json = await parseResponse(res);
+  return mapTimeEntry(json.data);
+}
+
+/**
+ * @param {number|string} serviceId
+ * @param {number|string} entryId
+ * @param {object} payload
+ * @returns {Promise<object>}
+ */
+export async function updateTimeEntry(serviceId, entryId, payload) {
+  const res = await fetch(`${API_BASE}/admin/services/${serviceId}/time-entries/${entryId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const json = await parseResponse(res);
+  return mapTimeEntry(json.data);
 }
 
 /**

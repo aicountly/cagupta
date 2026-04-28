@@ -142,6 +142,135 @@ class TimeEntryController extends BaseController
         }
     }
 
+    // ── GET /api/admin/time-entries/active ───────────────────────────────────
+
+    public function active(): never
+    {
+        $actor = $this->authUser();
+        $actorId = $actor ? (int)$actor['id'] : 0;
+        if ($actorId <= 0) {
+            $this->error('Unauthorized.', 401);
+        }
+        try {
+            $active = $this->entries->getActiveForUser($actorId);
+            if ($active === null) {
+                $this->success(null, 'No active timer');
+            }
+            $service = $this->services->find((int)$active['service_id']);
+            if ($service !== null) {
+                $active['service_type'] = $service['service_type'] ?? '';
+                $active['client_name'] = $service['client_name'] ?? '';
+            }
+            $this->success($active, 'Active timer retrieved');
+        } catch (\Throwable $e) {
+            if (self::isDbPermissionDenied($e)) {
+                $this->error(self::dbGrantDeniedMessage('SELECT on time-related tables'), 503);
+            }
+            throw $e;
+        }
+    }
+
+    // ── POST /api/admin/services/:id/time-entries/start ──────────────────────
+
+    public function startForService(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+        $body = $this->getJsonBody();
+        $actor = $this->authUser();
+        $actorId = $actor ? (int)$actor['id'] : 0;
+        if ($actorId <= 0) {
+            $this->error('Unauthorized.', 401);
+        }
+        $targetUserId = $actorId;
+        if (!empty($body['user_id']) && (int)$body['user_id'] !== $actorId) {
+            if (!$this->userHasManageAll($actor)) {
+                $this->error('Only team administrators may start timers for another user.', 403);
+            }
+            $targetUserId = (int)$body['user_id'];
+            if ($targetUserId <= 0) {
+                $this->error('Invalid user_id.', 422);
+            }
+        }
+
+        $active = $this->entries->getActiveForUser($targetUserId);
+        if ($active !== null) {
+            $activeService = $this->services->find((int)$active['service_id']);
+            if ($activeService !== null) {
+                $active['service_type'] = $activeService['service_type'] ?? '';
+                $active['client_name'] = $activeService['client_name'] ?? '';
+            }
+            $this->error('A timer is already running for this user.', 409, [], ['active_timer' => $active]);
+        }
+
+        $created = $this->entries->startTimerWithValidation($service, array_merge($body, [
+            'user_id' => $targetUserId,
+        ]));
+        if ($created === null) {
+            $this->error(
+                'Cannot start timer. Ensure the service is open and the selected task (if any) is not done.',
+                422
+            );
+        }
+        $this->success($created, 'Timer started', 201);
+    }
+
+    // ── POST /api/admin/services/:id/time-entries/:entryId/stop ──────────────
+
+    public function stopForService(int $id, int $entryId): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+        $body = $this->getJsonBody();
+        $actor = $this->authUser();
+        $actorId = $actor ? (int)$actor['id'] : 0;
+        if ($actorId <= 0) {
+            $this->error('Unauthorized.', 401);
+        }
+        $stopped = $this->entries->stopTimerWithValidation($service, $entryId, $actorId, $body);
+        if ($stopped === null) {
+            $this->error(
+                'Cannot stop timer. Ensure this timer is running for your user and the service/task is open.',
+                422
+            );
+        }
+        $this->success($stopped, 'Timer stopped');
+    }
+
+    // ── PATCH /api/admin/services/:id/time-entries/:entryId ──────────────────
+
+    public function updateForService(int $id, int $entryId): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+        $body = $this->getJsonBody();
+        $actor = $this->authUser();
+        $actorId = $actor ? (int)$actor['id'] : 0;
+        if ($actorId <= 0) {
+            $this->error('Unauthorized.', 401);
+        }
+        $updated = $this->entries->updateWithValidation(
+            $service,
+            $entryId,
+            $actorId,
+            $this->userHasManageAll($actor),
+            $body
+        );
+        if ($updated === null) {
+            $this->error(
+                'Cannot update time entry. Ensure duration/date/activity are valid and the service/task is open.',
+                422
+            );
+        }
+        $this->success($updated, 'Time entry updated');
+    }
+
     /**
      * @param array<string, mixed>|null $actor
      */

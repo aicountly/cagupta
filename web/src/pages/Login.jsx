@@ -27,7 +27,7 @@ function portalMismatchMessage(portal, user) {
     return 'This account is for affiliates. Select “Affiliate partner” above.';
   }
   if (user?.role === 'client' && portal !== 'client') {
-    return 'This account is for clients. Select “Client portal” above.';
+    return 'This account is for clients. Select “My CA” above.';
   }
   if (user?.role && user.role !== 'affiliate' && portal === 'affiliate') {
     return 'This is a staff account. Select “Staff & team” above.';
@@ -272,7 +272,7 @@ export default function LoginPage() {
                 color: '#0f172a',
               }}
             >
-              Client portal
+              My CA
             </button>
           </div>
           <h1 style={s.heading}>Sign in to your account</h1>

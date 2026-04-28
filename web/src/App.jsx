@@ -6,6 +6,7 @@ import LoginPage from './pages/Login';
 import Sidebar from './components/layout/Sidebar';
 import TopBar from './components/layout/TopBar';
 import Dashboard from './pages/Dashboard';
+import DashboardMetricDetail from './pages/DashboardMetricDetail';
 import Contacts from './pages/Contacts';
 import ContactCreatePage from './pages/ContactCreatePage';
 import Organizations from './pages/Organizations';
@@ -62,6 +63,7 @@ const pageTitles = {
   '/clients/groups':            '🗂️ Groups',
   '/services':                  '📋 Services & Tasks',
   '/services/focus':            '📋 Services & Tasks',
+  '/dashboard/metrics':         '🏠 Dashboard',
   '/services/new':              '➕ New Service Engagement',
   '/services/edit':             '✏️ Edit Service Engagement',
   '/services/manage':          '📋 Manage Service Engagement',
@@ -114,6 +116,7 @@ export default function App() {
           <Route path="/clients/organizations/:id/edit" element={<ProtectedRoute staffOnly><Layout routePath="/clients/organizations/edit"><OrganizationCreatePage /></Layout></ProtectedRoute>} />
           <Route path="/clients/groups" element={<ProtectedRoute staffOnly><Layout routePath="/clients/groups"><ClientGroups /></Layout></ProtectedRoute>} />
           <Route path="/services" element={<ProtectedRoute staffOnly><Layout routePath="/services"><Services /></Layout></ProtectedRoute>} />
+          <Route path="/dashboard/metrics/:metricKey" element={<ProtectedRoute staffOnly><Layout routePath="/dashboard/metrics"><DashboardMetricDetail /></Layout></ProtectedRoute>} />
           <Route path="/services/new" element={<ProtectedRoute staffOnly><Layout routePath="/services/new"><NewServiceEngagement /></Layout></ProtectedRoute>} />
           <Route path="/services/focus" element={<ProtectedRoute staffOnly><Navigate to="/services" replace /></ProtectedRoute>} />
           <Route path="/services/focus/:kpiSlug" element={<ProtectedRoute staffOnly><Layout routePath="/services/focus"><ServicesKpiList /></Layout></ProtectedRoute>} />

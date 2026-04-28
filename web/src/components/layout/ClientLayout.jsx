@@ -19,7 +19,7 @@ export default function ClientLayout({ title, children }) {
       <aside style={{ width: 240, background: '#fff', borderRight: '1px solid #E6E8F0', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: 16, borderBottom: '1px solid #f1f5f9' }}>
           <img src={logoUrl} alt="" style={{ height: 36, display: 'block' }} />
-          <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>Client portal</div>
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>My CA</div>
         </div>
         <nav style={{ flex: 1, padding: '12px 0' }}>
           {nav.map((item) => (

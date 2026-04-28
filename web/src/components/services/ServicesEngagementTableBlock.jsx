@@ -7,6 +7,9 @@ import { isEngagementOverdue } from '../../utils/serviceKpiFilters';
 import { useStaffUsers } from '../../hooks/useStaffUsers';
 import AddTaskModal from './AddTaskModal';
 import { Plus, Pencil, FolderOpen, X, Trash2 } from 'lucide-react';
+import { useServiceTimer } from '../../hooks/useServiceTimer';
+import TimerHandoffModal from './TimerHandoffModal';
+import { getTimeEntries } from '../../services/timeEntryService';
 
 const ROW_STATUS_OPTIONS = ['not_started', 'in_progress', 'pending_info', 'review', 'completed', 'cancelled'];
 
@@ -55,6 +58,10 @@ export default function ServicesEngagementTableBlock({
   const [selectedService, setSelectedService] = useState(null);
   const [hoverRow, setHoverRow] = useState(null);
   const [showAddTask, setShowAddTask] = useState(false);
+  const [showTimerModal, setShowTimerModal] = useState(false);
+  const [pendingStartService, setPendingStartService] = useState(null);
+  const [timerError, setTimerError] = useState('');
+  const [serviceTimeEntries, setServiceTimeEntries] = useState([]);
   const [serviceToDelete, setServiceToDelete] = useState(null);
   const [deleteOtp, setDeleteOtp] = useState('');
   const [deleteOtpSent, setDeleteOtpSent] = useState(false);
@@ -63,6 +70,14 @@ export default function ServicesEngagementTableBlock({
   const [requestingDeleteOtp, setRequestingDeleteOtp] = useState(false);
   const [hydratedAssigneeIds, setHydratedAssigneeIds] = useState(null);
   const { staffUsers } = useStaffUsers();
+  const {
+    activeTimer,
+    busy: timerBusy,
+    refreshActiveTimer,
+    startForService,
+    stopForService,
+    saveStoppedEntry,
+  } = useServiceTimer();
 
   const staffOptionsForTeam = useMemo(() => {
     if (!selectedService) return [];
@@ -124,6 +139,14 @@ export default function ServicesEngagementTableBlock({
     if (found) setSelectedService(found);
     onExpandConsumed?.();
   }, [expandServiceId, allServicesForSelection, rows, onExpandConsumed]);
+
+  useEffect(() => {
+    if (!selectedService?.id) {
+      setServiceTimeEntries([]);
+      return;
+    }
+    getTimeEntries(selectedService.id).then(setServiceTimeEntries).catch(() => setServiceTimeEntries([]));
+  }, [selectedService?.id]);
 
   function handleAddTask(taskData) {
     if (!selectedService) return;
@@ -196,6 +219,46 @@ export default function ServicesEngagementTableBlock({
     : [];
   const completedTasks = serviceTasks.filter((t) => t.status === 'done').length;
   const progress = serviceTasks.length ? Math.round((completedTasks / serviceTasks.length) * 100) : 0;
+  const openTasksForTime = serviceTasks.filter((t) => t.id && t.status !== 'done');
+
+  async function refreshSelectedTimeEntries(serviceId = selectedService?.id) {
+    if (!serviceId) return;
+    const list = await getTimeEntries(serviceId);
+    setServiceTimeEntries(list);
+  }
+
+  async function handleStartTimerForSelected() {
+    if (!selectedService?.id) return;
+    setTimerError('');
+    if (activeTimer && String(activeTimer.serviceId) !== String(selectedService.id)) {
+      setPendingStartService({ id: selectedService.id });
+      setShowTimerModal(true);
+      return;
+    }
+    if (activeTimer && String(activeTimer.serviceId) === String(selectedService.id)) {
+      setTimerError('A timer is already running for this service.');
+      return;
+    }
+    try {
+      await startForService(selectedService.id, {});
+      await refreshSelectedTimeEntries(selectedService.id);
+    } catch (e) {
+      const extra = e?.data?.active_timer;
+      if (extra) {
+        setPendingStartService({ id: selectedService.id });
+        setShowTimerModal(true);
+      } else {
+        setTimerError(e.message || 'Could not start timer.');
+      }
+    }
+  }
+
+  function handleStopTimerForSelected() {
+    if (!selectedService?.id || !activeTimer || String(activeTimer.serviceId) !== String(selectedService.id)) return;
+    setTimerError('');
+    setPendingStartService(null);
+    setShowTimerModal(true);
+  }
 
   return (
     <>
@@ -250,6 +313,21 @@ export default function ServicesEngagementTableBlock({
           </div>
         </div>
       )}
+      <TimerHandoffModal
+        open={showTimerModal}
+        activeTimer={activeTimer}
+        openTasks={openTasksForTime}
+        onClose={() => {
+          setShowTimerModal(false);
+          setPendingStartService(null);
+          refreshSelectedTimeEntries().catch(() => {});
+          refreshActiveTimer().catch(() => {});
+        }}
+        pendingStartService={pendingStartService}
+        onStopAndPrefill={(timer) => stopForService(timer.serviceId, timer.id)}
+        onSubmitStopped={(entry, payload) => saveStoppedEntry(entry.serviceId, entry.id, payload)}
+        onStartNext={(svc) => startForService(svc.id, {})}
+      />
       <div style={{ display: 'grid', gridTemplateColumns: selectedService ? '1fr 380px' : '1fr', gap: 16 }}>
         <div style={tableCard}>
           <div style={{ overflowX: 'auto' }}>
@@ -363,6 +441,28 @@ export default function ServicesEngagementTableBlock({
               <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{progress}% complete</div>
             </div>
 
+            <div style={{ marginBottom: 14, border: '1px solid #e2e8f0', borderRadius: 10, padding: 10, background: '#f8fafc' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                {activeTimer && String(activeTimer.serviceId) === String(selectedService.id) ? (
+                  <button type="button" style={btnSecondary} disabled={timerBusy} onClick={handleStopTimerForSelected}>
+                    {timerBusy ? 'Stopping...' : 'Stop timer'}
+                  </button>
+                ) : (
+                  <button type="button" style={btnSecondary} disabled={timerBusy} onClick={handleStartTimerForSelected}>
+                    {timerBusy ? 'Starting...' : 'Start timer'}
+                  </button>
+                )}
+                {activeTimer ? (
+                  <span style={{ fontSize: 11, color: '#64748b' }}>
+                    Running: {activeTimer.clientName || `Service #${activeTimer.serviceId}`} {activeTimer.serviceType ? `(${activeTimer.serviceType})` : ''}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 11, color: '#94a3b8' }}>No active timer</span>
+                )}
+              </div>
+              {timerError ? <div style={{ fontSize: 11, color: '#dc2626', marginTop: 8 }}>{timerError}</div> : null}
+            </div>
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <span style={{ fontWeight: 700, fontSize: 13, color: '#0B1F3B' }}>Tasks</span>
               <button type="button" style={btnSecondary} onClick={() => setShowAddTask(true)}><Plus size={12} /> Add Task</button>
@@ -393,6 +493,16 @@ export default function ServicesEngagementTableBlock({
                 </div>
               </div>
             ))}
+            {serviceTimeEntries.length > 0 ? (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#0B1F3B', marginBottom: 6 }}>Recent time</div>
+                {serviceTimeEntries.slice(0, 3).map((te) => (
+                  <div key={te.id} style={{ fontSize: 11, color: '#64748b', marginBottom: 4 }}>
+                    {te.workDate} - {te.durationMinutes} mins - {te.userName || 'User'}
+                  </div>
+                ))}
+              </div>
+            ) : null}
           </div>
         )}
       </div>
