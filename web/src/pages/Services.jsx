@@ -10,6 +10,9 @@ import {
 import { KPI_SLUGS, filterEngagementsBySlug } from '../utils/serviceKpiFilters';
 import ServicesEngagementTableBlock from '../components/services/ServicesEngagementTableBlock';
 
+const PENDING_ON_ME_FILTER = 'pending_on_me';
+const PENDING_ON_ME_STATUSES = ['not_started', 'in_progress', 'pending_info', 'review'];
+
 function formatWeekLine(delta, mode) {
   if (mode === 'activity_7d') {
     return delta > 0 ? `+${delta} this week` : 'No change';
@@ -116,7 +119,7 @@ export default function Services() {
   const canDeleteService = hasPermission('services.delete');
   const canEditService = hasPermission('services.edit');
   const [searchParams, setSearchParams] = useSearchParams();
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterStatus, setFilterStatus] = useState(PENDING_ON_ME_FILTER);
   const [search, setSearch] = useState('');
   const [allServices, setAllServices] = useState([]);
   const [kpiSnapshot, setKpiSnapshot] = useState(null);
@@ -148,7 +151,10 @@ export default function Services() {
   }, []);
 
   const filteredServices = allServices.filter((s) => {
-    const matchStatus = filterStatus === 'all' || s.status === filterStatus;
+    const matchStatus = filterStatus === 'all'
+      || (filterStatus === PENDING_ON_ME_FILTER
+        ? PENDING_ON_ME_STATUSES.includes(s.status)
+        : s.status === filterStatus);
     const q = search.toLowerCase();
     const matchSearch = !q || s.clientName.toLowerCase().includes(q) || s.type.toLowerCase().includes(q);
     return matchStatus && matchSearch;
@@ -187,6 +193,7 @@ export default function Services() {
             style={selectStyle}
           >
             <option value="all">All Statuses</option>
+            <option value={PENDING_ON_ME_FILTER}>Pending with me</option>
             {['not_started', 'in_progress', 'pending_info', 'review', 'completed', 'cancelled'].map((s) => (
               <option key={s} value={s}>{s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</option>
             ))}

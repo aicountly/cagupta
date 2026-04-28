@@ -300,6 +300,25 @@ export async function updateEngagement(id, payload, { superadminOtp } = {}) {
 }
 
 /**
+ * Reopen a completed engagement to an active workflow status with reason.
+ * @param {number|string} id
+ * @param {{status: string, reason: string}} payload
+ * @returns {Promise<object>}
+ */
+export async function reopenEngagement(id, payload) {
+  const res = await fetch(`${API_BASE}/admin/services/${id}/reopen`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      status: payload.status,
+      reason: payload.reason,
+    }),
+  });
+  const data = await parseResponse(res);
+  return normalizeEngagement(data.data);
+}
+
+/**
  * Admin audit log rows for a service engagement.
  * @param {number|string} id
  * @param {{ limit?: number, offset?: number }} [opts]

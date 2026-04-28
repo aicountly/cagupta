@@ -488,6 +488,16 @@ class ServiceController extends BaseController
                 $data[$field] = $body[$field];
             }
         }
+        if (array_key_exists('status', $body)) {
+            $oldStatus = (string)($service['status'] ?? '');
+            $newStatus = strtolower(trim((string)$body['status']));
+            if ($oldStatus === 'completed' && $newStatus !== '' && $newStatus !== 'completed') {
+                $this->error(
+                    'Completed engagements cannot change status directly. Use Reopen with a reason.',
+                    422
+                );
+            }
+        }
         if (array_key_exists('tasks', $body)) {
             $data['tasks'] = $body['tasks'];
         }
@@ -582,6 +592,59 @@ class ServiceController extends BaseController
             error_log('[ServiceController] Audit log failed: ' . $e->getMessage());
         }
         $this->success($updated, 'Service updated');
+    }
+
+    /**
+     * Reopen a completed service engagement with a mandatory reason.
+     * Body: { status: "not_started"|"in_progress"|"pending_info"|"review", reason: string }
+     */
+    public function reopen(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+        $currentStatus = strtolower(trim((string)($service['status'] ?? '')));
+        if ($currentStatus !== 'completed') {
+            $this->error('Only completed engagements can be reopened.', 422);
+        }
+
+        $body   = $this->getJsonBody();
+        $status = strtolower(trim((string)($body['status'] ?? '')));
+        $reason = trim((string)($body['reason'] ?? ''));
+        $allowedStatuses = ['not_started', 'in_progress', 'pending_info', 'review'];
+        if (!in_array($status, $allowedStatuses, true)) {
+            $this->error('status must be one of: not_started, in_progress, pending_info, review.', 422);
+        }
+        if ($reason === '') {
+            $this->error('Reopen reason is required.', 422);
+        }
+
+        $beforeSnap = $this->serviceAuditSnapshot($service);
+        $this->services->update($id, ['status' => $status]);
+        $updated   = $this->services->find($id);
+        $afterSnap = $this->serviceAuditSnapshot($updated ?? []);
+        $actorId   = $this->authUser() ? (int)$this->authUser()['id'] : null;
+        try {
+            $this->audit->insert(
+                $actorId,
+                'service.reopened',
+                'service',
+                $id,
+                [
+                    'reason'      => $reason,
+                    'from_status' => $currentStatus,
+                    'to_status'   => $status,
+                ],
+                $beforeSnap,
+                $afterSnap
+            );
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Audit log failed: ' . $e->getMessage());
+        }
+
+        $this->sendServiceReopenedEmail($service, $updated ?? $service, $reason, $this->authUser());
+        $this->success($updated, 'Service reopened');
     }
 
     // ── DELETE /api/admin/services/:id ───────────────────────────────────────
@@ -891,6 +954,62 @@ class ServiceController extends BaseController
         } catch (\Throwable $e) {
             error_log('[ServiceController] Deletion notify email failed: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * @param array<string, mixed>      $beforeService
+     * @param array<string, mixed>      $afterService
+     * @param array<string, mixed>|null $actingUser
+     */
+    private function sendServiceReopenedEmail(
+        array $beforeService,
+        array $afterService,
+        string $reason,
+        ?array $actingUser
+    ): void {
+        $actorName   = (string)(($actingUser ?? [])['name'] ?? 'Unknown');
+        $actorEmail  = (string)(($actingUser ?? [])['email'] ?? 'Unknown');
+        $timestamp   = date('d M Y, h:i A T');
+        $serviceId   = (string)($afterService['id'] ?? $beforeService['id'] ?? '');
+        $clientName  = (string)($afterService['client_name'] ?? $beforeService['client_name'] ?? 'Unknown');
+        $serviceType = (string)($afterService['service_type'] ?? $beforeService['service_type'] ?? '—');
+        $fromStatus  = $this->formatStatusLabel((string)($beforeService['status'] ?? 'completed'));
+        $toStatus    = $this->formatStatusLabel((string)($afterService['status'] ?? 'in_progress'));
+
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('service-reopened-notify', [
+                'serviceId'     => $serviceId,
+                'clientName'    => $clientName,
+                'serviceType'   => $serviceType,
+                'fromStatus'    => $fromStatus,
+                'toStatus'      => $toStatus,
+                'reopenReason'  => $reason,
+                'actorName'     => $actorName,
+                'actorEmail'    => $actorEmail,
+                'timestamp'     => $timestamp,
+            ]);
+            if ($htmlBody === '') {
+                return;
+            }
+            $subject = 'Service engagement reopened - CA Rahul Gupta';
+
+            $superEmail = (string)(getenv('SUPERADMIN_NOTIFY_EMAIL') ?: '');
+            if ($superEmail === '') {
+                $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
+                $superEmail = $super ? trim((string)($super['email'] ?? '')) : '';
+            }
+            if ($superEmail !== '') {
+                BrevoMailer::send($superEmail, 'CA Rahul Gupta', $subject, $htmlBody);
+            }
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Reopen notify email failed: ' . $e->getMessage());
+        }
+    }
+
+    private function formatStatusLabel(string $status): string
+    {
+        $s = str_replace('_', ' ', strtolower(trim($status)));
+        return ucwords($s);
     }
 
     /**

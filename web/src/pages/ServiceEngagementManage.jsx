@@ -8,6 +8,7 @@ import { useAuth } from '../auth/AuthContext';
 import {
   getEngagement,
   updateEngagement,
+  reopenEngagement,
   createTask,
   deleteEngagement,
   requestServiceClientFacingOtp,
@@ -20,6 +21,7 @@ import AddTaskModal from '../components/services/AddTaskModal';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
 import { getTimeEntries, createTimeEntry, TIME_ACTIVITY_TYPES } from '../services/timeEntryService';
 import { useServiceTimer } from '../hooks/useServiceTimer';
+import { useElapsedTimer } from '../hooks/useElapsedTimer';
 import TimerHandoffModal from '../components/services/TimerHandoffModal';
 
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'pending_info', 'review', 'completed', 'cancelled'];
@@ -112,6 +114,11 @@ export default function ServiceEngagementManage() {
   const [stoppedEntryDraft, setStoppedEntryDraft] = useState(null);
   const [showAddMemberSelect, setShowAddMemberSelect] = useState(false);
   const [replacingMemberId, setReplacingMemberId] = useState(null);
+  const [reopenModalOpen, setReopenModalOpen] = useState(false);
+  const [reopenStatus, setReopenStatus] = useState('in_progress');
+  const [reopenReason, setReopenReason] = useState('');
+  const [reopening, setReopening] = useState(false);
+  const [reopenError, setReopenError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteOtp, setDeleteOtp] = useState('');
@@ -142,6 +149,8 @@ export default function ServiceEngagementManage() {
     stopForService,
     saveStoppedEntry,
   } = useServiceTimer();
+  const manageRunningHere = Boolean(activeTimer && String(activeTimer.serviceId) === String(id));
+  const { label: elapsedLabel } = useElapsedTimer(activeTimer?.startedAt, manageRunningHere);
 
   const openTasksForTime = useMemo(
     () => tasks.filter((t) => t.id && t.status !== 'done'),
@@ -318,6 +327,31 @@ export default function ServiceEngagementManage() {
       }
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleReopenService() {
+    if (!id) return;
+    if (!reopenReason.trim()) {
+      setReopenError('Please enter a reason for reopening.');
+      return;
+    }
+    setReopening(true);
+    setReopenError('');
+    try {
+      const updated = await reopenEngagement(id, {
+        status: reopenStatus,
+        reason: reopenReason.trim(),
+      });
+      setStatus(updated.status || reopenStatus);
+      setReopenModalOpen(false);
+      setReopenReason('');
+      setToast('Service reopened');
+      setTimeout(() => setToast(''), 2000);
+    } catch (e) {
+      setReopenError(e.message || 'Could not reopen service.');
+    } finally {
+      setReopening(false);
     }
   }
 
@@ -626,6 +660,62 @@ export default function ServiceEngagementManage() {
           </div>
         </div>
       )}
+      {reopenModalOpen && (
+        <div style={deleteOverlayStyle}>
+          <div style={deleteModalStyle}>
+            <div style={deleteModalHeaderStyle}>
+              <span style={{ fontSize: 15, fontWeight: 700, color: '#0B1F3B' }}>Reopen completed service</span>
+              <button
+                type="button"
+                onClick={() => { setReopenModalOpen(false); setReopenError(''); }}
+                style={deleteCloseBtnStyle}
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+                Choose the status to reopen this engagement and record the reason. Super Admin will be notified by email with this reason.
+              </p>
+              {reopenError && <div style={{ color: '#dc2626', fontSize: 13 }}>{reopenError}</div>}
+              <label style={deleteLabelStyle}>
+                Reopen to status
+                <select
+                  value={reopenStatus}
+                  onChange={(e) => setReopenStatus(e.target.value)}
+                  style={deleteInputStyle}
+                >
+                  {['not_started', 'in_progress', 'pending_info', 'review'].map((s) => (
+                    <option key={s} value={s}>{s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={deleteLabelStyle}>
+                Reason for reopening *
+                <textarea
+                  value={reopenReason}
+                  onChange={(e) => setReopenReason(e.target.value)}
+                  rows={4}
+                  style={{ ...deleteInputStyle, resize: 'vertical', fontFamily: 'inherit' }}
+                  placeholder="Explain why this completed service is being reopened."
+                />
+              </label>
+            </div>
+            <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => { setReopenModalOpen(false); setReopenError(''); }}
+                style={deleteBtnSecondaryStyle}
+              >
+                Cancel
+              </button>
+              <button type="button" disabled={reopening} onClick={handleReopenService} style={deleteBtnPrimaryStyle}>
+                {reopening ? 'Reopening…' : 'Reopen service'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {toast && <div style={toastBar}>{toast}</div>}
 
       <div style={breadcrumbRow}>
@@ -741,12 +831,36 @@ export default function ServiceEngagementManage() {
           <div style={sectionTitle}>Engagement details</div>
           <label style={fieldLabel}>
             Status
-            <select value={status} onChange={e => setStatus(e.target.value)} style={selectStyle}>
+            <select
+              value={status}
+              onChange={e => setStatus(e.target.value)}
+              style={selectStyle}
+              disabled={status === 'completed'}
+            >
               {STATUS_OPTIONS.map(s => (
                 <option key={s} value={s}>{s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}</option>
               ))}
             </select>
           </label>
+          {status === 'completed' && (
+            <div style={{ marginTop: 10 }}>
+              <button
+                type="button"
+                style={btnSecondary}
+                onClick={() => {
+                  setReopenStatus('in_progress');
+                  setReopenReason('');
+                  setReopenError('');
+                  setReopenModalOpen(true);
+                }}
+              >
+                Reopen service
+              </button>
+              <p style={{ ...hint, marginTop: 8 }}>
+                Completed services cannot change status directly. Use <strong>Reopen service</strong> and provide a reason.
+              </p>
+            </div>
+          )}
           <p style={{ ...hint, marginTop: 12 }}>Assign staff on the <strong>Team</strong> tab (multiple people allowed). The first selected member is the primary owner for legacy reports.</p>
           <div style={{ ...twoCol, marginTop: 14 }}>
             <label style={fieldLabel}>
@@ -921,6 +1035,11 @@ export default function ServiceEngagementManage() {
                 {activeTimer ? (
                   <span style={{ fontSize: 12, color: '#64748b', alignSelf: 'center' }}>
                     Running: {activeTimer.clientName || `Service #${activeTimer.serviceId}`} {activeTimer.serviceType ? `(${activeTimer.serviceType})` : ''}
+                  </span>
+                ) : null}
+                {manageRunningHere ? (
+                  <span style={{ fontSize: 12, color: '#0B1F3B', fontWeight: 700, alignSelf: 'center' }}>
+                    Elapsed: {elapsedLabel}
                   </span>
                 ) : null}
               </div>

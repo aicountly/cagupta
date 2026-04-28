@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import DateInput from '../common/DateInput';
 import { TIME_ACTIVITY_TYPES } from '../../services/timeEntryService';
+import { useElapsedTimer } from '../../hooks/useElapsedTimer';
 
 function toDuration(startedAt, endedAt, fallback) {
   if (Number.isFinite(Number(fallback)) && Number(fallback) > 0) return String(Math.round(Number(fallback)));
@@ -38,6 +39,7 @@ export default function TimerHandoffModal({
     userId: defaultUserId ? String(defaultUserId) : '',
   });
   const [stoppedEntry, setStoppedEntry] = useState(null);
+  const { label: elapsedLabel } = useElapsedTimer(activeTimer?.startedAt, activeTimer?.timerStatus === 'running');
 
   useEffect(() => {
     if (!open || !activeTimer) return;
@@ -131,6 +133,12 @@ export default function TimerHandoffModal({
         <div style={{ padding: 16, display: 'grid', gap: 10 }}>
           <div style={{ fontSize: 13, color: '#334155' }}>
             Active service: <strong>{activeLabel}</strong>
+          </div>
+          <div style={{ display: 'grid', gap: 4, fontSize: 12, color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
+            <div><strong>Client:</strong> {activeTimer.clientName || 'Unknown client'}</div>
+            <div><strong>Engagement type:</strong> {activeTimer.serviceType || 'Unknown engagement type'}</div>
+            <div><strong>Service ID:</strong> {activeTimer.serviceId}</div>
+            <div><strong>Elapsed:</strong> {elapsedLabel}</div>
           </div>
           {activeTimer.startedAt ? (
             <div style={{ fontSize: 12, color: '#64748b' }}>

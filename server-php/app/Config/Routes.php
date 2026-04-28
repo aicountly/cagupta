@@ -365,6 +365,12 @@ class Routes
                 'middleware' => ['auth', 'permission:services.edit'],
             ],
             [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/services/:id/reopen',
+                'handler'    => 'Admin\ServiceController@reopen',
+                'middleware' => ['auth', 'permission:services.edit'],
+            ],
+            [
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/services/:id',
                 'handler'    => 'Admin\ServiceController@destroy',

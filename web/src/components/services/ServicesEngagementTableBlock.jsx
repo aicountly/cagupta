@@ -8,6 +8,7 @@ import { useStaffUsers } from '../../hooks/useStaffUsers';
 import AddTaskModal from './AddTaskModal';
 import { Plus, Pencil, FolderOpen, X, Trash2 } from 'lucide-react';
 import { useServiceTimer } from '../../hooks/useServiceTimer';
+import { useElapsedTimer } from '../../hooks/useElapsedTimer';
 import TimerHandoffModal from './TimerHandoffModal';
 import { getTimeEntries } from '../../services/timeEntryService';
 
@@ -220,6 +221,8 @@ export default function ServicesEngagementTableBlock({
   const completedTasks = serviceTasks.filter((t) => t.status === 'done').length;
   const progress = serviceTasks.length ? Math.round((completedTasks / serviceTasks.length) * 100) : 0;
   const openTasksForTime = serviceTasks.filter((t) => t.id && t.status !== 'done');
+  const drawerRunningHere = Boolean(activeTimer && String(activeTimer.serviceId) === String(selectedService?.id));
+  const { label: drawerElapsedLabel } = useElapsedTimer(activeTimer?.startedAt, drawerRunningHere);
 
   async function refreshSelectedTimeEntries(serviceId = selectedService?.id) {
     if (!serviceId) return;
@@ -380,6 +383,7 @@ export default function ServicesEngagementTableBlock({
                             onChange={(e) => handleRowStatusChange(s, e.target.value)}
                             style={rowStatusSelectStyle}
                             title="Status"
+                            disabled={s.status === 'completed'}
                           >
                             {ROW_STATUS_OPTIONS.map((st) => (
                               <option key={st} value={st}>{formatStatusLabel(st)}</option>
@@ -459,6 +463,11 @@ export default function ServicesEngagementTableBlock({
                 ) : (
                   <span style={{ fontSize: 11, color: '#94a3b8' }}>No active timer</span>
                 )}
+                {drawerRunningHere ? (
+                  <span style={{ fontSize: 11, color: '#0B1F3B', fontWeight: 700 }}>
+                    Elapsed: {drawerElapsedLabel}
+                  </span>
+                ) : null}
               </div>
               {timerError ? <div style={{ fontSize: 11, color: '#dc2626', marginTop: 8 }}>{timerError}</div> : null}
             </div>
