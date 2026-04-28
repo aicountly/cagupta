@@ -169,3 +169,47 @@ export async function getTimeEntryReport({ userId, dateFrom, dateTo }) {
     nonBillableMinutes: Number(r.non_billable_minutes) || 0,
   }));
 }
+
+function addOptionalQuery(q, key, value) {
+  if (value == null) return;
+  const raw = String(value).trim();
+  if (raw === '') return;
+  const n = Number(raw);
+  if (Number.isFinite(n) && n > 0) {
+    q.set(key, String(n));
+  }
+}
+
+/**
+ * @param {{
+ *   dateFrom: string,
+ *   dateTo: string,
+ *   bucket?: 'daily'|'weekly'|'monthly',
+ *   billableType?: 'all'|'billable'|'non_billable',
+ *   userId?: number|string,
+ *   clientId?: number|string,
+ *   organizationId?: number|string,
+ *   serviceId?: number|string,
+ *   groupId?: number|string
+ * }} params
+ * @returns {Promise<object>}
+ */
+export async function getTimesheetInsights(params) {
+  const q = new URLSearchParams({
+    date_from: params.dateFrom,
+    date_to: params.dateTo,
+    bucket: params.bucket || 'weekly',
+    billable_type: params.billableType || 'all',
+  });
+  addOptionalQuery(q, 'user_id', params.userId);
+  addOptionalQuery(q, 'client_id', params.clientId);
+  addOptionalQuery(q, 'organization_id', params.organizationId);
+  addOptionalQuery(q, 'service_id', params.serviceId);
+  addOptionalQuery(q, 'group_id', params.groupId);
+
+  const res = await fetch(`${API_BASE}/admin/reports/timesheets/insights?${q.toString()}`, {
+    headers: authHeaders(),
+  });
+  const json = await parseResponse(res);
+  return json.data || {};
+}

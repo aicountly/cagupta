@@ -82,7 +82,10 @@ SQL;
         string $search  = '',
         string $status  = '',
         int    $clientId = 0,
-        int    $orgId    = 0
+        int    $orgId    = 0,
+        ?int   $actorUserId = null,
+        bool   $isSuperAdmin = false,
+        ?int   $scopeUserId = null
     ): array {
         $where  = ['1=1'];
         $params = [];
@@ -108,6 +111,7 @@ SQL;
             $where[]              = 's.organization_id = :filter_org_id';
             $params[':filter_org_id'] = $orgId;
         }
+        $this->applyServiceVisibilityScope($where, $params, $actorUserId, $isSuperAdmin, $scopeUserId, 's');
 
         $whereClause = implode(' AND ', $where);
         $offset      = ($page - 1) * $perPage;
@@ -154,6 +158,41 @@ SQL;
         }
 
         return ['total' => $total, 'services' => $rows];
+    }
+
+    /**
+     * @param array<int, string>            $where
+     * @param array<string, int|string>     $params
+     */
+    private function applyServiceVisibilityScope(
+        array &$where,
+        array &$params,
+        ?int $actorUserId,
+        bool $isSuperAdmin,
+        ?int $scopeUserId,
+        string $serviceAlias = 's'
+    ): void {
+        $scopedUserId = null;
+        if ($isSuperAdmin) {
+            if ($scopeUserId !== null && $scopeUserId > 0) {
+                $scopedUserId = $scopeUserId;
+            }
+        } elseif ($actorUserId !== null && $actorUserId > 0) {
+            $scopedUserId = $actorUserId;
+        }
+        if ($scopedUserId === null) {
+            return;
+        }
+
+        $where[] = "(
+            {$serviceAlias}.assigned_to = :scope_uid
+            OR EXISTS (
+                SELECT 1 FROM service_assignees sa_scope
+                WHERE sa_scope.service_id = {$serviceAlias}.id
+                  AND sa_scope.user_id = :scope_uid
+            )
+        )";
+        $params[':scope_uid'] = $scopedUserId;
     }
 
     /**
@@ -792,7 +831,12 @@ SQL;
      *
      * @return array{asOf: string, counts: array<string, int>, weekDelta: array<string, int>, weekDeltaMode: array<string, string>}
      */
-    public function computeKpiSnapshot(string $asOfYmd): array
+    public function computeKpiSnapshot(
+        string $asOfYmd,
+        ?int $actorUserId = null,
+        bool $isSuperAdmin = false,
+        ?int $scopeUserId = null
+    ): array
     {
         $d = \DateTimeImmutable::createFromFormat('Y-m-d', $asOfYmd);
         if ($d === false) {
@@ -810,36 +854,47 @@ SQL;
         $waEndS    = $waEnd->format('Y-m-d');
 
         $open = "status NOT IN ('completed', 'cancelled')";
+        $scopeWhere = ['1=1'];
+        $scopeParams = [];
+        $this->applyServiceVisibilityScope(
+            $scopeWhere,
+            $scopeParams,
+            $actorUserId,
+            $isSuperAdmin,
+            $scopeUserId,
+            'services'
+        );
+        $scopeSql = implode(' AND ', $scopeWhere);
 
         $cDue = $this->scalarCount(
-            "SELECT COUNT(*) FROM services WHERE {$open}
+            "SELECT COUNT(*) FROM services WHERE {$scopeSql} AND {$open}
              AND due_date IS NOT NULL AND due_date >= :a AND due_date <= :b",
-            [':a' => $todayS, ':b' => $weekEndS]
+            array_merge($scopeParams, [':a' => $todayS, ':b' => $weekEndS])
         );
         $cDueThen = $this->scalarCount(
-            "SELECT COUNT(*) FROM services WHERE {$open}
+            "SELECT COUNT(*) FROM services WHERE {$scopeSql} AND {$open}
              AND due_date IS NOT NULL AND due_date >= :a AND due_date <= :b",
-            [':a' => $waS, ':b' => $waEndS]
+            array_merge($scopeParams, [':a' => $waS, ':b' => $waEndS])
         );
 
         $cOv = $this->scalarCount(
-            "SELECT COUNT(*) FROM services WHERE {$open} AND due_date IS NOT NULL AND due_date < :t",
-            [':t' => $todayS]
+            "SELECT COUNT(*) FROM services WHERE {$scopeSql} AND {$open} AND due_date IS NOT NULL AND due_date < :t",
+            array_merge($scopeParams, [':t' => $todayS])
         );
         $cOvThen = $this->scalarCount(
-            "SELECT COUNT(*) FROM services WHERE {$open} AND due_date IS NOT NULL AND due_date < :t",
-            [':t' => $waS]
+            "SELECT COUNT(*) FROM services WHERE {$scopeSql} AND {$open} AND due_date IS NOT NULL AND due_date < :t",
+            array_merge($scopeParams, [':t' => $waS])
         );
 
-        $cPend  = $this->scalarCount("SELECT COUNT(*) FROM services WHERE status = 'pending_info'", []);
-        $cComp  = $this->scalarCount("SELECT COUNT(*) FROM services WHERE status = 'completed'", []);
+        $cPend  = $this->scalarCount("SELECT COUNT(*) FROM services WHERE {$scopeSql} AND status = 'pending_info'", $scopeParams);
+        $cComp  = $this->scalarCount("SELECT COUNT(*) FROM services WHERE {$scopeSql} AND status = 'completed'", $scopeParams);
         $actPend = $this->scalarCount(
-            "SELECT COUNT(*) FROM services WHERE status = 'pending_info' AND updated_at >= (CAST(:d AS date) - INTERVAL '7 days')",
-            [':d' => $asOfYmd]
+            "SELECT COUNT(*) FROM services WHERE {$scopeSql} AND status = 'pending_info' AND updated_at >= (CAST(:d AS date) - INTERVAL '7 days')",
+            array_merge($scopeParams, [':d' => $asOfYmd])
         );
         $actComp = $this->scalarCount(
-            "SELECT COUNT(*) FROM services WHERE status = 'completed' AND updated_at >= (CAST(:d AS date) - INTERVAL '7 days')",
-            [':d' => $asOfYmd]
+            "SELECT COUNT(*) FROM services WHERE {$scopeSql} AND status = 'completed' AND updated_at >= (CAST(:d AS date) - INTERVAL '7 days')",
+            array_merge($scopeParams, [':d' => $asOfYmd])
         );
 
         return [

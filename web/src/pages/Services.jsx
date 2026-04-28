@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getAllEngagements, getServiceKpiSnapshot } from '../services/engagementService';
 import { useAuth } from '../auth/AuthContext';
+import { useStaffUsers } from '../hooks/useStaffUsers';
 import {
   Plus, Search, SlidersHorizontal,
   Clock, AlertTriangle,
@@ -115,10 +116,13 @@ function KpiCard({ item, to }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Services() {
   const navigate = useNavigate();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
+  const isSuperAdmin = String(user?.email || '').toLowerCase() === 'rahul@cagupta.in';
+  const { staffUsers } = useStaffUsers();
   const canDeleteService = hasPermission('services.delete');
   const canEditService = hasPermission('services.edit');
   const [searchParams, setSearchParams] = useSearchParams();
+  const [scopeUserId, setScopeUserId] = useState('');
   const [filterStatus, setFilterStatus] = useState(PENDING_ON_ME_FILTER);
   const [search, setSearch] = useState('');
   const [allServices, setAllServices] = useState([]);
@@ -140,15 +144,25 @@ export default function Services() {
   useEffect(() => {
     setLoading(true);
     Promise.all([
-      getAllEngagements().catch(() => []),
-      getServiceKpiSnapshot().catch(() => null),
+      getAllEngagements({
+        userId: isSuperAdmin && scopeUserId ? Number(scopeUserId) : null,
+      }).catch(() => []),
+      getServiceKpiSnapshot({
+        userId: isSuperAdmin && scopeUserId ? Number(scopeUserId) : null,
+      }).catch(() => null),
     ])
       .then(([data, snap]) => {
         setAllServices(data);
         setKpiSnapshot(snap);
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [isSuperAdmin, scopeUserId]);
+
+  const selectableUsers = useMemo(() => {
+    return staffUsers
+      .filter((s) => Number(s.id) > 0)
+      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  }, [staffUsers]);
 
   const filteredServices = allServices.filter((s) => {
     const matchStatus = filterStatus === 'all'
@@ -186,6 +200,18 @@ export default function Services() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {isSuperAdmin && (
+            <select
+              value={scopeUserId}
+              onChange={(e) => setScopeUserId(e.target.value)}
+              style={selectStyle}
+            >
+              <option value="">All Users</option>
+              {selectableUsers.map((u) => (
+                <option key={u.id} value={String(u.id)}>{u.name}</option>
+              ))}
+            </select>
+          )}
           <SlidersHorizontal size={14} style={{ color: '#64748b' }} />
           <select
             value={filterStatus}

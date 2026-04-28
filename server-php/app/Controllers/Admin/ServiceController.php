@@ -49,8 +49,23 @@ class ServiceController extends BaseController
         $status   = trim((string)$this->query('status', ''));
         $clientId = (int)$this->query('client_id', 0);
         $orgId    = (int)$this->query('organization_id', 0);
+        $scopeUserId = (int)$this->query('user_id', 0);
 
-        $result = $this->services->paginate($page, $perPage, $search, $status, $clientId, $orgId);
+        [$actorUserId, $isSuperAdmin, $effectiveScopeUserId] = $this->resolveServiceVisibilityContext(
+            $scopeUserId > 0 ? $scopeUserId : null
+        );
+
+        $result = $this->services->paginate(
+            $page,
+            $perPage,
+            $search,
+            $status,
+            $clientId,
+            $orgId,
+            $actorUserId,
+            $isSuperAdmin,
+            $effectiveScopeUserId
+        );
 
         $this->success($result['services'], 'Services retrieved', 200, [
             'pagination' => [
@@ -71,12 +86,21 @@ class ServiceController extends BaseController
     public function kpiSnapshot(): never
     {
         $asOf = trim((string)$this->query('as_of', ''));
+        $scopeUserId = (int)$this->query('user_id', 0);
         if ($asOf === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $asOf)) {
             $asOf = (new \DateTimeImmutable('today'))->format('Y-m-d');
         }
 
+        [$actorUserId, $isSuperAdmin, $effectiveScopeUserId] = $this->resolveServiceVisibilityContext(
+            $scopeUserId > 0 ? $scopeUserId : null
+        );
+
         try {
-            $this->success($this->services->computeKpiSnapshot($asOf), 'KPI snapshot', 200);
+            $this->success(
+                $this->services->computeKpiSnapshot($asOf, $actorUserId, $isSuperAdmin, $effectiveScopeUserId),
+                'KPI snapshot',
+                200
+            );
         } catch (\InvalidArgumentException) {
             $this->error('Invalid as_of — use YYYY-MM-DD', 422);
         }
@@ -1168,5 +1192,24 @@ class ServiceController extends BaseController
         }
 
         return array_values(array_unique($out, SORT_REGULAR));
+    }
+
+    /**
+     * @return array{0: ?int, 1: bool, 2: ?int}
+     */
+    private function resolveServiceVisibilityContext(?int $requestedScopeUserId = null): array
+    {
+        $actor = $this->authUser();
+        $actorUserId = $actor ? (int)($actor['id'] ?? 0) : 0;
+        if ($actorUserId <= 0) {
+            $this->error('Unauthorized.', 401);
+        }
+        $isSuperAdmin = $this->isSuperAdminEmail((string)($actor['email'] ?? ''));
+        $scopeUserId = null;
+        if ($isSuperAdmin && $requestedScopeUserId !== null && $requestedScopeUserId > 0) {
+            $scopeUserId = $requestedScopeUserId;
+        }
+
+        return [$actorUserId, $isSuperAdmin, $scopeUserId];
     }
 }

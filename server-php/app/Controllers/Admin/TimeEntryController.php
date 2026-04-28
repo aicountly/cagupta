@@ -122,8 +122,16 @@ class TimeEntryController extends BaseController
      */
     public function report(): never
     {
-        $uid   = (int)$this->query('user_id', 0);
-        $uid   = $uid > 0 ? $uid : null;
+        $requestedUserId = (int)$this->query('user_id', 0);
+        [$actorUserId, $isSuperAdmin, $scopeUserId] = $this->resolveServiceVisibilityContext(
+            $requestedUserId > 0 ? $requestedUserId : null
+        );
+        $uid = null;
+        if ($isSuperAdmin) {
+            $uid = $requestedUserId > 0 ? $requestedUserId : null;
+        } else {
+            $uid = $actorUserId;
+        }
         $from  = trim((string)$this->query('date_from', ''));
         $to    = trim((string)$this->query('date_to', ''));
 
@@ -132,11 +140,63 @@ class TimeEntryController extends BaseController
         }
 
         try {
-            $rows = $this->entries->reportByUserService($uid, $from, $to);
+            $rows = $this->entries->reportByUserService(
+                $uid,
+                $from,
+                $to,
+                $actorUserId,
+                $isSuperAdmin,
+                $scopeUserId
+            );
             $this->success($rows, 'Time entry report retrieved');
         } catch (\Throwable $e) {
             if (self::isDbPermissionDenied($e)) {
                 $this->error(self::dbGrantDeniedMessage('SELECT on time_entries and related tables'), 503);
+            }
+            throw $e;
+        }
+    }
+
+    // ── GET /api/admin/reports/timesheets/insights ──────────────────────────
+
+    public function reportInsights(): never
+    {
+        $requestedUserId = (int)$this->query('user_id', 0);
+        [$actorUserId, $isSuperAdmin, $scopeUserId] = $this->resolveServiceVisibilityContext(
+            $requestedUserId > 0 ? $requestedUserId : null
+        );
+        $from = trim((string)$this->query('date_from', ''));
+        $to = trim((string)$this->query('date_to', ''));
+        if ($from === '' || $to === '') {
+            $this->error('date_from and date_to are required (YYYY-MM-DD).', 422);
+        }
+
+        $bucketRaw = strtolower(trim((string)$this->query('bucket', 'weekly')));
+        $bucket = in_array($bucketRaw, ['daily', 'weekly', 'monthly'], true) ? $bucketRaw : 'weekly';
+        $billableRaw = strtolower(trim((string)$this->query('billable_type', 'all')));
+        $billableType = in_array($billableRaw, ['all', 'billable', 'non_billable'], true) ? $billableRaw : 'all';
+
+        $filters = [
+            'date_from' => $from,
+            'date_to' => $to,
+            'bucket' => $bucket,
+            'billable_type' => $billableType,
+            'user_id' => $isSuperAdmin ? $requestedUserId : $actorUserId,
+            'client_id' => (int)$this->query('client_id', 0),
+            'organization_id' => (int)$this->query('organization_id', 0),
+            'service_id' => (int)$this->query('service_id', 0),
+            'group_id' => (int)$this->query('group_id', 0),
+            'actor_user_id' => $actorUserId,
+            'is_super_admin' => $isSuperAdmin,
+            'scope_user_id' => $scopeUserId,
+        ];
+
+        try {
+            $data = $this->entries->reportInsights($filters);
+            $this->success($data, 'Timesheet insights retrieved');
+        } catch (\Throwable $e) {
+            if (self::isDbPermissionDenied($e)) {
+                $this->error(self::dbGrantDeniedMessage('SELECT on report, invoice, and receipt tables'), 503);
             }
             throw $e;
         }
@@ -288,6 +348,25 @@ class TimeEntryController extends BaseController
         }
 
         return in_array('users.manage', $list, true) || in_array('*', $list, true);
+    }
+
+    /**
+     * @return array{0: int, 1: bool, 2: ?int}
+     */
+    private function resolveServiceVisibilityContext(?int $requestedScopeUserId = null): array
+    {
+        $actor = $this->authUser();
+        $actorUserId = $actor ? (int)($actor['id'] ?? 0) : 0;
+        if ($actorUserId <= 0) {
+            $this->error('Unauthorized.', 401);
+        }
+        $isSuperAdmin = $this->isSuperAdminEmail((string)($actor['email'] ?? ''));
+        $scopeUserId = null;
+        if ($isSuperAdmin && $requestedScopeUserId !== null && $requestedScopeUserId > 0) {
+            $scopeUserId = $requestedScopeUserId;
+        }
+
+        return [$actorUserId, $isSuperAdmin, $scopeUserId];
     }
 }
 

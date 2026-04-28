@@ -566,7 +566,10 @@ class TimeEntryModel
     public function reportByUserService(
         ?int $userId,
         string $dateFrom,
-        string $dateTo
+        string $dateTo,
+        ?int $actorUserId = null,
+        bool $isSuperAdmin = false,
+        ?int $scopeUserId = null
     ): array {
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo)) {
             return [];
@@ -602,6 +605,14 @@ class TimeEntryModel
             $sql               .= ' AND te.user_id = :uid';
             $params[':uid'] = $userId;
         }
+        $this->applyServiceVisibilityScope(
+            $sql,
+            $params,
+            $actorUserId,
+            $isSuperAdmin,
+            $scopeUserId,
+            's'
+        );
         $sql .= ' GROUP BY te.user_id, u.name, te.service_id, s.service_type,
                     c.organization_name, c.first_name, c.last_name, o.name, s.client_name,
                     cg.id, cg.name
@@ -611,6 +622,404 @@ class TimeEntryModel
         $stmt->execute($params);
 
         return $stmt->fetchAll();
+    }
+
+    /**
+     * 360-degree time-sheet analytics payload for dashboards and charts.
+     *
+     * @param array<string, mixed> $filters
+     * @return array<string, mixed>
+     */
+    public function reportInsights(array $filters): array
+    {
+        $dateFrom = (string)($filters['date_from'] ?? '');
+        $dateTo = (string)($filters['date_to'] ?? '');
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo)) {
+            return [
+                'summary' => [],
+                'series' => [],
+                'breakdowns' => ['employees' => [], 'clients' => [], 'services' => [], 'financeByClient' => []],
+                'table' => [],
+            ];
+        }
+
+        $bucket = strtolower(trim((string)($filters['bucket'] ?? 'weekly')));
+        $bucketExpr = match ($bucket) {
+            'daily' => "te.work_date::date",
+            'monthly' => "date_trunc('month', te.work_date::timestamp)::date",
+            default => "date_trunc('week', te.work_date::timestamp)::date",
+        };
+        $bucketKey = match ($bucket) {
+            'daily' => 'daily',
+            'monthly' => 'monthly',
+            default => 'weekly',
+        };
+
+        [$whereSql, $params] = $this->buildInsightsWhere(
+            $filters,
+            isset($filters['actor_user_id']) ? (int)$filters['actor_user_id'] : null,
+            !empty($filters['is_super_admin']),
+            isset($filters['scope_user_id']) ? (int)$filters['scope_user_id'] : null
+        );
+
+        $summaryStmt = $this->db->prepare(
+            "SELECT
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE te.is_billable), 0) AS billable_minutes,
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE NOT te.is_billable), 0) AS non_billable_minutes,
+                COALESCE(SUM(
+                    CASE WHEN te.is_billable
+                        THEN (te.duration_minutes / 60.0) * COALESCE(u.planned_billable_rate_per_hour, 0)
+                        ELSE 0
+                    END
+                ), 0) AS expected_billable
+            FROM time_entries te
+            JOIN users u ON u.id = te.user_id
+            JOIN services s ON s.id = te.service_id
+            LEFT JOIN clients c ON c.id = s.client_id
+            LEFT JOIN organizations o ON o.id = s.organization_id
+            LEFT JOIN client_groups cg ON cg.id = COALESCE(c.group_id, o.group_id)
+            WHERE {$whereSql}"
+        );
+        $summaryStmt->execute($params);
+        $summaryRow = $summaryStmt->fetch() ?: [];
+
+        $financeStmt = $this->db->prepare(
+            "WITH filtered_services AS (
+                SELECT DISTINCT te.service_id
+                FROM time_entries te
+                JOIN services s ON s.id = te.service_id
+                LEFT JOIN clients c ON c.id = s.client_id
+                LEFT JOIN organizations o ON o.id = s.organization_id
+                LEFT JOIN client_groups cg ON cg.id = COALESCE(c.group_id, o.group_id)
+                WHERE {$whereSql}
+            ),
+            inv AS (
+                SELECT t.service_id,
+                       SUM(COALESCE(t.subtotal, t.amount, 0)) AS actual_billed
+                FROM txn t
+                JOIN filtered_services fs ON fs.service_id = t.service_id
+                WHERE t.txn_type = 'invoice'
+                  AND t.status = 'active'
+                  AND (t.invoice_status IS NULL OR t.invoice_status <> 'cancelled')
+                GROUP BY t.service_id
+            ),
+            rec AS (
+                SELECT i.service_id,
+                       SUM(r.amount) AS received
+                FROM txn r
+                JOIN txn i ON i.id = r.linked_txn_id
+                JOIN filtered_services fs ON fs.service_id = i.service_id
+                WHERE r.txn_type = 'receipt'
+                  AND r.status = 'active'
+                  AND i.txn_type = 'invoice'
+                  AND i.status = 'active'
+                GROUP BY i.service_id
+            )
+            SELECT
+                COALESCE(SUM(inv.actual_billed), 0) AS actual_billed,
+                COALESCE(SUM(rec.received), 0) AS received
+            FROM filtered_services fs
+            LEFT JOIN inv ON inv.service_id = fs.service_id
+            LEFT JOIN rec ON rec.service_id = fs.service_id"
+        );
+        $financeStmt->execute($params);
+        $financeRow = $financeStmt->fetch() ?: [];
+
+        $seriesStmt = $this->db->prepare(
+            "SELECT
+                {$bucketExpr} AS bucket_start,
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE te.is_billable), 0) AS billable_minutes,
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE NOT te.is_billable), 0) AS non_billable_minutes,
+                COALESCE(SUM(
+                    CASE WHEN te.is_billable
+                        THEN (te.duration_minutes / 60.0) * COALESCE(u.planned_billable_rate_per_hour, 0)
+                        ELSE 0
+                    END
+                ), 0) AS expected_billable
+            FROM time_entries te
+            JOIN users u ON u.id = te.user_id
+            JOIN services s ON s.id = te.service_id
+            LEFT JOIN clients c ON c.id = s.client_id
+            LEFT JOIN organizations o ON o.id = s.organization_id
+            LEFT JOIN client_groups cg ON cg.id = COALESCE(c.group_id, o.group_id)
+            WHERE {$whereSql}
+            GROUP BY {$bucketExpr}
+            ORDER BY {$bucketExpr} ASC"
+        );
+        $seriesStmt->execute($params);
+        $seriesRows = $seriesStmt->fetchAll();
+
+        $employeeStmt = $this->db->prepare(
+            "SELECT
+                te.user_id,
+                u.name AS user_name,
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE te.is_billable), 0) AS billable_minutes,
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE NOT te.is_billable), 0) AS non_billable_minutes,
+                COALESCE(SUM(
+                    CASE WHEN te.is_billable
+                        THEN (te.duration_minutes / 60.0) * COALESCE(u.planned_billable_rate_per_hour, 0)
+                        ELSE 0
+                    END
+                ), 0) AS expected_billable
+            FROM time_entries te
+            JOIN users u ON u.id = te.user_id
+            JOIN services s ON s.id = te.service_id
+            LEFT JOIN clients c ON c.id = s.client_id
+            LEFT JOIN organizations o ON o.id = s.organization_id
+            LEFT JOIN client_groups cg ON cg.id = COALESCE(c.group_id, o.group_id)
+            WHERE {$whereSql}
+            GROUP BY te.user_id, u.name
+            ORDER BY u.name ASC"
+        );
+        $employeeStmt->execute($params);
+        $employeeRows = $employeeStmt->fetchAll();
+
+        $clientStmt = $this->db->prepare(
+            "SELECT
+                COALESCE(c.id, o.id, 0) AS client_key_id,
+                CASE WHEN c.id IS NOT NULL THEN 'contact' WHEN o.id IS NOT NULL THEN 'organization' ELSE 'unknown' END AS client_type,
+                COALESCE(c.organization_name,
+                    NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                    o.name,
+                    s.client_name,
+                    'Unknown') AS client_name,
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE te.is_billable), 0) AS billable_minutes,
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE NOT te.is_billable), 0) AS non_billable_minutes
+            FROM time_entries te
+            JOIN services s ON s.id = te.service_id
+            LEFT JOIN clients c ON c.id = s.client_id
+            LEFT JOIN organizations o ON o.id = s.organization_id
+            LEFT JOIN client_groups cg ON cg.id = COALESCE(c.group_id, o.group_id)
+            WHERE {$whereSql}
+            GROUP BY c.id, o.id, c.organization_name, c.first_name, c.last_name, o.name, s.client_name
+            ORDER BY client_name ASC"
+        );
+        $clientStmt->execute($params);
+        $clientRows = $clientStmt->fetchAll();
+
+        $serviceRows = $this->reportByUserService(
+            isset($filters['user_id']) ? (int)$filters['user_id'] : null,
+            $dateFrom,
+            $dateTo,
+            isset($filters['actor_user_id']) ? (int)$filters['actor_user_id'] : null,
+            !empty($filters['is_super_admin']),
+            isset($filters['scope_user_id']) ? (int)$filters['scope_user_id'] : null
+        );
+
+        $financeByClientStmt = $this->db->prepare(
+            "WITH filtered_services AS (
+                SELECT DISTINCT s.id AS service_id,
+                    COALESCE(c.id, o.id, 0) AS client_key_id,
+                    CASE WHEN c.id IS NOT NULL THEN 'contact' WHEN o.id IS NOT NULL THEN 'organization' ELSE 'unknown' END AS client_type,
+                    COALESCE(c.organization_name,
+                        NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                        o.name,
+                        s.client_name,
+                        'Unknown') AS client_name
+                FROM time_entries te
+                JOIN services s ON s.id = te.service_id
+                LEFT JOIN clients c ON c.id = s.client_id
+                LEFT JOIN organizations o ON o.id = s.organization_id
+                LEFT JOIN client_groups cg ON cg.id = COALESCE(c.group_id, o.group_id)
+                WHERE {$whereSql}
+            ),
+            inv AS (
+                SELECT t.service_id,
+                       SUM(COALESCE(t.subtotal, t.amount, 0)) AS actual_billed
+                FROM txn t
+                JOIN filtered_services fs ON fs.service_id = t.service_id
+                WHERE t.txn_type = 'invoice'
+                  AND t.status = 'active'
+                  AND (t.invoice_status IS NULL OR t.invoice_status <> 'cancelled')
+                GROUP BY t.service_id
+            ),
+            rec AS (
+                SELECT i.service_id,
+                       SUM(r.amount) AS received
+                FROM txn r
+                JOIN txn i ON i.id = r.linked_txn_id
+                JOIN filtered_services fs ON fs.service_id = i.service_id
+                WHERE r.txn_type = 'receipt'
+                  AND r.status = 'active'
+                  AND i.txn_type = 'invoice'
+                  AND i.status = 'active'
+                GROUP BY i.service_id
+            )
+            SELECT
+                fs.client_key_id,
+                fs.client_type,
+                fs.client_name,
+                COALESCE(SUM(inv.actual_billed), 0) AS actual_billed,
+                COALESCE(SUM(rec.received), 0) AS received
+            FROM filtered_services fs
+            LEFT JOIN inv ON inv.service_id = fs.service_id
+            LEFT JOIN rec ON rec.service_id = fs.service_id
+            GROUP BY fs.client_key_id, fs.client_type, fs.client_name
+            ORDER BY fs.client_name ASC"
+        );
+        $financeByClientStmt->execute($params);
+        $financeByClientRows = $financeByClientStmt->fetchAll();
+
+        $billableMinutes = (int)($summaryRow['billable_minutes'] ?? 0);
+        $nonBillableMinutes = (int)($summaryRow['non_billable_minutes'] ?? 0);
+        $expectedBillable = round((float)($summaryRow['expected_billable'] ?? 0), 2);
+        $actualBilled = round((float)($financeRow['actual_billed'] ?? 0), 2);
+        $received = round((float)($financeRow['received'] ?? 0), 2);
+        $outstanding = round($actualBilled - $received, 2);
+
+        return [
+            'summary' => [
+                'bucket' => $bucketKey,
+                'billable_minutes' => $billableMinutes,
+                'non_billable_minutes' => $nonBillableMinutes,
+                'total_minutes' => $billableMinutes + $nonBillableMinutes,
+                'expected_billable' => $expectedBillable,
+                'actual_billed' => $actualBilled,
+                'received' => $received,
+                'outstanding' => $outstanding,
+                'variance_expected_vs_actual' => round($expectedBillable - $actualBilled, 2),
+            ],
+            'series' => array_map(static function (array $row): array {
+                return [
+                    'bucket_start' => (string)($row['bucket_start'] ?? ''),
+                    'billable_minutes' => (int)($row['billable_minutes'] ?? 0),
+                    'non_billable_minutes' => (int)($row['non_billable_minutes'] ?? 0),
+                    'expected_billable' => round((float)($row['expected_billable'] ?? 0), 2),
+                ];
+            }, $seriesRows),
+            'breakdowns' => [
+                'employees' => array_map(static function (array $row): array {
+                    return [
+                        'user_id' => (int)($row['user_id'] ?? 0),
+                        'user_name' => (string)($row['user_name'] ?? ''),
+                        'billable_minutes' => (int)($row['billable_minutes'] ?? 0),
+                        'non_billable_minutes' => (int)($row['non_billable_minutes'] ?? 0),
+                        'expected_billable' => round((float)($row['expected_billable'] ?? 0), 2),
+                    ];
+                }, $employeeRows),
+                'clients' => array_map(static function (array $row): array {
+                    return [
+                        'client_key_id' => (int)($row['client_key_id'] ?? 0),
+                        'client_type' => (string)($row['client_type'] ?? 'unknown'),
+                        'client_name' => (string)($row['client_name'] ?? ''),
+                        'billable_minutes' => (int)($row['billable_minutes'] ?? 0),
+                        'non_billable_minutes' => (int)($row['non_billable_minutes'] ?? 0),
+                    ];
+                }, $clientRows),
+                'services' => $serviceRows,
+                'financeByClient' => array_map(static function (array $row): array {
+                    $actual = round((float)($row['actual_billed'] ?? 0), 2);
+                    $received = round((float)($row['received'] ?? 0), 2);
+                    return [
+                        'client_key_id' => (int)($row['client_key_id'] ?? 0),
+                        'client_type' => (string)($row['client_type'] ?? 'unknown'),
+                        'client_name' => (string)($row['client_name'] ?? ''),
+                        'actual_billed' => $actual,
+                        'received' => $received,
+                        'outstanding' => round($actual - $received, 2),
+                    ];
+                }, $financeByClientRows),
+            ],
+            'table' => $serviceRows,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $filters
+     * @return array{0: string, 1: array<string, mixed>}
+     */
+    private function buildInsightsWhere(
+        array $filters,
+        ?int $actorUserId = null,
+        bool $isSuperAdmin = false,
+        ?int $scopeUserId = null
+    ): array
+    {
+        $where = [
+            'te.work_date >= :df',
+            'te.work_date <= :dt',
+            'te.timer_status <> :running',
+        ];
+        $params = [
+            ':df' => (string)$filters['date_from'],
+            ':dt' => (string)$filters['date_to'],
+            ':running' => 'running',
+        ];
+
+        $uid = (int)($filters['user_id'] ?? 0);
+        if ($uid > 0) {
+            $where[] = 'te.user_id = :uid';
+            $params[':uid'] = $uid;
+        }
+        $sid = (int)($filters['service_id'] ?? 0);
+        if ($sid > 0) {
+            $where[] = 'te.service_id = :sid';
+            $params[':sid'] = $sid;
+        }
+        $clientId = (int)($filters['client_id'] ?? 0);
+        if ($clientId > 0) {
+            $where[] = 's.client_id = :client_id';
+            $params[':client_id'] = $clientId;
+        }
+        $orgId = (int)($filters['organization_id'] ?? 0);
+        if ($orgId > 0) {
+            $where[] = 's.organization_id = :org_id';
+            $params[':org_id'] = $orgId;
+        }
+        $groupId = (int)($filters['group_id'] ?? 0);
+        if ($groupId > 0) {
+            $where[] = 'cg.id = :group_id';
+            $params[':group_id'] = $groupId;
+        }
+        $billableType = strtolower(trim((string)($filters['billable_type'] ?? 'all')));
+        if ($billableType === 'billable') {
+            $where[] = 'te.is_billable = true';
+        } elseif ($billableType === 'non_billable') {
+            $where[] = 'te.is_billable = false';
+        }
+        $this->applyServiceVisibilityScope($where, $params, $actorUserId, $isSuperAdmin, $scopeUserId, 's');
+
+        return [implode(' AND ', $where), $params];
+    }
+
+    /**
+     * @param array<int, string>|string      $where
+     * @param array<string, mixed>           $params
+     */
+    private function applyServiceVisibilityScope(
+        array|string &$where,
+        array &$params,
+        ?int $actorUserId,
+        bool $isSuperAdmin,
+        ?int $scopeUserId,
+        string $serviceAlias = 's'
+    ): void {
+        $scopedUserId = null;
+        if ($isSuperAdmin) {
+            if ($scopeUserId !== null && $scopeUserId > 0) {
+                $scopedUserId = $scopeUserId;
+            }
+        } elseif ($actorUserId !== null && $actorUserId > 0) {
+            $scopedUserId = $actorUserId;
+        }
+        if ($scopedUserId === null) {
+            return;
+        }
+
+        $scopeSql = "(
+            {$serviceAlias}.assigned_to = :scope_uid
+            OR EXISTS (
+                SELECT 1 FROM service_assignees sa_scope
+                WHERE sa_scope.service_id = {$serviceAlias}.id
+                  AND sa_scope.user_id = :scope_uid
+            )
+        )";
+        if (is_array($where)) {
+            $where[] = $scopeSql;
+        } else {
+            $where .= ' AND ' . $scopeSql;
+        }
+        $params[':scope_uid'] = $scopedUserId;
     }
 
     /**

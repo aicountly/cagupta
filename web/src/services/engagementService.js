@@ -123,10 +123,10 @@ function normalizeEngagement(s) {
  * @returns {Promise<object[]>}
  */
 export async function getEngagements({
-  page = 1, perPage = 100, search = '', status = '', clientId = null, organizationId = null,
+  page = 1, perPage = 100, search = '', status = '', clientId = null, organizationId = null, userId = null,
 } = {}) {
   const params = buildServicesListParams({
-    page, perPage, search, status, clientId, organizationId,
+    page, perPage, search, status, clientId, organizationId, userId,
   });
 
   const res = await fetch(`${API_BASE}/admin/services?${params}`, {
@@ -145,9 +145,10 @@ export async function getEngagements({
  * @param {string} [opts.status]
  * @param {number|null} [opts.clientId]
  * @param {number|null} [opts.organizationId]
+ * @param {number|null} [opts.userId]
  */
 function buildServicesListParams({
-  page = 1, perPage = 100, search = '', status = '', clientId = null, organizationId = null,
+  page = 1, perPage = 100, search = '', status = '', clientId = null, organizationId = null, userId = null,
 } = {}) {
   const params = new URLSearchParams({ page, per_page: perPage });
   if (search) params.set('search', search);
@@ -157,6 +158,9 @@ function buildServicesListParams({
   }
   if (organizationId != null && organizationId !== '' && Number(organizationId) > 0) {
     params.set('organization_id', String(organizationId));
+  }
+  if (userId != null && userId !== '' && Number(userId) > 0) {
+    params.set('user_id', String(userId));
   }
   return params;
 }
@@ -199,10 +203,14 @@ export async function getAllEngagements(options = {}) {
  * Server-side engagement KPI counts + week lines (matches list filter rules; as_of = browser local date).
  * @returns {Promise<{ asOf: string, counts: Record<string, number>, weekDelta: Record<string, number>, weekDeltaMode: Record<string, string> }>}
  */
-export async function getServiceKpiSnapshot() {
+export async function getServiceKpiSnapshot({ userId = null } = {}) {
   const asOf = localDateKey(new Date());
+  const params = new URLSearchParams({ as_of: asOf });
+  if (userId != null && userId !== '' && Number(userId) > 0) {
+    params.set('user_id', String(userId));
+  }
   const res = await fetch(
-    `${API_BASE}/admin/services/kpi-snapshot?as_of=${encodeURIComponent(asOf)}`,
+    `${API_BASE}/admin/services/kpi-snapshot?${params.toString()}`,
     { headers: authHeaders() }
   );
   const json = await parseResponse(res);

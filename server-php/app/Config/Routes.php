@@ -330,6 +330,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/reports/timesheets/insights',
+                'handler'    => 'Admin\TimeEntryController@reportInsights',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/time-entries/active',
                 'handler'    => 'Admin\TimeEntryController@active',
                 'middleware' => ['auth', 'permission:services.view'],

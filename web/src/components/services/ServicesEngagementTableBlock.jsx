@@ -6,7 +6,7 @@ import DateInput from '../common/DateInput';
 import { isEngagementOverdue } from '../../utils/serviceKpiFilters';
 import { useStaffUsers } from '../../hooks/useStaffUsers';
 import AddTaskModal from './AddTaskModal';
-import { Plus, Pencil, FolderOpen, X, Trash2 } from 'lucide-react';
+import { Plus, Pencil, FolderOpen, X, Trash2, Expand } from 'lucide-react';
 import { useServiceTimer } from '../../hooks/useServiceTimer';
 import { useElapsedTimer } from '../../hooks/useElapsedTimer';
 import TimerHandoffModal from './TimerHandoffModal';
@@ -429,9 +429,19 @@ export default function ServicesEngagementTableBlock({
                 <div style={{ fontWeight: 700, fontSize: 15, color: '#0B1F3B' }}>{selectedService.type}</div>
                 <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{selectedService.clientName} · {selectedService.financialYear}</div>
               </div>
-              <button type="button" onClick={() => setSelectedService(null)} style={closeBtn}>
-                <X size={14} />
-              </button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button
+                  type="button"
+                  title="Open in edit mode"
+                  onClick={() => navigate(`/services/${selectedService.id}/edit`)}
+                  style={openEditBtn}
+                >
+                  <Expand size={14} />
+                </button>
+                <button type="button" onClick={() => setSelectedService(null)} style={closeBtn}>
+                  <X size={14} />
+                </button>
+              </div>
             </div>
 
             <div style={{ marginBottom: 18 }}>
@@ -565,6 +575,7 @@ const tableFooter = {
 
 const sidePanel = { background: '#fff', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 6px rgba(0,0,0,0.06)', padding: 20, overflowY: 'auto', alignSelf: 'start' };
 const closeBtn = { background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', flexShrink: 0 };
+const openEditBtn = { background: '#FEF0E6', border: '1px solid rgba(243,121,32,0.35)', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#F37920', flexShrink: 0 };
 const progressTrack = { height: 7, background: '#E6E8F0', borderRadius: 99, overflow: 'hidden' };
 const progressFill = { height: '100%', background: 'linear-gradient(90deg, #55B848 0%, #7dcc72 100%)', borderRadius: 99, transition: 'width 0.4s ease' };
 const taskRow = { padding: '10px 0', borderBottom: '1px solid #F6F7FB' };
