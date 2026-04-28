@@ -2,11 +2,13 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import {
-  getOrganizations,
+  getOrganizationsWithMeta,
   requestOrganizationDeleteOtp,
   deleteOrganization,
 } from '../services/organizationService';
 import StatusBadge from '../components/common/StatusBadge';
+
+const PER_PAGE = 100;
 
 const NO_DELETE_ORG_HINT =
   'You do not have permission to delete organizations. Please contact an Admin or Super Admin.';
@@ -101,32 +103,45 @@ export default function Organizations() {
   const role = session?.user?.role ?? '';
   const isOrgDeleteRole = role === 'super_admin' || role === 'admin';
 
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [serverTotal, setServerTotal] = useState(0);
   const [selected, setSelected] = useState(null);
   const [deleteOrg, setDeleteOrg] = useState(null);
   const [orgs, setOrgs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Debounce search input — also resets to page 1
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Server fetch — reruns whenever page, debounced search, or filter changes
   useEffect(() => {
     setLoading(true);
-    getOrganizations()
-      .then(data => { setOrgs(data); setError(''); })
+    getOrganizationsWithMeta({ page, perPage: PER_PAGE, search, status: filter })
+      .then(({ orgs: data, total, lastPage }) => {
+        setOrgs(data);
+        setServerTotal(total);
+        setTotalPages(Math.max(1, lastPage));
+        setError('');
+      })
       .catch(err => setError(err.message || 'Failed to load organizations.'))
       .finally(() => setLoading(false));
-  }, []);
-  const filtered = orgs.filter(o => {
-    const matchSearch =
-      o.displayName.toLowerCase().includes(search.toLowerCase()) ||
-      (o.pan || '').includes(search.toUpperCase()) ||
-      (o.gstin || '').includes(search.toUpperCase()) ||
-      (o.cin || '').includes(search.toUpperCase()) ||
-      (o.clientCode || '').toLowerCase().includes(search.toLowerCase()) ||
-      (o.groupName || '').toLowerCase().includes(search.toLowerCase());
-    const matchFilter = filter === 'all' || o.status === filter;
-    return matchSearch && matchFilter;
-  });
+  }, [search, filter, page]);
+
+  function handleFilterChange(val) {
+    setFilter(val);
+    setPage(1);
+  }
 
   return (
     <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
@@ -134,12 +149,12 @@ export default function Organizations() {
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center' }}>
         <input
-          placeholder="🔍 Search organization by name, GSTIN, PAN, CIN, code, group…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+          placeholder="🔍 Search by name, GSTIN, PAN, CIN, email…"
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
           style={inputStyle}
         />
-        <select value={filter} onChange={e => setFilter(e.target.value)} style={selectStyle}>
+        <select value={filter} onChange={e => handleFilterChange(e.target.value)} style={selectStyle}>
           <option value="all">All Statuses</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
@@ -161,9 +176,9 @@ export default function Organizations() {
           <tbody>
             {loading ? (
               <tr><td colSpan={11} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>Loading organizations…</td></tr>
-            ) : filtered.length === 0 ? (
+            ) : orgs.length === 0 ? (
               <tr><td colSpan={11} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No organizations found.</td></tr>
-            ) : filtered.map(o => (
+            ) : orgs.map(o => (
               <tr key={o.id} style={trStyle}>
                 <td style={tdStyle}>
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{o.clientCode}</code>
@@ -200,8 +215,31 @@ export default function Organizations() {
             ))}
           </tbody>
         </table>
-        <div style={{ padding: '12px 16px', fontSize: 12, color: '#64748b', borderTop: '1px solid #f1f5f9' }}>
-          Showing {filtered.length} of {orgs.length} organizations
+        <div style={paginationBarStyle}>
+          <span style={{ color: '#64748b' }}>
+            {serverTotal === 0
+              ? 'No organizations'
+              : `${(page - 1) * PER_PAGE + 1}–${Math.min(page * PER_PAGE, serverTotal)} of ${serverTotal} organizations`}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              style={pageBtn(page <= 1)}
+              disabled={page <= 1 || loading}
+              onClick={() => setPage(p => p - 1)}
+            >
+              ‹ Prev
+            </button>
+            <span style={{ fontSize: 12, color: '#475569', fontWeight: 600, minWidth: 80, textAlign: 'center' }}>
+              Page {page} of {totalPages}
+            </span>
+            <button
+              style={pageBtn(page >= totalPages)}
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage(p => p + 1)}
+            >
+              Next ›
+            </button>
+          </div>
         </div>
       </div>
       {/* Side panel */}
@@ -274,6 +312,9 @@ const btnDeleteOutline = { padding: '8px 12px', background: '#fff', color: '#b91
 const btnDeleteDisabled = { ...btnDeleteOutline, opacity: 0.5, cursor: 'not-allowed' };
 const groupChipStyle = { display: 'inline-block', background: '#FFF7ED', color: '#C2410C', borderRadius: 12, padding: '2px 8px', fontSize: 11, fontWeight: 600 };
 const panel = { position:'fixed', right:0, top:56, width:360, height:'calc(100vh - 56px)', background:'#fff', boxShadow:'-4px 0 20px rgba(0,0,0,.12)', padding:24, overflowY:'auto', zIndex:100 };
+const paginationBarStyle = { padding: '10px 16px', fontSize: 12, borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, background: '#FAFBFD' };
+/** @param {boolean} disabled */
+const pageBtn = (disabled) => ({ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: '1px solid #E6E8F0', background: disabled ? '#f1f5f9' : '#fff', color: disabled ? '#94a3b8' : '#F37920', cursor: disabled ? 'not-allowed' : 'pointer' });
 
 const deleteOverlayStyle = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const deleteModalStyle = { background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', minWidth: 400, maxWidth: 520, width: '100%', maxHeight: '90vh', overflowY: 'auto' };

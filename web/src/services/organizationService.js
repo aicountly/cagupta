@@ -116,6 +116,27 @@ export async function getOrganizations({ page = 1, perPage = 100, search = '', s
 }
 
 /**
+ * Like getOrganizations but also returns server pagination metadata.
+ * @returns {Promise<{ orgs: object[], total: number, lastPage: number }>}
+ */
+export async function getOrganizationsWithMeta({ page = 1, perPage = 100, search = '', status = '' } = {}) {
+  const params = new URLSearchParams({ page, per_page: perPage });
+  if (search) params.set('search', search);
+  if (status && status !== 'all') params.set('status', status);
+
+  const res = await fetch(`${API_BASE}/admin/organizations?${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  const pagination = data.meta?.pagination || data.pagination || {};
+  return {
+    orgs:     (data.data || []).map(normalizeOrg),
+    total:    pagination.total    ?? (data.data || []).length,
+    lastPage: pagination.last_page ?? 1,
+  };
+}
+
+/**
  * Fetch one organization by id.
  * @param {number|string} id
  * @returns {Promise<object>}

@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
-import { getContacts, deleteContact, requestContactDeleteOtp } from '../services/contactService';
+import { getContactsWithMeta, deleteContact, requestContactDeleteOtp } from '../services/contactService';
 import StatusBadge from '../components/common/StatusBadge';
+
+const PER_PAGE = 100;
 
 const NO_DELETE_CONTACT_HINT =
   'You do not have permission to delete contacts. Client edit permission is required.';
@@ -11,8 +13,12 @@ export default function Contacts() {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const canDeleteContact = hasPermission('clients.edit');
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [serverTotal, setServerTotal] = useState(0);
   const [selected, setSelected] = useState(null);
   const [orgModalContact, setOrgModalContact] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -25,13 +31,33 @@ export default function Contacts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
+  // Debounce search input — also resets to page 1
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  // Server fetch — reruns whenever page, debounced search, or filter changes
   useEffect(() => {
     setLoading(true);
-    getContacts()
-      .then(data => { setContacts(data); setError(''); })
+    getContactsWithMeta({ page, perPage: PER_PAGE, search, status: filter })
+      .then(({ contacts: data, total, lastPage }) => {
+        setContacts(data);
+        setServerTotal(total);
+        setTotalPages(Math.max(1, lastPage));
+        setError('');
+      })
       .catch(err => setError(err.message || 'Failed to load contacts.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [search, filter, page]);
+
+  function handleFilterChange(val) {
+    setFilter(val);
+    setPage(1);
+  }
 
   useEffect(() => {
     if (!orgModalContact) return undefined;
@@ -95,16 +121,6 @@ export default function Contacts() {
     }
   }
 
-  const filtered = contacts.filter(c => {
-    const matchSearch =
-      c.displayName.toLowerCase().includes(search.toLowerCase()) ||
-      (c.mobile || '').includes(search) ||
-      (c.pan || '').includes(search.toUpperCase()) ||
-      (c.clientCode || '').toLowerCase().includes(search.toLowerCase()) ||
-      (c.groupName || '').toLowerCase().includes(search.toLowerCase());
-    const matchFilter = filter === 'all' || c.status === filter;
-    return matchSearch && matchFilter;
-  });
 
   return (
     <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
@@ -112,12 +128,12 @@ export default function Contacts() {
       {/* Toolbar */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center' }}>
         <input
-          placeholder="🔍 Search contact by name, mobile, PAN, code, group…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
+          placeholder="🔍 Search by name, mobile, PAN, email…"
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
           style={inputStyle}
         />
-        <select value={filter} onChange={e => setFilter(e.target.value)} style={selectStyle}>
+        <select value={filter} onChange={e => handleFilterChange(e.target.value)} style={selectStyle}>
           <option value="all">All Statuses</option>
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
@@ -139,9 +155,9 @@ export default function Contacts() {
           <tbody>
             {loading ? (
               <tr><td colSpan={10} style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>Loading contacts…</td></tr>
-            ) : filtered.length === 0 ? (
+            ) : contacts.length === 0 ? (
               <tr><td colSpan={10} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No contacts found.</td></tr>
-            ) : filtered.map(c => (
+            ) : contacts.map(c => (
               <tr key={c.id} style={trStyle}>
                 <td style={tdStyle}>
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{c.clientCode}</code>
@@ -212,8 +228,31 @@ export default function Contacts() {
             ))}
           </tbody>
         </table>
-        <div style={{ padding: '12px 16px', fontSize: 12, color: '#64748b', borderTop: '1px solid #f1f5f9' }}>
-          Showing {filtered.length} of {contacts.length} contacts
+        <div style={paginationBarStyle}>
+          <span style={{ color: '#64748b' }}>
+            {serverTotal === 0
+              ? 'No contacts'
+              : `${(page - 1) * PER_PAGE + 1}–${Math.min(page * PER_PAGE, serverTotal)} of ${serverTotal} contacts`}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button
+              style={pageBtn(page <= 1)}
+              disabled={page <= 1 || loading}
+              onClick={() => setPage(p => p - 1)}
+            >
+              ‹ Prev
+            </button>
+            <span style={{ fontSize: 12, color: '#475569', fontWeight: 600, minWidth: 80, textAlign: 'center' }}>
+              Page {page} of {totalPages}
+            </span>
+            <button
+              style={pageBtn(page >= totalPages)}
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage(p => p + 1)}
+            >
+              Next ›
+            </button>
+          </div>
         </div>
       </div>
       {orgModalContact && (
@@ -405,3 +444,6 @@ const modalCloseBtnStyle = { background: 'none', border: 'none', fontSize: 20, c
 const modalListStyle = { margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 10 };
 const modalListItemStyle = { margin: 0 };
 const panel = { position:'fixed', right:0, top:56, width:360, height:'calc(100vh - 56px)', background:'#fff', boxShadow:'-4px 0 20px rgba(0,0,0,.12)', padding:24, overflowY:'auto', zIndex:100 };
+const paginationBarStyle = { padding: '10px 16px', fontSize: 12, borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8, background: '#FAFBFD' };
+/** @param {boolean} disabled */
+const pageBtn = (disabled) => ({ padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, border: '1px solid #E6E8F0', background: disabled ? '#f1f5f9' : '#fff', color: disabled ? '#94a3b8' : '#F37920', cursor: disabled ? 'not-allowed' : 'pointer' });

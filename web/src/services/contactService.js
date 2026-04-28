@@ -166,6 +166,27 @@ export async function getContacts({ page = 1, perPage = 100, search = '', status
 }
 
 /**
+ * Like getContacts but also returns server pagination metadata.
+ * @returns {Promise<{ contacts: object[], total: number, lastPage: number }>}
+ */
+export async function getContactsWithMeta({ page = 1, perPage = 100, search = '', status = '' } = {}) {
+  const params = new URLSearchParams({ page, per_page: perPage });
+  if (search)  params.set('search', search);
+  if (status && status !== 'all')  params.set('status', status);
+
+  const res = await fetch(`${API_BASE}/admin/contacts?${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  const pagination = data.meta?.pagination || data.pagination || {};
+  return {
+    contacts: (data.data || []).map(normalizeContact),
+    total:    pagination.total    ?? (data.data || []).length,
+    lastPage: pagination.last_page ?? 1,
+  };
+}
+
+/**
  * Type-ahead contact search (GET /admin/contacts/search?q=&limit=).
  * @param {string} q
  * @param {number} limit  Capped at 50 server-side.
