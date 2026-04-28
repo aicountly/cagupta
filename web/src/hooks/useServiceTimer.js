@@ -25,8 +25,19 @@ export function useServiceTimer() {
     setBusy(true);
     try {
       const row = await startTimer(serviceId, payload);
-      setActiveTimer(row);
-      return row;
+      const nowIso = new Date().toISOString();
+      const startedAtTs = row?.startedAt ? Date.parse(row.startedAt) : NaN;
+      const nowTs = Date.now();
+      const normalized = {
+        ...row,
+        // Keep elapsed clock responsive even if backend omits/returns a future started_at.
+        startedAt: Number.isNaN(startedAtTs) || startedAtTs > nowTs + 2000
+          ? nowIso
+          : row.startedAt,
+        timerStatus: row?.timerStatus || 'running',
+      };
+      setActiveTimer(normalized);
+      return normalized;
     } finally {
       setBusy(false);
     }

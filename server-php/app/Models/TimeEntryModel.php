@@ -34,11 +34,20 @@ class TimeEntryModel
     public function find(int $id): ?array
     {
         $stmt = $this->db->prepare(
-            'SELECT te.*, u.name AS user_name
+            "SELECT te.*, u.name AS user_name,
+                    s.service_type,
+                    COALESCE(c.organization_name,
+                             NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                             o.name,
+                             s.client_name,
+                             'Unknown') AS client_name
              FROM time_entries te
              JOIN users u ON u.id = te.user_id
+             JOIN services s ON s.id = te.service_id
+             LEFT JOIN clients c ON c.id = s.client_id
+             LEFT JOIN organizations o ON o.id = s.organization_id
              WHERE te.id = :id
-             LIMIT 1'
+             LIMIT 1"
         );
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch();
@@ -52,11 +61,20 @@ class TimeEntryModel
     public function listForService(int $serviceId): array
     {
         $stmt = $this->db->prepare(
-            'SELECT te.*, u.name AS user_name
+            "SELECT te.*, u.name AS user_name,
+                    s.service_type,
+                    COALESCE(c.organization_name,
+                             NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                             o.name,
+                             s.client_name,
+                             'Unknown') AS client_name
              FROM time_entries te
              JOIN users u ON u.id = te.user_id
+             JOIN services s ON s.id = te.service_id
+             LEFT JOIN clients c ON c.id = s.client_id
+             LEFT JOIN organizations o ON o.id = s.organization_id
              WHERE te.service_id = :sid
-             ORDER BY te.work_date DESC, te.id DESC'
+             ORDER BY te.work_date DESC, te.id DESC"
         );
         $stmt->execute([':sid' => $serviceId]);
 
@@ -72,12 +90,21 @@ class TimeEntryModel
             return null;
         }
         $stmt = $this->db->prepare(
-            'SELECT te.*, u.name AS user_name
+            "SELECT te.*, u.name AS user_name,
+                    s.service_type,
+                    COALESCE(c.organization_name,
+                             NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                             o.name,
+                             s.client_name,
+                             'Unknown') AS client_name
              FROM time_entries te
              JOIN users u ON u.id = te.user_id
+             JOIN services s ON s.id = te.service_id
+             LEFT JOIN clients c ON c.id = s.client_id
+             LEFT JOIN organizations o ON o.id = s.organization_id
              WHERE te.user_id = :uid AND te.timer_status = :status
              ORDER BY te.id DESC
-             LIMIT 1'
+             LIMIT 1"
         );
         $stmt->execute([
             ':uid' => $userId,

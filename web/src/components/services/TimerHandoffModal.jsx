@@ -39,10 +39,16 @@ export default function TimerHandoffModal({
     userId: defaultUserId ? String(defaultUserId) : '',
   });
   const [stoppedEntry, setStoppedEntry] = useState(null);
-  const { label: elapsedLabel } = useElapsedTimer(activeTimer?.startedAt, activeTimer?.timerStatus === 'running');
+  const [timerContext, setTimerContext] = useState(null);
+  const timerRow = activeTimer || stoppedEntry || timerContext;
+  const { label: elapsedLabel } = useElapsedTimer(
+    timerRow?.startedAt,
+    activeTimer?.timerStatus === 'running',
+  );
 
   useEffect(() => {
     if (!open || !activeTimer) return;
+    setTimerContext(activeTimer);
     setPhase('handoff');
     setError('');
     setStoppedEntry(null);
@@ -58,20 +64,22 @@ export default function TimerHandoffModal({
   }, [open, activeTimer, defaultUserId]);
 
   const activeLabel = useMemo(() => {
-    if (!activeTimer) return '';
-    const bits = [activeTimer.clientName, activeTimer.serviceType].filter(Boolean);
-    return bits.join(' - ') || `Service #${activeTimer.serviceId}`;
-  }, [activeTimer]);
+    if (!timerRow) return '';
+    const bits = [timerRow.clientName, timerRow.serviceType].filter(Boolean);
+    return bits.join(' - ') || `Service #${timerRow.serviceId}`;
+  }, [timerRow]);
 
-  if (!open || !activeTimer) return null;
+  if (!open || !timerRow) return null;
 
   async function handleStop() {
+    if (!timerRow) return;
     setSaving(true);
     setError('');
     try {
-      const stopped = await onStopAndPrefill?.(activeTimer);
+      const stopped = await onStopAndPrefill?.(timerRow);
       if (stopped) {
         setStoppedEntry(stopped);
+        setTimerContext((prev) => prev || timerRow);
         setForm((f) => ({
           ...f,
           workDate: stopped.workDate || f.workDate,
@@ -135,22 +143,29 @@ export default function TimerHandoffModal({
             Active service: <strong>{activeLabel}</strong>
           </div>
           <div style={{ display: 'grid', gap: 4, fontSize: 12, color: '#475569', background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: 10 }}>
-            <div><strong>Client:</strong> {activeTimer.clientName || 'Unknown client'}</div>
-            <div><strong>Engagement type:</strong> {activeTimer.serviceType || 'Unknown engagement type'}</div>
-            <div><strong>Service ID:</strong> {activeTimer.serviceId}</div>
+            <div><strong>Client:</strong> {timerRow.clientName || 'Unknown client'}</div>
+            <div><strong>Engagement type:</strong> {timerRow.serviceType || 'Unknown engagement type'}</div>
+            <div><strong>Service ID:</strong> {timerRow.serviceId}</div>
             <div><strong>Elapsed:</strong> {elapsedLabel}</div>
           </div>
-          {activeTimer.startedAt ? (
+          {timerRow.startedAt ? (
             <div style={{ fontSize: 12, color: '#64748b' }}>
-              Started at: {new Date(activeTimer.startedAt).toLocaleString()}
+              Started at: {new Date(timerRow.startedAt).toLocaleString()}
             </div>
           ) : null}
           {error ? <div style={{ color: '#dc2626', fontSize: 13 }}>{error}</div> : null}
 
           {phase === 'handoff' ? (
-            <button type="button" style={primaryBtn} disabled={saving} onClick={handleStop}>
-              {saving ? 'Stopping...' : 'Stop and prefill'}
-            </button>
+            <>
+              <button type="button" style={primaryBtn} disabled={saving} onClick={handleStop}>
+                {saving ? 'Stopping...' : 'Stop and prefill'}
+              </button>
+              {saving ? (
+                <div style={{ fontSize: 12, color: '#64748b' }}>
+                  Preparing prefilled entry...
+                </div>
+              ) : null}
+            </>
           ) : (
             <div style={{ display: 'grid', gap: 10 }}>
               <div style={twoCol}>
