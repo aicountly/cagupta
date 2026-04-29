@@ -17,6 +17,9 @@ import { TIME_ACTIVITY_TYPES, requestTimeEntryModifyOtp, updateTimeEntry } from 
  * @param {() => void} props.onClose
  */
 export default function TimeEntryModifyModal({ entry, serviceId, onSaved, onClose }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const isToday = entry.workDate === today;
+
   const [phase, setPhase] = useState('reason');
 
   // Proposed values — initialised to current entry values
@@ -35,6 +38,41 @@ export default function TimeEntryModifyModal({ entry, serviceId, onSaved, onClos
   const [otpSent, setOtpSent] = useState(false);
 
   const set = (k, v) => setProposed((p) => ({ ...p, [k]: v }));
+
+  // ── Today's entry: direct save (no OTP) ──────────────────────────────────
+
+  async function handleSaveDirect(e) {
+    e.preventDefault();
+    setErr('');
+    const dur = Number(proposed.duration_minutes);
+    if (!proposed.work_date) {
+      setErr('Work date is required.');
+      return;
+    }
+    if (!Number.isInteger(dur) || dur < 1 || dur > 1440) {
+      setErr('Duration must be a whole number between 1 and 1440 minutes.');
+      return;
+    }
+    if (!proposed.activity_type) {
+      setErr('Activity type is required.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const updated = await updateTimeEntry(serviceId, entry.id, {
+        work_date: proposed.work_date,
+        duration_minutes: dur,
+        activity_type: proposed.activity_type,
+        is_billable: proposed.is_billable,
+        notes: proposed.notes,
+      });
+      onSaved(updated);
+    } catch (e2) {
+      setErr(e2.message || 'Update failed. Please try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
 
   // ── Phase 1 submit: send OTP ──────────────────────────────────────────────
 
@@ -120,7 +158,9 @@ export default function TimeEntryModifyModal({ entry, serviceId, onSaved, onClos
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <ShieldCheck size={16} color="#F37920" />
             <span style={{ fontSize: 14, fontWeight: 700, color: '#0B1F3B' }}>
-              {phase === 'reason' ? 'Request Timesheet Modification' : 'Enter Superadmin OTP'}
+              {isToday
+                ? "Edit Today's Timesheet Entry"
+                : phase === 'reason' ? 'Request Timesheet Modification' : 'Enter Superadmin OTP'}
             </span>
           </div>
           <button type="button" onClick={onClose} style={closeBtn} disabled={busy}>
@@ -128,19 +168,98 @@ export default function TimeEntryModifyModal({ entry, serviceId, onSaved, onClos
           </button>
         </div>
 
-        {/* Phase indicator */}
-        <div style={phaseBar}>
-          <div style={{ ...phaseStep, ...(phase === 'reason' ? phaseStepActive : phaseStepDone) }}>
-            1 Propose changes
+        {/* Phase indicator — only shown for past entries */}
+        {!isToday && (
+          <div style={phaseBar}>
+            <div style={{ ...phaseStep, ...(phase === 'reason' ? phaseStepActive : phaseStepDone) }}>
+              1 Propose changes
+            </div>
+            <div style={phaseDivider} />
+            <div style={{ ...phaseStep, ...(phase === 'otp' ? phaseStepActive : phaseStepInactive) }}>
+              2 Confirm with OTP
+            </div>
           </div>
-          <div style={phaseDivider} />
-          <div style={{ ...phaseStep, ...(phase === 'otp' ? phaseStepActive : phaseStepInactive) }}>
-            2 Confirm with OTP
-          </div>
-        </div>
+        )}
 
-        {/* ── Phase 1 ──────────────────────────────────────────────────── */}
-        {phase === 'reason' && (
+        {/* ── Today's entry: direct edit (no OTP) ──────────────────────── */}
+        {isToday && (
+          <form onSubmit={handleSaveDirect} style={body}>
+            <div style={editGrid}>
+              <label style={fieldLabel}>
+                Work date *
+                <input
+                  type="date"
+                  style={inputStyle}
+                  value={proposed.work_date}
+                  onChange={(e) => set('work_date', e.target.value)}
+                  required
+                />
+              </label>
+              <label style={fieldLabel}>
+                Duration (minutes) *
+                <input
+                  type="number"
+                  min={1}
+                  max={1440}
+                  style={inputStyle}
+                  value={proposed.duration_minutes}
+                  onChange={(e) => set('duration_minutes', e.target.value)}
+                  required
+                />
+              </label>
+              <label style={fieldLabel}>
+                Activity type *
+                <select
+                  style={inputStyle}
+                  value={proposed.activity_type}
+                  onChange={(e) => set('activity_type', e.target.value)}
+                  required
+                >
+                  <option value="">Select…</option>
+                  {TIME_ACTIVITY_TYPES.map((t) => (
+                    <option key={t.value} value={t.value}>{t.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label style={fieldLabel}>
+                Billable
+                <select
+                  style={inputStyle}
+                  value={proposed.is_billable ? 'yes' : 'no'}
+                  onChange={(e) => set('is_billable', e.target.value === 'yes')}
+                >
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </label>
+              <div style={{ gridColumn: '1 / -1' }}>
+                <label style={fieldLabel}>
+                  Notes
+                  <textarea
+                    style={{ ...inputStyle, minHeight: 60, resize: 'vertical' }}
+                    value={proposed.notes}
+                    onChange={(e) => set('notes', e.target.value)}
+                    placeholder="Optional notes"
+                  />
+                </label>
+              </div>
+            </div>
+
+            {err && <div style={errBox}>{err}</div>}
+
+            <div style={footer}>
+              <button type="button" style={btnSecondary} onClick={onClose} disabled={busy}>
+                Cancel
+              </button>
+              <button type="submit" style={btnPrimary} disabled={busy}>
+                {busy ? 'Saving…' : 'Save Changes'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {/* ── Phase 1 (past entries) ────────────────────────────────────── */}
+        {!isToday && phase === 'reason' && (
           <form onSubmit={handleSendOtp} style={body}>
             {/* Current values (read-only) */}
             <div style={sectionLabel}>Current values</div>
@@ -244,8 +363,8 @@ export default function TimeEntryModifyModal({ entry, serviceId, onSaved, onClos
           </form>
         )}
 
-        {/* ── Phase 2 ──────────────────────────────────────────────────── */}
-        {phase === 'otp' && (
+        {/* ── Phase 2 (past entries) ───────────────────────────────────── */}
+        {!isToday && phase === 'otp' && (
           <form onSubmit={handleConfirm} style={body}>
             <div style={successNote}>
               OTP sent to the super admin email. Ask the super admin for the code, then enter it below to confirm the modification.

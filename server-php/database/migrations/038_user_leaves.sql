@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS user_leaves (
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT user_leaves_dates_check CHECK (end_date >= start_date)
 );
+ALTER TABLE user_leaves OWNER TO carahulgupta;
 
 CREATE INDEX IF NOT EXISTS idx_user_leaves_user  ON user_leaves(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_leaves_dates ON user_leaves(start_date, end_date);

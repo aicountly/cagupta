@@ -51,6 +51,7 @@ BEGIN
                 'internal_message', 'reminder', 'system'
             ))
     );
+    ALTER TABLE service_logs OWNER TO carahulgupta;
 
     -- Primary lookup: logs for a service, newest first
     CREATE INDEX IF NOT EXISTS idx_service_logs_service

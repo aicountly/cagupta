@@ -461,12 +461,17 @@ class TimeEntryController extends BaseController
             $this->error('Service not found.', 404);
         }
 
-        $otp = $this->readSuperadminOtpFromRequest();
-        if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
-            $this->error(
-                'A valid superadmin OTP is required to modify a timesheet entry. Request a code first.',
-                403
-            );
+        $existingEntry = $this->entries->find($entryId);
+        $isToday = ($existingEntry['work_date'] ?? '') === date('Y-m-d');
+
+        if (!$isToday) {
+            $otp = $this->readSuperadminOtpFromRequest();
+            if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
+                $this->error(
+                    'A valid superadmin OTP is required to modify a past timesheet entry. Request a code first.',
+                    403
+                );
+            }
         }
 
         $body = $this->getJsonBody();

@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS service_temporary_assignments (
     created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (leave_id, service_id)
 );
+ALTER TABLE service_temporary_assignments OWNER TO carahulgupta;
 
 CREATE INDEX IF NOT EXISTS idx_sta_leave     ON service_temporary_assignments(leave_id);
 CREATE INDEX IF NOT EXISTS idx_sta_service   ON service_temporary_assignments(service_id);

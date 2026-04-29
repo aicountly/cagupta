@@ -104,6 +104,7 @@ export default function ServiceEngagementManage() {
   const [timeError, setTimeError] = useState('');
   const [timeSaving, setTimeSaving] = useState(false);
   const [modifyEntry, setModifyEntry] = useState(null);
+  const today = new Date().toISOString().slice(0, 10);
   const [timeForm, setTimeForm] = useState(() => ({
     workDate: new Date().toISOString().slice(0, 10),
     durationMinutes: '60',
@@ -1160,7 +1161,7 @@ export default function ServiceEngagementManage() {
                         {canLogTimePermission && (
                           <button
                             type="button"
-                            title="Request modification (requires superadmin OTP)"
+                            title={te.workDate === today ? "Edit today's entry" : "Request modification (requires superadmin OTP)"}
                             onClick={() => setModifyEntry(te)}
                             style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: 5, cursor: 'pointer', padding: '3px 6px', color: '#64748b', display: 'inline-flex', alignItems: 'center' }}
                           >
