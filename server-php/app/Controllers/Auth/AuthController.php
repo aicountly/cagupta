@@ -29,29 +29,11 @@ class AuthController extends BaseController
 
     public function __construct()
     {
-        // #region agent log
-        $this->_dbgLog('H-C', '__construct', 'start', []);
-        // #endregion
         $this->users    = new UserModel();
-        // #region agent log
-        $this->_dbgLog('H-C', '__construct', 'UserModel ok', []);
-        // #endregion
         $this->sessions = new SessionModel();
-        // #region agent log
-        $this->_dbgLog('H-C', '__construct', 'SessionModel ok', []);
-        // #endregion
         $this->clientIdentity = new ClientPortalIdentityModel();
-        // #region agent log
-        $this->_dbgLog('H-C', '__construct', 'ClientPortalIdentityModel ok', []);
-        // #endregion
         $this->clientOtps = new ClientLoginOtpModel();
-        // #region agent log
-        $this->_dbgLog('H-C', '__construct', 'ClientLoginOtpModel ok', []);
-        // #endregion
         $this->clientSessions = new ClientSessionModel();
-        // #region agent log
-        $this->_dbgLog('H-C', '__construct', 'ClientSessionModel ok', []);
-        // #endregion
     }
 
     // ── POST /api/auth/login ─────────────────────────────────────────────────
@@ -80,16 +62,7 @@ class AuthController extends BaseController
             $this->error('Email and password are required.', 422);
         }
 
-        // #region agent log
-        try {
-            $user = $this->users->findByEmail($email);
-        } catch (\Throwable $dbEx) {
-            $this->_dbgLog('H-D', 'login', 'findByEmail EXCEPTION', [
-                'class' => $dbEx::class, 'msg' => $dbEx->getMessage(), 'code' => $dbEx->getCode(),
-            ]);
-            throw $dbEx;
-        }
-        // #endregion
+        $user = $this->users->findByEmail($email);
         if ($user === null || !$user['is_active']) {
             $this->error('Invalid credentials.', 401);
         }
@@ -262,22 +235,7 @@ class AuthController extends BaseController
         }
 
         // Look up existing user — access is invite-only, no auto-registration
-        // #region agent log
-        $this->_dbgLog('H-D', 'sso', 'findByEmail start', ['email' => $email]);
-        // #endregion
-        try {
-            $user = $this->users->findByEmail($email);
-        } catch (\Throwable $dbEx) {
-            // #region agent log
-            $this->_dbgLog('H-D', 'sso', 'findByEmail EXCEPTION', [
-                'class' => $dbEx::class, 'msg' => $dbEx->getMessage(), 'code' => $dbEx->getCode(),
-            ]);
-            // #endregion
-            throw $dbEx;
-        }
-        // #region agent log
-        $this->_dbgLog('H-D', 'sso', 'findByEmail done', ['found' => ($user !== null), 'id' => $user['id'] ?? null]);
-        // #endregion
+        $user = $this->users->findByEmail($email);
 
         if ($user === null) {
             $this->error('Your account is not registered. Please contact the administrator to request access.', 403);
@@ -288,38 +246,18 @@ class AuthController extends BaseController
         }
 
         // Update SSO fields if changed
-        // #region agent log
-        $this->_dbgLog('H-A', 'sso', 'update start', ['id' => (int)$user['id']]);
-        // #endregion
-        try { $this->users->update((int)$user['id'], [
+        $this->users->update((int)$user['id'], [
             'sso_provider_id' => $providerUserId,
             'avatar_url'      => $avatar ?: ($user['avatar_url'] ?? null),
             'last_login_at'   => date('Y-m-d H:i:sO'),
-        ]); } catch (\Throwable $dbEx) {
-            // #region agent log
-            $this->_dbgLog('H-A', 'sso', 'update EXCEPTION', ['class' => $dbEx::class, 'msg' => $dbEx->getMessage()]);
-            // #endregion
-            throw $dbEx;
-        }
-        // #region agent log
-        $this->_dbgLog('H-A', 'sso', 'update done', []);
-        // #endregion
+        ]);
         $user = $this->users->find((int)$user['id']);
-        // #region agent log
-        $this->_dbgLog('H-A', 'sso', 'find after update done', ['found' => ($user !== null)]);
-        // #endregion
 
         if ($user === null) {
             $this->error('Account could not be loaded. Please contact the administrator.', 500);
         }
 
-        // #region agent log
-        $this->_dbgLog('H-E', 'sso', 'buildSession start', []);
-        // #endregion
         $result = $this->buildSession($user);
-        // #region agent log
-        $this->_dbgLog('H-B', 'sso', 'buildSession done', []);
-        // #endregion
         $this->success($result, 'SSO login successful');
     }
 
@@ -480,22 +418,6 @@ class AuthController extends BaseController
         $this->success($result, 'Token refreshed');
     }
 
-    // ── Debug helper (session 3bbd0c) — remove after fix ────────────────────
-    private function _dbgLog(string $hyp, string $loc, string $msg, array $data): void
-    {
-        $entry = json_encode([
-            'sessionId'    => '3bbd0c',
-            'runId'        => 'run1',
-            'hypothesisId' => $hyp,
-            'timestamp'    => (int) round(microtime(true) * 1000),
-            'location'     => "AuthController.php:{$loc}",
-            'message'      => $msg,
-            'data'         => $data,
-        ]) . "\n";
-        error_log('[SSO-DBG 3bbd0c] ' . $hyp . ' | ' . $loc . ' | ' . $msg . ' | ' . json_encode($data));
-        @file_put_contents(dirname(__DIR__, 4) . '/debug-3bbd0c.log', $entry, FILE_APPEND | LOCK_EX);
-    }
-
     // ── Private helpers ──────────────────────────────────────────────────────
 
     /**
@@ -529,9 +451,6 @@ class AuthController extends BaseController
         $token     = JWT::encode($payload, AuthConfig::jwtSecret());
         $expiresAt = new \DateTimeImmutable("@{$exp}");
 
-        // #region agent log
-        $this->_dbgLog('H-B', 'buildSession', 'sessions->create start', ['user_id' => (int)$user['id']]);
-        // #endregion
         $this->sessions->create(
             (int)$user['id'],
             $token,
@@ -539,9 +458,6 @@ class AuthController extends BaseController
             $_SERVER['REMOTE_ADDR'] ?? '',
             $_SERVER['HTTP_USER_AGENT'] ?? ''
         );
-        // #region agent log
-        $this->_dbgLog('H-B', 'buildSession', 'sessions->create done', []);
-        // #endregion
 
         return [
             'token' => $token,

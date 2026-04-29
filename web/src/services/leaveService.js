@@ -49,7 +49,7 @@ export async function getLeaves({ status = '', userId = 0 } = {}) {
   if (userId)  params.set('user_id', String(userId));
   const qs = params.toString() ? `?${params.toString()}` : '';
 
-  const res = await fetch(`${API_BASE}/api/admin/leaves${qs}`, {
+  const res = await fetch(`${API_BASE}/admin/leaves${qs}`, {
     headers: authHeaders(),
   });
   const json = await parseResponse(res);
@@ -62,7 +62,7 @@ export async function getLeaves({ status = '', userId = 0 } = {}) {
  * @returns {Promise<object>}
  */
 export async function getLeave(id) {
-  const res = await fetch(`${API_BASE}/api/admin/leaves/${id}`, {
+  const res = await fetch(`${API_BASE}/admin/leaves/${id}`, {
     headers: authHeaders(),
   });
   const json = await parseResponse(res);
@@ -75,7 +75,7 @@ export async function getLeave(id) {
  * @returns {Promise<object>}
  */
 export async function createLeave(payload) {
-  const res = await fetch(`${API_BASE}/api/admin/leaves`, {
+  const res = await fetch(`${API_BASE}/admin/leaves`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(payload),
@@ -92,7 +92,7 @@ export async function createLeave(payload) {
  * @returns {Promise<object>}
  */
 export async function updateLeave(id, payload) {
-  const res = await fetch(`${API_BASE}/api/admin/leaves/${id}`, {
+  const res = await fetch(`${API_BASE}/admin/leaves/${id}`, {
     method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify(payload),
@@ -112,7 +112,7 @@ export async function updateLeave(id, payload) {
  * @returns {Promise<{ assignments: Array, errors: string[] }>}
  */
 export async function createHandover(leaveId, assignments) {
-  const res = await fetch(`${API_BASE}/api/admin/leaves/${leaveId}/handover`, {
+  const res = await fetch(`${API_BASE}/admin/leaves/${leaveId}/handover`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify({ assignments }),
@@ -129,7 +129,7 @@ export async function createHandover(leaveId, assignments) {
  */
 export async function revokeAssignment(leaveId, assignmentId) {
   const res = await fetch(
-    `${API_BASE}/api/admin/leaves/${leaveId}/assignments/${assignmentId}`,
+    `${API_BASE}/admin/leaves/${leaveId}/assignments/${assignmentId}`,
     {
       method: 'DELETE',
       headers: authHeaders(),
@@ -148,7 +148,7 @@ export async function revokeAssignment(leaveId, assignmentId) {
  * @returns {Promise<Array>}
  */
 export async function getMyTemporaryCharges() {
-  const res = await fetch(`${API_BASE}/api/admin/leaves/my-charges`, {
+  const res = await fetch(`${API_BASE}/admin/leaves/my-charges`, {
     headers: authHeaders(),
   });
   const json = await parseResponse(res);
