@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../auth/AuthContext';
 import { getDashboardStats } from '../services/dashboardService';
 import { getEngagements } from '../services/engagementService';
 import { getInvoices } from '../services/invoiceService';
@@ -43,6 +44,8 @@ const QUICK_ACTIONS = [
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const { hasPermission } = useAuth();
+  const canViewTimesheetReports = hasPermission('services.view');
 
   const [stats, setStats]           = useState({ activeClients: '—', activeServices: '—', pendingTasks: '—', totalOutstanding: 0, documentsThisMonth: '—', appointmentsToday: '—' });
   const [tasks, setTasks]           = useState([]);
@@ -186,6 +189,15 @@ export default function Dashboard() {
             {QUICK_ACTIONS.map(({ label, path }) => (
               <button key={label} style={actionBtn} onClick={() => navigate(path)}>{label}</button>
             ))}
+            {canViewTimesheetReports && (
+              <button
+                type="button"
+                style={{ ...actionBtn, gridColumn: '1 / -1', borderColor: '#FDBA74', background: '#FFF7ED', fontWeight: 600 }}
+                onClick={() => navigate('/reports/timesheets/shift-target')}
+              >
+                🕐 Staff punch vs target (deficit and overtime)
+              </button>
+            )}
           </div>
         </section>
       </div>

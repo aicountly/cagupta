@@ -31,7 +31,7 @@ const navSections = [
         navKey: 'reports',
         children: [
           { to: '/reports/timesheets', label: 'Timesheet report', icon: Clock, permission: 'services.view' },
-          { to: '/reports/timesheets/shift-target', label: 'Shift target (punch)', icon: Target, permission: 'services.view' },
+          { to: '/reports/timesheets/shift-target', label: 'Staff punch vs target', icon: Target, permission: 'services.view' },
           { to: '/reports/exceptions/contacts', label: 'Contact exceptions', icon: UserRound, permission: 'clients.view' },
           { to: '/reports/exceptions/organizations', label: 'Organization exceptions', icon: Building2, permission: 'clients.view' },
         ],
@@ -68,7 +68,8 @@ export default function Sidebar() {
   const isClientsActive = loc.pathname.startsWith('/clients');
   const isReportsActive = loc.pathname.startsWith('/reports');
   const [clientsOpen, setClientsOpen] = useState(isClientsActive);
-  const [reportsOpen, setReportsOpen] = useState(isReportsActive);
+  /** Default expanded so report links (incl. punch vs target) are visible without an extra click. */
+  const [reportsOpen, setReportsOpen] = useState(true);
 
   const user = session?.user;
   const displayName = user?.name || 'CA Rahul Gupta';

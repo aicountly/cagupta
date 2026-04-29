@@ -72,7 +72,7 @@ const pageTitles = {
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
   '/reports/timesheets':                 '🕐 Timesheet report',
-  '/reports/timesheets/shift-target':    '📊 Shift target (punch)',
+  '/reports/timesheets/shift-target':    '📊 Staff punch vs target',
   '/reports/exceptions/contacts':      '📋 Contact data exceptions',
   '/reports/exceptions/organizations': '📋 Organization data exceptions',
   '/calendar':                  '📅 Calendar & Appointments',

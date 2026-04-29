@@ -68,7 +68,7 @@ export default function ShiftTargetTimesheetReport() {
 
   return (
     <div style={{ padding: 24, maxWidth: 1280 }}>
-      <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1F3B', marginBottom: 8 }}>Shift target (punch)</h1>
+      <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1F3B', marginBottom: 8 }}>Staff punch vs target</h1>
       <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16, maxWidth: 800 }}>
         Total punched time vs shift target for each active user (510 minutes per calendar day in the range,
         inclusive). <strong>Deficit</strong> and <strong>overtime</strong> are for the whole period (only one is
