@@ -28,9 +28,9 @@ export default function Footer() {
 
           <div className="footer__col">
             <h4>Portals</h4>
-            <a href={PORTAL_LINKS.staff}>Staff & Team</a>
-            <a href={PORTAL_LINKS.affiliate}>Affiliate Partner</a>
-            <a href={PORTAL_LINKS.client}>My CA (Client)</a>
+            <a href={PORTAL_LINKS.client}>My CA</a>
+            <a href={PORTAL_LINKS.affiliate}>Affiliate partner</a>
+            <a href={PORTAL_LINKS.staff}>Team member</a>
           </div>
 
           <div className="footer__col">

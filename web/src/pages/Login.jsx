@@ -19,14 +19,14 @@ const VALID_PORTALS = ['staff', 'affiliate', 'client'];
 
 const PORTAL_META = {
   staff: {
-    label: 'Staff & Team',
+    label: 'Team member',
     accent: '#2563eb',
     tint: '#eff6ff',
     Icon: Users,
     sub: 'Internal team members of CA Rahul Gupta & Associates',
   },
   affiliate: {
-    label: 'Affiliate Partner',
+    label: 'Affiliate partner',
     accent: '#7c3aed',
     tint: '#f5f3ff',
     Icon: Handshake,
@@ -58,10 +58,10 @@ function portalMismatchMessage(portal, user) {
     return 'This account is for clients. Select “My CA” above.';
   }
   if (user?.role && user.role !== 'affiliate' && portal === 'affiliate') {
-    return 'This is a staff account. Select “Staff & team” above.';
+    return 'This is a staff account. Select “Team member” above.';
   }
   if (user?.role && user.role !== 'client' && portal === 'client') {
-    return 'This is not a client account. Select “Staff & team” or “Affiliate partner”.';
+    return 'This is not a client account. Select “Team member” or “Affiliate partner”.';
   }
   return '';
 }
@@ -333,20 +333,20 @@ export default function LoginPage() {
             <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
               <button
                 type="button"
-                onClick={() => setLoginPortal('staff')}
+                onClick={() => setLoginPortal('client')}
                 style={{
                   flex: 1,
                   padding: '10px 12px',
                   borderRadius: 10,
-                  border: loginPortal === 'staff' ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                  background: loginPortal === 'staff' ? '#eff6ff' : '#fff',
+                  border: loginPortal === 'client' ? '2px solid #15803d' : '1px solid #e2e8f0',
+                  background: loginPortal === 'client' ? '#f0fdf4' : '#fff',
                   fontWeight: 700,
                   fontSize: 13,
                   cursor: 'pointer',
                   color: '#0f172a',
                 }}
               >
-                Staff & team
+                My CA
               </button>
               <button
                 type="button"
@@ -367,20 +367,20 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setLoginPortal('client')}
+                onClick={() => setLoginPortal('staff')}
                 style={{
                   flex: 1,
                   padding: '10px 12px',
                   borderRadius: 10,
-                  border: loginPortal === 'client' ? '2px solid #15803d' : '1px solid #e2e8f0',
-                  background: loginPortal === 'client' ? '#f0fdf4' : '#fff',
+                  border: loginPortal === 'staff' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                  background: loginPortal === 'staff' ? '#eff6ff' : '#fff',
                   fontWeight: 700,
                   fontSize: 13,
                   cursor: 'pointer',
                   color: '#0f172a',
                 }}
               >
-                My CA
+                Team member
               </button>
             </div>
           )}

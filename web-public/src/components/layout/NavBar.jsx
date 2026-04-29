@@ -16,28 +16,28 @@ const NAV_ITEMS = [
 
 const PORTAL_OPTIONS = [
   {
-    key: 'staff',
-    label: 'Staff & Team',
-    sub: 'For internal team members',
-    href: PORTAL_LINKS.staff,
-    Icon: Users,
-    iconClass: 'login-dd__icon--staff',
-  },
-  {
-    key: 'affiliate',
-    label: 'Affiliate Partner',
-    sub: 'For referral partners',
-    href: PORTAL_LINKS.affiliate,
-    Icon: Handshake,
-    iconClass: 'login-dd__icon--affiliate',
-  },
-  {
     key: 'client',
     label: 'My CA',
     sub: 'For our clients',
     href: PORTAL_LINKS.client,
     Icon: UserCircle,
     iconClass: 'login-dd__icon--client',
+  },
+  {
+    key: 'affiliate',
+    label: 'Affiliate partner',
+    sub: 'For referral partners',
+    href: PORTAL_LINKS.affiliate,
+    Icon: Handshake,
+    iconClass: 'login-dd__icon--affiliate',
+  },
+  {
+    key: 'staff',
+    label: 'Team member',
+    sub: 'For internal team members',
+    href: PORTAL_LINKS.staff,
+    Icon: Users,
+    iconClass: 'login-dd__icon--staff',
   },
 ];
 
