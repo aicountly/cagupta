@@ -10,7 +10,9 @@ use App\Libraries\OtpService;
 use App\Models\AdminAuditLogModel;
 use App\Models\ClientModel;
 use App\Models\OrganizationModel;
+use App\Models\ServiceLogModel;
 use App\Models\ServiceModel;
+use App\Models\ServiceTemporaryAssignmentModel;
 use App\Models\TimeEntryModel;
 use App\Models\UserModel;
 
@@ -25,13 +27,17 @@ class ServiceController extends BaseController
     private AdminAuditLogModel $audit;
     private UserModel $users;
     private TimeEntryModel $timeEntries;
+    private ServiceTemporaryAssignmentModel $tempAssignments;
+    private ServiceLogModel $serviceLogs;
 
     public function __construct()
     {
-        $this->services   = new ServiceModel();
-        $this->audit      = new AdminAuditLogModel();
-        $this->users      = new UserModel();
-        $this->timeEntries = new TimeEntryModel();
+        $this->services        = new ServiceModel();
+        $this->audit           = new AdminAuditLogModel();
+        $this->users           = new UserModel();
+        $this->timeEntries     = new TimeEntryModel();
+        $this->tempAssignments = new ServiceTemporaryAssignmentModel();
+        $this->serviceLogs     = new ServiceLogModel();
     }
 
     // ── GET /api/admin/services ──────────────────────────────────────────────
@@ -450,6 +456,24 @@ class ServiceController extends BaseController
             $meta['billing_time_metrics'] = $this->timeEntries->finalizeBillingSnapshot($id, $invoiced);
         }
 
+        // Auto-insert a system log entry for billing closure changes
+        $actor     = $this->authUser();
+        $actorId   = $actor ? (int)$actor['id'] : null;
+        $actorName = $actor ? (string)($actor['name'] ?? 'System') : 'System';
+        $closureLabel = $closure === 'built' ? 'Invoiced (built)' : 'Non-billable';
+        $reasonNote   = ($reason !== null && $reason !== '') ? " Reason: {$reason}" : '';
+        try {
+            $this->serviceLogs->insert([
+                'service_id'  => $id,
+                'log_type'    => 'system',
+                'message'     => "Billing closed as \"{$closureLabel}\" by {$actorName}.{$reasonNote}",
+                'visibility'  => 'internal',
+                'created_by'  => $actorId,
+            ]);
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Auto billing log failed: ' . $e->getMessage());
+        }
+
         $this->success($updated, 'Billing closure updated', 200, $meta);
     }
 
@@ -464,6 +488,39 @@ class ServiceController extends BaseController
         if ($service === null) {
             $this->error('Service not found.', 404);
         }
+
+        // Non-super-admin users who are not a regular assignee may still access
+        // this service if they hold an active temporary charge for it today.
+        $actor = $this->authUser();
+        if ($actor !== null && !$this->isSuperAdminEmail((string)($actor['email'] ?? ''))) {
+            $actorId     = (int)($actor['id'] ?? 0);
+            $roleName    = (string)($actor['role_name'] ?? '');
+            $isAdminRole = in_array($roleName, ['super_admin', 'admin'], true);
+
+            if (!$isAdminRole) {
+                // Check regular assignee membership
+                $assigneeIds = [];
+                if (!empty($service['assignee_user_ids'])) {
+                    $decoded = json_decode((string)$service['assignee_user_ids'], true);
+                    if (is_array($decoded)) {
+                        $assigneeIds = array_map('intval', $decoded);
+                    }
+                }
+                $isAssignee = in_array($actorId, $assigneeIds, true)
+                    || ((int)($service['assigned_to'] ?? 0)) === $actorId;
+
+                if (!$isAssignee) {
+                    $today = (new \DateTimeImmutable('today'))->format('Y-m-d');
+                    $hasTempCharge = $this->tempAssignments->hasActiveCharge($actorId, $id, $today);
+                    if (!$hasTempCharge) {
+                        $this->error('Service not found.', 404);
+                    }
+                    // Attach a flag so the frontend knows this is a temp-charge view
+                    $service['is_temporary_charge'] = true;
+                }
+            }
+        }
+
         $this->success($service);
     }
 
@@ -602,6 +659,10 @@ class ServiceController extends BaseController
             $this->assertServiceDueDateAllowed($data['due_date'], isset($service['due_date']) ? (string)$service['due_date'] : null);
         }
 
+        // Capture status change before applying updates
+        $oldStatusForLog = (string)($service['status'] ?? '');
+        $newStatusForLog = isset($data['status']) ? strtolower(trim((string)$data['status'])) : '';
+
         if ($data !== []) {
             $this->services->update($id, $data);
         }
@@ -615,6 +676,26 @@ class ServiceController extends BaseController
         } catch (\Throwable $e) {
             error_log('[ServiceController] Audit log failed: ' . $e->getMessage());
         }
+
+        // Auto-insert a status_change log entry when the status changed
+        if ($newStatusForLog !== '' && $newStatusForLog !== $oldStatusForLog) {
+            $actor       = $this->authUser();
+            $actorName   = $actor ? (string)($actor['name'] ?? 'System') : 'System';
+            $fromLabel   = ucwords(str_replace('_', ' ', $oldStatusForLog));
+            $toLabel     = ucwords(str_replace('_', ' ', $newStatusForLog));
+            try {
+                $this->serviceLogs->insert([
+                    'service_id'  => $id,
+                    'log_type'    => 'status_change',
+                    'message'     => "Status changed from \"{$fromLabel}\" to \"{$toLabel}\" by {$actorName}.",
+                    'visibility'  => 'affiliate',
+                    'created_by'  => $actorId,
+                ]);
+            } catch (\Throwable $e) {
+                error_log('[ServiceController] Auto status log failed: ' . $e->getMessage());
+            }
+        }
+
         $this->success($updated, 'Service updated');
     }
 
@@ -668,6 +749,23 @@ class ServiceController extends BaseController
         }
 
         $this->sendServiceReopenedEmail($service, $updated ?? $service, $reason, $this->authUser());
+
+        // Auto-insert a status_change log entry for the reopen event
+        $actor     = $this->authUser();
+        $actorName = $actor ? (string)($actor['name'] ?? 'System') : 'System';
+        $toLabel   = ucwords(str_replace('_', ' ', $status));
+        try {
+            $this->serviceLogs->insert([
+                'service_id'  => $id,
+                'log_type'    => 'status_change',
+                'message'     => "Engagement reopened (set to \"{$toLabel}\") by {$actorName}. Reason: {$reason}",
+                'visibility'  => 'affiliate',
+                'created_by'  => $actorId,
+            ]);
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Auto reopen log failed: ' . $e->getMessage());
+        }
+
         $this->success($updated, 'Service reopened');
     }
 

@@ -34,6 +34,8 @@ import OrganizationExceptionsReport from './pages/OrganizationExceptionsReport';
 import GlobalSearchPage from './pages/GlobalSearchPage';
 import Profile from './pages/Profile';
 import AdminAffiliates from './pages/AdminAffiliates';
+import LeaveManagement from './pages/LeaveManagement';
+import PendingFollowUps from './pages/PendingFollowUps';
 import AffiliateLayout from './components/layout/AffiliateLayout';
 import AffiliateDashboard from './pages/affiliate/AffiliateDashboard';
 import AffiliateServices from './pages/affiliate/AffiliateServices';
@@ -68,6 +70,7 @@ const pageTitles = {
   '/services/new':              '➕ New Service Engagement',
   '/services/edit':             '✏️ Edit Service Engagement',
   '/services/manage':          '📋 Manage Service Engagement',
+  '/services/follow-ups':      '📋 Pending Follow-ups',
   '/services/files':            '📂 Engagement Files',
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
@@ -82,6 +85,7 @@ const pageTitles = {
   '/leads':                     '🎯 Leads & Quotations',
   '/settings':                  '⚙️ Settings',
   '/admin/users':               '👥 User Management',
+  '/admin/leaves':              '📅 Leave Management',
   '/admin/affiliates':          '🤝 Affiliates',
   '/search':                    '🔍 Search',
   '/profile':                   '👤 My Profile',
@@ -118,6 +122,11 @@ export default function App() {
           <Route path="/clients/organizations/:id/edit" element={<ProtectedRoute staffOnly><Layout routePath="/clients/organizations/edit"><OrganizationCreatePage /></Layout></ProtectedRoute>} />
           <Route path="/clients/groups" element={<ProtectedRoute staffOnly><Layout routePath="/clients/groups"><ClientGroups /></Layout></ProtectedRoute>} />
           <Route path="/services" element={<ProtectedRoute staffOnly><Layout routePath="/services"><Services /></Layout></ProtectedRoute>} />
+          <Route path="/services/follow-ups" element={
+            <ProtectedRoute staffOnly requiredPermission="services.view">
+              <Layout routePath="/services/follow-ups"><PendingFollowUps /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/dashboard/metrics/:metricKey" element={<ProtectedRoute staffOnly><Layout routePath="/dashboard/metrics"><DashboardMetricDetail /></Layout></ProtectedRoute>} />
           <Route path="/services/new" element={<ProtectedRoute staffOnly><Layout routePath="/services/new"><NewServiceEngagement /></Layout></ProtectedRoute>} />
           <Route path="/services/focus" element={<ProtectedRoute staffOnly><Navigate to="/services" replace /></ProtectedRoute>} />
@@ -174,6 +183,13 @@ export default function App() {
             <ProtectedRoute staffOnly requiredPermission="affiliates.manage">
               <Layout routePath="/admin/affiliates">
                 <AdminAffiliates />
+              </Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/leaves" element={
+            <ProtectedRoute staffOnly requiredPermission="users.manage">
+              <Layout routePath="/admin/leaves">
+                <LeaveManagement />
               </Layout>
             </ProtectedRoute>
           } />

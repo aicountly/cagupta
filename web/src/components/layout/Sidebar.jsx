@@ -3,11 +3,12 @@ import { NavLink, useLocation } from 'react-router-dom';
 import logoUrl from '../../assets/cropped_logo.png';
 import { useAuth } from '../../auth/AuthContext';
 import { getInitials } from '../../utils/getInitials';
+import { getOverdueFollowUpCount } from '../../services/serviceLogService';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen, Clock,
   Target, Settings, ChevronRight, ChevronDown,
-  UserRound, Building2, ShieldCheck, Layers, Handshake, BarChart3,
+  UserRound, Building2, ShieldCheck, Layers, Handshake, BarChart3, CalendarOff, Bell,
 } from 'lucide-react';
 
 const navSections = [
@@ -37,6 +38,7 @@ const navSections = [
         ],
       },
       { to: '/services', label: 'Services & Tasks', icon: ClipboardList },
+      { to: '/services/follow-ups', label: 'Pending Follow-ups', icon: Bell, permission: 'services.view', badge: 'overdue' },
       { to: '/documents', label: 'Documents', icon: FolderOpen },
     ],
   },
@@ -58,8 +60,9 @@ const navSections = [
 
 /** Team admin: full manage or delegated (staff/viewer) invites */
 const adminNavItems = [
-  { to: '/admin/users', label: 'User Management', icon: ShieldCheck, anyOf: ['users.manage', 'users.delegate'] },
-  { to: '/admin/affiliates', label: 'Affiliates', icon: Handshake, permission: 'affiliates.manage' },
+  { to: '/admin/users',   label: 'User Management',  icon: ShieldCheck,  anyOf: ['users.manage', 'users.delegate'] },
+  { to: '/admin/leaves',  label: 'Leave Management', icon: CalendarOff,  permission: 'users.manage' },
+  { to: '/admin/affiliates', label: 'Affiliates',    icon: Handshake,    permission: 'affiliates.manage' },
 ];
 
 export default function Sidebar() {
@@ -70,11 +73,20 @@ export default function Sidebar() {
   const [clientsOpen, setClientsOpen] = useState(isClientsActive);
   /** Default expanded so report links (incl. punch vs target) are visible without an extra click. */
   const [reportsOpen, setReportsOpen] = useState(true);
+  const [overdueCount, setOverdueCount] = useState(0);
 
   const user = session?.user;
   const displayName = user?.name || 'CA Rahul Gupta';
   const initials = user?.initials || getInitials(displayName);
   const roleName = user?.role || '';
+
+  // Fetch overdue follow-up count for badge (only for staff with services.view)
+  useEffect(() => {
+    if (!hasPermission('services.view')) return;
+    getOverdueFollowUpCount()
+      .then(setOverdueCount)
+      .catch(() => setOverdueCount(0));
+  }, [hasPermission]);
 
   // Keep the sub-menu open whenever navigating to a /clients/* route
   useEffect(() => {
@@ -180,6 +192,7 @@ export default function Sidebar() {
                 );
               }
 
+              const badgeCount = item.badge === 'overdue' ? overdueCount : 0;
               return (
                 <NavLink
                   key={item.to}
@@ -196,7 +209,17 @@ export default function Sidebar() {
                         <Icon size={15} />
                       </span>
                       <span style={styles.navText}>{item.label}</span>
-                      {isActive && <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
+                      {badgeCount > 0 && (
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          background: '#dc2626', color: '#fff', borderRadius: 10,
+                          fontSize: 10, fontWeight: 700, minWidth: 17, height: 17,
+                          padding: '0 4px', marginLeft: 4, flexShrink: 0,
+                        }}>
+                          {badgeCount > 99 ? '99+' : badgeCount}
+                        </span>
+                      )}
+                      {isActive && badgeCount === 0 && <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
                     </>
                   )}
                 </NavLink>

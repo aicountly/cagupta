@@ -255,6 +255,52 @@ class Routes
                 'middleware' => ['auth', 'permission:clients.view'],
             ],
 
+            // ── Admin — Service Logs (activity log per engagement) ────────────
+            // NOTE: static sub-paths (pending-followups, overdue-count) must be
+            // registered BEFORE :id patterns to avoid being captured as an :id.
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/services/pending-followups',
+                'handler'    => 'Admin\ServiceLogController@pendingFollowUps',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/services/logs/overdue-count',
+                'handler'    => 'Admin\ServiceLogController@overdueCount',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/services/:id/logs',
+                'handler'    => 'Admin\ServiceLogController@index',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/services/:id/logs',
+                'handler'    => 'Admin\ServiceLogController@store',
+                'middleware' => ['auth', 'permission:services.edit'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/services/:id/logs/:id',
+                'handler'    => 'Admin\ServiceLogController@update',
+                'middleware' => ['auth', 'permission:services.edit'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/services/:id/logs/:id',
+                'handler'    => 'Admin\ServiceLogController@destroy',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/services/:id/logs/:id/remind',
+                'handler'    => 'Admin\ServiceLogController@sendReminder',
+                'middleware' => ['auth', 'permission:services.edit'],
+            ],
+
             // ── Admin — Services (Engagements) ────────────────────────────────
             [
                 'method'     => 'GET',
@@ -662,6 +708,51 @@ class Routes
                 'middleware' => ['auth', 'permission:services.view'],
             ],
 
+            // ── Admin — Staff Leaves & Temporary Handovers ───────────────────
+            // NOTE: my-charges (static) must be registered before :id patterns.
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/leaves/my-charges',
+                'handler'    => 'Admin\LeaveController@myTemporaryCharges',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/leaves',
+                'handler'    => 'Admin\LeaveController@index',
+                'middleware' => ['auth', 'permission:users.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/leaves',
+                'handler'    => 'Admin\LeaveController@store',
+                'middleware' => ['auth', 'permission:users.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/leaves/:id',
+                'handler'    => 'Admin\LeaveController@show',
+                'middleware' => ['auth', 'permission:users.manage'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/leaves/:id',
+                'handler'    => 'Admin\LeaveController@update',
+                'middleware' => ['auth', 'permission:users.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/leaves/:id/handover',
+                'handler'    => 'Admin\LeaveController@handover',
+                'middleware' => ['auth', 'permission:users.manage'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/leaves/:id/assignments/:id',
+                'handler'    => 'Admin\LeaveController@revokeAssignment',
+                'middleware' => ['auth', 'permission:users.manage'],
+            ],
+
             // ── Admin — Dashboard ─────────────────────────────────────────────
             [
                 'method'     => 'GET',
@@ -1037,6 +1128,12 @@ class Routes
                 'pattern'    => '/api/client/ledger',
                 'handler'    => 'Client\ClientPortalController@ledger',
                 'middleware' => ['auth', 'permission:client.ledger.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/client/services/:id/logs',
+                'handler'    => 'Client\ServiceLogController@index',
+                'middleware' => ['auth', 'permission:client.services.view'],
             ],
         ];
     }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronRight, Plus, CheckSquare, Square, Trash2, FolderOpen, History, Pencil } from 'lucide-react';
+import { ChevronRight, Plus, CheckSquare, Square, Trash2, FolderOpen, History, Pencil, ChevronDown } from 'lucide-react';
+import ServiceLogPanel from '../components/services/ServiceLogPanel';
 import DateInput from '../components/common/DateInput';
 import { localDateKey, engagementDueDateKey } from '../utils/serviceKpiFilters';
 import { useStaffUsers } from '../hooks/useStaffUsers';
@@ -71,8 +72,10 @@ export default function ServiceEngagementManage() {
   const navigate = useNavigate();
   const { hasPermission, session } = useAuth();
   const canDeleteService = hasPermission('services.delete');
+  const canEditService   = hasPermission('services.edit');
   const canLogTimePermission = hasPermission('services.edit');
   const canManageTeamRates = hasPermission('users.manage');
+  const isSuperAdmin = String(session?.user?.email || '').toLowerCase() === 'rahul@cagupta.in';
   const { staffUsers } = useStaffUsers();
 
   const [loading, setLoading] = useState(true);
@@ -1250,38 +1253,21 @@ export default function ServiceEngagementManage() {
         )}
 
         {tab === 'activity' && (
-          <section style={sectionCard}>
-            <div style={sectionTitle}>Activity</div>
-            <p style={hint}>Admin changes recorded for this engagement (status, team, tasks, billing, and more).</p>
-            {auditError && <div style={{ ...errBox, marginBottom: 12 }}>{auditError}</div>}
-            {auditLoading ? (
-              <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading activity…</div>
-            ) : auditRows.length === 0 ? (
-              <div style={{ color: '#94a3b8', fontSize: 13 }}>No audit entries yet.</div>
-            ) : (
-              <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {auditRows.map((row) => (
-                  <li
-                    key={String(row.id)}
-                    style={{
-                      borderLeft: '3px solid #F37920',
-                      paddingLeft: 14,
-                      paddingBottom: 12,
-                      borderBottom: '1px solid #f1f5f9',
-                    }}
-                  >
-                    <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>
-                      {(row.created_at || row.createdAt) ? new Date(row.created_at || row.createdAt).toLocaleString() : ''}
-                      {' · '}
-                      <span style={{ fontWeight: 600, color: '#475569' }}>{row.actor_name || 'System'}</span>
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: '#0B1F3B', marginBottom: 6 }}>{row.action}</div>
-                    <AuditMetaDetails row={row} />
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* Primary: user-created activity log */}
+            <ServiceLogPanel
+              serviceId={id}
+              isSuperAdmin={isSuperAdmin}
+              canEdit={canEditService}
+            />
+
+            {/* Secondary: collapsible system audit trail */}
+            <SystemAuditSection
+              auditRows={auditRows}
+              auditLoading={auditLoading}
+              auditError={auditError}
+            />
+          </div>
         )}
       </div>
 
@@ -1310,6 +1296,65 @@ export default function ServiceEngagementManage() {
           <button type="button" style={btnPrimary} disabled={saving} onClick={handleSave}>{saving ? 'Saving…' : 'Save changes'}</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── System Audit Section (collapsible, within Activity tab) ──────────────────
+function SystemAuditSection({ auditRows, auditLoading, auditError }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E6E8F0', overflow: 'hidden' }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '12px 18px', background: 'none', border: 'none', cursor: 'pointer',
+          fontSize: 13, fontWeight: 700, color: '#64748b',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <History size={14} />
+          System Audit Trail
+        </span>
+        <ChevronDown size={14} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+      </button>
+      {open && (
+        <div style={{ padding: '0 18px 18px', borderTop: '1px solid #F1F5F9' }}>
+          <p style={{ fontSize: 12, color: '#94a3b8', margin: '12px 0 16px' }}>
+            Automated system changes recorded for this engagement (status, team, tasks, billing, and more).
+          </p>
+          {auditError && <div style={{ fontSize: 13, color: '#dc2626', marginBottom: 12 }}>{auditError}</div>}
+          {auditLoading ? (
+            <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading audit trail…</div>
+          ) : auditRows.length === 0 ? (
+            <div style={{ color: '#94a3b8', fontSize: 13 }}>No audit entries yet.</div>
+          ) : (
+            <ul style={{ listStyle: 'none', margin: 0, padding: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {auditRows.map((row) => (
+                <li
+                  key={String(row.id)}
+                  style={{
+                    borderLeft: '3px solid #F37920',
+                    paddingLeft: 14,
+                    paddingBottom: 12,
+                    borderBottom: '1px solid #f1f5f9',
+                  }}
+                >
+                  <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>
+                    {(row.created_at || row.createdAt) ? new Date(row.created_at || row.createdAt).toLocaleString() : ''}
+                    {' · '}
+                    <span style={{ fontWeight: 600, color: '#475569' }}>{row.actor_name || 'System'}</span>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#0B1F3B', marginBottom: 6 }}>{row.action}</div>
+                  <AuditMetaDetails row={row} />
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
     </div>
   );
 }
