@@ -1,0 +1,18 @@
+Options -MultiViews
+RewriteEngine On
+
+# Hard 301 redirect: /login on the marketing site -> portal login on the subdomain.
+# Preserves any ?portal= query string the visitor was carrying.
+RewriteRule ^login/?$ https://app.carahulgupta.in/login [QSA,R=301,L]
+
+# SPA fallback for all other client-side routes.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [QSA,L]
+
+# Long-cache static assets emitted by Vite (filenames are hashed).
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css|svg|png|jpg|jpeg|gif|woff2?)$">
+    Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+</IfModule>

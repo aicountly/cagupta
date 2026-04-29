@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { useMsal } from '@azure/msal-react';
+import { Handshake, UserCircle, Users } from 'lucide-react';
 import logoUrl from '../assets/cropped_logo.png';
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -12,6 +13,33 @@ import {
 } from '../services/authService';
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const MARKETING_URL = import.meta.env.VITE_MARKETING_URL || 'https://carahulgupta.in';
+
+const VALID_PORTALS = ['staff', 'affiliate', 'client'];
+
+const PORTAL_META = {
+  staff: {
+    label: 'Staff & Team',
+    accent: '#2563eb',
+    tint: '#eff6ff',
+    Icon: Users,
+    sub: 'Internal team members of CA Rahul Gupta & Associates',
+  },
+  affiliate: {
+    label: 'Affiliate Partner',
+    accent: '#7c3aed',
+    tint: '#f5f3ff',
+    Icon: Handshake,
+    sub: 'Referral & partnership network',
+  },
+  client: {
+    label: 'My CA',
+    accent: '#15803d',
+    tint: '#f0fdf4',
+    Icon: UserCircle,
+    sub: 'Clients of CA Rahul Gupta & Associates',
+  },
+};
 
 const MOCK_GOOGLE_CREDENTIAL =
   'mock-google-credential.' +
@@ -48,12 +76,26 @@ export default function LoginPage() {
   const { isAuthenticated, login, user } = useAuth();
   const navigate = useNavigate();
   const { instance: msalInstance } = useMsal();
+  const [searchParams] = useSearchParams();
 
-  const [loginPortal, setLoginPortalState] = useState(() => sessionStorage.getItem('login_portal') || 'staff');
+  const urlPortal = searchParams.get('portal');
+  const portalFromUrl = VALID_PORTALS.includes(urlPortal) ? urlPortal : null;
+  const portalLocked = Boolean(portalFromUrl);
+
+  const [loginPortal, setLoginPortalState] = useState(
+    () => portalFromUrl || sessionStorage.getItem('login_portal') || 'staff'
+  );
   const setLoginPortal = (p) => {
     sessionStorage.setItem('login_portal', p);
     setLoginPortalState(p);
   };
+
+  useEffect(() => {
+    if (portalFromUrl && portalFromUrl !== loginPortal) {
+      sessionStorage.setItem('login_portal', portalFromUrl);
+      setLoginPortalState(portalFromUrl);
+    }
+  }, [portalFromUrl, loginPortal]);
 
   // Step 1 state
   const [email, setEmail] = useState('');
@@ -222,59 +264,126 @@ export default function LoginPage() {
           <div style={s.logoWrap}>
             <img src={logoUrl} alt="CA Office Portal" style={s.logo} />
           </div>
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-            <button
-              type="button"
-              onClick={() => setLoginPortal('staff')}
-              style={{
-                flex: 1,
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: loginPortal === 'staff' ? '2px solid #2563eb' : '1px solid #e2e8f0',
-                background: loginPortal === 'staff' ? '#eff6ff' : '#fff',
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: 'pointer',
-                color: '#0f172a',
-              }}
-            >
-              Staff & team
-            </button>
-            <button
-              type="button"
-              onClick={() => setLoginPortal('affiliate')}
-              style={{
-                flex: 1,
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: loginPortal === 'affiliate' ? '2px solid #7c3aed' : '1px solid #e2e8f0',
-                background: loginPortal === 'affiliate' ? '#f5f3ff' : '#fff',
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: 'pointer',
-                color: '#0f172a',
-              }}
-            >
-              Affiliate partner
-            </button>
-            <button
-              type="button"
-              onClick={() => setLoginPortal('client')}
-              style={{
-                flex: 1,
-                padding: '10px 12px',
-                borderRadius: 10,
-                border: loginPortal === 'client' ? '2px solid #15803d' : '1px solid #e2e8f0',
-                background: loginPortal === 'client' ? '#f0fdf4' : '#fff',
-                fontWeight: 700,
-                fontSize: 13,
-                cursor: 'pointer',
-                color: '#0f172a',
-              }}
-            >
-              My CA
-            </button>
-          </div>
+          {portalLocked ? (
+            (() => {
+              const meta = PORTAL_META[loginPortal] || PORTAL_META.staff;
+              const Icon = meta.Icon;
+              return (
+                <div style={{ marginBottom: 16 }}>
+                  <div
+                    role="status"
+                    aria-label={`Signing in to ${meta.label} portal`}
+                    style={{
+                      width: '100%',
+                      padding: '14px 16px',
+                      borderRadius: 12,
+                      border: `2px solid ${meta.accent}`,
+                      background: meta.tint,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 10,
+                        background: '#fff',
+                        color: meta.accent,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                        boxShadow: '0 1px 2px rgba(15,23,42,0.06)',
+                      }}
+                    >
+                      <Icon size={20} />
+                    </span>
+                    <div style={{ minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          letterSpacing: '.06em',
+                          color: meta.accent,
+                          textTransform: 'uppercase',
+                        }}
+                      >
+                        Signing in to
+                      </div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: '#0f172a' }}>
+                        {meta.label} Portal
+                      </div>
+                      <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                        {meta.sub}
+                      </div>
+                    </div>
+                  </div>
+                  <div style={s.wrongPortalRow}>
+                    Wrong portal?{' '}
+                    <a href={MARKETING_URL} style={s.wrongPortalLink}>
+                      Choose another at carahulgupta.in
+                    </a>
+                  </div>
+                </div>
+              );
+            })()
+          ) : (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <button
+                type="button"
+                onClick={() => setLoginPortal('staff')}
+                style={{
+                  flex: 1,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: loginPortal === 'staff' ? '2px solid #2563eb' : '1px solid #e2e8f0',
+                  background: loginPortal === 'staff' ? '#eff6ff' : '#fff',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  color: '#0f172a',
+                }}
+              >
+                Staff & team
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginPortal('affiliate')}
+                style={{
+                  flex: 1,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: loginPortal === 'affiliate' ? '2px solid #7c3aed' : '1px solid #e2e8f0',
+                  background: loginPortal === 'affiliate' ? '#f5f3ff' : '#fff',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  color: '#0f172a',
+                }}
+              >
+                Affiliate partner
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginPortal('client')}
+                style={{
+                  flex: 1,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: loginPortal === 'client' ? '2px solid #15803d' : '1px solid #e2e8f0',
+                  background: loginPortal === 'client' ? '#f0fdf4' : '#fff',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  color: '#0f172a',
+                }}
+              >
+                My CA
+              </button>
+            </div>
+          )}
           <h1 style={s.heading}>Sign in to your account</h1>
           <p style={s.subheading}>CA Rahul Gupta – Office Portal</p>
 
@@ -498,4 +607,10 @@ const s = {
     borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#b91c1c', lineHeight: 1.5,
   },
   adminNote: { marginTop: 20, textAlign: 'center', fontSize: 12, color: '#94a3b8', lineHeight: 1.5 },
+  wrongPortalRow: {
+    marginTop: 8, fontSize: 12, color: '#94a3b8', textAlign: 'center', lineHeight: 1.5,
+  },
+  wrongPortalLink: {
+    color: '#F37920', textDecoration: 'none', fontWeight: 600,
+  },
 };

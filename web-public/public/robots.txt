@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://carahulgupta.in/sitemap.xml

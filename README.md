@@ -278,7 +278,20 @@ We use a **monorepo** (powered by **Nx** or **Turborepo**) to share common code 
 
 ```
 /
-├── /web                          # React Web Application
+├── /web-public                   # Public marketing website (carahulgupta.in)
+│   ├── /src
+│   │   ├── /assets
+│   │   ├── /components
+│   │   │   ├── /layout           # NavBar (with portal dropdown), Footer
+│   │   │   ├── /sections         # Hero, ServicesGrid, WhyUs, FaqAccordion, CtaBanner
+│   │   │   └── /ui               # Container, Button
+│   │   ├── /config               # site.config.js (PORTAL_URL, contact info)
+│   │   ├── /content              # services.js, faqs.js, blogPosts.js
+│   │   └── /pages                # Home, About, Services, Blog, BlogPost, Contact
+│   ├── /public                   # .htaccess, favicon, robots.txt
+│   └── package.json
+│
+├── /web                          # React Web Application (portal at app.carahulgupta.in)
 │   ├── /public
 │   ├── /src
 │   │   ├── /assets               # Images, icons, fonts
@@ -381,7 +394,89 @@ npm run dev
 npm run build
 ```
 
-> **Production deployment note:** The web app is built locally (`npm run build`) and the resulting `dist/` folder is uploaded directly to the cPanel `public_html/` directory. All testing is performed against the live production URL — there is no separate staging environment. See [`server-php/README.md`](server-php/README.md) for backend deployment details and the browser-console logging strategy used during production testing.
+> **Production deployment note:** The web app is built locally (`npm run build`) and the resulting `dist/` folder is uploaded directly to the cPanel `public_html/app/` directory of the **`app.carahulgupta.in`** subdomain (see "Public Marketing Site" below). All testing is performed against the live production URL — there is no separate staging environment. See [`server-php/README.md`](server-php/README.md) for backend deployment details and the browser-console logging strategy used during production testing.
+
+### Public Marketing Site (`carahulgupta.in`)
+
+The repo also contains [`web-public/`](web-public/) — a separate React/Vite project that powers the firm's public-facing marketing website at **`https://carahulgupta.in`**. It is fully decoupled from the practice portal: no shared auth, no shared API. Its only job is to introduce the firm and hand visitors off to the right portal via the dropdown in the navbar.
+
+```bash
+cd web-public
+
+# Install dependencies (one-time)
+npm install
+
+# Start dev server (http://localhost:5174)
+npm run dev
+
+# Build for production (outputs web-public/dist/)
+npm run build
+```
+
+#### What's in the marketing site
+
+| Path | Content |
+|---|---|
+| `/`              | Hero, services grid, why-us, FAQ, CTA |
+| `/about`         | Firm bio, credentials, areas of practice |
+| `/services`      | Full services catalogue with bullets |
+| `/blog`, `/blog/:slug` | Static articles (data lives in [`web-public/src/content/blogPosts.js`](web-public/src/content/blogPosts.js)) |
+| `/contact`       | Contact form (uses `mailto:` for now), office details, embedded map |
+| Login dropdown   | Three portal links — see below |
+
+#### Portal handoff (the URL parameter contract)
+
+The login dropdown in the marketing site's navbar is a plain `<a>` link (not JS state) so the receiving portal sees the parameter on the very first paint:
+
+```
+https://app.carahulgupta.in/login?portal=staff
+https://app.carahulgupta.in/login?portal=affiliate
+https://app.carahulgupta.in/login?portal=client
+```
+
+The portal's [`web/src/pages/Login.jsx`](web/src/pages/Login.jsx) reads `?portal=` via `useSearchParams`, locks the portal selection (no tab switcher is shown), and renders a full-width banner identifying which portal the visitor is signing in to. A small "Wrong portal? Choose another at carahulgupta.in" link sends them back here if they followed a wrong link.
+
+If `/login` is opened **without** a `portal=` parameter (e.g. a direct bookmark), the portal falls back to the original 3-tab selector so existing behavior is preserved.
+
+#### Environment variables
+
+Marketing site — [`web-public/.env.example`](web-public/.env.example):
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `VITE_PORTAL_URL` | Base URL of the portal that the login dropdown points at | `https://app.carahulgupta.in` |
+
+Portal — [`web/.env.example`](web/.env.example) gains:
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `VITE_MARKETING_URL` | Used by the "Wrong portal?" escape link on the locked login page | `https://carahulgupta.in` |
+
+In local dev you can point the marketing site at the local portal:
+
+```env
+# web-public/.env
+VITE_PORTAL_URL=http://localhost:5173
+```
+
+#### cPanel deployment (subdomain split)
+
+Single cPanel account hosts both the marketing site and the portal:
+
+| Hostname | DocumentRoot | Source |
+|---|---|---|
+| `carahulgupta.in` (and `www.`) | `public_html/`     | Upload `web-public/dist/` here |
+| `app.carahulgupta.in`          | `public_html/app/` | Upload `web/dist/` here (cPanel → "Subdomains" → create) |
+
+The PHP API (`server-php/`) keeps living at `app.carahulgupta.in/api/` — the existing rewrite in [`web/public/.htaccess`](web/public/.htaccess) handles that automatically.
+
+`web-public/public/.htaccess` ships with two rules: an SPA fallback for client-side routes, and a hard 301 from `/login` on the marketing domain to the portal subdomain so any old bookmarks keep working.
+
+#### One-time configuration changes after the split
+
+1. **CORS** — set `CORS_ORIGIN=https://app.carahulgupta.in` in `server-php/.env` (the API only needs to allow the portal origin; the marketing site makes no API calls).
+2. **Google OAuth** — in Google Cloud Console → Credentials, add `https://app.carahulgupta.in` to **Authorised JavaScript Origins**.
+3. **Microsoft / Azure App Registration** — add `https://app.carahulgupta.in/` (with trailing slash) as a **Single-Page Application redirect URI**.
 
 ### Mobile Applications
 
