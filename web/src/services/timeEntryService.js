@@ -213,3 +213,25 @@ export async function getTimesheetInsights(params) {
   const json = await parseResponse(res);
   return json.data || {};
 }
+
+/**
+ * @param {{ dateFrom: string, dateTo: string, userId?: number|string }} params
+ * @returns {Promise<{ meta: object, rows: object[] }>}
+ */
+export async function getShiftTargetTimesheetReport(params) {
+  const q = new URLSearchParams({
+    date_from: params.dateFrom,
+    date_to: params.dateTo,
+  });
+  addOptionalQuery(q, 'user_id', params.userId);
+
+  const res = await fetch(`${API_BASE}/admin/reports/timesheets/shift-target?${q.toString()}`, {
+    headers: authHeaders(),
+  });
+  const json = await parseResponse(res);
+  const data = json.data || {};
+  return {
+    meta: data.meta || {},
+    rows: Array.isArray(data.rows) ? data.rows : [],
+  };
+}

@@ -52,7 +52,7 @@ Edit `.env` and fill in:
 | `DB_HOST` | PostgreSQL host |
 | `DB_PORT` | PostgreSQL port (default: 5432) |
 | `DB_NAME` | Database name |
-| `DB_USER` | Database user |
+| `DB_USER` | Database user — production cPanel role is **`carahulgupta_cagupta_user`** (also the default in `app/Config/Database.php` when unset). For local PostgreSQL use `postgres` or your dev role. |
 | `DB_PASS` | Database password |
 | `JWT_SECRET` | Random secret — generate with: `php -r "echo base64_encode(random_bytes(32));"` |
 | `CORS_ORIGIN` | One or more allowed browser Origins, comma-separated (e.g. `https://app.yourdomain.com,https://yourdomain.com` when the portal is on a subdomain and the API is on the apex) |

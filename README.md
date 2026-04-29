@@ -470,6 +470,8 @@ Single cPanel account hosts both the marketing site and the portal:
 
 The PHP API (`server-php/`) lives at **`https://carahulgupta.in/api/`** (folder `public_html/api/`). The portal on **`app.carahulgupta.in`** should call that URL from the browser (`VITE_API_BASE_URL`). In the **`app/`** document root, use an `.htaccess` that only does the SPA fallback (no `/api/` rewrite to the wrong path). A template is in [`web/public/.htaccess.subdomain-app`](web/public/.htaccess.subdomain-app) — copy its rules into `public_html/app/.htaccess` on the server (the cPanel workflow excludes `.htaccess` from rsync so server copies are not overwritten).
 
+PostgreSQL on this cPanel account uses the role **`carahulgupta_cagupta_user`**. Set `DB_USER` in `server-php/.env` to that value on the server; the backend defaults to it in [`server-php/app/Config/Database.php`](server-php/app/Config/Database.php) when `DB_USER` is omitted. For local machines that still use the `postgres` superuser, set `DB_USER=postgres` in `.env`. See [`server-php/README.md`](server-php/README.md) and [`server-php/.env.example`](server-php/.env.example).
+
 `web-public/public/.htaccess` ships with two rules: an SPA fallback for client-side routes, and a hard 301 from `/login` on the marketing domain to the portal subdomain so any old bookmarks keep working.
 
 #### One-time configuration changes after the split

@@ -28,6 +28,7 @@ import Settings from './pages/Settings';
 import UserManagement from './pages/UserManagement';
 import ClientGroups from './pages/ClientGroups';
 import TimesheetsReport from './pages/TimesheetsReport';
+import ShiftTargetTimesheetReport from './pages/ShiftTargetTimesheetReport';
 import ContactExceptionsReport from './pages/ContactExceptionsReport';
 import OrganizationExceptionsReport from './pages/OrganizationExceptionsReport';
 import GlobalSearchPage from './pages/GlobalSearchPage';
@@ -71,6 +72,7 @@ const pageTitles = {
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
   '/reports/timesheets':                 '🕐 Timesheet report',
+  '/reports/timesheets/shift-target':    '📊 Shift target (punch)',
   '/reports/exceptions/contacts':      '📋 Contact data exceptions',
   '/reports/exceptions/organizations': '📋 Organization data exceptions',
   '/calendar':                  '📅 Calendar & Appointments',
@@ -136,6 +138,11 @@ export default function App() {
           <Route path="/reports/timesheets" element={
             <ProtectedRoute staffOnly requiredPermission="services.view">
               <Layout routePath="/reports/timesheets"><TimesheetsReport /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/reports/timesheets/shift-target" element={
+            <ProtectedRoute staffOnly requiredPermission="services.view">
+              <Layout routePath="/reports/timesheets/shift-target"><ShiftTargetTimesheetReport /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/reports/exceptions/contacts" element={

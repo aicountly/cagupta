@@ -336,6 +336,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/reports/timesheets/shift-target',
+                'handler'    => 'Admin\TimeEntryController@shiftTargetReport',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/time-entries/active',
                 'handler'    => 'Admin\TimeEntryController@active',
                 'middleware' => ['auth', 'permission:services.view'],

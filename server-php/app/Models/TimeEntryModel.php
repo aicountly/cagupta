@@ -603,6 +603,82 @@ class TimeEntryModel
     }
 
     /**
+     * Per-user punch totals vs shift target over an inclusive calendar date range.
+     * Target minutes = (inclusive day count) × shift target (same user set as daily super-admin report).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listShiftTargetSummaryForDateRange(
+        string $dateFrom,
+        string $dateTo,
+        ?int $filterUserId,
+        int $shiftTargetMinutes = self::SHIFT_TARGET_MINUTES
+    ): array {
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo)) {
+            return [];
+        }
+        if ($shiftTargetMinutes <= 0) {
+            $shiftTargetMinutes = self::SHIFT_TARGET_MINUTES;
+        }
+        try {
+            $from = new \DateTimeImmutable($dateFrom);
+            $to = new \DateTimeImmutable($dateTo);
+        } catch (\Exception) {
+            return [];
+        }
+        if ($to < $from) {
+            return [];
+        }
+        $dayCount = (int)$from->diff($to)->days + 1;
+        $totalTargetMinutes = $dayCount * $shiftTargetMinutes;
+
+        $uidClause = '';
+        $params = [
+            ':df' => $dateFrom,
+            ':dt' => $dateTo,
+            ':running' => 'running',
+            ':total_target_b' => $totalTargetMinutes,
+            ':total_target_c' => $totalTargetMinutes,
+        ];
+        if ($filterUserId !== null && $filterUserId > 0) {
+            $uidClause = ' AND u.id = :filter_uid';
+            $params[':filter_uid'] = $filterUserId;
+        }
+
+        $stmt = $this->db->prepare(
+            "SELECT
+                u.id AS user_id,
+                COALESCE(NULLIF(TRIM(u.name), ''), TRIM(u.email), 'User') AS user_name,
+                TRIM(u.email) AS user_email,
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE te.is_billable), 0) AS billable_minutes,
+                COALESCE(SUM(te.duration_minutes) FILTER (WHERE NOT te.is_billable), 0) AS non_billable_minutes,
+                COALESCE(SUM(te.duration_minutes), 0) AS total_punched_minutes,
+                GREATEST(0, :total_target_b - COALESCE(SUM(te.duration_minutes), 0)) AS deficit_minutes,
+                GREATEST(0, COALESCE(SUM(te.duration_minutes), 0) - :total_target_c) AS overtime_minutes
+            FROM users u
+            LEFT JOIN time_entries te
+                ON te.user_id = u.id
+               AND te.work_date >= :df
+               AND te.work_date <= :dt
+               AND te.timer_status <> :running
+            WHERE u.is_active = TRUE
+              AND TRIM(COALESCE(u.email, '')) <> ''
+              {$uidClause}
+            GROUP BY u.id, u.name, u.email
+            ORDER BY u.name ASC, u.id ASC"
+        );
+        $stmt->execute($params);
+
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) {
+            $row['total_target_minutes'] = $totalTargetMinutes;
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
      * Aggregated report for timesheets (per user, optional date range).
      *
      * @return array<int, array<string, mixed>>

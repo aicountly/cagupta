@@ -7,13 +7,16 @@ namespace App\Config;
  * PostgreSQL database connection configuration.
  *
  * Values are read from the .env file loaded by public/index.php.
+ *
+ * Default username matches the cPanel-created PostgreSQL role for this project.
+ * Override with DB_USER in .env (e.g. DB_USER=postgres for local Docker).
  */
 class Database
 {
     public string $host     = 'localhost';
     public int    $port     = 5432;
     public string $dbname   = 'cagupta_db';
-    public string $username = 'postgres';
+    public string $username = 'carahulgupta_cagupta_user';
     public string $password = '';
 
     /** PDO connection options. */

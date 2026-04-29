@@ -31,6 +31,7 @@ const navSections = [
         navKey: 'reports',
         children: [
           { to: '/reports/timesheets', label: 'Timesheet report', icon: Clock, permission: 'services.view' },
+          { to: '/reports/timesheets/shift-target', label: 'Shift target (punch)', icon: Target, permission: 'services.view' },
           { to: '/reports/exceptions/contacts', label: 'Contact exceptions', icon: UserRound, permission: 'clients.view' },
           { to: '/reports/exceptions/organizations', label: 'Organization exceptions', icon: Building2, permission: 'clients.view' },
         ],

@@ -202,6 +202,71 @@ class TimeEntryController extends BaseController
         }
     }
 
+    // ── GET /api/admin/reports/timesheets/shift-target ───────────────────────
+
+    /**
+     * Query: date_from, date_to (YYYY-MM-DD), optional user_id (super admin only).
+     */
+    public function shiftTargetReport(): never
+    {
+        $requestedUserId = (int)$this->query('user_id', 0);
+        [$actorUserId, $isSuperAdmin, $scopeUserId] = $this->resolveServiceVisibilityContext(
+            $requestedUserId > 0 ? $requestedUserId : null
+        );
+        $from = trim((string)$this->query('date_from', ''));
+        $to = trim((string)$this->query('date_to', ''));
+        if ($from === '' || $to === '') {
+            $this->error('date_from and date_to are required (YYYY-MM-DD).', 422);
+        }
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) {
+            $this->error('date_from and date_to must be YYYY-MM-DD.', 422);
+        }
+        if (strcmp($to, $from) < 0) {
+            $this->error('date_to must be on or after date_from.', 422);
+        }
+        try {
+            $fromDt = new \DateTimeImmutable($from);
+            $toDt = new \DateTimeImmutable($to);
+        } catch (\Exception) {
+            $this->error('Invalid date range.', 422);
+        }
+        $dayCount = (int)$fromDt->diff($toDt)->days + 1;
+        if ($dayCount > 366) {
+            $this->error('Date range cannot exceed 366 days.', 422);
+        }
+
+        $filterUserId = null;
+        if ($isSuperAdmin) {
+            if ($requestedUserId > 0) {
+                $filterUserId = $requestedUserId;
+            }
+        } else {
+            $filterUserId = $actorUserId;
+        }
+
+        $shiftTarget = TimeEntryModel::SHIFT_TARGET_MINUTES;
+        try {
+            $rows = $this->entries->listShiftTargetSummaryForDateRange($from, $to, $filterUserId, $shiftTarget);
+        } catch (\Throwable $e) {
+            if (self::isDbPermissionDenied($e)) {
+                $this->error(self::dbGrantDeniedMessage('SELECT on time_entries and related tables'), 503);
+            }
+            throw $e;
+        }
+
+        $totalTargetMinutes = $dayCount * $shiftTarget;
+        $this->success([
+            'meta' => [
+                'date_from' => $from,
+                'date_to' => $to,
+                'day_count' => $dayCount,
+                'shift_target_minutes_per_day' => $shiftTarget,
+                'total_target_minutes' => $totalTargetMinutes,
+            ],
+            'rows' => $rows,
+        ], 'Shift target timesheet report retrieved');
+    }
+
     // ── GET /api/admin/time-entries/active ───────────────────────────────────
 
     public function active(): never
