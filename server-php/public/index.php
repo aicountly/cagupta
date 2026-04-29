@@ -111,21 +111,38 @@ $appConfig = new AppConfig();
 date_default_timezone_set($appConfig->timezone);
 
 // ── CORS headers ──────────────────────────────────────────────────────────────
-$origin           = $_SERVER['HTTP_ORIGIN'] ?? '';
-$allowedOrigin    = $appConfig->corsOrigin;
+$origin = $_SERVER['HTTP_ORIGIN'] ?? '';
 
-// Normalize: treat www.domain same as non-www domain
-$normalizedOrigin = preg_replace('#^(https?://)www\.#', '$1', $origin);
+// CORS_ORIGIN may be a comma-separated list, e.g. portal on app subdomain + apex + www.
+$allowedList = array_values(array_filter(array_map('trim', explode(',', $appConfig->corsOrigin))));
 
-// Allow the configured origin (with or without www) or (in dev) any localhost origin
-if (
-    $normalizedOrigin === $allowedOrigin
-    || (str_starts_with($origin, 'http://localhost') && $appConfig->environment === 'development')
-) {
-    header("Access-Control-Allow-Origin: {$origin}");
-} else {
-    header("Access-Control-Allow-Origin: {$allowedOrigin}");
+$normalize = static function (string $url): string {
+    return preg_replace('#^(https?://)www\.#', '$1', $url) ?? $url;
+};
+
+$normalizedOrigin = $origin !== '' ? $normalize($origin) : '';
+$corsMatched        = false;
+
+if ($origin !== '' && $normalizedOrigin !== '') {
+    foreach ($allowedList as $allowed) {
+        if ($allowed === '') {
+            continue;
+        }
+        if ($normalizedOrigin === $normalize($allowed)) {
+            // Must echo the browser's exact Origin when credentials are used.
+            header("Access-Control-Allow-Origin: {$origin}");
+            $corsMatched = true;
+            break;
+        }
+    }
 }
+
+if (!$corsMatched && str_starts_with($origin, 'http://localhost') && $appConfig->environment === 'development') {
+    header("Access-Control-Allow-Origin: {$origin}");
+    $corsMatched = true;
+}
+
+// Do not send a mismatched Access-Control-Allow-Origin (breaks credentialed fetches).
 header('Access-Control-Allow-Credentials: true');
 header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');

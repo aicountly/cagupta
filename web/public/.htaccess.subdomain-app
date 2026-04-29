@@ -1,0 +1,15 @@
+# Use this file as `.htaccess` in the *subdomain* document root (e.g. public_html/app/)
+# when the PHP API lives at https://your-apex-domain/api/ (sibling folder), NOT under /app/api/.
+# The default web/public/.htaccess rewrites /api to /api/public/... which is wrong for that layout.
+#
+# Deploy: either paste these rules into the server’s `app/.htaccess`, or stop excluding
+# `.htaccess` from the portal rsync and rename this file to `.htaccess` in `web/public/`
+# only for subdomain builds (advanced).
+
+Options -MultiViews
+RewriteEngine On
+
+# SPA: client-side routes only (API calls go to VITE_API_BASE_URL on the apex domain).
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^ index.html [QSA,L]

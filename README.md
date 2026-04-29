@@ -468,15 +468,26 @@ Single cPanel account hosts both the marketing site and the portal:
 | `carahulgupta.in` (and `www.`) | `public_html/`     | Upload `web-public/dist/` here |
 | `app.carahulgupta.in`          | `public_html/app/` | Upload `web/dist/` here (cPanel → "Subdomains" → create) |
 
-The PHP API (`server-php/`) keeps living at `app.carahulgupta.in/api/` — the existing rewrite in [`web/public/.htaccess`](web/public/.htaccess) handles that automatically.
+The PHP API (`server-php/`) lives at **`https://carahulgupta.in/api/`** (folder `public_html/api/`). The portal on **`app.carahulgupta.in`** should call that URL from the browser (`VITE_API_BASE_URL`). In the **`app/`** document root, use an `.htaccess` that only does the SPA fallback (no `/api/` rewrite to the wrong path). A template is in [`web/public/.htaccess.subdomain-app`](web/public/.htaccess.subdomain-app) — copy its rules into `public_html/app/.htaccess` on the server (the cPanel workflow excludes `.htaccess` from rsync so server copies are not overwritten).
 
 `web-public/public/.htaccess` ships with two rules: an SPA fallback for client-side routes, and a hard 301 from `/login` on the marketing domain to the portal subdomain so any old bookmarks keep working.
 
 #### One-time configuration changes after the split
 
-1. **CORS** — set `CORS_ORIGIN=https://app.carahulgupta.in` in `server-php/.env` (the API only needs to allow the portal origin; the marketing site makes no API calls).
+1. **CORS** — in `server-php/.env` set a comma-separated list so the API accepts the portal **and** any origin that actually loads the SPA, e.g. `CORS_ORIGIN=https://app.carahulgupta.in,https://carahulgupta.in,https://www.carahulgupta.in`. Put **`https://app.carahulgupta.in` first** (used by the Zoom OAuth callback `postMessage` target). The marketing site does not call the API. The API now matches `Origin` against each entry (www/non-www normalized).
 2. **Google OAuth** — in Google Cloud Console → Credentials, add `https://app.carahulgupta.in` to **Authorised JavaScript Origins**.
 3. **Microsoft / Azure App Registration** — add `https://app.carahulgupta.in/` (with trailing slash) as a **Single-Page Application redirect URI**.
+
+#### GitHub Actions — [`deploy-cpanel.yml`](.github/workflows/deploy-cpanel.yml)
+
+One manual workflow builds and rsyncs **portal** (`web/dist` → `CPANEL_REMOTE_ROOT`), **API** (`server-php/` → `CPANEL_SITE_ROOT/api/`), and **marketing** (`web-public/dist` → `CPANEL_SITE_ROOT/` with `--exclude` for `app/` and `api/` so `rsync --delete` does not remove those folders).
+
+| GitHub secret | Example | Used for |
+|---|---|---|
+| `CPANEL_REMOTE_ROOT` | `/home/carahulgupta/public_html/app` | Portal only (`app.carahulgupta.in`) |
+| `CPANEL_SITE_ROOT` | `/home/carahulgupta/public_html` | API (`…/api/`) + marketing (site root) |
+| `VITE_PORTAL_URL` | `https://app.carahulgupta.in` | `web-public` build (login links in navbar) |
+| `VITE_MARKETING_URL` | `https://carahulgupta.in` | Optional; portal “Wrong portal?” link ([`web/.env.example`](web/.env.example)) |
 
 ### Mobile Applications
 

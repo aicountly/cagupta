@@ -77,8 +77,11 @@ class ZoomCallbackController extends BaseController
             'account_id'    => $accountId,
         ]);
 
-        $app  = new AppConfig();
-        $orig = $app->corsOrigin;
+        $app = new AppConfig();
+        // CORS_ORIGIN may be comma-separated; postMessage target should be the portal origin (list first).
+        $raw   = $app->corsOrigin;
+        $parts = array_values(array_filter(array_map('trim', explode(',', $raw))));
+        $orig  = $parts[0] ?? $raw;
         $this->htmlCloseWindow($orig);
     }
 

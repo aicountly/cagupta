@@ -55,7 +55,7 @@ Edit `.env` and fill in:
 | `DB_USER` | Database user |
 | `DB_PASS` | Database password |
 | `JWT_SECRET` | Random secret — generate with: `php -r "echo base64_encode(random_bytes(32));"` |
-| `CORS_ORIGIN` | URL of your React frontend (e.g. `https://yourdomain.com`) |
+| `CORS_ORIGIN` | One or more allowed browser Origins, comma-separated (e.g. `https://app.yourdomain.com,https://yourdomain.com` when the portal is on a subdomain and the API is on the apex) |
 
 ### 4 — Point your web server to `public/`
 
@@ -314,5 +314,5 @@ Email **`rahul@cagupta.in`** is hardcoded as `SUPER_ADMIN_EMAIL` in `app/Config/
 - Passwords are hashed with bcrypt (cost factor 12).
 - JWTs are signed with HS256; token expiry is validated on every request.
 - Sessions are stored in the DB — tokens can be revoked server-side by deleting the row.
-- CORS is restricted to `CORS_ORIGIN` in `.env`.
+- CORS allows browser `Origin` values listed in `CORS_ORIGIN` in `.env` (comma-separated; www/non-www normalized per entry).
 - `.env` is blocked by `.htaccess` from being served directly.
