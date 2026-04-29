@@ -1,11 +1,11 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, User, Building2, Search, X, CheckSquare, Square } from 'lucide-react';
 import { getCategories } from '../services/serviceCategoryService';
 import { createEngagement, ApiError } from '../services/engagementService';
 import OpenEngagementConflictModal from '../components/services/OpenEngagementConflictModal';
-import { getContacts, getContact, getContactsWithMeta } from '../services/contactService';
-import { getOrganizations, getOrganization, getOrganizationsWithMeta } from '../services/organizationService';
+import { getContact, getContactsWithMeta, getContactsForSearch } from '../services/contactService';
+import { getOrganization, getOrganizationsWithMeta, getOrganizationsForSearch } from '../services/organizationService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useNotification } from '../context/NotificationContext';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
@@ -61,28 +61,69 @@ function ClientCard({ client, type }) {
   );
 }
 
-// ── Searchable dropdown ───────────────────────────────────────────────────────
-function SearchableDropdown({ items, value, onChange, placeholder }) {
+// ── Server-backed client search (full directory; list API is paginated) ───────
+const ORG_SEARCH_MIN_LEN = 2;
+const CONTACT_SEARCH_MIN_LEN = 1;
+const CLIENT_SEARCH_LIMIT = 50;
+const CLIENT_SEARCH_DEBOUNCE_MS = 300;
+
+function AsyncClientSearchDropdown({ clientType, value, displayName, onSelect, placeholder }) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef(null);
 
-  const filtered = useMemo(
-    () => items.filter(i => i.displayName.toLowerCase().includes(query.toLowerCase())),
-    [items, query],
-  );
+  const minLen = clientType === 'organization' ? ORG_SEARCH_MIN_LEN : CONTACT_SEARCH_MIN_LEN;
+  const hasSelection = Boolean(value && displayName);
 
-  const selected = items.find(i => i.id === value);
+  const runSearch = useCallback(async (q) => {
+    const trimmed = q.trim();
+    if (trimmed.length < minLen) {
+      setSuggestions([]);
+      return;
+    }
+    setLoading(true);
+    try {
+      const rows = clientType === 'organization'
+        ? await getOrganizationsForSearch(trimmed, CLIENT_SEARCH_LIMIT)
+        : await getContactsForSearch(trimmed, CLIENT_SEARCH_LIMIT);
+      setSuggestions(rows);
+      // #region agent log
+      fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7a34ef' }, body: JSON.stringify({ sessionId: '7a34ef', runId: 'post-fix', hypothesisId: 'verify', location: 'NewServiceEngagement.jsx:asyncSearch', message: 'server search result count', data: { clientType, resultCount: rows.length }, timestamp: Date.now() }) }).catch(() => {});
+      // #endregion
+    } catch {
+      setSuggestions([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [clientType, minLen]);
 
-  function select(item) {
-    onChange(item.id);
+  useEffect(() => () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+  }, []);
+
+  function handleInput(e) {
+    const val = e.target.value;
+    setQuery(val);
+    setOpen(true);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => runSearch(val), CLIENT_SEARCH_DEBOUNCE_MS);
+    if (val.trim().length < minLen) setSuggestions([]);
+  }
+
+  function selectRow(row) {
+    onSelect(row.id, row.displayName);
     setQuery('');
+    setSuggestions([]);
     setOpen(false);
   }
 
   function clear(e) {
     e.stopPropagation();
-    onChange('');
+    onSelect('', '');
     setQuery('');
+    setSuggestions([]);
   }
 
   return (
@@ -94,35 +135,59 @@ function SearchableDropdown({ items, value, onChange, placeholder }) {
         <Search size={13} color="#94a3b8" style={{ flexShrink: 0 }} />
         <input
           style={searchDropdownInput}
-          placeholder={selected ? selected.displayName : placeholder}
+          placeholder={hasSelection ? displayName : placeholder}
           value={open ? query : ''}
-          onChange={e => { setQuery(e.target.value); if (!open) setOpen(true); }}
-          onFocus={() => setOpen(true)}
+          onChange={handleInput}
+          onFocus={() => { setOpen(true); }}
           onClick={e => e.stopPropagation()}
         />
-        {selected && (
-          <button onClick={clear} style={searchDropdownClear}>
+        {hasSelection && (
+          <button type="button" onClick={clear} style={searchDropdownClear}>
             <X size={12} />
           </button>
         )}
       </div>
       {open && (
         <div style={searchDropdownMenu}>
-          {filtered.length === 0 && (
-            <div style={searchDropdownEmpty}>No results found</div>
+          {loading && (
+            <div style={searchDropdownEmpty}>Searching…</div>
           )}
-          {filtered.map(item => (
-            <div
-              key={item.id}
-              style={{ ...searchDropdownItem, background: item.id === value ? '#FEF0E6' : undefined }}
-              onClick={() => select(item)}
-              onMouseEnter={e => { if (item.id !== value) e.currentTarget.style.background = '#F6F7FB'; }}
-              onMouseLeave={e => { if (item.id !== value) e.currentTarget.style.background = ''; }}
-            >
-              <div style={{ fontWeight: 600, fontSize: 13, color: '#0B1F3B' }}>{item.displayName}</div>
-              {item.city && <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.city}</div>}
-            </div>
-          ))}
+          {!loading && (() => {
+            const t = query.trim();
+            if (t.length === 0) {
+              return (
+                <div style={searchDropdownEmpty}>
+                  {clientType === 'organization'
+                    ? 'Type at least 2 characters to search all organizations.'
+                    : 'Type at least 1 character to search all contacts.'}
+                </div>
+              );
+            }
+            if (t.length < minLen) {
+              return (
+                <div style={searchDropdownEmpty}>
+                  {clientType === 'organization'
+                    ? 'Type at least 2 characters to search organizations…'
+                    : 'Keep typing to search contacts…'}
+                </div>
+              );
+            }
+            if (suggestions.length === 0) {
+              return <div style={searchDropdownEmpty}>No results found</div>;
+            }
+            return suggestions.map(item => (
+              <div
+                key={item.id}
+                style={{ ...searchDropdownItem, background: String(item.id) === String(value) ? '#FEF0E6' : undefined }}
+                onClick={() => selectRow(item)}
+                onMouseEnter={e => { if (String(item.id) !== String(value)) e.currentTarget.style.background = '#F6F7FB'; }}
+                onMouseLeave={e => { if (String(item.id) !== String(value)) e.currentTarget.style.background = ''; }}
+              >
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#0B1F3B' }}>{item.displayName}</div>
+                {item.city && <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.city}</div>}
+              </div>
+            ));
+          })()}
         </div>
       )}
       {open && <div style={overlay} onClick={() => setOpen(false)} />}
@@ -145,22 +210,9 @@ export default function NewServiceEngagement() {
   const [dataError, setDataError] = useState('');
   const hasCatalog = categories.length > 0;
 
-  // Client lists loaded from API
-  const [contacts, setContacts] = useState([]);
-  const [organizations, setOrganizations] = useState([]);
-
   useEffect(() => {
-    Promise.all([
-      getCategories().catch(() => null),
-      getContacts().catch(() => null),
-      getOrganizations().catch(() => null),
-    ]).then(([cats, cts, orgs]) => {
+    getCategories().catch(() => null).then((cats) => {
       if (cats) setCategories(cats); else setDataError(e => e || 'Failed to load service catalog.');
-      if (cts) setContacts(cts);
-      if (orgs) setOrganizations(orgs);
-      // #region agent log
-      fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7a34ef' }, body: JSON.stringify({ sessionId: '7a34ef', hypothesisId: 'A', location: 'NewServiceEngagement.jsx:initialLoad', message: 'first-page list lengths', data: { loadedContacts: Array.isArray(cts) ? cts.length : null, loadedOrgs: Array.isArray(orgs) ? orgs.length : null }, timestamp: Date.now() }) }).catch(() => {});
-      // #endregion
     });
   }, []);
 
@@ -175,9 +227,10 @@ export default function NewServiceEngagement() {
   }, []);
   // #endregion
 
-  // Client selection
+  // Client selection (search-backed; no bulk list — API is paginated at 100/page)
   const [clientType, setClientType] = useState('contact'); // 'contact' | 'organization'
   const [clientId, setClientId] = useState('');
+  const [selectedClientLabel, setSelectedClientLabel] = useState('');
 
   // Service catalog selection
   const [categoryId, setCategoryId] = useState('');
@@ -222,6 +275,12 @@ export default function NewServiceEngagement() {
     req.then(setMasterClient).catch(() => setMasterClient(null));
   }, [clientId, clientType]);
 
+  useEffect(() => {
+    if (masterClient?.displayName && clientId) {
+      setSelectedClientLabel(masterClient.displayName);
+    }
+  }, [masterClient?.displayName, clientId]);
+
   // ── Derived catalog data ────────────────────────────────────────────────────
   const selectedCategory = categories.find(c => String(c.id) === String(categoryId));
   const subcategories = selectedCategory?.subcategories ?? [];
@@ -253,9 +312,9 @@ export default function NewServiceEngagement() {
       : 'Client master default: not restricted (applied when this engagement is created).';
   }, [masterClient]);
 
-  // ── Client lists ────────────────────────────────────────────────────────────
-  const clientList = clientType === 'contact' ? contacts : organizations;
-  const selectedClient = clientList.find(c => String(c.id) === String(clientId));
+  // ── Selected client row (detail loaded async into masterClient) ─────────────
+  const selectedClient = masterClient
+    || (clientId && selectedClientLabel ? { displayName: selectedClientLabel } : null);
 
   // ── Cascade reset helpers ───────────────────────────────────────────────────
   function handleCategoryChange(id) {
@@ -272,6 +331,14 @@ export default function NewServiceEngagement() {
   function handleClientTypeChange(type) {
     setClientType(type);
     setClientId('');
+    setSelectedClientLabel('');
+  }
+
+  function handleClientSelect(id, name) {
+    const sid = id === '' || id == null ? '' : String(id);
+    setClientId(sid);
+    setSelectedClientLabel(name || '');
+    setErrors(prev => ({ ...prev, clientId: '' }));
   }
 
   // ── Validation ──────────────────────────────────────────────────────────────
@@ -316,7 +383,7 @@ export default function NewServiceEngagement() {
     const engagement = {
       clientType,
       clientId,
-      clientName: selectedClient.displayName,
+      clientName: masterClient?.displayName || selectedClientLabel || selectedClient?.displayName || '',
       categoryId,
       categoryName: selectedCategory.name,
       subcategoryId,
@@ -410,10 +477,11 @@ export default function NewServiceEngagement() {
             </div>
 
             <FieldLabel label="Select Client" required />
-            <SearchableDropdown
-              items={clientList}
+            <AsyncClientSearchDropdown
+              clientType={clientType}
               value={clientId}
-              onChange={id => { setClientId(id); setErrors(prev => ({ ...prev, clientId: '' })); }}
+              displayName={selectedClientLabel}
+              onSelect={handleClientSelect}
               placeholder={`Search ${clientType === 'contact' ? 'contact' : 'organization'}…`}
             />
             {errors.clientId && <ErrorMsg msg={errors.clientId} />}
