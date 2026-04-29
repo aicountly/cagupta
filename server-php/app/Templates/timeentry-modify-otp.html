@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Timesheet Modification Approval – CA Rahul Gupta</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .container { max-width: 620px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .header { background: #1a3c6e; padding: 32px 40px; text-align: center; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 24px; }
+    .header p { color: #aac4e8; margin: 8px 0 0; font-size: 14px; }
+    .body { padding: 32px 40px; color: #333333; line-height: 1.6; }
+    .otp-box { text-align: center; margin: 28px 0; }
+    .otp-code { display: inline-block; font-size: 42px; font-weight: bold; letter-spacing: 12px; color: #F37920; background: #FFF7F0; border: 2px dashed #F37920; border-radius: 8px; padding: 16px 28px; font-family: 'Courier New', monospace; }
+    .expiry { text-align: center; margin: 0 0 24px; font-size: 13px; color: #888888; }
+    .diff-table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 20px 0; }
+    .diff-table th { background: #f1f5f9; color: #475569; padding: 8px 12px; text-align: left; border: 1px solid #e2e8f0; }
+    .diff-table td { padding: 8px 12px; border: 1px solid #e2e8f0; vertical-align: top; }
+    .diff-table td.field { color: #64748b; font-weight: 600; width: 28%; }
+    .diff-table td.old-val { color: #dc2626; background: #fef2f2; }
+    .diff-table td.new-val { color: #16a34a; background: #f0fdf4; }
+    .reason-box { background: #f8fafc; border-left: 4px solid #1a3c6e; padding: 12px 16px; border-radius: 4px; font-size: 13px; color: #334155; margin: 20px 0; }
+    .reason-box strong { display: block; margin-bottom: 4px; color: #1a3c6e; }
+    .warning { background: #FFF8E1; border-left: 4px solid #F59E0B; padding: 12px 16px; border-radius: 4px; font-size: 13px; color: #92400E; margin-top: 24px; }
+    .footer { background: #f4f6f8; padding: 20px 40px; text-align: center; font-size: 12px; color: #888888; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>CA Rahul Gupta</h1>
+      <p>Office Portal – Timesheet Modification Approval</p>
+    </div>
+    <div class="body">
+      <p>Dear <strong>{{userName}}</strong>,</p>
+      <p>
+        <strong>{{requesterName}}</strong> has requested to modify timesheet entry
+        <strong>#{{entryId}}</strong> for engagement <strong>{{serviceType}}</strong>
+        (Client: <strong>{{clientName}}</strong>).
+        Use the one-time password below to approve this change in the portal.
+      </p>
+
+      <div class="otp-box">
+        <div class="otp-code">{{otpCode}}</div>
+      </div>
+      <p class="expiry">This OTP is valid for <strong>{{expiryMinutes}} minutes</strong> only.</p>
+
+      <p><strong>Proposed changes:</strong></p>
+      <table class="diff-table">
+        <thead>
+          <tr>
+            <th>Field</th>
+            <th>Current value</th>
+            <th>Proposed value</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="field">Work date</td>
+            <td class="old-val">{{oldDate}}</td>
+            <td class="new-val">{{newDate}}</td>
+          </tr>
+          <tr>
+            <td class="field">Duration (mins)</td>
+            <td class="old-val">{{oldDuration}}</td>
+            <td class="new-val">{{newDuration}}</td>
+          </tr>
+          <tr>
+            <td class="field">Activity type</td>
+            <td class="old-val">{{oldActivity}}</td>
+            <td class="new-val">{{newActivity}}</td>
+          </tr>
+          <tr>
+            <td class="field">Billable</td>
+            <td class="old-val">{{oldBillable}}</td>
+            <td class="new-val">{{newBillable}}</td>
+          </tr>
+          <tr>
+            <td class="field">Notes</td>
+            <td class="old-val">{{oldNotes}}</td>
+            <td class="new-val">{{newNotes}}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="reason-box">
+        <strong>Reason given by requester:</strong>
+        {{reason}}
+      </div>
+
+      <p>
+        If you approve these changes, share this OTP with <strong>{{requesterName}}</strong> so they can
+        complete the update in the portal. If you do not approve, ignore this email — the OTP will
+        expire automatically.
+      </p>
+
+      <div class="warning">
+        <strong>Security note:</strong> Each timesheet modification requires a new OTP.
+        Do not share this code with anyone other than the team member who needs it.
+        If you did not expect this request, review activity in the portal immediately.
+      </div>
+    </div>
+    <div class="footer">
+      <p>© CA Rahul Gupta Office Portal &nbsp;|&nbsp; office@carahulgupta.in</p>
+      <p>This is an automated message. Please do not reply directly to this email.</p>
+    </div>
+  </div>
+</body>
+</html>

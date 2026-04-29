@@ -128,15 +128,41 @@ export async function stopTimer(serviceId, entryId, payload = {}) {
 }
 
 /**
+ * Request a superadmin OTP for modifying a specific time entry.
+ * The OTP is emailed to the superadmin with full change details.
+ *
+ * @param {number|string} serviceId
+ * @param {number|string} entryId
+ * @param {{ proposed_values: object, reason: string }} payload
+ * @returns {Promise<object>}
+ */
+export async function requestTimeEntryModifyOtp(serviceId, entryId, payload) {
+  const res = await fetch(
+    `${API_BASE}/admin/services/${serviceId}/time-entries/${entryId}/request-modify-otp`,
+    {
+      method: 'POST',
+      headers: authHeaders(),
+      body: JSON.stringify(payload),
+    }
+  );
+  return parseResponse(res);
+}
+
+/**
  * @param {number|string} serviceId
  * @param {number|string} entryId
  * @param {object} payload
+ * @param {{ superadminOtp?: string }} [opts]
  * @returns {Promise<object>}
  */
-export async function updateTimeEntry(serviceId, entryId, payload) {
+export async function updateTimeEntry(serviceId, entryId, payload, { superadminOtp } = {}) {
+  const headers = { ...authHeaders() };
+  if (superadminOtp) {
+    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
+  }
   const res = await fetch(`${API_BASE}/admin/services/${serviceId}/time-entries/${entryId}`, {
     method: 'PATCH',
-    headers: authHeaders(),
+    headers,
     body: JSON.stringify(payload),
   });
   const json = await parseResponse(res);

@@ -3,9 +3,13 @@ declare(strict_types=1);
 
 namespace App\Controllers\Admin;
 
+use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
+use App\Libraries\BrevoMailer;
+use App\Libraries\OtpService;
 use App\Models\ServiceModel;
 use App\Models\TimeEntryModel;
+use App\Models\UserModel;
 
 /**
  * Time entries on engagements.
@@ -366,6 +370,88 @@ class TimeEntryController extends BaseController
         $this->success($stopped, 'Timer stopped');
     }
 
+    // ── POST /api/admin/services/:id/time-entries/:entryId/request-modify-otp ─
+
+    /**
+     * Email the super admin an OTP containing full change details.
+     * Body: { proposed_values: { work_date?, duration_minutes?, activity_type?, is_billable?, notes? }, reason: string }
+     */
+    public function requestModifyOtp(int $id, int $entryId): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $entry = $this->entries->find($entryId);
+        if ($entry === null || (int)$entry['service_id'] !== $id) {
+            $this->error('Time entry not found.', 404);
+        }
+
+        $actor   = $this->authUser();
+        $actorId = $actor ? (int)$actor['id'] : 0;
+        if ($actorId <= 0) {
+            $this->error('Unauthorized.', 401);
+        }
+
+        $body     = $this->getJsonBody();
+        $proposed = is_array($body['proposed_values'] ?? null) ? $body['proposed_values'] : [];
+        $reason   = trim((string)($body['reason'] ?? ''));
+        if ($reason === '') {
+            $this->error('A reason is required to request a timesheet modification OTP.', 422);
+        }
+
+        $users = new UserModel();
+        $super = $users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
+        if ($super === null || !$super['is_active']) {
+            $this->error('Super admin account is not provisioned.', 500);
+        }
+        $superId    = (int)$super['id'];
+        $superEmail = trim((string)($super['email'] ?? ''));
+        if ($superEmail === '') {
+            $this->error('Super admin has no email configured.', 500);
+        }
+
+        $otp = OtpService::generate($superId);
+
+        $oldBillable = !empty($entry['is_billable']) ? 'Yes' : 'No';
+        $newBillable = isset($proposed['is_billable'])
+            ? ($proposed['is_billable'] ? 'Yes' : 'No')
+            : '(unchanged)';
+
+        $htmlBody = BrevoMailer::renderTemplate('timeentry-modify-otp', [
+            'userName'      => (string)($super['name'] ?? $superEmail),
+            'otpCode'       => $otp,
+            'expiryMinutes' => (string)OtpService::expiryMinutes(),
+            'entryId'       => (string)$entryId,
+            'serviceType'   => (string)($service['service_type'] ?? '—'),
+            'clientName'    => (string)($service['client_name'] ?? '—'),
+            'requesterName' => (string)($actor['name'] ?? $actor['email'] ?? 'Unknown'),
+            'oldDate'       => (string)($entry['work_date'] ?? '—'),
+            'oldDuration'   => (string)($entry['duration_minutes'] ?? '—'),
+            'oldActivity'   => str_replace('_', ' ', (string)($entry['activity_type'] ?? '—')),
+            'oldBillable'   => $oldBillable,
+            'oldNotes'      => (string)($entry['notes'] ?? ''),
+            'newDate'       => isset($proposed['work_date']) ? (string)$proposed['work_date'] : '(unchanged)',
+            'newDuration'   => isset($proposed['duration_minutes']) ? (string)$proposed['duration_minutes'] : '(unchanged)',
+            'newActivity'   => isset($proposed['activity_type']) ? str_replace('_', ' ', (string)$proposed['activity_type']) : '(unchanged)',
+            'newBillable'   => $newBillable,
+            'newNotes'      => isset($proposed['notes']) ? (string)$proposed['notes'] : '(unchanged)',
+            'reason'        => htmlspecialchars($reason, ENT_QUOTES, 'UTF-8'),
+        ]);
+
+        if ($htmlBody !== '') {
+            BrevoMailer::send(
+                $superEmail,
+                (string)($super['name'] ?? $superEmail),
+                'Timesheet Modification Approval — Entry #' . $entryId,
+                $htmlBody
+            );
+        }
+
+        $this->success(null, 'OTP sent to super admin email.');
+    }
+
     // ── PATCH /api/admin/services/:id/time-entries/:entryId ──────────────────
 
     public function updateForService(int $id, int $entryId): never
@@ -374,6 +460,15 @@ class TimeEntryController extends BaseController
         if ($service === null) {
             $this->error('Service not found.', 404);
         }
+
+        $otp = $this->readSuperadminOtpFromRequest();
+        if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
+            $this->error(
+                'A valid superadmin OTP is required to modify a timesheet entry. Request a code first.',
+                403
+            );
+        }
+
         $body = $this->getJsonBody();
         $actor = $this->authUser();
         $actorId = $actor ? (int)$actor['id'] : 0;

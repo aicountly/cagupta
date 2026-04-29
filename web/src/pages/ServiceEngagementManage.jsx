@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ChevronRight, Plus, CheckSquare, Square, Trash2, FolderOpen, History } from 'lucide-react';
+import { ChevronRight, Plus, CheckSquare, Square, Trash2, FolderOpen, History, Pencil } from 'lucide-react';
 import DateInput from '../components/common/DateInput';
 import { localDateKey, engagementDueDateKey } from '../utils/serviceKpiFilters';
 import { useStaffUsers } from '../hooks/useStaffUsers';
@@ -23,6 +23,7 @@ import { getTimeEntries, createTimeEntry, TIME_ACTIVITY_TYPES } from '../service
 import { useServiceTimer } from '../hooks/useServiceTimer';
 import { useElapsedTimer } from '../hooks/useElapsedTimer';
 import TimerHandoffModal from '../components/services/TimerHandoffModal';
+import TimeEntryModifyModal from '../components/services/TimeEntryModifyModal';
 
 const STATUS_OPTIONS = ['not_started', 'in_progress', 'pending_info', 'review', 'completed', 'cancelled'];
 
@@ -99,6 +100,7 @@ export default function ServiceEngagementManage() {
   const [timeLoading, setTimeLoading] = useState(false);
   const [timeError, setTimeError] = useState('');
   const [timeSaving, setTimeSaving] = useState(false);
+  const [modifyEntry, setModifyEntry] = useState(null);
   const [timeForm, setTimeForm] = useState(() => ({
     workDate: new Date().toISOString().slice(0, 10),
     durationMinutes: '60',
@@ -1137,7 +1139,7 @@ export default function ServiceEngagementManage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ textAlign: 'left', color: '#64748b' }}>
-                    {['Date', 'User', 'Mins', 'Activity', 'Scope', 'Billable'].map((h) => (
+                    {['Date', 'User', 'Mins', 'Activity', 'Scope', 'Billable', ''].map((h) => (
                       <th key={h} style={{ padding: '6px 4px', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
                     ))}
                   </tr>
@@ -1151,11 +1153,35 @@ export default function ServiceEngagementManage() {
                       <td style={{ padding: '6px 4px' }}>{te.activityType.replace(/_/g, ' ')}</td>
                       <td style={{ padding: '6px 4px', color: '#64748b' }}>{te.taskId ? `Task` : 'Engagement'}</td>
                       <td style={{ padding: '6px 4px' }}>{te.isBillable ? 'Yes' : 'No'}</td>
+                      <td style={{ padding: '6px 4px' }}>
+                        {canLogTimePermission && (
+                          <button
+                            type="button"
+                            title="Request modification (requires superadmin OTP)"
+                            onClick={() => setModifyEntry(te)}
+                            style={{ background: 'none', border: '1px solid #e2e8f0', borderRadius: 5, cursor: 'pointer', padding: '3px 6px', color: '#64748b', display: 'inline-flex', alignItems: 'center' }}
+                          >
+                            <Pencil size={12} />
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+          )}
+
+          {modifyEntry && (
+            <TimeEntryModifyModal
+              entry={modifyEntry}
+              serviceId={id}
+              onSaved={(updated) => {
+                setTimeEntries((prev) => prev.map((te) => te.id === updated.id ? updated : te));
+                setModifyEntry(null);
+              }}
+              onClose={() => setModifyEntry(null)}
+            />
           )}
         </section>
         )}

@@ -354,6 +354,12 @@ class Routes
             ],
             [
                 'method'     => 'POST',
+                'pattern'    => '/api/admin/services/:id/time-entries/:id/request-modify-otp',
+                'handler'    => 'Admin\TimeEntryController@requestModifyOtp',
+                'middleware' => ['auth', 'permission:services.edit'],
+            ],
+            [
+                'method'     => 'POST',
                 'pattern'    => '/api/admin/services/:id/time-entries/:id/stop',
                 'handler'    => 'Admin\TimeEntryController@stopForService',
                 'middleware' => ['auth', 'permission:services.edit'],
