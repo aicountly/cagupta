@@ -4,8 +4,8 @@ import { ChevronRight, User, Building2, Search, X, CheckSquare, Square } from 'l
 import { getCategories } from '../services/serviceCategoryService';
 import { createEngagement, ApiError } from '../services/engagementService';
 import OpenEngagementConflictModal from '../components/services/OpenEngagementConflictModal';
-import { getContacts, getContact } from '../services/contactService';
-import { getOrganizations, getOrganization } from '../services/organizationService';
+import { getContacts, getContact, getContactsWithMeta } from '../services/contactService';
+import { getOrganizations, getOrganization, getOrganizationsWithMeta } from '../services/organizationService';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useNotification } from '../context/NotificationContext';
 import { getApprovedAffiliates } from '../services/affiliateAdminService';
@@ -158,8 +158,22 @@ export default function NewServiceEngagement() {
       if (cats) setCategories(cats); else setDataError(e => e || 'Failed to load service catalog.');
       if (cts) setContacts(cts);
       if (orgs) setOrganizations(orgs);
+      // #region agent log
+      fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7a34ef' }, body: JSON.stringify({ sessionId: '7a34ef', hypothesisId: 'A', location: 'NewServiceEngagement.jsx:initialLoad', message: 'first-page list lengths', data: { loadedContacts: Array.isArray(cts) ? cts.length : null, loadedOrgs: Array.isArray(orgs) ? orgs.length : null }, timestamp: Date.now() }) }).catch(() => {});
+      // #endregion
     });
   }, []);
+
+  // #region agent log
+  useEffect(() => {
+    Promise.all([
+      getOrganizationsWithMeta({ page: 1, perPage: 100 }).catch(() => null),
+      getContactsWithMeta({ page: 1, perPage: 100 }).catch(() => null),
+    ]).then(([om, cm]) => {
+      fetch('http://127.0.0.1:7926/ingest/28a79f3f-f04f-4bab-ab73-c26b190ed6e3', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '7a34ef' }, body: JSON.stringify({ sessionId: '7a34ef', hypothesisId: 'A', location: 'NewServiceEngagement.jsx:metaTotals', message: 'pagination totals vs page1', data: { orgTotal: om?.total ?? null, orgLastPage: om?.lastPage ?? null, orgPage1Len: om?.orgs?.length ?? null, contactTotal: cm?.total ?? null, contactLastPage: cm?.lastPage ?? null, contactPage1Len: cm?.contacts?.length ?? null }, timestamp: Date.now() }) }).catch(() => {});
+    });
+  }, []);
+  // #endregion
 
   // Client selection
   const [clientType, setClientType] = useState('contact'); // 'contact' | 'organization'
