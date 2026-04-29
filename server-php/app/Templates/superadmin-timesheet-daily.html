@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Daily Timesheet Report — Super Admin</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .container { max-width: 900px; margin: 32px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .header { background: #1a3c6e; padding: 28px 34px; color: #ffffff; }
+    .header h1 { margin: 0; font-size: 22px; }
+    .header p { margin: 8px 0 0; color: #d7e7ff; font-size: 14px; }
+    .body { padding: 26px 34px; color: #334155; line-height: 1.6; }
+    .section-title { font-size: 16px; font-weight: 700; color: #1a3c6e; margin: 24px 0 12px; padding-bottom: 6px; border-bottom: 2px solid #e2e8f0; }
+    .section-title:first-of-type { margin-top: 0; }
+    .intro { margin: 0 0 16px; font-size: 14px; }
+    .data { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+    .data th { text-align: left; background: #f8fafc; padding: 10px 12px; border: 1px solid #e2e8f0; color: #334155; }
+    .data td { padding: 10px 12px; border: 1px solid #e2e8f0; color: #0f172a; vertical-align: top; }
+    .data td small { color: #64748b; word-break: break-all; }
+    .empty-note { color: #64748b; font-size: 14px; font-style: italic; margin: 8px 0 0; }
+    .note { font-size: 13px; color: #64748b; margin-top: 12px; }
+    .footer { background: #f8fafc; padding: 18px 34px; font-size: 12px; color: #64748b; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Daily Timesheet Report</h1>
+      <p>Office Portal — Super Admin · Date: {{reportDate}}</p>
+    </div>
+    <div class="body">
+      <p class="intro">
+        Previous workday summary for all active users. Daily shift target:
+        <strong>{{targetFormatted}}</strong> ({{targetMinutes}} minutes).
+      </p>
+
+      <div class="section-title">1. Below shift target</div>
+      <p class="intro" style="margin-top:0;">Users who did not reach the daily punched total.</p>
+      {{belowTargetTable}}
+
+      <div class="section-title">2. Met or exceeded shift target</div>
+      <p class="intro" style="margin-top:0;">Overtime minutes and extra target multiples are <strong>statistical only</strong> (not billable).</p>
+      {{metOrOverTable}}
+
+      <p class="note">Extra target multiples = full shift-length increments beyond the minimum, i.e. floor((total punched − target) ÷ target) when punched exceeds target.</p>
+    </div>
+    <div class="footer">
+      Automated daily report from CA Rahul Gupta Office Portal. Please do not reply directly to this email.
+    </div>
+  </div>
+</body>
+</html>

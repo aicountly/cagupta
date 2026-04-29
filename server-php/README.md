@@ -160,6 +160,22 @@ The migration is idempotent — safe to run multiple times.
 
 The project uses standalone CLI scripts for scheduled notifications.
 
+Schedule the super-admin **daily timesheet report** one hour **before** per-user low-timesheet emails so the digest arrives first; both use the **same previous calendar day**.
+
+### Super admin daily timesheet report (5:00 AM)
+
+Sends **one** consolidated email to `SUPERADMIN_NOTIFY_EMAIL` with two sections: users **below** the daily shift target (with billable / non-billable / shortfall), and users who **met or exceeded** target (overtime minutes and extra target multiples — statistical only, not billable). Evaluates the **previous day** (`510` minute target, same as intimation).
+
+```bash
+0 5 * * * php /absolute/path/to/server-php/cli/send-superadmin-timesheet-report.php >> /absolute/path/to/logs/superadmin-timesheet.log 2>&1
+```
+
+Optional dry run:
+
+```bash
+php cli/send-superadmin-timesheet-report.php --dry-run
+```
+
 ### Daily low-timesheet intimation (6:00 AM)
 
 This checks each active user's **previous day** timesheet and sends an email only when punched time is below `510` minutes.
