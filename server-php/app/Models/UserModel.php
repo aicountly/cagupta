@@ -130,7 +130,7 @@ class UserModel
         $stmt = $this->db->prepare(
             "SELECT u.id, u.name, u.email, u.is_active, u.is_email_verified,
                     u.avatar_url, u.last_login_at, u.login_provider, u.created_at,
-                    u.planned_billable_rate_per_hour,
+                    u.planned_billable_rate_per_hour, u.shift_target_minutes,
                     r.name AS role_name, r.display_name AS role_display_name
              FROM users u
              LEFT JOIN roles r ON r.id = u.role_id
@@ -162,9 +162,9 @@ class UserModel
 
         $stmt = $this->db->prepare(
             'INSERT INTO users (name, email, password_hash, role_id, is_active, is_email_verified,
-                                login_provider, sso_provider_id, avatar_url, created_by)
+                                login_provider, sso_provider_id, avatar_url, created_by, shift_target_minutes)
              VALUES (:name, :email, :password_hash, :role_id, :is_active, :is_email_verified,
-                     :login_provider, :sso_provider_id, :avatar_url, :created_by)
+                     :login_provider, :sso_provider_id, :avatar_url, :created_by, :shift_target_minutes)
              RETURNING id'
         );
         $stmt->execute([
@@ -178,6 +178,7 @@ class UserModel
             ':sso_provider_id' => $data['sso_provider_id'] ?? null,
             ':avatar_url'      => $data['avatar_url'] ?? null,
             ':created_by'      => $data['created_by'] ?? null,
+            ':shift_target_minutes' => isset($data['shift_target_minutes']) ? (int)$data['shift_target_minutes'] : 510,
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -192,7 +193,7 @@ class UserModel
         $setClauses = [];
         $params     = [':id' => $id];
 
-        $allowed = ['name', 'email', 'role_id', 'is_active', 'avatar_url', 'last_login_at', 'sso_provider_id', 'planned_billable_rate_per_hour'];
+        $allowed = ['name', 'email', 'role_id', 'is_active', 'avatar_url', 'last_login_at', 'sso_provider_id', 'planned_billable_rate_per_hour', 'shift_target_minutes'];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
                 $setClauses[]       = "{$field} = :{$field}";

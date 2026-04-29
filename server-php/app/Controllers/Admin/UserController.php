@@ -103,13 +103,23 @@ class UserController extends BaseController
             $this->assertDelegateAssignableRole((int)($body['role_id'] ?? 0));
         }
 
+        $shiftTarget = 510;
+        if (array_key_exists('shift_target_minutes', $body)) {
+            $stv = (int)$body['shift_target_minutes'];
+            if ($stv < 60 || $stv > 1440) {
+                $this->error('shift_target_minutes must be between 60 and 1440.', 422);
+            }
+            $shiftTarget = $stv;
+        }
+
         $newId = $this->users->create([
-            'name'       => $name,
-            'email'      => $email,
-            'password'   => $pass,
-            'role_id'    => isset($body['role_id']) ? (int)$body['role_id'] : null,
-            'is_active'  => isset($body['is_active']) ? (bool)$body['is_active'] : true,
-            'created_by' => $actingUser ? (int)$actingUser['id'] : null,
+            'name'                 => $name,
+            'email'                => $email,
+            'password'             => $pass,
+            'role_id'              => isset($body['role_id']) ? (int)$body['role_id'] : null,
+            'is_active'            => isset($body['is_active']) ? (bool)$body['is_active'] : true,
+            'created_by'           => $actingUser ? (int)$actingUser['id'] : null,
+            'shift_target_minutes' => $shiftTarget,
         ]);
 
         $roleRow = isset($body['role_id']) ? $this->roles->find((int)$body['role_id']) : null;
@@ -209,6 +219,13 @@ class UserController extends BaseController
                 $this->error('Password must be at least 8 characters.', 422);
             }
             $data['password'] = $pass;
+        }
+        if (array_key_exists('shift_target_minutes', $body)) {
+            $stv = (int)$body['shift_target_minutes'];
+            if ($stv < 60 || $stv > 1440) {
+                $this->error('shift_target_minutes must be between 60 and 1440.', 422);
+            }
+            $data['shift_target_minutes'] = $stv;
         }
 
         $this->users->update($id, $data);
@@ -399,6 +416,7 @@ class UserController extends BaseController
             'planned_billable_rate_per_hour' => isset($user['planned_billable_rate_per_hour']) && $user['planned_billable_rate_per_hour'] !== null && $user['planned_billable_rate_per_hour'] !== ''
                 ? round((float)$user['planned_billable_rate_per_hour'], 2)
                 : null,
+            'shift_target_minutes' => (int)($user['shift_target_minutes'] ?? 510),
         ];
     }
 }

@@ -13,10 +13,12 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/AuthContext';
 import { useStaffUsers } from '../hooks/useStaffUsers';
 import { useTimesheetReportFilters } from '../hooks/useTimesheetReportFilters';
 import { getTimesheetInsights, TIME_ACTIVITY_TYPES } from '../services/timeEntryService';
+import DateRangeSelector from '../components/common/DateRangeSelector';
 
 function fmtHours(mins) {
   const h = mins / 60;
@@ -27,7 +29,8 @@ export default function TimesheetsReport() {
   const { hasPermission } = useAuth();
   const { staffUsers } = useStaffUsers();
   const canView = hasPermission('services.view');
-  const { filters, updateFilter, resetFilters } = useTimesheetReportFilters();
+  const { filters, updateFilter, setPreset, resetFilters } = useTimesheetReportFilters();
+  const navigate = useNavigate();
   const [payload, setPayload] = useState(null);
   const [error, setError] = useState('');
 
@@ -119,14 +122,14 @@ export default function TimesheetsReport() {
             ))}
           </select>
         </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#475569' }}>
-          From
-          <input type="date" value={filters.dateFrom} onChange={(e) => updateFilter('dateFrom', e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }} />
-        </label>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#475569' }}>
-          To
-          <input type="date" value={filters.dateTo} onChange={(e) => updateFilter('dateTo', e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }} />
-        </label>
+        <DateRangeSelector
+          preset={filters.preset}
+          onPresetChange={setPreset}
+          dateFrom={filters.dateFrom}
+          onDateFromChange={(v) => updateFilter('dateFrom', v)}
+          dateTo={filters.dateTo}
+          onDateToChange={(v) => updateFilter('dateTo', v)}
+        />
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#475569' }}>
           Bucket
           <select value={filters.bucket} onChange={(e) => updateFilter('bucket', e.target.value)} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0', minWidth: 130, fontSize: 13 }}>
@@ -238,17 +241,30 @@ export default function TimesheetsReport() {
                 <td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#94a3b8' }}>No time entries in this range.</td>
               </tr>
             ) : (
-              rows.map((r, i) => (
-                <tr key={`${r.user_id}-${r.service_id}-${i}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '10px 12px', fontWeight: 600 }}>{r.user_name}</td>
-                  <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{r.service_id}</td>
-                  <td style={{ padding: '10px 12px' }}>{r.service_type}</td>
-                  <td style={{ padding: '10px 12px' }}>{r.client_name}</td>
-                  <td style={{ padding: '10px 12px', color: r.group_name ? '#334155' : '#94a3b8' }}>{r.group_name || '—'}</td>
-                  <td style={{ padding: '10px 12px' }}>{fmtHours(r.billable_minutes)}</td>
-                  <td style={{ padding: '10px 12px' }}>{fmtHours(r.non_billable_minutes)}</td>
-                </tr>
-              ))
+              rows.map((r, i) => {
+                const params = new URLSearchParams({
+                  userId: String(r.user_id || ''),
+                  dateFrom: filters.dateFrom,
+                  dateTo: filters.dateTo,
+                  preset: 'custom',
+                });
+                return (
+                  <tr
+                    key={`${r.user_id}-${r.service_id}-${i}`}
+                    style={{ borderBottom: '1px solid #f1f5f9', cursor: 'pointer' }}
+                    onClick={() => navigate(`/reports/timesheets/shift-target?${params}`)}
+                    title="View Staff Punch vs Target for this user and period"
+                  >
+                    <td style={{ padding: '10px 12px', fontWeight: 600, color: '#2563eb', textDecoration: 'underline dotted' }}>{r.user_name}</td>
+                    <td style={{ padding: '10px 12px', fontFamily: 'monospace' }}>{r.service_id}</td>
+                    <td style={{ padding: '10px 12px' }}>{r.service_type}</td>
+                    <td style={{ padding: '10px 12px' }}>{r.client_name}</td>
+                    <td style={{ padding: '10px 12px', color: r.group_name ? '#334155' : '#94a3b8' }}>{r.group_name || '—'}</td>
+                    <td style={{ padding: '10px 12px' }}>{fmtHours(r.billable_minutes)}</td>
+                    <td style={{ padding: '10px 12px' }}>{fmtHours(r.non_billable_minutes)}</td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

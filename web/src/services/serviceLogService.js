@@ -48,7 +48,7 @@ async function parseResponse(res) {
  * @returns {Promise<Array>}
  */
 export async function getServiceLogs(serviceId) {
-  const res = await fetch(`${API_BASE}/api/admin/services/${serviceId}/logs`, {
+  const res = await fetch(`${API_BASE}/admin/services/${serviceId}/logs`, {
     headers: authHeaders(),
   });
   const json = await parseResponse(res);
@@ -70,7 +70,7 @@ export async function getServiceLogs(serviceId) {
  * @returns {Promise<object>}
  */
 export async function createServiceLog(serviceId, payload) {
-  const res = await fetch(`${API_BASE}/api/admin/services/${serviceId}/logs`, {
+  const res = await fetch(`${API_BASE}/admin/services/${serviceId}/logs`, {
     method: 'POST',
     headers: authHeaders(),
     body: JSON.stringify(payload),
@@ -96,7 +96,7 @@ export async function createServiceLog(serviceId, payload) {
  * @returns {Promise<object>}
  */
 export async function updateServiceLog(serviceId, logId, payload) {
-  const res = await fetch(`${API_BASE}/api/admin/services/${serviceId}/logs/${logId}`, {
+  const res = await fetch(`${API_BASE}/admin/services/${serviceId}/logs/${logId}`, {
     method: 'PATCH',
     headers: authHeaders(),
     body: JSON.stringify(payload),
@@ -114,7 +114,7 @@ export async function updateServiceLog(serviceId, logId, payload) {
  * @returns {Promise<void>}
  */
 export async function deleteServiceLog(serviceId, logId) {
-  const res = await fetch(`${API_BASE}/api/admin/services/${serviceId}/logs/${logId}`, {
+  const res = await fetch(`${API_BASE}/admin/services/${serviceId}/logs/${logId}`, {
     method: 'DELETE',
     headers: authHeaders(),
   });
@@ -130,7 +130,7 @@ export async function deleteServiceLog(serviceId, logId) {
  * @returns {Promise<object>}  Updated log entry
  */
 export async function sendLogReminder(serviceId, logId) {
-  const res = await fetch(`${API_BASE}/api/admin/services/${serviceId}/logs/${logId}/remind`, {
+  const res = await fetch(`${API_BASE}/admin/services/${serviceId}/logs/${logId}/remind`, {
     method: 'POST',
     headers: authHeaders(),
   });
@@ -147,7 +147,7 @@ export async function sendLogReminder(serviceId, logId) {
  */
 export async function getPendingFollowUps({ daysAhead = 30 } = {}) {
   const params = new URLSearchParams({ days_ahead: String(daysAhead) });
-  const res = await fetch(`${API_BASE}/api/admin/services/pending-followups?${params}`, {
+  const res = await fetch(`${API_BASE}/admin/services/pending-followups?${params}`, {
     headers: authHeaders(),
   });
   const json = await parseResponse(res);
@@ -161,7 +161,7 @@ export async function getPendingFollowUps({ daysAhead = 30 } = {}) {
  * @returns {Promise<number>}
  */
 export async function getOverdueFollowUpCount() {
-  const res = await fetch(`${API_BASE}/api/admin/services/logs/overdue-count`, {
+  const res = await fetch(`${API_BASE}/admin/services/logs/overdue-count`, {
     headers: authHeaders(),
   });
   const json = await parseResponse(res);
@@ -176,7 +176,7 @@ export async function getOverdueFollowUpCount() {
  * @returns {Promise<Array>}
  */
 export async function getClientServiceLogs(serviceId) {
-  const res = await fetch(`${API_BASE}/api/client/services/${serviceId}/logs`, {
+  const res = await fetch(`${API_BASE}/client/services/${serviceId}/logs`, {
     headers: authHeaders(),
   });
   const json = await parseResponse(res);

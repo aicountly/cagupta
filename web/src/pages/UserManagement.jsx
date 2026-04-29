@@ -60,11 +60,12 @@ function StatusBadge({ active }) {
 
 function UserModal({ mode, user, roles, onClose, onSave }) {
   const [form, setForm] = useState({
-    name:      user?.name     || '',
-    email:     user?.email    || '',
-    password:  '',
-    role_id:   user?.role_id  || (roles[0]?.id ?? ''),
-    is_active: user?.is_active !== false,
+    name:                 user?.name     || '',
+    email:                user?.email    || '',
+    password:             '',
+    role_id:              user?.role_id  || (roles[0]?.id ?? ''),
+    is_active:            user?.is_active !== false,
+    shift_target_minutes: user?.shift_target_minutes ?? 510,
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -148,6 +149,18 @@ function UserModal({ mode, user, roles, onClose, onSave }) {
                 </option>
               ))}
             </select>
+
+            <label style={styles.label}>Daily target (minutes)</label>
+            <input
+              style={styles.input}
+              type="number"
+              min={60}
+              max={1440}
+              step={1}
+              value={form.shift_target_minutes}
+              onChange={(e) => set('shift_target_minutes', Number(e.target.value))}
+              placeholder="510"
+            />
 
             {mode === 'edit' && (
               <>

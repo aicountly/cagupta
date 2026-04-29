@@ -1,0 +1,2 @@
+ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS shift_target_minutes INTEGER NOT NULL DEFAULT 510;

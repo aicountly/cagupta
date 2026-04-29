@@ -63,7 +63,7 @@ function formatMinutes(int $minutes): string
 /**
  * @param array<int, array<string, mixed>> $rows
  */
-function renderBelowTargetTable(array $rows, int $targetMinutes): string
+function renderBelowTargetTable(array $rows): string
 {
     if ($rows === []) {
         return '<p class="empty-note">No users in this category.</p>';
@@ -77,17 +77,18 @@ function renderBelowTargetTable(array $rows, int $targetMinutes): string
     foreach ($rows as $row) {
         $name = $h(trim((string)($row['user_name'] ?? 'User')));
         $email = $h(trim((string)($row['user_email'] ?? '')));
+        $rowTarget = (int)($row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
         $bill = (int)($row['billable_minutes'] ?? 0);
         $non = (int)($row['non_billable_minutes'] ?? 0);
         $punched = (int)($row['total_punched_minutes'] ?? 0);
-        $idle = max(0, $targetMinutes - $punched);
+        $idle = max(0, $rowTarget - $punched);
         $out .= '<tr>'
             . "<td>{$name}</td>"
             . "<td><small>{$email}</small></td>"
             . '<td>' . $h(formatMinutes($bill) . " ({$bill})") . '</td>'
             . '<td>' . $h(formatMinutes($non) . " ({$non})") . '</td>'
             . '<td>' . $h(formatMinutes($punched) . " ({$punched})") . '</td>'
-            . '<td>' . $h(formatMinutes($targetMinutes) . " ({$targetMinutes} min)") . '</td>'
+            . '<td>' . $h(formatMinutes($rowTarget) . " ({$rowTarget} min)") . '</td>'
             . '<td>' . $h(formatMinutes($idle) . " ({$idle})") . '</td>'
             . '</tr>';
     }
@@ -97,7 +98,7 @@ function renderBelowTargetTable(array $rows, int $targetMinutes): string
 /**
  * @param array<int, array<string, mixed>> $rows
  */
-function renderMetOrOverTable(array $rows, int $targetMinutes): string
+function renderMetOrOverTable(array $rows): string
 {
     if ($rows === []) {
         return '<p class="empty-note">No users in this category.</p>';
@@ -111,14 +112,15 @@ function renderMetOrOverTable(array $rows, int $targetMinutes): string
     foreach ($rows as $row) {
         $name = $h(trim((string)($row['user_name'] ?? 'User')));
         $email = $h(trim((string)($row['user_email'] ?? '')));
+        $rowTarget = (int)($row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
         $punched = (int)($row['total_punched_minutes'] ?? 0);
-        $overtime = max(0, $punched - $targetMinutes);
-        $extraMultiples = $punched > $targetMinutes ? intdiv($punched - $targetMinutes, $targetMinutes) : 0;
+        $overtime = max(0, $punched - $rowTarget);
+        $extraMultiples = $punched > $rowTarget ? intdiv($punched - $rowTarget, $rowTarget) : 0;
         $out .= '<tr>'
             . "<td>{$name}</td>"
             . "<td><small>{$email}</small></td>"
             . '<td>' . $h(formatMinutes($punched) . " ({$punched})") . '</td>'
-            . '<td>' . $h(formatMinutes($targetMinutes) . " ({$targetMinutes})") . '</td>'
+            . '<td>' . $h(formatMinutes($rowTarget) . " ({$rowTarget})") . '</td>'
             . '<td>' . $h(formatMinutes($overtime) . " ({$overtime})") . '</td>'
             . '<td>' . $h((string)$extraMultiples) . '</td>'
             . '</tr>';
@@ -142,8 +144,7 @@ if ($targetDate === null) {
 }
 
 $model = new TimeEntryModel();
-$targetMinutes = TimeEntryModel::SHIFT_TARGET_MINUTES;
-$rows = $model->listDailyUserPunchedSummary($targetDate, $targetMinutes);
+$rows = $model->listDailyUserPunchedSummary($targetDate);
 
 if ($rows === []) {
     echo "[superadmin-timesheet-report] No active users found for {$targetDate}." . PHP_EOL;
@@ -155,7 +156,8 @@ $metOrOver = [];
 
 foreach ($rows as $row) {
     $punched = (int)($row['total_punched_minutes'] ?? 0);
-    if ($punched < $targetMinutes) {
+    $rowTarget = (int)($row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
+    if ($punched < $rowTarget) {
         $below[] = $row;
     } else {
         $metOrOver[] = $row;
@@ -163,17 +165,18 @@ foreach ($rows as $row) {
 }
 
 $labelDate = date('d M Y', (int)strtotime($targetDate));
-$targetFormatted = formatMinutes($targetMinutes);
+$defaultTarget = TimeEntryModel::SHIFT_TARGET_MINUTES;
+$defaultTargetFormatted = formatMinutes($defaultTarget);
 
-$belowHtml = renderBelowTargetTable($below, $targetMinutes);
-$metHtml = renderMetOrOverTable($metOrOver, $targetMinutes);
+$belowHtml = renderBelowTargetTable($below);
+$metHtml = renderMetOrOverTable($metOrOver);
 
 $htmlBody = BrevoMailer::renderTemplate('superadmin-timesheet-daily', [
-    'reportDate' => htmlspecialchars($labelDate, ENT_QUOTES, 'UTF-8'),
-    'targetMinutes' => (string)$targetMinutes,
-    'targetFormatted' => htmlspecialchars($targetFormatted, ENT_QUOTES, 'UTF-8'),
+    'reportDate'      => htmlspecialchars($labelDate, ENT_QUOTES, 'UTF-8'),
+    'targetMinutes'   => (string)$defaultTarget,
+    'targetFormatted' => htmlspecialchars($defaultTargetFormatted, ENT_QUOTES, 'UTF-8'),
     'belowTargetTable' => $belowHtml,
-    'metOrOverTable' => $metHtml,
+    'metOrOverTable'   => $metHtml,
 ]);
 
 if ($htmlBody === '') {

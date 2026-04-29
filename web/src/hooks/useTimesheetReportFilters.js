@@ -1,48 +1,83 @@
 import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { getPresetDates } from '../utils/datePresets';
 
-function defaultDateBounds() {
-  const now = new Date();
-  const day = now.getDay();
-  const mondayDelta = day === 0 ? -6 : 1 - day;
-  const monday = new Date(now);
-  monday.setDate(now.getDate() + mondayDelta);
-  const sunday = new Date(monday);
-  sunday.setDate(monday.getDate() + 6);
-  const toYmd = (d) => d.toISOString().slice(0, 10);
-  return { from: toYmd(monday), to: toYmd(sunday) };
+const DEFAULT_PRESET = 'this_week';
+
+function buildInitialFilters(searchParams) {
+  const urlPreset   = searchParams.get('preset')   || '';
+  const urlDateFrom = searchParams.get('dateFrom')  || '';
+  const urlDateTo   = searchParams.get('dateTo')    || '';
+  const urlUserId   = searchParams.get('userId')    || '';
+
+  if (urlPreset && urlDateFrom && urlDateTo) {
+    return {
+      preset:         urlPreset,
+      dateFrom:       urlDateFrom,
+      dateTo:         urlDateTo,
+      bucket:         'weekly',
+      billableType:   'all',
+      userId:         urlUserId,
+      clientId:       '',
+      organizationId: '',
+      serviceId:      '',
+      groupId:        '',
+    };
+  }
+
+  const preset = DEFAULT_PRESET;
+  const { from, to } = getPresetDates(preset);
+  return {
+    preset,
+    dateFrom:       from,
+    dateTo:         to,
+    bucket:         'weekly',
+    billableType:   'all',
+    userId:         urlUserId,
+    clientId:       '',
+    organizationId: '',
+    serviceId:      '',
+    groupId:        '',
+  };
 }
 
 export function useTimesheetReportFilters() {
-  const bounds = useMemo(() => defaultDateBounds(), []);
-  const [filters, setFilters] = useState({
-    dateFrom: bounds.from,
-    dateTo: bounds.to,
-    bucket: 'weekly',
-    billableType: 'all',
-    userId: '',
-    clientId: '',
-    organizationId: '',
-    serviceId: '',
-    groupId: '',
-  });
+  const [searchParams] = useSearchParams();
+  const initialFilters = useMemo(() => buildInitialFilters(searchParams), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [filters, setFilters] = useState(initialFilters);
 
   const updateFilter = (key, value) => {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
+  const setPreset = (preset) => {
+    if (preset === 'custom') {
+      setFilters((prev) => ({ ...prev, preset }));
+    } else {
+      const dates = getPresetDates(preset);
+      setFilters((prev) => ({
+        ...prev,
+        preset,
+        ...(dates ? { dateFrom: dates.from, dateTo: dates.to } : {}),
+      }));
+    }
+  };
+
   const resetFilters = () => {
+    const { from, to } = getPresetDates(DEFAULT_PRESET);
     setFilters({
-      dateFrom: bounds.from,
-      dateTo: bounds.to,
-      bucket: 'weekly',
-      billableType: 'all',
-      userId: '',
-      clientId: '',
+      preset:         DEFAULT_PRESET,
+      dateFrom:       from,
+      dateTo:         to,
+      bucket:         'weekly',
+      billableType:   'all',
+      userId:         '',
+      clientId:       '',
       organizationId: '',
-      serviceId: '',
-      groupId: '',
+      serviceId:      '',
+      groupId:        '',
     });
   };
 
-  return { filters, updateFilter, resetFilters };
+  return { filters, updateFilter, setPreset, resetFilters };
 }

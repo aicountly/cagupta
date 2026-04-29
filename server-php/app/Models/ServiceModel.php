@@ -15,7 +15,7 @@ class ServiceModel
 
     /** Subselects for assignee list (expects main table alias `s` = services). */
     private const SQL_ASSIGNEE_IDS_JSON = <<<'SQL'
-(SELECT COALESCE(json_agg(sa.user_id ORDER BY u_asg.name NULLS LAST), '[]'::json)::text
+(SELECT COALESCE(json_agg(sa.user_id ORDER BY sa.id), '[]'::json)::text
  FROM service_assignees sa
  JOIN users u_asg ON u_asg.id = sa.user_id
  WHERE sa.service_id = s.id)
@@ -259,6 +259,18 @@ SQL;
                 }
             }
         }
+
+        // Ensure the incharge (assigned_to) is always at position 0.
+        $assignedTo = isset($row['assigned_to']) && is_numeric($row['assigned_to'])
+            ? (int)$row['assigned_to']
+            : null;
+        if ($assignedTo !== null && in_array($assignedTo, $ids, true)) {
+            $ids = array_merge(
+                [$assignedTo],
+                array_values(array_filter($ids, fn($x) => $x !== $assignedTo))
+            );
+        }
+
         $row['assignee_user_ids'] = $ids;
 
         $namesAgg = isset($row['assignee_names_agg']) ? trim((string)$row['assignee_names_agg']) : '';

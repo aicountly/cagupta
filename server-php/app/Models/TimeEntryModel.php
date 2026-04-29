@@ -565,13 +565,10 @@ class TimeEntryModel
      *
      * @return array<int, array<string, mixed>>
      */
-    public function listDailyUserPunchedSummary(string $workDate, int $shiftTargetMinutes = self::SHIFT_TARGET_MINUTES): array
+    public function listDailyUserPunchedSummary(string $workDate): array
     {
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $workDate)) {
             return [];
-        }
-        if ($shiftTargetMinutes <= 0) {
-            $shiftTargetMinutes = self::SHIFT_TARGET_MINUTES;
         }
 
         $stmt = $this->db->prepare(
@@ -579,10 +576,11 @@ class TimeEntryModel
                 u.id AS user_id,
                 COALESCE(NULLIF(TRIM(u.name), ''), TRIM(u.email), 'User') AS user_name,
                 TRIM(u.email) AS user_email,
+                u.shift_target_minutes,
                 COALESCE(SUM(te.duration_minutes) FILTER (WHERE te.is_billable), 0) AS billable_minutes,
                 COALESCE(SUM(te.duration_minutes) FILTER (WHERE NOT te.is_billable), 0) AS non_billable_minutes,
                 COALESCE(SUM(te.duration_minutes), 0) AS total_punched_minutes,
-                GREATEST(0, :target_minutes - COALESCE(SUM(te.duration_minutes), 0)) AS idle_minutes
+                GREATEST(0, u.shift_target_minutes - COALESCE(SUM(te.duration_minutes), 0)) AS idle_minutes
             FROM users u
             LEFT JOIN time_entries te
                 ON te.user_id = u.id
@@ -590,13 +588,12 @@ class TimeEntryModel
                AND te.timer_status <> :running
             WHERE u.is_active = TRUE
               AND TRIM(COALESCE(u.email, '')) <> ''
-            GROUP BY u.id, u.name, u.email
+            GROUP BY u.id, u.name, u.email, u.shift_target_minutes
             ORDER BY u.name ASC, u.id ASC"
         );
         $stmt->execute([
             ':work_date' => $workDate,
-            ':running' => 'running',
-            ':target_minutes' => $shiftTargetMinutes,
+            ':running'   => 'running',
         ]);
 
         return $stmt->fetchAll();
@@ -611,14 +608,10 @@ class TimeEntryModel
     public function listShiftTargetSummaryForDateRange(
         string $dateFrom,
         string $dateTo,
-        ?int $filterUserId,
-        int $shiftTargetMinutes = self::SHIFT_TARGET_MINUTES
+        ?int $filterUserId
     ): array {
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo)) {
             return [];
-        }
-        if ($shiftTargetMinutes <= 0) {
-            $shiftTargetMinutes = self::SHIFT_TARGET_MINUTES;
         }
         try {
             $from = new \DateTimeImmutable($dateFrom);
@@ -630,15 +623,12 @@ class TimeEntryModel
             return [];
         }
         $dayCount = (int)$from->diff($to)->days + 1;
-        $totalTargetMinutes = $dayCount * $shiftTargetMinutes;
 
         $uidClause = '';
         $params = [
-            ':df' => $dateFrom,
-            ':dt' => $dateTo,
+            ':df'      => $dateFrom,
+            ':dt'      => $dateTo,
             ':running' => 'running',
-            ':total_target_b' => $totalTargetMinutes,
-            ':total_target_c' => $totalTargetMinutes,
         ];
         if ($filterUserId !== null && $filterUserId > 0) {
             $uidClause = ' AND u.id = :filter_uid';
@@ -650,11 +640,13 @@ class TimeEntryModel
                 u.id AS user_id,
                 COALESCE(NULLIF(TRIM(u.name), ''), TRIM(u.email), 'User') AS user_name,
                 TRIM(u.email) AS user_email,
+                u.shift_target_minutes,
+                ({$dayCount} * u.shift_target_minutes) AS total_target_minutes,
                 COALESCE(SUM(te.duration_minutes) FILTER (WHERE te.is_billable), 0) AS billable_minutes,
                 COALESCE(SUM(te.duration_minutes) FILTER (WHERE NOT te.is_billable), 0) AS non_billable_minutes,
                 COALESCE(SUM(te.duration_minutes), 0) AS total_punched_minutes,
-                GREATEST(0, :total_target_b - COALESCE(SUM(te.duration_minutes), 0)) AS deficit_minutes,
-                GREATEST(0, COALESCE(SUM(te.duration_minutes), 0) - :total_target_c) AS overtime_minutes
+                GREATEST(0, ({$dayCount} * u.shift_target_minutes) - COALESCE(SUM(te.duration_minutes), 0)) AS deficit_minutes,
+                GREATEST(0, COALESCE(SUM(te.duration_minutes), 0) - ({$dayCount} * u.shift_target_minutes)) AS overtime_minutes
             FROM users u
             LEFT JOIN time_entries te
                 ON te.user_id = u.id
@@ -664,18 +656,12 @@ class TimeEntryModel
             WHERE u.is_active = TRUE
               AND TRIM(COALESCE(u.email, '')) <> ''
               {$uidClause}
-            GROUP BY u.id, u.name, u.email
+            GROUP BY u.id, u.name, u.email, u.shift_target_minutes
             ORDER BY u.name ASC, u.id ASC"
         );
         $stmt->execute($params);
 
-        $rows = $stmt->fetchAll();
-        foreach ($rows as &$row) {
-            $row['total_target_minutes'] = $totalTargetMinutes;
-        }
-        unset($row);
-
-        return $rows;
+        return $stmt->fetchAll();
     }
 
     /**

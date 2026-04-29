@@ -76,8 +76,7 @@ if ($targetDate === null) {
 }
 
 $model = new TimeEntryModel();
-$targetMinutes = TimeEntryModel::SHIFT_TARGET_MINUTES;
-$rows = $model->listDailyUserPunchedSummary($targetDate, $targetMinutes);
+$rows = $model->listDailyUserPunchedSummary($targetDate);
 
 if (empty($rows)) {
     echo "[timesheet-intimation] No active users found for {$targetDate}." . PHP_EOL;
@@ -97,6 +96,7 @@ foreach ($rows as $row) {
         continue;
     }
 
+    $targetMinutes = (int)($row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
     $billable = (int)($row['billable_minutes'] ?? 0);
     $nonBillable = (int)($row['non_billable_minutes'] ?? 0);
     $punched = (int)($row['total_punched_minutes'] ?? 0);

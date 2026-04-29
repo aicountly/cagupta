@@ -89,6 +89,7 @@ export default function ServiceEngagementManage() {
   const [status, setStatus] = useState('not_started');
   const [clientName, setClientName] = useState('');
   const [assigneeUserIds, setAssigneeUserIds] = useState([]);
+  const [inchargeUserId, setInchargeUserId] = useState(null);
   const [tab, setTab] = useState('overview');
   const [auditRows, setAuditRows] = useState([]);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -185,7 +186,14 @@ export default function ServiceEngagementManage() {
     const idStr = String(userId);
     setAssigneeUserIds((prev) => {
       const has = prev.some((x) => String(x) === idStr);
-      if (has) return prev.filter((x) => String(x) !== idStr);
+      if (has) {
+        const next = prev.filter((x) => String(x) !== idStr);
+        // If the removed member was the incharge, promote the next remaining member.
+        if (String(inchargeUserId) === idStr) {
+          setInchargeUserId(next.length > 0 ? next[0] : null);
+        }
+        return next;
+      }
       return [...prev, Number(userId)];
     });
   }
@@ -194,6 +202,10 @@ export default function ServiceEngagementManage() {
     setAssigneeUserIds((prev) =>
       prev.map((x) => (String(x) === String(oldId) ? Number(newId) : x)),
     );
+    // If the replaced member was the incharge, transfer incharge to the replacement.
+    if (String(inchargeUserId) === String(oldId)) {
+      setInchargeUserId(Number(newId));
+    }
     setReplacingMemberId(null);
   }
 
@@ -211,6 +223,7 @@ export default function ServiceEngagementManage() {
           ? eng.assigneeUserIds.map(Number)
           : (eng.assignedToUserId != null ? [eng.assignedToUserId] : []);
         setAssigneeUserIds(ids);
+        setInchargeUserId(ids.length > 0 ? ids[0] : null);
         const d0 = eng.dueDate || '';
         setDueDate(d0);
         setInitialDueDate(d0);
@@ -292,9 +305,12 @@ export default function ServiceEngagementManage() {
     setError('');
     setToast('');
     try {
+      const orderedAssigneeIds = inchargeUserId != null
+        ? [inchargeUserId, ...assigneeUserIds.filter((x) => x !== inchargeUserId)]
+        : assigneeUserIds;
       const payload = {
         status,
-        assigneeUserIds,
+        assigneeUserIds: orderedAssigneeIds,
         dueDate,
         feeAgreed: fee.trim() === '' ? null : fee,
         notes,
@@ -317,6 +333,7 @@ export default function ServiceEngagementManage() {
       }
       if (Array.isArray(updated.assigneeUserIds)) {
         setAssigneeUserIds(updated.assigneeUserIds);
+        setInchargeUserId(updated.assigneeUserIds.length > 0 ? updated.assigneeUserIds[0] : null);
       }
       setInitialClientFacing(clientFacingRestricted);
       setCfOtp('');
@@ -902,7 +919,7 @@ export default function ServiceEngagementManage() {
               <div style={sectionTitle}>Team ({assigneeUserIds.length})</div>
             </div>
             <p style={hint}>
-              Manage everyone assigned to this engagement. The first member is treated as the primary owner in legacy reports.
+              Manage everyone assigned to this engagement. Use <strong>Set as Incharge</strong> to designate the primary responsible member.
               Click <strong>Save changes</strong> to apply.
             </p>
 
@@ -910,9 +927,10 @@ export default function ServiceEngagementManage() {
               <div style={{ color: '#94a3b8', fontSize: 13, padding: '12px 0' }}>No team members assigned yet.</div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-                {assigneeUserIds.map((uid, idx) => {
+                {assigneeUserIds.map((uid) => {
                   const u = staffOptionsForTeam.find((x) => String(x.id) === String(uid)) || { id: uid, name: `User #${uid}` };
                   const isReplacing = replacingMemberId === uid;
+                  const isIncharge = String(uid) === String(inchargeUserId);
                   const availableForReplace = staffUsers.filter(
                     (s) => !assigneeUserIds.some((x) => String(x) === String(s.id)),
                   );
@@ -922,8 +940,8 @@ export default function ServiceEngagementManage() {
                         <div style={memberAvatar}>{u.name.charAt(0).toUpperCase()}</div>
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1F3B' }}>{u.name}</div>
-                          {idx === 0 && (
-                            <div style={{ fontSize: 11, color: '#F37920', fontWeight: 500 }}>Primary owner</div>
+                          {isIncharge && (
+                            <div style={{ fontSize: 11, color: '#F37920', fontWeight: 500 }}>Incharge</div>
                           )}
                         </div>
                       </div>
@@ -953,6 +971,15 @@ export default function ServiceEngagementManage() {
                           </>
                         ) : (
                           <>
+                            {!isIncharge && (
+                              <button
+                                type="button"
+                                style={teamBtnSetIncharge}
+                                onClick={() => setInchargeUserId(uid)}
+                              >
+                                Set as Incharge
+                              </button>
+                            )}
                             <button
                               type="button"
                               style={teamBtnReplace}
@@ -1490,6 +1517,10 @@ const teamBtnRemove = {
 const teamBtnReplace = {
   padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
   background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0',
+};
+const teamBtnSetIncharge = {
+  padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
+  background: '#FEF0E6', color: '#F37920', border: '1px solid rgba(243,121,32,0.35)',
 };
 const teamBtnCancel = {
   padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',

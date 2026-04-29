@@ -248,9 +248,8 @@ class TimeEntryController extends BaseController
             $filterUserId = $actorUserId;
         }
 
-        $shiftTarget = TimeEntryModel::SHIFT_TARGET_MINUTES;
         try {
-            $rows = $this->entries->listShiftTargetSummaryForDateRange($from, $to, $filterUserId, $shiftTarget);
+            $rows = $this->entries->listShiftTargetSummaryForDateRange($from, $to, $filterUserId);
         } catch (\Throwable $e) {
             if (self::isDbPermissionDenied($e)) {
                 $this->error(self::dbGrantDeniedMessage('SELECT on time_entries and related tables'), 503);
@@ -258,14 +257,11 @@ class TimeEntryController extends BaseController
             throw $e;
         }
 
-        $totalTargetMinutes = $dayCount * $shiftTarget;
         $this->success([
             'meta' => [
                 'date_from' => $from,
-                'date_to' => $to,
+                'date_to'   => $to,
                 'day_count' => $dayCount,
-                'shift_target_minutes_per_day' => $shiftTarget,
-                'total_target_minutes' => $totalTargetMinutes,
             ],
             'rows' => $rows,
         ], 'Shift target timesheet report retrieved');
