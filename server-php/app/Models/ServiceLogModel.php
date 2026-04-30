@@ -204,15 +204,8 @@ class ServiceLogModel
      */
     public function pendingFollowUps(int $daysAhead = 30): array
     {
-        // #region agent log
-        $__logFile = dirname(__DIR__, 2) . '/debug-212930.log';
-        $__logEntry = json_encode(['sessionId'=>'212930','hypothesisId'=>'entry','location'=>'ServiceLogModel.php:pendingFollowUps','message'=>'pendingFollowUps called','data'=>['daysAhead'=>$daysAhead],'timestamp'=>round(microtime(true)*1000)]) . "\n";
-        file_put_contents($__logFile, $__logEntry, FILE_APPEND);
-        // #endregion
-
         $cutoff = (new \DateTimeImmutable('today'))->modify("+{$daysAhead} days")->format('Y-m-d');
 
-        try {
         $stmt = $this->db->prepare(
             "SELECT
                 sl.id,
@@ -253,21 +246,7 @@ class ServiceLogModel
         );
         $stmt->execute([':cutoff' => $cutoff]);
 
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-        // #region agent log
-        $__logEntry2 = json_encode(['sessionId'=>'212930','hypothesisId'=>'A-C-success','location'=>'ServiceLogModel.php:pendingFollowUps','message'=>'query succeeded','data'=>['rowCount'=>count($rows)],'timestamp'=>round(microtime(true)*1000)]) . "\n";
-        file_put_contents($__logFile, $__logEntry2, FILE_APPEND);
-        // #endregion
-
-        return $rows;
-        } catch (\Throwable $e) {
-            // #region agent log
-            $__logEntry3 = json_encode(['sessionId'=>'212930','hypothesisId'=>'A-B-C-D','location'=>'ServiceLogModel.php:pendingFollowUps','message'=>'query FAILED','data'=>['error'=>$e->getMessage(),'code'=>$e->getCode(),'class'=>get_class($e)],'timestamp'=>round(microtime(true)*1000)]) . "\n";
-            file_put_contents($__logFile, $__logEntry3, FILE_APPEND);
-            // #endregion
-            throw $e;
-        }
+        return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
     /**
