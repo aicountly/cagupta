@@ -8,8 +8,9 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, FileText, Image as ImageIcon, Eye, Download, History, X, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react';
-import { listAllKycDocuments, fetchDocumentBlob, getKycDocumentAudit } from '../services/kycDocumentService';
+import { Search, FileText, Image as ImageIcon, Eye, Download, History, X, ChevronLeft, ChevronRight as ChevronRightIcon, Trash2 } from 'lucide-react';
+import { listAllKycDocuments, fetchDocumentBlob, getKycDocumentAudit, deleteKycDocumentAudit } from '../services/kycDocumentService';
+import { useAuth } from '../auth/AuthContext';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -132,12 +133,14 @@ function actionColor(action) {
   return '#334155';
 }
 
-function AuditModal({ doc, onClose }) {
-  const [log,     setLog]     = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err,     setErr]     = useState('');
+function AuditModal({ doc, onClose, isSuperAdmin }) {
+  const [log,      setLog]      = useState([]);
+  const [loading,  setLoading]  = useState(true);
+  const [err,      setErr]      = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [delErr,   setDelErr]   = useState('');
 
-  useEffect(() => {
+  const loadLog = useCallback(() => {
     if (!doc) return;
     setLoading(true); setErr('');
     getKycDocumentAudit(doc.id)
@@ -145,6 +148,24 @@ function AuditModal({ doc, onClose }) {
       .catch(e => { setErr(e.message || 'Failed to load audit log.'); setLog([]); })
       .finally(() => setLoading(false));
   }, [doc?.id]);
+
+  useEffect(() => { loadLog(); }, [loadLog]);
+
+  async function handleDeleteAuditLog() {
+    if (!window.confirm(
+      `Delete the entire audit log for "${doc.original_file_name}"?\n\nThis action cannot be undone.`
+    )) return;
+
+    setDeleting(true); setDelErr('');
+    try {
+      await deleteKycDocumentAudit(doc.id);
+      setLog([]);
+    } catch (e) {
+      setDelErr(e.message || 'Failed to delete audit log.');
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   if (!doc) return null;
 
@@ -185,6 +206,20 @@ function AuditModal({ doc, onClose }) {
             </div>
           ))}
         </div>
+
+        {isSuperAdmin && (
+          <div style={{ padding: '10px 18px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button
+              onClick={handleDeleteAuditLog}
+              disabled={deleting || loading}
+              style={btnDanger}
+            >
+              <Trash2 size={13} style={{ marginRight: 5 }} />
+              {deleting ? 'Clearing…' : 'Clear Audit Log'}
+            </button>
+            {delErr && <span style={{ fontSize: 12, color: '#dc2626' }}>{delErr}</span>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -194,6 +229,8 @@ function AuditModal({ doc, onClose }) {
 
 export default function Documents() {
   const navigate = useNavigate();
+  const { user }  = useAuth();
+  const isSuperAdmin = user?.role === 'super_admin';
 
   const [docs,        setDocs]        = useState([]);
   const [pagination,  setPagination]  = useState(null);
@@ -423,7 +460,7 @@ export default function Documents() {
       </div>
 
       {preview   && <PreviewModal doc={preview}   onClose={() => setPreview(null)} />}
-      {auditDoc  && <AuditModal   doc={auditDoc}  onClose={() => setAuditDoc(null)} />}
+      {auditDoc  && <AuditModal   doc={auditDoc}  onClose={() => setAuditDoc(null)} isSuperAdmin={isSuperAdmin} />}
     </div>
   );
 }
@@ -479,6 +516,12 @@ const btnPrimary = {
 const btnSecondary = {
   padding: '8px 14px', background: '#f1f5f9', color: '#334155',
   border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', fontSize: 12,
+};
+const btnDanger = {
+  display: 'inline-flex', alignItems: 'center',
+  padding: '7px 13px', background: '#fef2f2', color: '#dc2626',
+  border: '1px solid #fca5a5', borderRadius: 8, cursor: 'pointer',
+  fontSize: 12, fontWeight: 600,
 };
 const iconBtn = {
   background: 'none', border: 'none', cursor: 'pointer',

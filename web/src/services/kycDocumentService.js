@@ -126,6 +126,21 @@ export async function getKycDocumentAudit(docId) {
   return json.data ?? [];
 }
 
+/**
+ * Delete the entire audit log for a document. Super admin only.
+ *
+ * @param {number} docId
+ * @returns {Promise<{ deleted_entries: number }>}
+ */
+export async function deleteKycDocumentAudit(docId) {
+  const res  = await fetch(`${API_BASE}/admin/kyc-documents/${docId}/audit`, {
+    method:  'DELETE',
+    headers: jsonHeaders(),
+  });
+  const json = await parseJson(res);
+  return json.data;
+}
+
 // ── Upload ────────────────────────────────────────────────────────────────────
 
 /**

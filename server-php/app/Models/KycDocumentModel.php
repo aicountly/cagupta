@@ -587,4 +587,18 @@ class KycDocumentModel
         $stmt->execute([':id' => $documentId]);
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
+
+    /**
+     * Delete all audit log entries for a document.
+     *
+     * @return int Number of rows deleted.
+     */
+    public function deleteAuditLog(int $documentId): int
+    {
+        $stmt = $this->db->prepare(
+            'DELETE FROM kyc_document_audit WHERE document_id = :id'
+        );
+        $stmt->execute([':id' => $documentId]);
+        return $stmt->rowCount();
+    }
 }

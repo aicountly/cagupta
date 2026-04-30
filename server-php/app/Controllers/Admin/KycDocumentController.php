@@ -316,31 +316,9 @@ class KycDocumentController extends BaseController
         $root    = $this->docuBankRoot();
         $absPath = $root . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) $doc['file_path']);
 
-        // #region agent log — dbdf04 — file path diagnostics
-        $__debugInfo = [
-            'hypothesisId'       => 'H-A/B/C/D/E',
-            'sessionId'          => 'dbdf04',
-            'doc_id'             => $id,
-            'env_docu_bank_path' => (string) (getenv('DOCU_BANK_PATH') ?: '(not set)'),
-            'docu_bank_root'     => $root,
-            'db_file_path'       => (string) $doc['file_path'],
-            'abs_path_resolved'  => $absPath,
-            'abs_path_realpath'  => (string) (realpath($absPath) ?: '(false — not found)'),
-            'parent_dir'         => dirname($absPath),
-            'parent_dir_exists'  => is_dir(dirname($absPath)),
-            'parent_dir_files'   => is_dir(dirname($absPath)) ? array_values(array_diff((array) scandir(dirname($absPath)), ['.', '..'])) : [],
-            'is_file'            => is_file($absPath),
-            'file_exists'        => file_exists($absPath),
-            'is_link'            => is_link($absPath),
-            'php_cwd'            => getcwd(),
-            'doc_is_active'      => (bool) $doc['is_active'],
-        ];
-        error_log('[KYC-DEBUG-dbdf04] ' . json_encode($__debugInfo));
-        // #endregion agent log
-
         if (!is_file($absPath)) {
             http_response_code(404);
-            echo json_encode(['success' => false, 'message' => 'File not found on disk.', '_debug' => $__debugInfo]);
+            echo json_encode(['success' => false, 'message' => 'File not found on disk.']);
             exit;
         }
 
@@ -482,6 +460,29 @@ class KycDocumentController extends BaseController
         $this->success($log, 'Audit log retrieved');
     }
 
+    // ── DELETE /api/admin/kyc-documents/:id/audit ─────────────────────────────
+
+    /**
+     * Permanently delete the entire audit log for a document.
+     * Restricted to super admin only (enforced by both the role middleware on
+     * the route and an explicit email check here as a second layer of defence).
+     */
+    public function clearAuditLog(int $id): never
+    {
+        $actingUser = $this->authUser();
+        if (strtolower((string) ($actingUser['email'] ?? '')) !== strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
+            $this->error('Only the super admin can delete audit logs.', 403);
+        }
+
+        $doc = $this->docs->find($id);
+        if ($doc === null) {
+            $this->error('Document not found.', 404);
+        }
+
+        $deleted = $this->docs->deleteAuditLog($id);
+        $this->success(['deleted_entries' => $deleted], 'Audit log cleared.');
+    }
+
     // ── POST /api/admin/kyc-documents/:id/new-version ────────────────────────
 
     /**
@@ -618,7 +619,6 @@ class KycDocumentController extends BaseController
         // Always set DOCU_BANK_PATH in production to a path outside public_html.
         $default = dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'docu_bank';
 
-        // #region agent log — dbdf04 — warn if inside public_html
         if (str_contains($default, 'public_html')) {
             error_log(
                 '[KYC] WARNING: DOCU_BANK_PATH is not set. Document storage falls back to ' . $default
@@ -626,7 +626,6 @@ class KycDocumentController extends BaseController
                 . 'Set DOCU_BANK_PATH to a path outside public_html in your .env file.'
             );
         }
-        // #endregion agent log
 
         return $default;
     }

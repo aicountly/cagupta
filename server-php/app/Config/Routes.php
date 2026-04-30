@@ -1233,6 +1233,12 @@ class Routes
                 'middleware' => ['auth', 'permission:clients.view'],
             ],
             [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/kyc-documents/:id/audit',
+                'handler'    => 'Admin\KycDocumentController@clearAuditLog',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/kyc-documents/:id/new-version',
                 'handler'    => 'Admin\KycDocumentController@newVersion',
