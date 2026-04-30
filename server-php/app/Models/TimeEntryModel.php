@@ -30,6 +30,15 @@ class TimeEntryModel
         $this->db = Database::getConnection();
     }
 
+    // #region agent log
+    /** @param array<string, mixed> $payload */
+    private function _debugLog(array $payload): void
+    {
+        $logPath = __DIR__ . '/../../../debug-9ce8c9.log';
+        @file_put_contents($logPath, json_encode($payload) . "\n", FILE_APPEND | LOCK_EX);
+    }
+    // #endregion
+
     /**
      * @return array<string, mixed>|null
      */
@@ -309,6 +318,9 @@ class TimeEntryModel
             $notes = null;
         }
         $startTs = isset($row['started_at']) ? strtotime((string)$row['started_at']) : false;
+        // #region agent log
+        $this->_debugLog(['sessionId'=>'9ce8c9','hypothesisId'=>'H-B','location'=>'TimeEntryModel.php:stopTimerWithValidation','message'=>'startTs parse result','data'=>['started_at'=>$row['started_at']??null,'startTs'=>$startTs,'startTsType'=>gettype($startTs)],'timestamp'=>(int)(microtime(true)*1000)]);
+        // #endregion
         if ($startTs === false) {
             return null;
         }
@@ -319,6 +331,10 @@ class TimeEntryModel
         }
         $endAt = gmdate('Y-m-d H:i:sP', $endTs);
         $workDate = gmdate('Y-m-d', $startTs);
+
+        // #region agent log
+        $this->_debugLog(['sessionId'=>'9ce8c9','hypothesisId'=>'H-A','location'=>'TimeEntryModel.php:stopTimerWithValidation','message'=>'computed duration before DB update','data'=>['entryId'=>$entryId,'startTs'=>$startTs,'endTs'=>$endTs,'mins'=>$mins,'workDate'=>$workDate,'endAt'=>$endAt,'exceeds1440'=>$mins>1440],'timestamp'=>(int)(microtime(true)*1000)]);
+        // #endregion
 
         $stmt = $this->db->prepare(
             'UPDATE time_entries
@@ -333,6 +349,9 @@ class TimeEntryModel
                  updated_at = NOW()
              WHERE id = :id'
         );
+        // #region agent log
+        try {
+        // #endregion
         $stmt->execute([
             ':ended_at' => $endAt,
             ':dur' => $mins,
@@ -344,6 +363,13 @@ class TimeEntryModel
             ':status' => 'stopped',
             ':id' => $entryId,
         ]);
+        // #region agent log
+        $this->_debugLog(['sessionId'=>'9ce8c9','hypothesisId'=>'H-A','location'=>'TimeEntryModel.php:stopTimerWithValidation','message'=>'DB update succeeded','data'=>['entryId'=>$entryId,'mins'=>$mins],'timestamp'=>(int)(microtime(true)*1000)]);
+        } catch (\Throwable $dbEx) {
+            $this->_debugLog(['sessionId'=>'9ce8c9','hypothesisId'=>'H-A,H-C','location'=>'TimeEntryModel.php:stopTimerWithValidation','message'=>'DB update threw exception','data'=>['entryId'=>$entryId,'mins'=>$mins,'exceptionClass'=>get_class($dbEx),'exceptionMsg'=>$dbEx->getMessage()],'timestamp'=>(int)(microtime(true)*1000)]);
+            throw $dbEx;
+        }
+        // #endregion
 
         return $this->find($entryId);
     }
