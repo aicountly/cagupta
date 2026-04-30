@@ -1,0 +1,61 @@
+# ============================================================
+# .cursorignore — Exclude non-source files from Cursor indexing
+# ============================================================
+
+# -- Node dependencies (largest offender — tens of thousands of files) --
+**/node_modules/**
+
+# -- Vite cache & temp directories --
+**/.vite/**
+**/.vite-temp/**
+
+# -- Build output --
+**/dist/**
+**/build/**
+
+# -- Package lock files (large, not useful for agent context) --
+**/package-lock.json
+**/.package-lock.json
+
+# -- PHP: no vendor or generated cache --
+**/vendor/**
+**/*.cache
+
+# -- Archives & binaries (never useful for code context) --
+*.zip
+*.tar.gz
+*.gz
+*.rar
+*.7z
+
+# -- Image & font assets --
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.svg
+*.ico
+*.woff
+*.woff2
+*.ttf
+*.eot
+
+# -- Static public asset folders --
+web/public/assets/**
+web-public/public/assets/**
+
+# -- Cursor internal debug logs --
+.cursor/debug-*.log
+
+# -- Git internals --
+.git/**
+
+# -- Environment files (secrets — keep out of agent context) --
+**/.env
+**/.env.production
+**/.env.local
+
+# -- Large SQL seed / schema dumps (use migration files instead) --
+server-php/database/schema.sql
+server-php/database/seed.sql

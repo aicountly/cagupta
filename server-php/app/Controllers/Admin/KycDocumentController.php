@@ -316,9 +316,31 @@ class KycDocumentController extends BaseController
         $root    = $this->docuBankRoot();
         $absPath = $root . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) $doc['file_path']);
 
+        // #region agent log — dbdf04 — file path diagnostics
+        $__debugInfo = [
+            'hypothesisId'       => 'H-A/B/C/D/E',
+            'sessionId'          => 'dbdf04',
+            'doc_id'             => $id,
+            'env_docu_bank_path' => (string) (getenv('DOCU_BANK_PATH') ?: '(not set)'),
+            'docu_bank_root'     => $root,
+            'db_file_path'       => (string) $doc['file_path'],
+            'abs_path_resolved'  => $absPath,
+            'abs_path_realpath'  => (string) (realpath($absPath) ?: '(false — not found)'),
+            'parent_dir'         => dirname($absPath),
+            'parent_dir_exists'  => is_dir(dirname($absPath)),
+            'parent_dir_files'   => is_dir(dirname($absPath)) ? array_values(array_diff((array) scandir(dirname($absPath)), ['.', '..'])) : [],
+            'is_file'            => is_file($absPath),
+            'file_exists'        => file_exists($absPath),
+            'is_link'            => is_link($absPath),
+            'php_cwd'            => getcwd(),
+            'doc_is_active'      => (bool) $doc['is_active'],
+        ];
+        error_log('[KYC-DEBUG-dbdf04] ' . json_encode($__debugInfo));
+        // #endregion agent log
+
         if (!is_file($absPath)) {
             http_response_code(404);
-            echo json_encode(['success' => false, 'message' => 'File not found on disk.']);
+            echo json_encode(['success' => false, 'message' => 'File not found on disk.', '_debug' => $__debugInfo]);
             exit;
         }
 

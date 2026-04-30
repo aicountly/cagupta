@@ -8,8 +8,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, FileText, Image as ImageIcon, Eye, Download, Filter, X, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react';
-import { listAllKycDocuments, fetchDocumentBlob } from '../services/kycDocumentService';
+import { Search, FileText, Image as ImageIcon, Eye, Download, History, X, ChevronLeft, ChevronRight as ChevronRightIcon } from 'lucide-react';
+import { listAllKycDocuments, fetchDocumentBlob, getKycDocumentAudit } from '../services/kycDocumentService';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -123,6 +123,73 @@ function PreviewModal({ doc, onClose }) {
   );
 }
 
+// ── Audit modal ───────────────────────────────────────────────────────────────
+
+function actionColor(action) {
+  if (action === 'uploaded' || action === 'new_version_uploaded') return '#16a34a';
+  if (action === 'hard_deleted' || action === 'soft_deleted')     return '#dc2626';
+  if (action === 'downloaded'   || action === 'viewed')           return '#2563eb';
+  return '#334155';
+}
+
+function AuditModal({ doc, onClose }) {
+  const [log,     setLog]     = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err,     setErr]     = useState('');
+
+  useEffect(() => {
+    if (!doc) return;
+    setLoading(true); setErr('');
+    getKycDocumentAudit(doc.id)
+      .then(setLog)
+      .catch(e => { setErr(e.message || 'Failed to load audit log.'); setLog([]); })
+      .finally(() => setLoading(false));
+  }, [doc?.id]);
+
+  if (!doc) return null;
+
+  return (
+    <div style={overlay}>
+      <div style={{ ...auditBox }}>
+        <div style={previewHeader}>
+          <span style={{ fontWeight: 700, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '85%' }}>
+            Audit — {doc.original_file_name}
+          </span>
+          <button onClick={onClose} style={iconBtnSm}><X size={16} /></button>
+        </div>
+
+        <div style={{ overflowY: 'auto', flex: 1, padding: '10px 18px' }}>
+          {loading && <p style={{ color: '#64748b', fontSize: 13 }}>Loading…</p>}
+          {err     && <p style={{ color: '#dc2626', fontSize: 13 }}>{err}</p>}
+          {!loading && !err && log.length === 0 && (
+            <p style={{ color: '#64748b', fontSize: 13 }}>No audit entries found.</p>
+          )}
+          {log.map(entry => (
+            <div key={entry.id} style={{ borderBottom: '1px solid #f1f5f9', padding: '8px 0', fontSize: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                <span style={{ fontWeight: 600, textTransform: 'capitalize', color: actionColor(entry.action) }}>
+                  {entry.action.replace(/_/g, ' ')}
+                </span>
+                <span style={{ color: '#94a3b8', whiteSpace: 'nowrap', marginLeft: 8 }}>
+                  {entry.created_at
+                    ? new Date(entry.created_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                    : '—'}
+                </span>
+              </div>
+              <span style={{ color: '#475569' }}>
+                by {entry.actor_name || entry.actor_display || 'System'}
+              </span>
+              {entry.notes && (
+                <div style={{ color: '#64748b', marginTop: 2 }}>{entry.notes}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 export default function Documents() {
@@ -133,6 +200,7 @@ export default function Documents() {
   const [loading,     setLoading]     = useState(true);
   const [error,       setError]       = useState('');
   const [preview,     setPreview]     = useState(null);
+  const [auditDoc,    setAuditDoc]    = useState(null);
 
   // Filters
   const [searchInput,  setSearchInput]  = useState('');
@@ -316,6 +384,9 @@ export default function Documents() {
                   }}>
                     <Download size={14} />
                   </button>
+                  <button title="Activity / Audit Log" style={{ ...iconBtn, color: '#7c3aed' }} onClick={() => setAuditDoc(doc)}>
+                    <History size={14} />
+                  </button>
                 </td>
               </tr>
             ))}
@@ -351,7 +422,8 @@ export default function Documents() {
         )}
       </div>
 
-      {preview && <PreviewModal doc={preview} onClose={() => setPreview(null)} />}
+      {preview   && <PreviewModal doc={preview}   onClose={() => setPreview(null)} />}
+      {auditDoc  && <AuditModal   doc={auditDoc}  onClose={() => setAuditDoc(null)} />}
     </div>
   );
 }
@@ -473,4 +545,9 @@ const previewBody = {
   flex: 1, overflow: 'auto', display: 'flex',
   alignItems: 'center', justifyContent: 'center',
   padding: 16, background: '#f8fafc',
+};
+const auditBox = {
+  background: '#fff', borderRadius: 12,
+  width: '90vw', maxWidth: 600, maxHeight: '80vh',
+  display: 'flex', flexDirection: 'column', overflow: 'hidden',
 };
