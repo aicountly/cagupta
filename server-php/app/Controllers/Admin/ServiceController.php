@@ -9,7 +9,9 @@ use App\Libraries\BrevoMailer;
 use App\Libraries\OtpService;
 use App\Models\AdminAuditLogModel;
 use App\Models\ClientModel;
+use App\Models\EngagementTypeModel;
 use App\Models\OrganizationModel;
+use App\Models\RegisterModel;
 use App\Models\ServiceLogModel;
 use App\Models\ServiceModel;
 use App\Models\ServiceTemporaryAssignmentModel;
@@ -696,6 +698,13 @@ class ServiceController extends BaseController
             }
         }
 
+        // Compliance register hook: when a service is marked completed and its
+        // engagement type has a register_category, find-or-create the register row
+        // for the matching period and stamp it as filed.
+        if ($newStatusForLog === 'completed' && $oldStatusForLog !== 'completed') {
+            $this->syncRegisterOnCompletion($updated ?? $service, $actorId);
+        }
+
         $this->success($updated, 'Service updated');
     }
 
@@ -1290,6 +1299,93 @@ class ServiceController extends BaseController
         }
 
         return array_values(array_unique($out, SORT_REGULAR));
+    }
+
+    /**
+     * When a service is marked completed, find or create the corresponding
+     * `registers` row for the period and mark it as filed.
+     *
+     * Silently swallows errors so the main service update is never blocked.
+     *
+     * @param array<string, mixed> $service   The freshly-updated service row
+     * @param int|null             $actorId   The user who completed the service
+     */
+    private function syncRegisterOnCompletion(array $service, ?int $actorId): void
+    {
+        try {
+            $etId = (int)($service['engagement_type_id'] ?? 0);
+            if ($etId === 0) {
+                return;
+            }
+
+            $etModel = new EngagementTypeModel();
+            $et      = $etModel->find($etId);
+            if ($et === null || empty($et['register_category'])) {
+                return;
+            }
+
+            $regCat     = (string)$et['register_category'];
+            $clientId   = isset($service['client_id'])       ? (int)$service['client_id']       : null;
+            $orgId      = isset($service['organization_id']) ? (int)$service['organization_id'] : null;
+            $filedDate  = (new \DateTimeImmutable('today'))->format('Y-m-d');
+
+            // Derive period from service financial_year / due_date if available.
+            // We attempt to build a period_start from the service data; if we cannot
+            // determine it, fall back to a date-of-completion derived period.
+            $periodStart = null;
+            $periodEnd   = null;
+            $periodLabel = null;
+
+            $fy = isset($service['financial_year']) ? trim((string)$service['financial_year']) : '';
+            if ($fy !== '') {
+                // financial_year stored as "2024-25" or "FY 2024-25" or "2024-2025"
+                $fyClean = preg_replace('/[^0-9\-]/', '', $fy);
+                if (preg_match('/^(\d{4})-(\d{2,4})$/', $fyClean, $m)) {
+                    $startY      = (int)$m[1];
+                    $endY        = strlen($m[2]) === 2 ? (int)('20' . $m[2]) : (int)$m[2];
+                    $periodStart = "{$startY}-04-01";
+                    $periodEnd   = "{$endY}-03-31";
+                    $periodLabel = 'FY ' . $startY . '-' . substr((string)$endY, -2);
+                }
+            }
+
+            if ($periodStart === null && !empty($service['due_date'])) {
+                // Derive month period from due_date for monthly returns
+                $dd          = new \DateTimeImmutable((string)$service['due_date']);
+                $periodStart = $dd->format('Y-m-01');
+                $periodEnd   = $dd->format('Y-m-' . $dd->format('t'));
+                $periodLabel = $dd->format('M Y');
+            }
+
+            if ($periodStart === null) {
+                // Last resort: use today's month
+                $today       = new \DateTimeImmutable('today');
+                $periodStart = $today->format('Y-m-01');
+                $periodEnd   = $today->format('Y-m-' . $today->format('t'));
+                $periodLabel = $today->format('M Y');
+            }
+
+            $registerModel = new RegisterModel();
+            $registerModel->findOrCreateForPeriod([
+                'client_id'          => $clientId,
+                'organization_id'    => $orgId,
+                'engagement_type_id' => $etId,
+                'register_category'  => $regCat,
+                'register_type'      => $regCat,
+                'return_type'        => (string)($et['name'] ?? ''),
+                'period_label'       => $periodLabel,
+                'period_start'       => $periodStart,
+                'period_end'         => $periodEnd,
+                'due_date'           => $service['due_date'] ?? $periodEnd,
+                'status'             => 'filed',
+                'filed_date'         => $filedDate,
+                'filed_by'           => $actorId,
+                'service_id'         => (int)$service['id'],
+                'created_by'         => $actorId,
+            ]);
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Register sync on completion failed: ' . $e->getMessage());
+        }
     }
 
     /**

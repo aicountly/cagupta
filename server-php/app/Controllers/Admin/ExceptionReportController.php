@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Models\ClientModel;
+use App\Models\KycDocumentModel;
 use App\Models\OrganizationModel;
 
 /**
@@ -58,6 +59,62 @@ class ExceptionReportController extends BaseController
         $result = $model->exceptionPaginate($page, $perPage, $missing, $activeOnly);
 
         $this->success($result['rows'], 'Organization exceptions', 200, [
+            'pagination' => [
+                'page'      => $page,
+                'per_page'  => $perPage,
+                'total'     => $result['total'],
+                'last_page' => $result['total'] > 0 ? (int)ceil($result['total'] / $perPage) : 1,
+            ],
+            'missing_applied' => $missing,
+        ]);
+    }
+
+    // ── GET /api/admin/reports/contact-kyc-exceptions ────────────────────────
+
+    public function contactKycExceptions(): never
+    {
+        $allowed = array_keys(KycDocumentModel::kycExceptionAllowedKeys('contact'));
+        $missing = $this->parseMissingKeys((string)$this->query('missing', ''), $allowed);
+        if ($missing === []) {
+            $this->error('Provide at least one `missing` KYC category (allowed: ' . implode(', ', $allowed) . ').', 400);
+        }
+
+        $page       = max(1, (int)$this->query('page', 1));
+        $perPage    = min(100, max(1, (int)$this->query('per_page', 20)));
+        $activeOnly = !$this->queryFlagIncludeInactive();
+
+        $model  = new KycDocumentModel();
+        $result = $model->kycExceptionPaginate('contact', $page, $perPage, $missing, $activeOnly);
+
+        $this->success($result['rows'], 'Contact KYC exceptions', 200, [
+            'pagination' => [
+                'page'      => $page,
+                'per_page'  => $perPage,
+                'total'     => $result['total'],
+                'last_page' => $result['total'] > 0 ? (int)ceil($result['total'] / $perPage) : 1,
+            ],
+            'missing_applied' => $missing,
+        ]);
+    }
+
+    // ── GET /api/admin/reports/organization-kyc-exceptions ───────────────────
+
+    public function organizationKycExceptions(): never
+    {
+        $allowed = array_keys(KycDocumentModel::kycExceptionAllowedKeys('organization'));
+        $missing = $this->parseMissingKeys((string)$this->query('missing', ''), $allowed);
+        if ($missing === []) {
+            $this->error('Provide at least one `missing` KYC category (allowed: ' . implode(', ', $allowed) . ').', 400);
+        }
+
+        $page       = max(1, (int)$this->query('page', 1));
+        $perPage    = min(100, max(1, (int)$this->query('per_page', 20)));
+        $activeOnly = !$this->queryFlagIncludeInactive();
+
+        $model  = new KycDocumentModel();
+        $result = $model->kycExceptionPaginate('organization', $page, $perPage, $missing, $activeOnly);
+
+        $this->success($result['rows'], 'Organization KYC exceptions', 200, [
             'pagination' => [
                 'page'      => $page,
                 'per_page'  => $perPage,

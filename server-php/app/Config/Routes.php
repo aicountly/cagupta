@@ -275,6 +275,18 @@ class Routes
                 'handler'    => 'Admin\ExceptionReportController@organizationExceptions',
                 'middleware' => ['auth', 'permission:clients.view'],
             ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/reports/contact-kyc-exceptions',
+                'handler'    => 'Admin\ExceptionReportController@contactKycExceptions',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/reports/organization-kyc-exceptions',
+                'handler'    => 'Admin\ExceptionReportController@organizationKycExceptions',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
 
             // ── Admin — Service Logs (activity log per engagement) ────────────
             // NOTE: static sub-paths (pending-followups, overdue-count) must be
@@ -1243,6 +1255,84 @@ class Routes
                 'pattern'    => '/api/admin/kyc-documents/:id',
                 'handler'    => 'Admin\KycDocumentController@destroy',
                 'middleware' => ['auth', 'permission:clients.edit'],
+            ],
+
+            // ── Admin — Registers ────────────────────────────────────────────
+            // Static sub-route /counts must appear before :id pattern.
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/registers/counts',
+                'handler'    => 'Admin\RegisterController@counts',
+                'middleware' => ['auth', 'permission:registers.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/registers',
+                'handler'    => 'Admin\RegisterController@index',
+                'middleware' => ['auth', 'permission:registers.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/registers',
+                'handler'    => 'Admin\RegisterController@store',
+                'middleware' => ['auth', 'permission:registers.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/registers/:id',
+                'handler'    => 'Admin\RegisterController@show',
+                'middleware' => ['auth', 'permission:registers.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/registers/:id',
+                'handler'    => 'Admin\RegisterController@update',
+                'middleware' => ['auth', 'permission:registers.view'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/registers/:id',
+                'handler'    => 'Admin\RegisterController@destroy',
+                'middleware' => ['auth', 'permission:registers.view'],
+            ],
+
+            // ── Admin — Recurring Service Definitions ─────────────────────────
+            // Static sub-route /:id/generate must appear before :id pattern.
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/recurring-services/:id/generate',
+                'handler'    => 'Admin\RecurringServiceDefinitionController@generatePeriods',
+                'middleware' => ['auth', 'permission:registers.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/recurring-services',
+                'handler'    => 'Admin\RecurringServiceDefinitionController@index',
+                'middleware' => ['auth', 'permission:registers.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/recurring-services',
+                'handler'    => 'Admin\RecurringServiceDefinitionController@store',
+                'middleware' => ['auth', 'permission:registers.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/recurring-services/:id',
+                'handler'    => 'Admin\RecurringServiceDefinitionController@show',
+                'middleware' => ['auth', 'permission:registers.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/recurring-services/:id',
+                'handler'    => 'Admin\RecurringServiceDefinitionController@update',
+                'middleware' => ['auth', 'permission:registers.view'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/recurring-services/:id',
+                'handler'    => 'Admin\RecurringServiceDefinitionController@destroy',
+                'middleware' => ['auth', 'permission:registers.view'],
             ],
 
             // ── Client portal ────────────────────────────────────────────────

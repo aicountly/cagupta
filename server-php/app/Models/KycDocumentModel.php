@@ -404,6 +404,146 @@ class KycDocumentModel
         }
     }
 
+    // ── Exception report ─────────────────────────────────────────────────────
+
+    /**
+     * Return allowed category keys for the KYC exception report.
+     * Excludes 'other' / 'other_registration' catch-all buckets.
+     *
+     * @return array<string, string>  category_key => human label
+     */
+    public static function kycExceptionAllowedKeys(string $entityType): array
+    {
+        $cats = self::categoriesFor($entityType);
+        $out  = [];
+        foreach ($cats as $key => $meta) {
+            if (str_starts_with($key, 'other')) {
+                continue;
+            }
+            $out[$key] = $meta['label'];
+        }
+        return $out;
+    }
+
+    /**
+     * Paginated entities (contacts or organizations) where ANY of the selected
+     * KYC categories has no active document uploaded.
+     *
+     * @param list<string> $missingCategories  validated keys from kycExceptionAllowedKeys()
+     * @return array{total: int, rows: array<int, array<string, mixed>>}
+     */
+    public function kycExceptionPaginate(
+        string $entityType,
+        int    $page,
+        int    $perPage,
+        array  $missingCategories,
+        bool   $activeOnly = true
+    ): array {
+        if ($missingCategories === []) {
+            return ['total' => 0, 'rows' => []];
+        }
+
+        $isContact = $entityType === 'contact';
+        $table     = $isContact ? 'clients'       : 'organizations';
+        $alias     = $isContact ? 'c'             : 'o';
+        $nameCol   = $isContact
+            ? "TRIM(CONCAT(COALESCE(c.first_name,''), ' ', COALESCE(c.last_name,''), ' ', COALESCE(c.organization_name,'')))"
+            : 'o.name';
+        $activeCol = "{$alias}.is_active";
+
+        $where  = [];
+        $params = [];
+
+        if ($activeOnly) {
+            $where[] = "{$activeCol} = TRUE";
+        }
+
+        // NOT EXISTS per category, OR-joined
+        $notExists = [];
+        foreach ($missingCategories as $i => $cat) {
+            $p            = ":cat{$i}";
+            $params[$p]   = $cat;
+            $notExists[]  =
+                "(NOT EXISTS (SELECT 1 FROM kyc_documents kd"
+                . " WHERE kd.entity_type = '{$entityType}'"
+                . " AND kd.entity_id = {$alias}.id"
+                . " AND kd.doc_category = {$p}"
+                . " AND kd.is_active = TRUE))";
+        }
+        $where[] = '(' . implode(' OR ', $notExists) . ')';
+
+        $whereClause = implode(' AND ', $where);
+        $offset      = ($page - 1) * $perPage;
+
+        if ($isContact) {
+            $selectCols = "{$alias}.id, {$alias}.first_name, {$alias}.last_name,
+                           {$alias}.organization_name, {$alias}.email,
+                           {$alias}.is_active, {$alias}.contact_status,
+                           cg.name AS group_name";
+            $joins      = "LEFT JOIN client_groups cg ON cg.id = {$alias}.group_id";
+        } else {
+            $selectCols = "{$alias}.id, {$alias}.name, {$alias}.type,
+                           {$alias}.email, {$alias}.is_active,
+                           cg.name AS group_name";
+            $joins      = "LEFT JOIN client_groups cg ON cg.id = {$alias}.group_id";
+        }
+
+        $countStmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM {$table} {$alias} {$joins} WHERE {$whereClause}"
+        );
+        $countStmt->execute($params);
+        $total = (int) $countStmt->fetchColumn();
+
+        $stmt = $this->db->prepare(
+            "SELECT {$selectCols}
+             FROM   {$table} {$alias}
+             {$joins}
+             WHERE  {$whereClause}
+             ORDER BY {$alias}.created_at DESC
+             LIMIT  :lim OFFSET :off"
+        );
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
+        $stmt->bindValue(':lim', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':off', $offset,  PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Enrich each row with display_name and missing_categories
+        $allowed = self::kycExceptionAllowedKeys($entityType);
+        foreach ($rows as &$row) {
+            if ($isContact) {
+                $parts = array_filter([
+                    $row['first_name']        ?? '',
+                    $row['last_name']         ?? '',
+                    $row['organization_name'] ?? '',
+                ]);
+                $row['display_name'] = implode(' ', $parts) ?: 'Unknown';
+                unset($row['first_name'], $row['last_name'], $row['organization_name']);
+            }
+
+            // Determine which of the requested categories are actually missing
+            $missing = [];
+            foreach ($missingCategories as $cat) {
+                $chk = $this->db->prepare(
+                    'SELECT 1 FROM kyc_documents
+                     WHERE entity_type = :et AND entity_id = :eid
+                       AND doc_category = :cat AND is_active = TRUE
+                     LIMIT 1'
+                );
+                $chk->execute([':et' => $entityType, ':eid' => $row['id'], ':cat' => $cat]);
+                if ($chk->fetchColumn() === false) {
+                    $missing[] = $cat;
+                }
+            }
+            $row['missing_categories'] = $missing;
+        }
+        unset($row);
+
+        return ['total' => $total, 'rows' => $rows];
+    }
+
     // ── Audit ─────────────────────────────────────────────────────────────────
 
     /**

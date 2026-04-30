@@ -23,6 +23,7 @@ import Calendar from './pages/Calendar';
 import AppointmentFeeRules from './pages/AppointmentFeeRules';
 import Credentials from './pages/Credentials';
 import Registers from './pages/Registers';
+import RecurringServices from './pages/RecurringServices';
 import Leads from './pages/Leads';
 import Settings from './pages/Settings';
 import UserManagement from './pages/UserManagement';
@@ -31,6 +32,8 @@ import TimesheetsReport from './pages/TimesheetsReport';
 import ShiftTargetTimesheetReport from './pages/ShiftTargetTimesheetReport';
 import ContactExceptionsReport from './pages/ContactExceptionsReport';
 import OrganizationExceptionsReport from './pages/OrganizationExceptionsReport';
+import ContactKycExceptionsReport from './pages/ContactKycExceptionsReport';
+import OrganizationKycExceptionsReport from './pages/OrganizationKycExceptionsReport';
 import GlobalSearchPage from './pages/GlobalSearchPage';
 import Profile from './pages/Profile';
 import AdminAffiliates from './pages/AdminAffiliates';
@@ -76,12 +79,15 @@ const pageTitles = {
   '/invoices':                  '💰 Invoices & Ledger',
   '/reports/timesheets':                 '🕐 Timesheet report',
   '/reports/timesheets/shift-target':    '📊 Staff punch vs target',
-  '/reports/exceptions/contacts':      '📋 Contact data exceptions',
-  '/reports/exceptions/organizations': '📋 Organization data exceptions',
+  '/reports/exceptions/contacts':          '📋 Contact data exceptions',
+  '/reports/exceptions/organizations':     '📋 Organization data exceptions',
+  '/reports/exceptions/contact-kyc':       '📋 Contact KYC exceptions',
+  '/reports/exceptions/organization-kyc':  '📋 Organization KYC exceptions',
   '/calendar':                  '📅 Calendar & Appointments',
   '/settings/appointment-fees': '💳 Appointment fee rules',
   '/credentials':               '🔑 Credentials Vault',
   '/registers':                 '📊 Compliance Registers',
+  '/recurring-services':        '🔁 Recurring Services',
   '/leads':                     '🎯 Leads & Quotations',
   '/settings':                  '⚙️ Settings',
   '/admin/users':               '👥 User Management',
@@ -164,9 +170,20 @@ export default function App() {
               <Layout routePath="/reports/exceptions/organizations"><OrganizationExceptionsReport /></Layout>
             </ProtectedRoute>
           } />
+          <Route path="/reports/exceptions/contact-kyc" element={
+            <ProtectedRoute staffOnly requiredPermission="clients.view">
+              <Layout routePath="/reports/exceptions/contact-kyc"><ContactKycExceptionsReport /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/reports/exceptions/organization-kyc" element={
+            <ProtectedRoute staffOnly requiredPermission="clients.view">
+              <Layout routePath="/reports/exceptions/organization-kyc"><OrganizationKycExceptionsReport /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/calendar" element={<ProtectedRoute staffOnly><Layout routePath="/calendar"><Calendar /></Layout></ProtectedRoute>} />
           <Route path="/credentials" element={<ProtectedRoute staffOnly><Layout routePath="/credentials"><Credentials /></Layout></ProtectedRoute>} />
           <Route path="/registers" element={<ProtectedRoute staffOnly><Layout routePath="/registers"><Registers /></Layout></ProtectedRoute>} />
+          <Route path="/recurring-services" element={<ProtectedRoute staffOnly><Layout routePath="/recurring-services"><RecurringServices /></Layout></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute staffOnly><Layout routePath="/leads"><Leads /></Layout></ProtectedRoute>} />
           <Route path="/search" element={<ProtectedRoute staffOnly><Layout routePath="/search"><GlobalSearchPage /></Layout></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute staffOnly><Layout routePath="/settings"><Settings /></Layout></ProtectedRoute>} />

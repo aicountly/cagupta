@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen, Clock,
   Target, Settings, ChevronRight, ChevronDown,
-  UserRound, Building2, ShieldCheck, Layers, Handshake, BarChart3, CalendarOff, Bell,
+  UserRound, Building2, ShieldCheck, Layers, Handshake, BarChart3, CalendarOff, Bell, RefreshCw,
 } from 'lucide-react';
 
 const navSections = [
@@ -35,6 +35,8 @@ const navSections = [
           { to: '/reports/timesheets/shift-target', label: 'Staff punch vs target', icon: Target, permission: 'services.view' },
           { to: '/reports/exceptions/contacts', label: 'Contact exceptions', icon: UserRound, permission: 'clients.view' },
           { to: '/reports/exceptions/organizations', label: 'Organization exceptions', icon: Building2, permission: 'clients.view' },
+          { to: '/reports/exceptions/contact-kyc', label: 'Contact KYC exceptions', icon: ShieldCheck, permission: 'clients.view' },
+          { to: '/reports/exceptions/organization-kyc', label: 'Organization KYC exceptions', icon: ShieldCheck, permission: 'clients.view' },
         ],
       },
       { to: '/services', label: 'Services & Tasks', icon: ClipboardList },
@@ -49,6 +51,7 @@ const navSections = [
       { to: '/calendar', label: 'Calendar', icon: CalendarDays },
       { to: '/credentials', label: 'Credentials Vault', icon: KeyRound },
       { to: '/registers', label: 'Registers', icon: BookOpen },
+      { to: '/recurring-services', label: 'Recurring Services', icon: RefreshCw },
       { to: '/leads', label: 'Leads & Quotations', icon: Target },
     ],
   },

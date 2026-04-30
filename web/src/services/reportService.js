@@ -93,6 +93,94 @@ export async function getContactExceptions({ missingKeys, page = 1, perPage = 20
 }
 
 /**
+ * @param {object} r
+ * @returns {object}
+ */
+function normalizeContactKycExceptionRow(r) {
+  return {
+    id: Number(r.id),
+    displayName: r.display_name || 'Unknown',
+    email: r.email || '',
+    contactStatus: r.contact_status || '',
+    isActive: Boolean(r.is_active),
+    groupName: r.group_name || '',
+    missingCategories: Array.isArray(r.missing_categories) ? r.missing_categories : [],
+  };
+}
+
+/**
+ * @param {object} r
+ * @returns {object}
+ */
+function normalizeOrgKycExceptionRow(r) {
+  return {
+    id: Number(r.id),
+    name: r.name || 'Unknown',
+    type: r.type || '',
+    email: r.email || '',
+    isActive: Boolean(r.is_active),
+    groupName: r.group_name || '',
+    missingCategories: Array.isArray(r.missing_categories) ? r.missing_categories : [],
+  };
+}
+
+/**
+ * @param {{ missingKeys: string[], page?: number, perPage?: number, includeInactive?: boolean }} p
+ * @returns {Promise<{ rows: object[], pagination: object, missingApplied: string[] }>}
+ */
+export async function getContactKycExceptions({ missingKeys, page = 1, perPage = 20, includeInactive = false }) {
+  const keys = (missingKeys || []).filter(Boolean);
+  if (keys.length === 0) {
+    throw new Error('Select at least one KYC category criterion.');
+  }
+  const params = new URLSearchParams({
+    missing: keys.join(','),
+    page: String(page),
+    per_page: String(perPage),
+  });
+  if (includeInactive) params.set('include_inactive', '1');
+
+  const res = await fetch(`${API_BASE}/admin/reports/contact-kyc-exceptions?${params}`, {
+    headers: authHeaders(),
+  });
+  const json = await parseResponse(res);
+  const rows = (json.data || []).map(normalizeContactKycExceptionRow);
+  return {
+    rows,
+    pagination: json.pagination || {},
+    missingApplied: json.missing_applied || keys,
+  };
+}
+
+/**
+ * @param {{ missingKeys: string[], page?: number, perPage?: number, includeInactive?: boolean }} p
+ * @returns {Promise<{ rows: object[], pagination: object, missingApplied: string[] }>}
+ */
+export async function getOrganizationKycExceptions({ missingKeys, page = 1, perPage = 20, includeInactive = false }) {
+  const keys = (missingKeys || []).filter(Boolean);
+  if (keys.length === 0) {
+    throw new Error('Select at least one KYC category criterion.');
+  }
+  const params = new URLSearchParams({
+    missing: keys.join(','),
+    page: String(page),
+    per_page: String(perPage),
+  });
+  if (includeInactive) params.set('include_inactive', '1');
+
+  const res = await fetch(`${API_BASE}/admin/reports/organization-kyc-exceptions?${params}`, {
+    headers: authHeaders(),
+  });
+  const json = await parseResponse(res);
+  const rows = (json.data || []).map(normalizeOrgKycExceptionRow);
+  return {
+    rows,
+    pagination: json.pagination || {},
+    missingApplied: json.missing_applied || keys,
+  };
+}
+
+/**
  * @param {{ missingKeys: string[], page?: number, perPage?: number, includeInactive?: boolean }} p
  * @returns {Promise<{ rows: object[], pagination: object, missingApplied: string[] }>}
  */
