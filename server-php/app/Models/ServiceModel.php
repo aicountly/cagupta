@@ -116,11 +116,6 @@ SQL;
         $whereClause = implode(' AND ', $where);
         $offset      = ($page - 1) * $perPage;
 
-        // #region agent log db20f6
-        $__log = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'debug-db20f6.log';
-        @file_put_contents($__log, json_encode(['sessionId'=>'db20f6','runId'=>'run2','hypothesisId'=>'H1','location'=>'ServiceModel.php:paginate','message'=>'before_count_query','data'=>['whereClause'=>$whereClause,'scopeUidCount'=>substr_count($whereClause,':scope_uid'),'paramKeys'=>array_keys($params)],'timestamp'=>(int)round(microtime(true)*1000)])."\n", FILE_APPEND|LOCK_EX);
-        // #endregion agent log db20f6
-
         $countStmt = $this->db->prepare(
             "SELECT COUNT(*)
              FROM services s
@@ -130,10 +125,6 @@ SQL;
         );
         $countStmt->execute($params);
         $total = (int)$countStmt->fetchColumn();
-
-        // #region agent log db20f6
-        @file_put_contents($__log, json_encode(['sessionId'=>'db20f6','runId'=>'run2','hypothesisId'=>'H2','location'=>'ServiceModel.php:paginate','message'=>'after_count_query','data'=>['total'=>$total],'timestamp'=>(int)round(microtime(true)*1000)])."\n", FILE_APPEND|LOCK_EX);
-        // #endregion agent log db20f6
 
         $aid = self::SQL_ASSIGNEE_IDS_JSON;
         $an  = self::SQL_ASSIGNEE_NAMES_AGG;
@@ -162,10 +153,6 @@ SQL;
         $stmt->bindValue(':offset', $offset,  PDO::PARAM_INT);
         $stmt->execute();
         $rows = $stmt->fetchAll();
-
-        // #region agent log db20f6
-        @file_put_contents($__log, json_encode(['sessionId'=>'db20f6','runId'=>'run2','hypothesisId'=>'H2','location'=>'ServiceModel.php:paginate','message'=>'after_main_select','data'=>['rowCount'=>count($rows)],'timestamp'=>(int)round(microtime(true)*1000)])."\n", FILE_APPEND|LOCK_EX);
-        // #endregion agent log db20f6
         foreach ($rows as $i => $r) {
             $rows[$i] = $this->attachAssigneeFields($r);
         }
