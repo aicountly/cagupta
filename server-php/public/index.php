@@ -62,7 +62,7 @@ require_once dirname(__DIR__) . '/app/Helpers/response_helper.php';
 set_exception_handler(static function (\Throwable $e): void {
     error_log('[API] uncaught: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
     // #region agent log db20f6
-    @file_put_contents(dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'debug-db20f6.log', json_encode(['sessionId'=>'db20f6','runId'=>'run1','hypothesisId'=>'H0','location'=>'index.php:exception_handler','message'=>'uncaught_exception','data'=>['class'=>$e::class,'msg'=>$e->getMessage(),'file'=>basename($e->getFile()),'line'=>$e->getLine()],'timestamp'=>(int)round(microtime(true)*1000)])."\n", FILE_APPEND|LOCK_EX);
+    @file_put_contents(dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'debug-db20f6.log', json_encode(['sessionId'=>'db20f6','runId'=>'run2','hypothesisId'=>'H0','location'=>'index.php:exception_handler','message'=>'uncaught_exception','data'=>['class'=>$e::class,'msg'=>$e->getMessage(),'file'=>basename($e->getFile()),'line'=>$e->getLine()],'timestamp'=>(int)round(microtime(true)*1000)])."\n", FILE_APPEND|LOCK_EX);
     // #endregion agent log db20f6
     $debugLog = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'debug-441a9d.log';
     $agentPayload = [
