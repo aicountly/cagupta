@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
+import KycDocumentTab from '../components/documents/KycDocumentTab';
 import { createContact } from '../services/contactService';
 import {
   ApiError,
@@ -231,6 +232,7 @@ export default function OrganizationCreatePage() {
   const [duplicateConflict, setDuplicateConflict] = useState(null);
   /** Inline name duplicate / similarity (from search API; not persisted server-side). */
   const [nameDuplicateInfo, setNameDuplicateInfo] = useState(null);
+  const [activeTab, setActiveTab] = useState('details');
   const [nameCollisionModalOpen, setNameCollisionModalOpen] = useState(false);
   /** Set to `'save'` when identical duplicate blocked a save attempt (modal copy). */
   const [nameCollisionBlockingReason, setNameCollisionBlockingReason] = useState(null);
@@ -680,8 +682,25 @@ export default function OrganizationCreatePage() {
 
       <div style={pageTitleStyle}>{isEdit ? 'Edit Organization' : 'Add Organization'}</div>
 
-      {/* Form grid – 2 columns on desktop, 1 on mobile */}
-      <div style={formGrid}>
+      {/* Tab bar — Documents tab only available when editing an existing organization */}
+      {isEdit && (
+        <div style={orgTabBarStyle}>
+          <button style={activeTab === 'details' ? orgTabActive : orgTabInactive} onClick={() => setActiveTab('details')}>
+            Details
+          </button>
+          <button style={activeTab === 'documents' ? orgTabActive : orgTabInactive} onClick={() => setActiveTab('documents')}>
+            KYC Documents
+          </button>
+        </div>
+      )}
+
+      {/* Documents tab */}
+      {isEdit && activeTab === 'documents' && (
+        <KycDocumentTab entityType="organization" entityId={parseInt(id, 10)} />
+      )}
+
+      {/* Form grid – hidden (not unmounted) when on the documents tab so form state is preserved */}
+      <div style={activeTab === 'documents' && isEdit ? { display: 'none' } : formGrid}>
         {/* ── Section: Basic Information ──────────────────────────────── */}
         <FormSection title="Basic Information">
           {/* Read-only Org Code */}
@@ -1330,4 +1349,35 @@ const toastClose = {
   marginLeft: 'auto',
   color: 'inherit',
   opacity: 0.7,
+};
+
+const orgTabBarStyle = {
+  display: 'flex',
+  gap: 0,
+  marginBottom: 20,
+  borderBottom: '2px solid #E6E8F0',
+};
+
+const orgTabActive = {
+  padding: '9px 22px',
+  background: 'none',
+  border: 'none',
+  borderBottom: '2px solid #F37920',
+  marginBottom: -2,
+  color: '#F37920',
+  fontWeight: 700,
+  fontSize: 13,
+  cursor: 'pointer',
+};
+
+const orgTabInactive = {
+  padding: '9px 22px',
+  background: 'none',
+  border: 'none',
+  borderBottom: '2px solid transparent',
+  marginBottom: -2,
+  color: '#64748b',
+  fontWeight: 500,
+  fontSize: 13,
+  cursor: 'pointer',
 };
