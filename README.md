@@ -502,6 +502,10 @@ One manual workflow (`.github/workflows/deploy-cpanel.yml`) builds and rsyncs al
 | `CPANEL_SITE_ROOT` | `/home/carahulgupta/public_html` | API + marketing |
 | `VITE_PORTAL_URL` | `https://app.carahulgupta.in` | `web-public` build |
 | `VITE_MARKETING_URL` | `https://carahulgupta.in` | Portal "Wrong portal?" link |
+| `MIGRATION_DB_USER` | `carahulgupta` | Table-owner role for `ALTER TABLE` migrations |
+| `MIGRATION_DB_PASS` | *(phpPgAdmin password)* | Password for `MIGRATION_DB_USER` |
+
+> **cPanel note:** cPanel creates tables owned by the phpPgAdmin default user (`carahulgupta`), but the runtime app DB user (`carahulgupta_cagupta_user`) is a restricted role without ownership. `database/migrate.php` uses `MIGRATION_DB_USER`/`MIGRATION_DB_PASS` for DDL migrations and falls back to `DB_USER`/`DB_PASS` when they are absent (safe for local dev).
 
 ---
 

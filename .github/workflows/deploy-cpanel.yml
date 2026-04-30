@@ -117,11 +117,17 @@ jobs:
           username: ${{ secrets.CPANEL_SSH_USER }}
           key: ${{ secrets.CPANEL_SSH_PRIVATE_KEY }}
           port: ${{ secrets.CPANEL_SSH_PORT }}
+          # MIGRATION_DB_USER / MIGRATION_DB_PASS must be the table-owner role
+          # (carahulgupta on cPanel). They are injected here so migrate.php
+          # uses the owner for DDL while the app still uses DB_USER at runtime.
+          envs: MIGRATION_DB_USER,MIGRATION_DB_PASS
           script: |
             find ${{ secrets.CPANEL_SITE_ROOT }}/api -type d -exec chmod 755 {} \;
             find ${{ secrets.CPANEL_SITE_ROOT }}/api -type f -exec chmod 644 {} \;
             echo "✅ Permissions fixed"
             echo "▶  Running database migrations…"
+            MIGRATION_DB_USER="${{ secrets.MIGRATION_DB_USER }}" \
+            MIGRATION_DB_PASS="${{ secrets.MIGRATION_DB_PASS }}" \
             php ${{ secrets.CPANEL_SITE_ROOT }}/api/database/migrate.php
             echo "✅ Deploy complete"
 

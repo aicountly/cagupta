@@ -25,7 +25,9 @@ if (is_readable($envFile)) {
         if (preg_match('/^(["\'])(.*)\\1$/', $value, $m)) {
             $value = $m[2];
         }
-        if ($key !== '' && !array_key_exists($key, $_ENV)) {
+        // getenv() checks the real process environment, not just $_ENV,
+        // so variables set in the shell (e.g. from CI secrets) take precedence.
+        if ($key !== '' && getenv($key) === false) {
             putenv("{$key}={$value}");
             $_ENV[$key] = $value;
         }

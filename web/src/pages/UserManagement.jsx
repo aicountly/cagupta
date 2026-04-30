@@ -118,7 +118,7 @@ function UserModal({ mode, user, roles, onClose, onSave }) {
               value={form.email}
               onChange={(e) => set('email', e.target.value)}
               required
-              disabled={mode === 'edit'}
+              disabled={mode === 'edit' && user?.email === SUPER_ADMIN_EMAIL}
               placeholder="e.g. priya@example.com"
             />
 
@@ -265,7 +265,7 @@ export default function UserManagement() {
         body:   JSON.stringify(form),
       });
     } else {
-      const { password: _pw, email: _em, ...updateData } = form;
+      const { password: _pw, ...updateData } = form;
       await apiFetch(token, `/admin/users/${modal.user.id}`, {
         method: 'PUT',
         body:   JSON.stringify(updateData),

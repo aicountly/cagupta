@@ -302,7 +302,10 @@ class UserController extends BaseController
     /**
      * Update a role's permissions JSONB.
      *
-     * Cannot modify the super_admin role.
+     * - super_admin role: can never be modified (anyone).
+     * - admin role: only super_admin (wildcard "*" or hardcoded email) may edit it.
+     * - manager / staff / viewer / affiliate / client: any user with users.manage may edit.
+     *
      * Body: { permissions: string[] }
      */
     public function updateRole(int $id): never
@@ -313,6 +316,11 @@ class UserController extends BaseController
         }
         if ($role['name'] === 'super_admin') {
             $this->error('The super_admin role permissions cannot be modified.', 403);
+        }
+
+        // Only a true super_admin can change the admin role itself.
+        if ($role['name'] === 'admin' && !$this->actingUserIsSuperAdmin()) {
+            $this->error('Only a super admin can modify the admin role permissions.', 403);
         }
 
         $body        = $this->getJsonBody();
@@ -327,6 +335,24 @@ class UserController extends BaseController
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    /**
+     * Returns true if the acting user is a true super_admin: either the hardcoded
+     * super-admin email or a user whose role permissions contain the wildcard "*".
+     */
+    private function actingUserIsSuperAdmin(): bool
+    {
+        $u = $this->authUser();
+        if ($u === null) {
+            return false;
+        }
+        if (strtolower((string)($u['email'] ?? '')) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
+            return true;
+        }
+        $p = $u['role_permissions_array'] ?? [];
+
+        return in_array('*', $p, true);
+    }
 
     private function userHasManageAll(): bool
     {

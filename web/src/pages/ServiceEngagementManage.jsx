@@ -71,10 +71,11 @@ export default function ServiceEngagementManage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { hasPermission, session } = useAuth();
-  const canDeleteService = hasPermission('services.delete');
-  const canEditService   = hasPermission('services.edit');
+  const canDeleteService    = hasPermission('services.delete');
+  const canEditService      = hasPermission('services.edit');
   const canLogTimePermission = hasPermission('services.edit');
-  const canManageTeamRates = hasPermission('users.manage');
+  const canManageTeamRates  = hasPermission('users.manage');
+  const canManageAssignees  = hasPermission('services.assignees.manage');
   const isSuperAdmin = String(session?.user?.email || '').toLowerCase() === 'rahul@cagupta.in';
   const { staffUsers } = useStaffUsers();
 
@@ -918,10 +919,16 @@ export default function ServiceEngagementManage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
               <div style={sectionTitle}>Team ({assigneeUserIds.length})</div>
             </div>
-            <p style={hint}>
-              Manage everyone assigned to this engagement. Use <strong>Set as Incharge</strong> to designate the primary responsible member.
-              Click <strong>Save changes</strong> to apply.
-            </p>
+            {canManageAssignees ? (
+              <p style={hint}>
+                Manage everyone assigned to this engagement. Use <strong>Set as Incharge</strong> to designate the primary responsible member.
+                Click <strong>Save changes</strong> to apply.
+              </p>
+            ) : (
+              <p style={{ ...hint, color: '#94a3b8', fontStyle: 'italic' }}>
+                View only — you do not have permission to add or change assignees on this engagement.
+              </p>
+            )}
 
             {assigneeUserIds.length === 0 ? (
               <div style={{ color: '#94a3b8', fontSize: 13, padding: '12px 0' }}>No team members assigned yet.</div>
@@ -946,55 +953,57 @@ export default function ServiceEngagementManage() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexShrink: 0 }}>
-                        {isReplacing ? (
-                          <>
-                            <select
-                              style={teamPickerSelect}
-                              defaultValue=""
-                              onChange={(e) => {
-                                if (!e.target.value) return;
-                                handleReplaceMember(uid, Number(e.target.value));
-                              }}
-                            >
-                              <option value="">Pick replacement…</option>
-                              {availableForReplace.map((s) => (
-                                <option key={s.id} value={s.id}>{s.name}</option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              style={teamBtnCancel}
-                              onClick={() => setReplacingMemberId(null)}
-                            >
-                              Cancel
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            {!isIncharge && (
+                        {canManageAssignees && (
+                          isReplacing ? (
+                            <>
+                              <select
+                                style={teamPickerSelect}
+                                defaultValue=""
+                                onChange={(e) => {
+                                  if (!e.target.value) return;
+                                  handleReplaceMember(uid, Number(e.target.value));
+                                }}
+                              >
+                                <option value="">Pick replacement…</option>
+                                {availableForReplace.map((s) => (
+                                  <option key={s.id} value={s.id}>{s.name}</option>
+                                ))}
+                              </select>
                               <button
                                 type="button"
-                                style={teamBtnSetIncharge}
-                                onClick={() => setInchargeUserId(uid)}
+                                style={teamBtnCancel}
+                                onClick={() => setReplacingMemberId(null)}
                               >
-                                Set as Incharge
+                                Cancel
                               </button>
-                            )}
-                            <button
-                              type="button"
-                              style={teamBtnReplace}
-                              onClick={() => { setReplacingMemberId(uid); setShowAddMemberSelect(false); }}
-                            >
-                              Replace
-                            </button>
-                            <button
-                              type="button"
-                              style={teamBtnRemove}
-                              onClick={() => toggleTeamMember(uid)}
-                            >
-                              Remove
-                            </button>
-                          </>
+                            </>
+                          ) : (
+                            <>
+                              {!isIncharge && (
+                                <button
+                                  type="button"
+                                  style={teamBtnSetIncharge}
+                                  onClick={() => setInchargeUserId(uid)}
+                                >
+                                  Set as Incharge
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                style={teamBtnReplace}
+                                onClick={() => { setReplacingMemberId(uid); setShowAddMemberSelect(false); }}
+                              >
+                                Replace
+                              </button>
+                              <button
+                                type="button"
+                                style={teamBtnRemove}
+                                onClick={() => toggleTeamMember(uid)}
+                              >
+                                Remove
+                              </button>
+                            </>
+                          )
                         )}
                       </div>
                     </div>
@@ -1003,7 +1012,7 @@ export default function ServiceEngagementManage() {
               </div>
             )}
 
-            {showAddMemberSelect ? (
+            {canManageAssignees && showAddMemberSelect ? (
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
                 <select
                   style={{ ...teamPickerSelect, flex: 1 }}
@@ -1030,7 +1039,7 @@ export default function ServiceEngagementManage() {
                 </button>
               </div>
             ) : (
-              staffUsers.some((s) => !assigneeUserIds.some((x) => String(x) === String(s.id))) && (
+              canManageAssignees && staffUsers.some((s) => !assigneeUserIds.some((x) => String(x) === String(s.id))) && (
                 <button
                   type="button"
                   style={btnSmall}

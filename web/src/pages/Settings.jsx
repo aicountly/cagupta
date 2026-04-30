@@ -18,23 +18,24 @@ import {
   saveQuotationDefault,
 } from '../services/quotationService';
 import { API_BASE_URL } from '../constants/config';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getZoomIntegrationStatus, getZoomAuthorizeUrl } from '../services/zoomIntegrationService';
 
 // ── Available permission modules ─────────────────────────────────────────────
 const PERMISSION_GROUPS = [
-  { group: 'Dashboard', keys: ['dashboard.view'] },
-  { group: 'Clients',   keys: ['clients.view', 'clients.create', 'clients.edit', 'clients.delete'] },
-  { group: 'Services',  keys: ['services.view', 'services.create', 'services.edit', 'services.delete'] },
-  { group: 'Documents', keys: ['documents.view', 'documents.upload'] },
-  { group: 'Invoices',  keys: ['invoices.view', 'invoices.create', 'invoices.edit'] },
-  { group: 'Calendar',  keys: ['calendar.view', 'calendar.create'] },
+  { group: 'Dashboard',   keys: ['dashboard.view'] },
+  { group: 'Clients',     keys: ['clients.view', 'clients.create', 'clients.edit', 'clients.delete'] },
+  { group: 'Services',    keys: ['services.view', 'services.create', 'services.edit', 'services.delete', 'services.assignees.manage'] },
+  { group: 'Documents',   keys: ['documents.view', 'documents.upload'] },
+  { group: 'Invoices',    keys: ['invoices.view', 'invoices.create', 'invoices.edit', 'invoices.delete'] },
+  { group: 'Calendar',    keys: ['calendar.view', 'calendar.create'] },
   { group: 'Credentials', keys: ['credentials.view'] },
-  { group: 'Registers', keys: ['registers.view'] },
+  { group: 'Registers',   keys: ['registers.view'] },
   { group: 'Leads',       keys: ['leads.view', 'leads.create', 'leads.edit'] },
   { group: 'Quotations',  keys: ['quotations.setup', 'quotations.manage'] },
-  { group: 'Settings',  keys: ['settings.view'] },
-  { group: 'Users',     keys: ['users.manage', 'users.delegate'] },
+  { group: 'Affiliates',  keys: ['affiliates.manage'] },
+  { group: 'Settings',    keys: ['settings.view'] },
+  { group: 'Users',       keys: ['users.manage', 'users.delegate'] },
 ];
 
 function authHeaders() {
@@ -121,7 +122,7 @@ function ConfigureRoleModal({ role, onClose, onSaved }) {
                         onChange={() => toggle(key)}
                         style={{ accentColor:'#2563eb', cursor:'pointer' }}
                       />
-                      {key.split('.')[1]}
+                      {key.split('.').slice(1).join('.')}
                     </label>
                   ))}
                 </div>
@@ -138,6 +139,210 @@ function ConfigureRoleModal({ role, onClose, onSaved }) {
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Edit User Modal ───────────────────────────────────────────────────────────
+function EditUserModal({ user, roles, onClose, onSaved }) {
+  const roleName = user.role_name || user.role || '';
+  const matchedRole = roles.find(r => r.name === roleName);
+
+  const [form, setForm] = useState({
+    name: user.name || '',
+    roleId: matchedRole ? String(matchedRole.id) : '',
+    isActive: user.is_active !== false,
+    shiftTargetMinutes: user.shift_target_minutes || 510,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState('');
+
+  async function handleSave() {
+    const name = form.name.trim();
+    if (!name) { setError('Name is required.'); return; }
+    const shiftMins = Math.max(60, Math.min(1440, parseInt(form.shiftTargetMinutes, 10) || 510));
+    setSaving(true);
+    setError('');
+    try {
+      const payload = { name, is_active: form.isActive, shift_target_minutes: shiftMins };
+      if (form.roleId) payload.role_id = parseInt(form.roleId, 10);
+      const res = await fetch(`${API_BASE_URL}/admin/users/${user.id}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify(payload),
+      });
+      const json = await parseApiResponse(res);
+      onSaved(json.data || json);
+      onClose();
+    } catch (e) {
+      setError(e.message || 'Failed to update user.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={overlayStyle}>
+      <div style={{ background:'#fff', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', width:'100%', maxWidth:480, display:'flex', flexDirection:'column' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+          <span style={{ fontSize:15, fontWeight:700 }}>✏️ Edit User — {user.name}</span>
+          <button onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14, overflowY:'auto' }}>
+          <div>
+            <label style={labelStyle}>Full Name</label>
+            <input
+              value={form.name}
+              onChange={e => { setForm(p => ({ ...p, name: e.target.value })); setError(''); }}
+              style={inputStyle}
+              autoFocus
+            />
+          </div>
+          <div>
+            <label style={labelStyle}>Email</label>
+            <input value={user.email} disabled style={{ ...inputStyle, background:'#f8fafc', color:'#94a3b8' }} />
+            <div style={{ fontSize:11, color:'#94a3b8', marginTop:3 }}>Email cannot be changed from here.</div>
+          </div>
+          {roles.length > 0 && (
+            <div>
+              <label style={labelStyle}>Role</label>
+              <select
+                value={form.roleId}
+                onChange={e => setForm(p => ({ ...p, roleId: e.target.value }))}
+                style={inputStyle}
+              >
+                <option value="">— Select role —</option>
+                {roles.map(r => (
+                  <option key={r.id} value={String(r.id)}>
+                    {r.display_name || r.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          <div>
+            <label style={labelStyle}>Daily shift target (minutes)</label>
+            <input
+              type="number"
+              min={60}
+              max={1440}
+              value={form.shiftTargetMinutes}
+              onChange={e => setForm(p => ({ ...p, shiftTargetMinutes: e.target.value }))}
+              style={inputStyle}
+            />
+            <div style={{ fontSize:11, color:'#94a3b8', marginTop:3 }}>60–1440 min. Default: 510 (8 h 30 m).</div>
+          </div>
+          <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'#334155', cursor:'pointer' }}>
+            <input
+              type="checkbox"
+              checked={form.isActive}
+              onChange={e => setForm(p => ({ ...p, isActive: e.target.checked }))}
+              style={{ accentColor:'#2563eb' }}
+            />
+            Active account
+          </label>
+          {error && <div style={{ color:'#dc2626', fontSize:12 }}>{error}</div>}
+        </div>
+        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10, borderTop:'1px solid #f1f5f9', flexShrink:0 }}>
+          <button onClick={onClose} style={btnSecondary} disabled={saving}>Cancel</button>
+          <button onClick={handleSave} style={btnPrimary} disabled={saving}>
+            {saving ? 'Saving…' : '💾 Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Reset Password Modal ──────────────────────────────────────────────────────
+function ResetPasswordModal({ user, onClose }) {
+  const [newPassword,     setNewPassword]     = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState('');
+  const [success, setSuccess] = useState(false);
+
+  async function handleReset() {
+    if (newPassword.length < 8)        { setError('Password must be at least 8 characters.'); return; }
+    if (newPassword !== confirmPassword) { setError('Passwords do not match.'); return; }
+    setSaving(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE_URL}/admin/users/${user.id}`, {
+        method: 'PUT',
+        headers: authHeaders(),
+        body: JSON.stringify({ password: newPassword }),
+      });
+      await parseApiResponse(res);
+      setSuccess(true);
+    } catch (e) {
+      setError(e.message || 'Failed to reset password.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={overlayStyle}>
+      <div style={{ background:'#fff', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', width:'100%', maxWidth:420, display:'flex', flexDirection:'column' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+          <span style={{ fontSize:15, fontWeight:700 }}>🔑 Reset Password</span>
+          <button onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        {success ? (
+          <div style={{ padding:'32px 24px', textAlign:'center' }}>
+            <div style={{ fontSize:36, marginBottom:12 }}>✅</div>
+            <div style={{ fontWeight:700, fontSize:15, color:'#15803d', marginBottom:8 }}>Password Reset Successfully</div>
+            <div style={{ fontSize:13, color:'#64748b', marginBottom:20 }}>
+              A confirmation email has been sent to <strong>{user.email}</strong>.
+            </div>
+            <button onClick={onClose} style={btnPrimary}>Close</button>
+          </div>
+        ) : (
+          <>
+            <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+              <div style={{ fontSize:13, color:'#92400e', background:'#fef3c7', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px' }}>
+                You are setting a new password for <strong>{user.name}</strong> ({user.email}).
+                They will receive an email notification.
+              </div>
+              <div>
+                <label style={labelStyle}>New Password</label>
+                <input
+                  type="password"
+                  value={newPassword}
+                  onChange={e => { setNewPassword(e.target.value); setError(''); }}
+                  style={inputStyle}
+                  autoFocus
+                  autoComplete="new-password"
+                  placeholder="Minimum 8 characters"
+                />
+              </div>
+              <div>
+                <label style={labelStyle}>Confirm New Password</label>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={e => { setConfirmPassword(e.target.value); setError(''); }}
+                  style={inputStyle}
+                  autoComplete="new-password"
+                  onKeyDown={e => e.key === 'Enter' && handleReset()}
+                />
+              </div>
+              {error && <div style={{ color:'#dc2626', fontSize:12 }}>{error}</div>}
+            </div>
+            <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10, borderTop:'1px solid #f1f5f9', flexShrink:0 }}>
+              <button onClick={onClose} style={btnSecondary} disabled={saving}>Cancel</button>
+              <button
+                onClick={handleReset}
+                style={{ ...btnPrimary, background:'#dc2626' }}
+                disabled={saving || !newPassword || !confirmPassword}
+              >
+                {saving ? 'Resetting…' : '🔑 Reset Password'}
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -169,12 +374,15 @@ function loadFirmProfile() {
   }
 }
 
-const roleColors = { super_admin:'#fce7f3', admin:'#ede9fe', partner:'#dbeafe', manager:'#dcfce7', staff:'#f1f5f9' };
-const roleTextColors = { super_admin:'#9d174d', admin:'#5b21b6', partner:'#1d4ed8', manager:'#166534', staff:'#475569' };
+const roleColors = { super_admin:'#fce7f3', admin:'#ffedd5', manager:'#dbeafe', staff:'#dcfce7', viewer:'#f3f4f6', affiliate:'#ede9fe', client:'#dcfce7' };
+const roleTextColors = { super_admin:'#9d174d', admin:'#9a3412', manager:'#1e40af', staff:'#166534', viewer:'#374151', affiliate:'#5b21b6', client:'#166534' };
 
 export default function Settings() {
   const { hasPermission } = useAuth();
+  const navigate = useNavigate();
   const canManageUserRates = hasPermission('users.manage');
+  const canManageUsers     = hasPermission('users.manage') || hasPermission('users.delegate');
+  const canConfigureRoles  = hasPermission('users.manage');
   const [tab, setTab] = useState('firm');
   const [zoomStatus, setZoomStatus] = useState({ connected: false, accountId: null });
   const [zoomLoading, setZoomLoading] = useState(false);
@@ -238,7 +446,14 @@ export default function Settings() {
   const [teamUsers, setTeamUsers]       = useState([]);
   const [teamLoading, setTeamLoading]   = useState(false);
   const [teamError, setTeamError]       = useState('');
+  const [teamRoles, setTeamRoles]       = useState([]);
   const [teamRateSavingId, setTeamRateSavingId] = useState(null);
+
+  // ── Edit User modal state ──────────────────────────────────────────────────
+  const [editUserModal, setEditUserModal] = useState(null);
+
+  // ── Reset Password modal state ────────────────────────────────────────────
+  const [resetPwModal, setResetPwModal] = useState(null);
 
   // ── Roles & Permissions state ──────────────────────────────────────────────
   const [roles, setRoles]                   = useState([]);
@@ -297,9 +512,14 @@ export default function Settings() {
     if (tab === 'team') {
       setTeamLoading(true);
       setTeamError('');
-      fetch(`${API_BASE_URL}/admin/users?per_page=100`, { headers: authHeaders() })
-        .then(r => r.json())
-        .then(data => setTeamUsers(data.data || []))
+      Promise.all([
+        fetch(`${API_BASE_URL}/admin/users?per_page=100`, { headers: authHeaders() }).then(r => r.json()),
+        fetch(`${API_BASE_URL}/admin/roles`, { headers: authHeaders() }).then(r => r.json()),
+      ])
+        .then(([usersData, rolesData]) => {
+          setTeamUsers(usersData.data || []);
+          setTeamRoles(rolesData.data || []);
+        })
         .catch(() => setTeamError('Failed to load team members.'))
         .finally(() => setTeamLoading(false));
     }
@@ -662,8 +882,24 @@ export default function Settings() {
 
       {tab==='team' && (
         <div>
+          {editUserModal && (
+            <EditUserModal
+              user={editUserModal}
+              roles={teamRoles}
+              onClose={() => setEditUserModal(null)}
+              onSaved={(updated) =>
+                setTeamUsers(prev => prev.map(u => u.id === updated.id ? { ...u, ...updated } : u))
+              }
+            />
+          )}
+          {resetPwModal && (
+            <ResetPasswordModal
+              user={resetPwModal}
+              onClose={() => setResetPwModal(null)}
+            />
+          )}
           <div style={{ marginBottom:16, display:'flex', justifyContent:'flex-end' }}>
-            <button style={btnPrimary}>➕ Invite Team Member</button>
+            <button style={btnPrimary} onClick={() => navigate('/admin/users')}>➕ Invite Team Member</button>
           </div>
           <div style={cardStyle}>
             {!teamLoading && (
@@ -732,8 +968,20 @@ export default function Settings() {
                           </span>
                         </td>
                         <td style={tdStyle}>
-                          <button style={iconBtn}>✏️</button>
-                          <button style={iconBtn}>🔑 Reset Password</button>
+                          {canManageUsers && (
+                            <button
+                              style={iconBtn}
+                              title="Edit user"
+                              onClick={() => setEditUserModal(u)}
+                            >✏️</button>
+                          )}
+                          {canManageUsers && (
+                            <button
+                              style={{ ...iconBtn, color:'#dc2626' }}
+                              title="Reset password"
+                              onClick={() => setResetPwModal(u)}
+                            >🔑 Reset Password</button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -781,7 +1029,9 @@ export default function Settings() {
                     })()}
                   </div>
                 </div>
-                <button style={btnOutline} onClick={() => setConfigureRole(r)}>Configure</button>
+                {canConfigureRoles && (
+                  <button style={btnOutline} onClick={() => setConfigureRole(r)}>Configure</button>
+                )}
               </div>
             ))}
             {!rolesLoading && roles.length === 0 && (

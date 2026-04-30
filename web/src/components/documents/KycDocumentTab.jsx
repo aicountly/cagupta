@@ -157,7 +157,8 @@ function FileStager({ categories, onUpload, uploading }) {
       const next = [...prev];
       allowed.forEach(f => {
         if (next.length < 10) {
-          next.push({ file: f, category: Object.keys(categories)[0] || '', label: '' });
+          const nameWithoutExt = f.name.replace(/\.[^/.]+$/, '');
+          next.push({ file: f, category: Object.keys(categories)[0] || '', label: nameWithoutExt });
         }
       });
       return next;

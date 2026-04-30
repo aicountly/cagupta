@@ -153,7 +153,7 @@ class Routes
                 'method'     => 'PUT',
                 'pattern'    => '/api/admin/roles/:id',
                 'handler'    => 'Admin\UserController@updateRole',
-                'middleware' => ['auth', 'role:super_admin'],
+                'middleware' => ['auth', 'permission:users.manage'],
             ],
 
             // ── Admin — Contacts (clients) ────────────────────────────────────

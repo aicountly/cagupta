@@ -49,6 +49,7 @@ export const PERMISSIONS = {
     'dashboard.view',
     'clients.view', 'clients.create', 'clients.edit', 'clients.delete',
     'services.view', 'services.create', 'services.edit', 'services.delete',
+    'services.assignees.manage',
     'documents.view', 'documents.upload',
     'invoices.view', 'invoices.create', 'invoices.edit', 'invoices.delete',
     'calendar.view', 'calendar.create',

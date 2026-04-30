@@ -16,7 +16,7 @@ INSERT INTO roles (name, display_name, permissions, is_system) VALUES
 (
     'admin',
     'Administrator',
-    '{"permissions": ["dashboard.view","clients.view","clients.create","clients.edit","clients.delete","services.view","services.create","services.edit","services.delete","documents.view","documents.upload","invoices.view","invoices.create","invoices.edit","invoices.delete","calendar.view","calendar.create","credentials.view","registers.view","leads.view","leads.create","leads.edit","quotations.setup","quotations.manage","settings.view","users.manage","users.delegate","affiliates.manage"]}',
+    '{"permissions": ["dashboard.view","clients.view","clients.create","clients.edit","clients.delete","services.view","services.create","services.edit","services.delete","services.assignees.manage","documents.view","documents.upload","invoices.view","invoices.create","invoices.edit","invoices.delete","calendar.view","calendar.create","credentials.view","registers.view","leads.view","leads.create","leads.edit","quotations.setup","quotations.manage","settings.view","users.manage","users.delegate","affiliates.manage"]}',
     TRUE
 ),
 (
