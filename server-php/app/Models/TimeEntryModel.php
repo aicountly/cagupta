@@ -325,15 +325,28 @@ class TimeEntryModel
             return null;
         }
         $endTs = time();
+
+        // Timers must not cross midnight (IST). Cap ended_at at the start of the next
+        // calendar day in Asia/Kolkata so duration_minutes never exceeds 1440.
+        $midnightTs = mktime(
+            0, 0, 0,
+            (int)date('n', $startTs),
+            (int)date('j', $startTs) + 1,
+            (int)date('Y', $startTs)
+        );
+        if ($endTs > $midnightTs) {
+            $endTs = $midnightTs;
+        }
+
         $mins = (int)floor(($endTs - $startTs) / 60);
         if ($mins < 1) {
             $mins = 1;
         }
         $endAt = gmdate('Y-m-d H:i:sP', $endTs);
-        $workDate = gmdate('Y-m-d', $startTs);
+        $workDate = date('Y-m-d', $startTs);
 
         // #region agent log
-        $this->_debugLog(['sessionId'=>'9ce8c9','hypothesisId'=>'H-A','location'=>'TimeEntryModel.php:stopTimerWithValidation','message'=>'computed duration before DB update','data'=>['entryId'=>$entryId,'startTs'=>$startTs,'endTs'=>$endTs,'mins'=>$mins,'workDate'=>$workDate,'endAt'=>$endAt,'exceeds1440'=>$mins>1440],'timestamp'=>(int)(microtime(true)*1000)]);
+        $this->_debugLog(['sessionId'=>'9ce8c9','hypothesisId'=>'H-A','location'=>'TimeEntryModel.php:stopTimerWithValidation','message'=>'computed duration after midnight cap','data'=>['entryId'=>$entryId,'startTs'=>$startTs,'endTs'=>$endTs,'midnightTs'=>$midnightTs,'wasCapped'=>time()>$midnightTs,'mins'=>$mins,'workDate'=>$workDate,'endAt'=>$endAt],'timestamp'=>(int)(microtime(true)*1000)]);
         // #endregion
 
         $stmt = $this->db->prepare(
@@ -364,7 +377,7 @@ class TimeEntryModel
             ':id' => $entryId,
         ]);
         // #region agent log
-        $this->_debugLog(['sessionId'=>'9ce8c9','hypothesisId'=>'H-A','location'=>'TimeEntryModel.php:stopTimerWithValidation','message'=>'DB update succeeded','data'=>['entryId'=>$entryId,'mins'=>$mins],'timestamp'=>(int)(microtime(true)*1000)]);
+        $this->_debugLog(['sessionId'=>'9ce8c9','hypothesisId'=>'H-A','runId'=>'post-fix','location'=>'TimeEntryModel.php:stopTimerWithValidation','message'=>'DB update succeeded','data'=>['entryId'=>$entryId,'mins'=>$mins],'timestamp'=>(int)(microtime(true)*1000)]);
         } catch (\Throwable $dbEx) {
             $this->_debugLog(['sessionId'=>'9ce8c9','hypothesisId'=>'H-A,H-C','location'=>'TimeEntryModel.php:stopTimerWithValidation','message'=>'DB update threw exception','data'=>['entryId'=>$entryId,'mins'=>$mins,'exceptionClass'=>get_class($dbEx),'exceptionMsg'=>$dbEx->getMessage()],'timestamp'=>(int)(microtime(true)*1000)]);
             throw $dbEx;
