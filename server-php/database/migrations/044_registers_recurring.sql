@@ -1,5 +1,5 @@
 -- =============================================================================
--- Migration 050 — Registers & Recurring Service Definitions
+-- Migration 044 — Registers & Recurring Service Definitions
 --
 -- 1. Add `register_category` to engagement_types so each engagement type
 --    knows which compliance register tab it belongs to (gst/tds/it/roc/pf).
