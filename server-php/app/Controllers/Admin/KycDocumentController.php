@@ -142,6 +142,14 @@ class KycDocumentController extends BaseController
             $this->error("doc_category '{$docCategory}' is not valid for entity_type '{$entityType}'.", 422);
         }
 
+        // Auto-fill label with the category's human name when not supplied.
+        // This ensures every document has a readable label from the moment it
+        // is uploaded; the user can always edit it later via PUT.
+        if ($docLabel === '') {
+            $cats     = KycDocumentModel::categoriesFor($entityType);
+            $docLabel = $cats[$docCategory]['label'] ?? $docCategory;
+        }
+
         // Check OTP for uncompressed bypass
         $skipCompression = false;
         $rawSkip = strtolower(trim((string) ($_POST['skip_compression'] ?? '')));
@@ -188,8 +196,9 @@ class KycDocumentController extends BaseController
             $tmpPath  = (string) $file['tmp_name'];
             $origSize = (int) $file['size'];
 
-            // Detect real MIME (finfo is more reliable than browser-supplied type)
-            $mime = $this->detectMime($tmpPath);
+            // Detect real MIME from file bytes; fall back to original filename's
+            // extension when finfo returns the generic application/octet-stream.
+            $mime = $this->detectMime($tmpPath, $origName);
             if (!array_key_exists($mime, self::ALLOWED_MIME)) {
                 $this->error("File type '{$mime}' is not allowed. Upload only images (JPEG, PNG, GIF, WebP) or PDF.", 422);
             }
@@ -587,25 +596,47 @@ class KycDocumentController extends BaseController
 
     /**
      * Detect the real MIME type of an uploaded file using finfo.
-     * Falls back to the browser-supplied MIME if finfo is unavailable.
+     *
+     * finfo reads the actual file bytes (magic-number detection) and is the
+     * primary source.  When finfo is unavailable OR returns the generic
+     * 'application/octet-stream' fallback (which some servers produce for
+     * valid PDFs / images depending on the installed magic database), we
+     * re-try using the original filename's extension.
+     *
+     * $origName must be the user-supplied basename (e.g. "aadhaar.pdf").
+     * $path is the PHP temporary file path, which has no extension and must
+     * never be used for extension-based detection.
      */
-    private function detectMime(string $path): string
+    private function detectMime(string $path, string $origName = ''): string
     {
+        $extMap = [
+            'jpg'  => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png'  => 'image/png',
+            'gif'  => 'image/gif',
+            'webp' => 'image/webp',
+            'pdf'  => 'application/pdf',
+        ];
+
         if (function_exists('finfo_open')) {
             $fi   = finfo_open(FILEINFO_MIME_TYPE);
             $mime = $fi ? (string) finfo_file($fi, $path) : '';
             if ($fi) {
                 finfo_close($fi);
             }
-            if ($mime !== '') {
+            // Accept finfo result only when it is a concrete type (not the
+            // generic octet-stream fallback that finfo emits when it cannot
+            // identify the file — typically on servers with an outdated or
+            // minimal magic database).
+            if ($mime !== '' && $mime !== 'application/octet-stream') {
                 return $mime;
             }
         }
-        // Fallback
-        $ext  = strtolower(pathinfo($path, PATHINFO_EXTENSION));
-        $map  = ['jpg' => 'image/jpeg', 'jpeg' => 'image/jpeg', 'png' => 'image/png',
-                  'gif' => 'image/gif',  'webp'  => 'image/webp', 'pdf' => 'application/pdf'];
-        return $map[$ext] ?? 'application/octet-stream';
+
+        // Extension-based fallback — use the ORIGINAL filename, never the
+        // temp path (which has no extension).
+        $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+        return $extMap[$ext] ?? 'application/octet-stream';
     }
 
     /**
