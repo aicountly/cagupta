@@ -612,8 +612,23 @@ class KycDocumentController extends BaseController
         if ($configured !== '') {
             return rtrim($configured, '/\\');
         }
-        // Four levels up: Admin → Controllers → app → server-php → repo root
-        return dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'docu_bank';
+
+        // Fallback: four levels up from this file (Admin → Controllers → app → server-php → repo root).
+        // On shared hosting this typically resolves inside public_html, which is web-accessible.
+        // Always set DOCU_BANK_PATH in production to a path outside public_html.
+        $default = dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'docu_bank';
+
+        // #region agent log — dbdf04 — warn if inside public_html
+        if (str_contains($default, 'public_html')) {
+            error_log(
+                '[KYC] WARNING: DOCU_BANK_PATH is not set. Document storage falls back to ' . $default
+                . ' which is inside public_html and web-accessible. '
+                . 'Set DOCU_BANK_PATH to a path outside public_html in your .env file.'
+            );
+        }
+        // #endregion agent log
+
+        return $default;
     }
 
     /**
