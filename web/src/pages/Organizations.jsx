@@ -190,12 +190,12 @@ export default function Organizations() {
             ) : orgs.length === 0 ? (
               <tr><td colSpan={11} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No organizations found.</td></tr>
             ) : orgs.map(o => (
-              <tr key={o.id} style={trStyle}>
+              <tr key={o.id} style={trStyle} onClick={() => setSelected(o)}>
                 <td style={tdStyle}>
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{o.clientCode}</code>
                 </td>
-                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920', cursor: 'pointer' }} onClick={() => setSelected(o)} title="View details">
-                  <span style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}>{o.displayName}</span>{o.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4, textDecoration: 'none' }}>({o.reference})</span>}
+                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920' }}>
+                  {o.displayName}{o.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4 }}>({o.reference})</span>}
                 </td>
                 <td style={tdStyle}>
                   {o.groupName ? (
@@ -211,7 +211,7 @@ export default function Organizations() {
                 <td style={tdStyle}>{o.assignedManager}</td>
                 <td style={tdStyle}>{o.city}</td>
                 <td style={tdStyle}><StatusBadge status={o.status} /></td>
-                <td style={tdStyle}>
+                <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                   <button type="button" style={iconBtn} title="View" onClick={() => setSelected(o)}>👁️</button>
                   <button type="button" style={iconBtn} title="Edit" onClick={() => navigate(`/clients/organizations/${o.id}/edit`)}>✏️</button>
                   {isOrgDeleteRole ? (
@@ -295,7 +295,7 @@ const cardStyle = { background: '#fff', borderRadius: 14, boxShadow: '0 1px 4px 
 const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
 const thStyle = { textAlign: 'left', padding: '10px 12px', color: '#64748b', fontWeight: 600, fontSize: 11, borderBottom: '1px solid #F0F2F8', whiteSpace: 'nowrap', background: '#F8FAFC', textTransform: 'uppercase', letterSpacing: '0.04em' };
 const tdStyle = { padding: '10px 12px', color: '#334155', verticalAlign: 'middle', whiteSpace: 'nowrap', borderBottom: '1px solid #F6F7FB' };
-const trStyle = { cursor: 'default', transition: 'background 0.1s' };
+const trStyle = { cursor: 'pointer', transition: 'background 0.15s' };
 const inputStyle = { flex: 1, padding: '8px 12px', border: '1px solid #E6E8F0', borderRadius: 8, fontSize: 13, outline: 'none', background: '#F6F7FB' };
 const selectStyle = { padding: '8px 12px', border: '1px solid #E6E8F0', borderRadius: 8, fontSize: 13, background: '#fff' };
 const btnPrimary = { padding: '8px 16px', background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' };

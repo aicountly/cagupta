@@ -169,12 +169,12 @@ export default function Contacts() {
             ) : contacts.length === 0 ? (
               <tr><td colSpan={10} style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>No contacts found.</td></tr>
             ) : contacts.map(c => (
-              <tr key={c.id} style={trStyle}>
+              <tr key={c.id} style={trStyle} onClick={() => setSelected(c)}>
                 <td style={tdStyle}>
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{c.clientCode}</code>
                 </td>
-                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920', cursor: 'pointer' }} onClick={() => setSelected(c)} title="View details">
-                  <span style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}>{c.displayName}</span>{c.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4, textDecoration: 'none' }}>({c.reference})</span>}
+                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920' }}>
+                  {c.displayName}{c.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4 }}>({c.reference})</span>}
                 </td>
                 <td style={tdStyle}>
                   {c.linkedOrgsCount > 1 ? (
@@ -208,7 +208,7 @@ export default function Contacts() {
                 <td style={tdStyle}>{c.assignedManager}</td>
                 <td style={tdStyle}>{c.city}</td>
                 <td style={tdStyle}><StatusBadge status={c.status} /></td>
-                <td style={tdStyle}>
+                <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                   <button type="button" style={iconBtn} title="View" onClick={() => setSelected(c)}>👁️</button>
                   <button type="button" style={iconBtn} title="Edit" onClick={() => navigate(`/clients/contacts/${c.id}/edit`)}>✏️</button>
                   {canDeleteContact ? (
@@ -216,10 +216,7 @@ export default function Contacts() {
                       type="button"
                       style={iconBtnDanger}
                       title="Delete contact"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteTarget(c);
-                      }}
+                      onClick={() => setDeleteTarget(c)}
                     >
                       🗑️
                     </button>
@@ -392,7 +389,7 @@ const cardStyle = { background: '#fff', borderRadius: 14, boxShadow: '0 1px 4px 
 const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
 const thStyle = { textAlign: 'left', padding: '10px 12px', color: '#64748b', fontWeight: 600, fontSize: 11, borderBottom: '1px solid #F0F2F8', whiteSpace: 'nowrap', background: '#F8FAFC', textTransform: 'uppercase', letterSpacing: '0.04em' };
 const tdStyle = { padding: '10px 12px', color: '#334155', verticalAlign: 'middle', whiteSpace: 'nowrap', borderBottom: '1px solid #F6F7FB' };
-const trStyle = { cursor: 'default', transition: 'background 0.1s' };
+const trStyle = { cursor: 'pointer', transition: 'background 0.15s' };
 const inputStyle = { flex: 1, padding: '8px 12px', border: '1px solid #E6E8F0', borderRadius: 8, fontSize: 13, outline: 'none', background: '#F6F7FB' };
 const selectStyle = { padding: '8px 12px', border: '1px solid #E6E8F0', borderRadius: 8, fontSize: 13, background: '#fff' };
 const btnPrimary = { padding: '8px 16px', background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' };

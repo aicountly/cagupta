@@ -35,11 +35,23 @@ if (is_readable($envFile)) {
 $dryRun = in_array('--dry-run', $argv ?? [], true);
 
 // ── Connect ───────────────────────────────────────────────────────────────────
+// On cPanel, DB_USER is the restricted app user (non-owner). Migrations that
+// run ALTER TABLE require the table owner. Set MIGRATION_DB_USER /
+// MIGRATION_DB_PASS in .env to the owner role (e.g. the phpPgAdmin default
+// user) and migrate.php will use those credentials only for migrations while
+// the application continues to use DB_USER for all runtime connections.
 $host   = getenv('DB_HOST') ?: 'localhost';
 $port   = (int)(getenv('DB_PORT') ?: 5432);
 $dbname = getenv('DB_NAME') ?: 'cagupta_db';
-$user   = getenv('DB_USER') ?: 'postgres';
-$pass   = getenv('DB_PASS') ?: '';
+$user   = getenv('MIGRATION_DB_USER') ?: (getenv('DB_USER') ?: 'postgres');
+$pass   = getenv('MIGRATION_DB_PASS') !== false && getenv('MIGRATION_DB_PASS') !== ''
+    ? getenv('MIGRATION_DB_PASS')
+    : (getenv('DB_PASS') ?: '');
+
+$usingMigrationUser = getenv('MIGRATION_DB_USER') !== false && getenv('MIGRATION_DB_USER') !== '';
+if ($usingMigrationUser) {
+    echo "ℹ️  Using MIGRATION_DB_USER ({$user}) for DDL ownership.\n";
+}
 
 try {
     $pdo = new PDO(
