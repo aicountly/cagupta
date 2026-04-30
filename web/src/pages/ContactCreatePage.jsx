@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
+import KycDocumentTab from '../components/documents/KycDocumentTab';
 import {
   createContact,
   updateContact as updateContactApi,
@@ -181,6 +182,7 @@ export default function ContactCreatePage() {
   const [nameDuplicateInfo, setNameDuplicateInfo] = useState(null);
   /** @type {null | { profile: 'contact_name_duplicate' | 'contact_pan_identical', matches: object[], blockingReason?: string | null, confirmMode?: 'quit' | 'addNew' }} */
   const [collisionModal, setCollisionModal] = useState(null);
+  const [activeTab, setActiveTab] = useState('details');
   const [panDuplicateInfo, setPanDuplicateInfo] = useState(null);
   /** Pending API payload when save is gated behind suspicious name confirmation. */
   const pendingSaveRef = useRef(/** @type {null | { contact: object, mode: 'quit' | 'addNew' }} */ (null));
@@ -717,13 +719,36 @@ export default function ContactCreatePage() {
       </div>
 
       {/* Page title */}
-      <div style={{ marginBottom: 24 }}>
+      <div style={{ marginBottom: 20 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>{isEdit ? 'Edit Contact' : 'Add Contact'}</h2>
         <p style={{ margin: '4px 0 0', fontSize: 13, color: '#64748b' }}>{isEdit ? 'Update contact record details.' : 'Create a new client contact record.'}</p>
       </div>
 
-      {/* Form card */}
-      <div style={cardStyle}>
+      {/* Tab bar — Documents tab only available when editing an existing contact */}
+      {isEdit && (
+        <div style={tabBarStyle}>
+          <button
+            style={activeTab === 'details' ? tabActive : tabInactive}
+            onClick={() => setActiveTab('details')}
+          >
+            Details
+          </button>
+          <button
+            style={activeTab === 'documents' ? tabActive : tabInactive}
+            onClick={() => setActiveTab('documents')}
+          >
+            KYC Documents
+          </button>
+        </div>
+      )}
+
+      {/* Documents tab */}
+      {isEdit && activeTab === 'documents' && (
+        <KycDocumentTab entityType="contact" entityId={parseInt(id, 10)} />
+      )}
+
+      {/* Form card — hidden (not unmounted) when on the documents tab so form state is preserved */}
+      <div style={activeTab === 'documents' && isEdit ? { display: 'none' } : cardStyle}>
         {/* ── Section: Basic Info ── */}
         <SectionHeader title="Basic Information" />
         <div style={gridStyle}>
@@ -1231,4 +1256,35 @@ const toastClose = {
   padding: 0,
   display: 'flex',
   alignItems: 'center',
+};
+
+const tabBarStyle = {
+  display: 'flex',
+  gap: 0,
+  marginBottom: 20,
+  borderBottom: '2px solid #E6E8F0',
+};
+
+const tabActive = {
+  padding: '9px 22px',
+  background: 'none',
+  border: 'none',
+  borderBottom: '2px solid #F37920',
+  marginBottom: -2,
+  color: '#F37920',
+  fontWeight: 700,
+  fontSize: 13,
+  cursor: 'pointer',
+};
+
+const tabInactive = {
+  padding: '9px 22px',
+  background: 'none',
+  border: 'none',
+  borderBottom: '2px solid transparent',
+  marginBottom: -2,
+  color: '#64748b',
+  fontWeight: 500,
+  fontSize: 13,
+  cursor: 'pointer',
 };

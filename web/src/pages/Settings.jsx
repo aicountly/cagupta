@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthContext';
 import { getPortalTypes } from '../constants/portalTypes';
-import { fetchPortalTypes, createPortalType, deletePortalType } from '../services/portalTypeService';
+import { fetchPortalTypes, createPortalType, updatePortalType, deletePortalType } from '../services/portalTypeService';
 import { getRegisterTypes, saveRegisterTypes } from '../constants/registerTypes';
 import { loadBillingProfiles, saveBillingProfiles } from '../constants/billingProfiles';
 import { stateCodeFromGstin } from '../utils/gstUtils';
@@ -183,6 +183,9 @@ export default function Settings() {
   const [newPortalUrl, setNewPortalUrl] = useState('');
   const [portalLoading, setPortalLoading] = useState(false);
   const [portalError, setPortalError] = useState('');
+  const [editingPortalId, setEditingPortalId] = useState(null);
+  const [editPortalName, setEditPortalName] = useState('');
+  const [editPortalUrl, setEditPortalUrl] = useState('');
   const [registerTypes, setRegisterTypes] = useState(() => getRegisterTypes());
   const [newRegister, setNewRegister] = useState('');
   const [registerError, setRegisterError] = useState('');
@@ -467,12 +470,46 @@ export default function Settings() {
   }
 
   async function handleDeletePortal(portal) {
+    if (!window.confirm(`Delete portal type "${portal.name}"? This cannot be undone.`)) return;
     try {
       await deletePortalType(portal.id);
       setPortalTypes(prev => prev.filter(p => p.id !== portal.id));
       setPortalError('');
     } catch (e) {
       setPortalError(e.message || `Cannot delete "${portal.name}".`);
+    }
+  }
+
+  function handleStartEditPortal(pt) {
+    setEditingPortalId(pt.id);
+    setEditPortalName(pt.name);
+    setEditPortalUrl(pt.url || '');
+    setPortalError('');
+  }
+
+  function handleCancelEditPortal() {
+    setEditingPortalId(null);
+    setEditPortalName('');
+    setEditPortalUrl('');
+    setPortalError('');
+  }
+
+  async function handleSavePortal(id) {
+    const name = editPortalName.trim();
+    if (!name) { setPortalError('Portal name cannot be empty.'); return; }
+    if (portalTypes.some(p => p.name === name && String(p.id) !== String(id))) {
+      setPortalError('Another portal type with this name already exists.');
+      return;
+    }
+    try {
+      const updated = await updatePortalType(id, { name, url: editPortalUrl.trim() });
+      setPortalTypes(prev => prev.map(p => (String(p.id) === String(id) ? updated : p)));
+      setEditingPortalId(null);
+      setEditPortalName('');
+      setEditPortalUrl('');
+      setPortalError('');
+    } catch (e) {
+      setPortalError(e.message || 'Failed to update portal type.');
     }
   }
 
@@ -921,14 +958,42 @@ export default function Settings() {
             <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>These portal names appear as a dropdown when adding credentials in the Credentials Vault.</p>
             {portalLoading && <div style={{ fontSize:13, color:'#64748b' }}>Loading…</div>}
             {portalTypes.map(pt => (
-              <div key={pt.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
-                <div>
-                  <span style={{ fontSize:13, color:'#334155', fontWeight:600 }}>{pt.name}</span>
-                  {pt.url && (
-                    <a href={pt.url} target="_blank" rel="noreferrer" style={{ display:'block', fontSize:11, color:'#2563eb', marginTop:2 }}>{pt.url}</a>
-                  )}
-                </div>
-                <button onClick={() => handleDeletePortal(pt)} style={iconBtn} title="Delete">🗑️</button>
+              <div key={pt.id} style={{ padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
+                {editingPortalId === pt.id ? (
+                  <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
+                    <input
+                      value={editPortalName}
+                      onChange={e => { setEditPortalName(e.target.value); setPortalError(''); }}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSavePortal(pt.id); if (e.key === 'Escape') handleCancelEditPortal(); }}
+                      placeholder="Portal name"
+                      style={{ ...inputStyle, flex:'2 1 160px' }}
+                      autoFocus
+                    />
+                    <input
+                      type="url"
+                      value={editPortalUrl}
+                      onChange={e => setEditPortalUrl(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') handleSavePortal(pt.id); if (e.key === 'Escape') handleCancelEditPortal(); }}
+                      placeholder="Portal URL"
+                      style={{ ...inputStyle, flex:'3 1 200px' }}
+                    />
+                    <button onClick={() => handleSavePortal(pt.id)} style={btnPrimary}>Save</button>
+                    <button onClick={handleCancelEditPortal} style={iconBtn} title="Cancel">✕</button>
+                  </div>
+                ) : (
+                  <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <div>
+                      <span style={{ fontSize:13, color:'#334155', fontWeight:600 }}>{pt.name}</span>
+                      {pt.url && (
+                        <a href={pt.url} target="_blank" rel="noreferrer" style={{ display:'block', fontSize:11, color:'#2563eb', marginTop:2 }}>{pt.url}</a>
+                      )}
+                    </div>
+                    <div style={{ display:'flex', gap:4 }}>
+                      <button onClick={() => handleStartEditPortal(pt)} style={iconBtn} title="Edit">✏️</button>
+                      <button onClick={() => handleDeletePortal(pt)} style={iconBtn} title="Delete">🗑️</button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
             <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>

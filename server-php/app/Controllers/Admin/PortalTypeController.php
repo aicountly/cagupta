@@ -11,6 +11,7 @@ use App\Models\PortalTypeModel;
  *
  * GET    /api/admin/portal-types        — list all portal types
  * POST   /api/admin/portal-types        — create a new portal type
+ * PUT    /api/admin/portal-types/:id    — update a portal type
  * DELETE /api/admin/portal-types/:id    — delete a portal type (blocked if in use)
  */
 class PortalTypeController extends BaseController
@@ -52,6 +53,31 @@ class PortalTypeController extends BaseController
 
         $record = $this->model->find($newId);
         $this->success($record, 'Portal type created', 201);
+    }
+
+    // ── PUT /api/admin/portal-types/:id ──────────────────────────────────────
+
+    public function update(int $id): never
+    {
+        $record = $this->model->find($id);
+        if ($record === null) {
+            $this->error('Portal type not found.', 404);
+        }
+
+        $body = $this->getJsonBody();
+        $name = trim((string)($body['name'] ?? ''));
+
+        if ($name === '') {
+            $this->error('name is required.', 422);
+        }
+
+        $this->model->update($id, [
+            'name' => $name,
+            'url'  => isset($body['url']) ? trim((string)$body['url']) : null,
+        ]);
+
+        $updated = $this->model->find($id);
+        $this->success($updated, 'Portal type updated');
     }
 
     // ── DELETE /api/admin/portal-types/:id ───────────────────────────────────

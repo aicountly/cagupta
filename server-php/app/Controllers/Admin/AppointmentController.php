@@ -9,6 +9,7 @@ use App\Controllers\BaseController;
 use App\Libraries\AppointmentBookingService;
 use App\Libraries\AppointmentInvoiceBuilder;
 use App\Libraries\AppointmentPaymentHooks;
+use App\Libraries\CalendarSyncService;
 use App\Libraries\RazorpayClient;
 use App\Libraries\ZoomMeetingService;
 use App\Models\AppointmentModel;
@@ -132,6 +133,10 @@ class AppointmentController extends BaseController
             $this->syncZoomSafe($appointment);
         }
 
+        if ($actingUser !== null) {
+            $this->syncCalendarSafe('push', $newId, (int)$actingUser['id']);
+        }
+
         $this->success($appointment, 'Appointment created', 201);
     }
 
@@ -190,6 +195,12 @@ class AppointmentController extends BaseController
         ) {
             $this->syncZoomSafe($updated);
         }
+
+        $actingUser = $this->authUser();
+        if ($actingUser !== null) {
+            $this->syncCalendarSafe('update', $id, (int)$actingUser['id']);
+        }
+
         $this->success($updated, 'Appointment updated');
     }
 
@@ -211,6 +222,11 @@ class AppointmentController extends BaseController
                     error_log('[AppointmentController::destroy] Zoom delete: ' . $e->getMessage());
                 }
             }
+        }
+
+        $actingUser = $this->authUser();
+        if ($actingUser !== null) {
+            $this->syncCalendarSafe('delete', $id, (int)$actingUser['id']);
         }
 
         $this->appointments->delete($id);
@@ -289,6 +305,21 @@ class AppointmentController extends BaseController
             ZoomMeetingService::syncForAppointment((int)$super['id'], $appointment);
         } catch (\Throwable $e) {
             error_log('[AppointmentController] Zoom: ' . $e->getMessage());
+        }
+    }
+
+    private function syncCalendarSafe(string $action, int $appointmentId, int $userId): void
+    {
+        try {
+            $svc = new CalendarSyncService();
+            match ($action) {
+                'push'   => $svc->pushEvent($appointmentId, $userId),
+                'update' => $svc->updateEvent($appointmentId, $userId),
+                'delete' => $svc->deleteEvent($appointmentId, $userId),
+                default  => null,
+            };
+        } catch (\Throwable $e) {
+            error_log('[AppointmentController] CalendarSync ' . $action . ': ' . $e->getMessage());
         }
     }
 }

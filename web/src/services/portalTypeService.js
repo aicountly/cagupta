@@ -74,6 +74,32 @@ export async function createPortalType(payload) {
 }
 
 /**
+ * Update an existing portal type.
+ */
+export async function updatePortalType(id, payload) {
+  if (!API_BASE) {
+    const list    = getPortalTypes();
+    const updated = list.map(p =>
+      String(p.id) === String(id) ? { ...p, name: payload.name, url: payload.url || '' } : p
+    );
+    savePortalTypes(updated);
+    return updated.find(p => String(p.id) === String(id));
+  }
+  const res  = await fetch(`${API_BASE}/admin/portal-types/${id}`, {
+    method:  'PUT',
+    headers: authHeaders(),
+    body:    JSON.stringify({ name: payload.name, url: payload.url || null }),
+  });
+  const data = await parseResponse(res);
+  const item = normalise(data.data || data);
+  // sync localStorage
+  const list    = getPortalTypes();
+  const updated = list.map(p => (String(p.id) === String(id) ? item : p));
+  savePortalTypes(updated);
+  return item;
+}
+
+/**
  * Delete a portal type by id.
  */
 export async function deletePortalType(id) {

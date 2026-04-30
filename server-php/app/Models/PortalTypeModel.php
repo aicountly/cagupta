@@ -72,6 +72,23 @@ class PortalTypeModel
     }
 
     /**
+     * Update an existing portal type.
+     *
+     * @param array<string, mixed> $data
+     */
+    public function update(int $id, array $data): bool
+    {
+        $stmt = $this->db->prepare(
+            'UPDATE portal_types SET name = :name, url = :url WHERE id = :id'
+        );
+        return $stmt->execute([
+            ':name' => $data['name'],
+            ':url'  => $data['url'] ?? null,
+            ':id'   => $id,
+        ]);
+    }
+
+    /**
      * Delete a portal type by primary key.
      */
     public function delete(int $id): bool

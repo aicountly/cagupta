@@ -89,6 +89,27 @@ class Routes
                 'middleware' => [],
             ],
 
+            // ── Calendar OAuth callbacks (no auth — validated via signed state) ──
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/integrations/calendar/google/callback',
+                'handler'    => 'Integrations\GoogleCalendarCallbackController@handle',
+                'middleware' => [],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/integrations/calendar/outlook/callback',
+                'handler'    => 'Integrations\OutlookCalendarCallbackController@handle',
+                'middleware' => [],
+            ],
+            // Apple CalDAV connect (requires auth — user submits credentials via the UI)
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/integrations/calendar/apple/connect',
+                'handler'    => 'Integrations\AppleCalendarConnectController@handle',
+                'middleware' => ['auth', 'permission:calendar.create'],
+            ],
+
             // ── Admin — Users ─────────────────────────────────────────────────
             [
                 'method'     => 'GET',
@@ -575,6 +596,56 @@ class Routes
                 'middleware' => ['auth', 'permission:calendar.view'],
             ],
 
+            // ── Admin — Calendar Sync (Google, Outlook, Apple) ───────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/integrations/calendar/google/authorize',
+                'handler'    => 'Admin\CalendarSyncController@googleAuthorize',
+                'middleware' => ['auth', 'permission:calendar.create'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/integrations/calendar/outlook/authorize',
+                'handler'    => 'Admin\CalendarSyncController@outlookAuthorize',
+                'middleware' => ['auth', 'permission:calendar.create'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/integrations/calendar/accounts',
+                'handler'    => 'Admin\CalendarSyncController@accounts',
+                'middleware' => ['auth', 'permission:calendar.view'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/integrations/calendar/accounts/:id',
+                'handler'    => 'Admin\CalendarSyncController@disconnect',
+                'middleware' => ['auth', 'permission:calendar.create'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/integrations/calendar/accounts/:id',
+                'handler'    => 'Admin\CalendarSyncController@updateAccount',
+                'middleware' => ['auth', 'permission:calendar.create'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/integrations/calendar/settings',
+                'handler'    => 'Admin\CalendarSyncController@getSettings',
+                'middleware' => ['auth', 'permission:calendar.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/integrations/calendar/settings',
+                'handler'    => 'Admin\CalendarSyncController@updateSettings',
+                'middleware' => ['auth', 'permission:calendar.create'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/integrations/calendar/sync',
+                'handler'    => 'Admin\CalendarSyncController@syncNow',
+                'middleware' => ['auth', 'permission:calendar.create'],
+            ],
+
             // ── Admin — Credentials Vault ─────────────────────────────────────
             [
                 'method'     => 'GET',
@@ -618,6 +689,12 @@ class Routes
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/portal-types',
                 'handler'    => 'Admin\PortalTypeController@store',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/portal-types/:id',
+                'handler'    => 'Admin\PortalTypeController@update',
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
             [
@@ -1104,6 +1181,70 @@ class Routes
                 'handler'    => 'Affiliate\AffiliatePortalController@subAffiliateStore',
                 'middleware' => ['auth', 'permission:affiliate.sub_affiliates.create'],
             ],
+            // ── Admin — KYC Documents ────────────────────────────────────────
+            // Static sub-routes (request-uncompressed-otp, request-delete-otp)
+            // must appear BEFORE :id patterns so the router matches them first.
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/kyc-documents/request-uncompressed-otp',
+                'handler'    => 'Admin\KycDocumentController@requestUncompressedOtp',
+                'middleware' => ['auth', 'permission:clients.edit'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/kyc-documents/request-delete-otp',
+                'handler'    => 'Admin\KycDocumentController@requestDeleteOtp',
+                'middleware' => ['auth', 'permission:clients.edit'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/kyc-documents',
+                'handler'    => 'Admin\KycDocumentController@index',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/kyc-documents',
+                'handler'    => 'Admin\KycDocumentController@store',
+                'middleware' => ['auth', 'permission:clients.edit'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/kyc-documents/:id/file',
+                'handler'    => 'Admin\KycDocumentController@serveFile',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/kyc-documents/:id/audit',
+                'handler'    => 'Admin\KycDocumentController@auditLog',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/kyc-documents/:id/new-version',
+                'handler'    => 'Admin\KycDocumentController@newVersion',
+                'middleware' => ['auth', 'permission:clients.edit'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/kyc-documents/:id',
+                'handler'    => 'Admin\KycDocumentController@show',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/kyc-documents/:id',
+                'handler'    => 'Admin\KycDocumentController@update',
+                'middleware' => ['auth', 'permission:clients.edit'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/kyc-documents/:id',
+                'handler'    => 'Admin\KycDocumentController@destroy',
+                'middleware' => ['auth', 'permission:clients.edit'],
+            ],
+
             // ── Client portal ────────────────────────────────────────────────
             [
                 'method'     => 'GET',

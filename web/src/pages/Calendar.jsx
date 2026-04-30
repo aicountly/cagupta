@@ -7,6 +7,7 @@ import {
   updateAppointment,
   deleteAppointment,
 } from '../services/appointmentService';
+import CalendarSyncSettings from '../components/calendar/CalendarSyncSettings';
 import { getAppointmentFeeRules } from '../services/appointmentFeeRuleService';
 import { getContacts } from '../services/contactService';
 import { getOrganizations } from '../services/organizationService';
@@ -65,6 +66,7 @@ function hoursBetween(start, end) {
 export default function Calendar() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState('appointments');
+  const TABS = ['calendar', 'appointments', 'sync'];
   const [year, setYear] = useState(2026);
   const [month, setMonth] = useState(3);
   const [appointments, setAppointments] = useState([]);
@@ -341,8 +343,8 @@ export default function Calendar() {
 
   return (
     <div style={{ padding: 24 }}>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '2px solid #e2e8f0' }}>
-        {['calendar', 'appointments'].map((t) => (
+      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '2px solid #e2e8f0', alignItems: 'center' }}>
+        {TABS.map((t) => (
           <button
             key={t}
             type="button"
@@ -357,9 +359,10 @@ export default function Calendar() {
               color: tab === t ? '#2563eb' : '#64748b',
               borderBottom: tab === t ? '2px solid #2563eb' : '2px solid transparent',
               marginBottom: -2,
+              whiteSpace: 'nowrap',
             }}
           >
-            {t === 'calendar' ? '📅 Calendar View' : '📋 Appointments List'}
+            {t === 'calendar' ? '📅 Calendar View' : t === 'appointments' ? '📋 Appointments List' : '🔗 Sync'}
           </button>
         ))}
         <button type="button" style={{ ...btnPrimary, marginLeft: 'auto' }} onClick={openAddModal}>
@@ -529,6 +532,10 @@ export default function Calendar() {
             </table>
           )}
         </div>
+      )}
+
+      {tab === 'sync' && (
+        <CalendarSyncSettings />
       )}
 
       {showBookModal && (
