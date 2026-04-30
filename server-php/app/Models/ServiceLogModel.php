@@ -230,7 +230,11 @@ class ServiceLogModel
                 s.status  AS service_status,
                 s.client_name,
                 s.client_type,
-                COALESCE(c.name, o.name) AS client_display_name,
+                COALESCE(
+                    c.organization_name,
+                    NULLIF(TRIM(CONCAT(COALESCE(c.first_name, ''), ' ', COALESCE(c.last_name, ''))), ''),
+                    o.name
+                ) AS client_display_name,
                 (
                     SELECT STRING_AGG(su.name, ', ' ORDER BY su.name)
                     FROM service_assignees sa
