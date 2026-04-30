@@ -1,0 +1,49 @@
+---
+description: Standards for creating or editing email HTML templates in this project
+globs: server-php/app/Templates/*.html,backend/src/templates/*.html
+alwaysApply: false
+---
+
+# Email Template Standards
+
+All email templates must include the brand logo at the top of the email container.
+
+## Required structure
+
+Every template must follow this layout order inside `.container`:
+
+```html
+<div class="container">
+  <!-- 1. Logo strip — ALWAYS first, before the coloured header -->
+  <div class="logo-strip">
+    <img src="https://carahulgupta.in/cropped_logo.png" alt="CA Rahul Gupta" height="52" style="display:block;margin:0 auto;" />
+  </div>
+
+  <!-- 2. Coloured header (navy #1a3c6e or contextual colour) -->
+  <div class="header">
+    <h1>...</h1>
+  </div>
+
+  <!-- 3. Body -->
+  <div class="body">...</div>
+
+  <!-- 4. Footer -->
+  <div class="footer">...</div>
+</div>
+```
+
+## Required CSS (add to every `<style>` block, after `.container`)
+
+```css
+.logo-strip { background: #ffffff; padding: 20px 40px; text-align: center; border-bottom: 3px solid #F37920; }
+.logo-strip img { height: 52px; width: auto; display: block; margin: 0 auto; }
+```
+
+- Use `border-bottom: 3px solid #dc2626` instead when the header colour is red (`#7f1d1d`).
+- For inline-style-only templates (no `<style>` block), replicate the logo strip using `style=` attributes directly on the divs.
+
+## Logo asset
+
+- File: `web-public/public/cropped_logo.png` (tracked in git)
+- Public URL: `https://carahulgupta.in/cropped_logo.png`
+- This file is copied as-is into `web-public/dist/` by Vite during build and deployed via rsync — do **not** reference hashed paths.

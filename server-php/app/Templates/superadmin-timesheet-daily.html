@@ -7,6 +7,8 @@
   <style>
     body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
     .container { max-width: 900px; margin: 32px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .logo-strip { background: #ffffff; padding: 20px 34px; text-align: center; border-bottom: 3px solid #F37920; }
+    .logo-strip img { height: 52px; width: auto; display: block; margin: 0 auto; }
     .header { background: #1a3c6e; padding: 28px 34px; color: #ffffff; }
     .header h1 { margin: 0; font-size: 22px; }
     .header p { margin: 8px 0 0; color: #d7e7ff; font-size: 14px; }
@@ -25,6 +27,9 @@
 </head>
 <body>
   <div class="container">
+    <div class="logo-strip">
+      <img src="https://carahulgupta.in/cropped_logo.png" alt="CA Rahul Gupta" height="52" style="display:block;margin:0 auto;" />
+    </div>
     <div class="header">
       <h1>Daily Timesheet Report</h1>
       <p>Office Portal — Super Admin · Date: {{reportDate}}</p>

@@ -395,6 +395,9 @@ class ServiceLogController extends BaseController
 <head><meta charset="UTF-8"></head>
 <body style="font-family:sans-serif;background:#f6f7fb;margin:0;padding:24px;">
   <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e6e8f0;">
+    <div style="background:#ffffff;padding:16px 24px;text-align:center;border-bottom:3px solid #F37920;">
+      <img src="https://carahulgupta.in/cropped_logo.png" alt="CA Rahul Gupta" height="48" style="display:block;margin:0 auto;" />
+    </div>
     <div style="background:#F37920;padding:20px 24px;">
       <h2 style="margin:0;color:#fff;font-size:18px;">Follow-up Reminder</h2>
     </div>
