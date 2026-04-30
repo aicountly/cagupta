@@ -1,369 +1,383 @@
-# 🏢 Office Management Portal – Automated Practice Workbench for CA Firms
+# 🏢 CA Gupta Office Management Portal
 
-A **React‑based automated office‑management portal** designed specifically for a **Chartered Accountancy practice** handling **100+ clients** with a team of **15+ professionals**. The goal of this project is to **centralize, automate, and streamline** all core operations of the practice into a single, clean, and scalable web platform.
+A **full-stack automated office-management portal** designed specifically for a **Chartered Accountancy practice** handling **100+ clients** with a team of **15+ professionals**. The portal centralises, automates, and streamlines all core operations — from client onboarding and compliance tracking to invoicing, appointments, and affiliate management.
 
-This repository contains the **frontend code** built in **React** and is intended to be **backend‑agnostic**, so it can later integrate with custom Node.js, PHP, .NET, or any other backend as per business needs.
+The system comprises:
 
-Additionally, the project includes **two dedicated React Native mobile applications** — one for the **internal team** and one for **clients** — ensuring on‑the‑go access to all critical workflows.
+| Layer | Technology | URL |
+|---|---|---|
+| **Public marketing site** | React + Vite | `https://carahulgupta.in` |
+| **Practice portal (web app)** | React + Vite | `https://app.carahulgupta.in` |
+| **PHP API backend** | PHP 8.1 + PostgreSQL | `https://carahulgupta.in/api/` |
+| **Email notification service** | Node.js + Brevo | `backend/` (internal) |
 
 ---
 
 ## 🎯 Vision & Purpose
 
-Instead of juggling multiple tools (Excel, Tally, WhatsApp, emails, and random folders), this portal aims to:
+Instead of juggling multiple tools (Excel, Tally, WhatsApp, emails, and random folders), this portal provides:
 
-- Provide a **single pane of glass** for managing clients, services, tasks, documents, and finances.
-- Automate repetitive workflows (invoice generation, reminders, document sharing, ledger maintenance, etc.).
-- Allow **secure client access** for document viewing and request submission.
-- Help the practice **scale** without adding proportionate overhead.
-- Deliver **native mobile experiences** to both the team and clients for real‑time operations from anywhere.
-
----
-
-## 🧩 Key Features Planned
-
-### 1. **Services, Tasks & Sub‑tasks**
-- Define **services** offered by the firm (e.g., ITR filing, GST return, ROC filings, audits, book‑keeping, etc.).
-- Break each service into **tasks and sub‑tasks** with assignees, deadlines, and status.
-- Track progress at service, task, and client level.
-
-### 2. **Document Management within Services**
-- Attach, upload, and version‑control **files within each service**.
-- Add descriptions, categories, and tags to documents.
-- Maintain a clear audit trail of who uploaded and when.
-
-### 3. **Structured Document Library**
-- A **central Document Library** where all files are organized by category and tag, independent of services.
-- Fast search and filtering by client, year, document type, etc.
-- Optional role‑based permissions (admin, staff, client).
-
-### 4. **Client Portal & Login**
-- Secure **client login** to access their own documents and request assistance.
-- Transparent view of pending tasks, recent invoices, and upcoming events.
-- Web‑based communication channel to reduce reliance on WhatsApp and email for trivial queries.
-
-### 5. **One‑Click Document Sharing**
-- Share documents with clients via **email, SMS, WhatsApp, or download link** in a single click.
-- Support for **bulk actions** (e.g., share all documents for a particular year).
-- Security layer: expiry links, access logs, and download tracking.
-
-### 6. **Calendar & Appointments**
-- Integrated **calendar** for tasks, deadlines, and client meetings.
-- Online **appointment booking** for clients (with slots, durations, and reminders).
-- Staff‑wise calendar view to avoid over‑scheduling.
-
-### 7. **Client Ledger & Invoicing**
-- Track **client ledger** across multiple billing firms (e.g., separate invoices for different services/banks, but a single consolidated ledger view).
-- Raise **invoices** from the portal, with templates and GST support as per Indian regulations.
-- View pending, paid, and overdue invoices with aging filters.
-
-### 8. **Credentials & Automated Registers**
-- Maintain **client credentials** (login IDs, passwords, portal URLs) in a secure, permission‑based manner.
-- Auto‑generate **registers** (e.g., GST filing, ROC, TDS, Tally‑related registers) from active services and tasks.
-
-### 9. **Quotations & Leads Management**
-- Capture **leads** with source, stage, and probability.
-- Create and manage **quotations** for new services.
-- Set **timely reminders** for follow‑ups and renewal dates.
-
-### 10. **Extensibility & Future Ideas**
-This portal will be designed to accommodate any feature that increases **productivity, compliance, or client experience**, such as:
-- Integration with **Tally** or **accounting APIs**.
-- Workflow approvals (e.g., manager approval for final submissions).
-- Role‑based dashboards and reports.
-- Mobile‑friendly / responsive UI for working from anywhere.
+- A **single pane of glass** for managing clients, services, tasks, documents, and finances.
+- Automated compliance workflows (recurring services, registers, reminders, document sharing).
+- A **secure client portal** for document viewing, service status, and ledger access.
+- An **affiliate portal** for referral partners to track commissions, payouts, and sub-affiliates.
+- **Native calendar sync** with Google, Outlook, and Apple CalDAV.
+- **Online appointment booking** with Razorpay payment and automatic Zoom meeting creation.
 
 ---
 
-## 🗄️ Recommended Database Strategy
+## ✅ Features Built (Current State)
 
-Since this is primarily a frontend project, the database lives on the backend. However, the choice of database is critical for the long‑term success and scalability of the portal. Below is our **recommended multi‑database strategy** tailored for a CA practice workbench:
+### 1. Authentication & Access Control
+- Email OTP login, Google OAuth, and Microsoft (MSAL) OAuth for the **staff portal**.
+- Separate OTP-based login for the **client portal**.
+- Three portal types served from the same app: `staff`, `client`, `affiliate`.
+- Role-based access control (RBAC) — `super_admin`, `admin`, `manager`, `staff`, `viewer`.
+- Delegate permissions — granular per-user permission overrides on top of roles.
+- JWT sessions stored in DB (server-side revocation on logout).
 
-### Primary Database — **PostgreSQL** ✅ (Strongly Recommended)
+### 2. Dashboard
+- KPI cards: pending tasks, overdue services, monthly revenue, active clients.
+- Drill-down views (`DashboardMetricDetail`) for each metric.
+- Today's tasks, pending follow-ups, and upcoming deadlines at a glance.
 
-| Aspect | Detail |
-|--------|--------|
-| **Why** | PostgreSQL is the gold standard for structured, transactional business data — exactly what a CA firm needs. |
-| **Best For** | Client master data, ledgers, invoices, tasks, services, user roles & permissions, audit logs, registers, and all relational/financial data. |
-| **Key Strengths** | ACID compliance, complex joins & queries, full‑text search, JSONB support (for flexible metadata), row‑level security, and excellent performance for reporting & analytics. |
-| **Indian Compliance** | Handles GST calculations, multi‑entity billing, and financial year partitioning natively with proper schema design. |
-| **ORM / Query Layer** | Use **Prisma**, **TypeORM**, or **Sequelize** (Node.js); **Entity Framework** (.NET); or **Eloquent** (PHP/Laravel). |
-| **Scaling** | Supports read replicas, partitioning, and connection pooling (PgBouncer) for handling 100+ concurrent client sessions. |
+### 3. Client & Organization Management
+- Separate **Contacts** (individuals) and **Organizations** (companies) modules.
+- PAN-based deduplication — identical PAN rejected at create/update with a conflict payload.
+- Soft duplicate warning on similar names (informational only).
+- **Client Groups** for batch billing and service assignment.
+- KYC document collection per contact and organization.
+- **Exception reports** for contacts and organizations missing required fields or KYC documents.
+- Contact–organization linking (one contact can belong to multiple organizations).
 
-### Secondary Database — **MongoDB** (Optional, for specific use cases)
+### 4. Services & Engagement Management
+- Define service **categories** and **sub-categories** (e.g. GST Return, ITR Filing, ROC).
+- Open engagements per client/organization with assignees, due dates, and billing closure.
+- **Multi-assignee** support per service engagement.
+- Sub-task tracking within engagements.
+- **Service logs** — timestamped notes and activity feed per engagement.
+- **Time tracking** — per-staff time entries with live timer, start/stop, and handoff between staff members.
+- Service engagement files — attach and manage documents per engagement.
+- **Recurring service definitions** — per-client compliance schedules (monthly / quarterly / half-yearly / annual) that drive expected register rows and due dates (migration 044).
+- KPI list view for service performance analytics.
 
-| Aspect | Detail |
-|--------|--------|
-| **Why** | Ideal for storing unstructured or semi‑structured data that doesn't fit neatly into relational tables. |
-| **Best For** | Activity/audit logs, notification streams, chat messages, document metadata with variable schemas, and client communication history. |
-| **Key Strengths** | Schema‑less flexibility, horizontal scaling, native JSON storage, excellent for real‑time event streams. |
-| **ORM / Driver** | Use **Mongoose** (Node.js) or the native MongoDB driver. |
+### 5. Compliance Registers
+- Compliance register tabs: **GST**, **TDS**, **Income Tax (IT)**, **ROC**, **PF**, **Payment**.
+- Each engagement type maps to a register category.
+- Register entries carry: return type, period label, period start/end, filed-by, acknowledgment number, error number, late fee, and linked service.
+- Registers auto-populated via recurring service definitions.
+- Sub-filters for granular register viewing per client/period.
 
-### File / Object Storage — **AWS S3 / MinIO / Google Cloud Storage**
+### 6. Invoicing & Financial Ledger
+- Raise invoices with **GST line-item breakdown** (CGST, SGST, IGST) per Indian regulations.
+- Transaction (`txn`) model covering invoices, payments, and expenses with proper ledger signs.
+- Opening balances per client.
+- Aged receivables and outstanding balance tracking.
+- **Razorpay integration** for online appointment payments (webhook-verified).
+- Appointment invoice auto-generation on payment confirmation.
+- Affiliate commission accrual and sync per invoice line item.
 
-| Aspect | Detail |
-|--------|--------|
-| **Why** | Documents (PDFs, Excel files, images, scanned copies) should never be stored in the database. |
-| **Best For** | All uploaded documents, invoices, signed copies, and client submissions. |
-| **Key Strengths** | Unlimited scalable storage, CDN integration, versioning, signed URLs for secure sharing, and lifecycle policies for archival. |
+### 7. Appointments & Calendar
+- Staff-wise appointment slots with configurable **fee rules** per engagement type.
+- Online booking with Razorpay payment gateway and automatic **Zoom meeting** creation.
+- Two-way **calendar sync**: Google Calendar, Outlook Calendar, Apple CalDAV.
+- Integrated calendar view for tasks, appointments, deadlines, and staff leave.
+- Push events to/from connected calendars on create/update/cancel.
 
-### Caching Layer — **Redis**
+### 8. Document Management
+- Upload, tag, categorize, and version-control documents per engagement.
+- Central **Document Library** independent of services.
+- KYC document collection with exception reporting.
 
-| Aspect | Detail |
-|--------|--------|
-| **Why** | For blazing‑fast responses on dashboards, session management, and rate limiting. |
-| **Best For** | Session tokens, frequently accessed data (dashboard KPIs, task counts), real‑time notification queues, and API response caching. |
+### 9. Credentials Vault
+- Securely store client portal credentials (login IDs, passwords, portal URLs).
+- Permission-based access — staff and manager roles only.
 
-### Search Engine — **Elasticsearch** or **Meilisearch** (Optional)
+### 10. Leads & Quotations
+- Capture leads with source, stage, and assigned owner.
+- Create quotations linked to leads with per-engagement-type default pricing.
+- Follow-up reminders and lead lifecycle tracking.
+- **Pending Follow-Ups** dashboard for overdue lead actions.
 
-| Aspect | Detail |
-|--------|--------|
-| **Why** | The Document Library and client search need fast, typo‑tolerant, filterable full‑text search. |
-| **Best For** | Searching across thousands of documents, client records, invoices, and registers by keyword, tag, date, or type. |
+### 11. Affiliate Portal
+- Dedicated portal for referral affiliates (`/affiliate/*` routes).
+- Dashboard with commission summary, pending payouts, and active services.
+- Sub-affiliate tree (upline tracker).
+- Commission accrual per invoice line with configurable rates.
+- Payout request workflow.
+- Bank detail management.
+- Firm-level commission defaults with per-affiliate overrides.
 
-### Recommended Architecture Diagram
+### 12. Client Portal
+- Dedicated self-service portal for clients (`/client/*` routes).
+- View active and completed services.
+- Client ledger (invoice history, payment records, outstanding balance).
+- Client profile management.
+- Service detail view with log entries and file downloads.
 
+### 13. Leave Management
+- Staff leave requests and approval workflow.
+- Handover assignment modal for active service tasks during leave.
+- Leave calendar integration.
+
+### 14. Timesheets & Shift Targets
+- Per-user daily timesheet with billable/non-billable breakdown.
+- Shift target configuration (minutes per day per user).
+- Timesheets report with date-range and staff filters.
+- Shift-target timesheet report for gap analysis.
+- **Cron job** (6 AM daily): sends low-timesheet intimation emails to individual staff.
+- **Cron job** (5 AM daily): sends consolidated super-admin digest with team attendance.
+
+### 15. Global Search
+- Full-text search across clients, organizations, services, leads, and invoices from a single input.
+
+### 16. User Management & Settings
+- Create/edit/deactivate staff users with role assignment.
+- Per-user delegate permissions beyond the base role.
+- Firm-level settings (portal types, engagement type definitions, quotation defaults).
+- Admin audit log — all create/update/delete operations recorded.
+
+### 17. Notifications & Email
+- **Brevo (Sendinblue)** transactional email for OTP, appointment confirmations, invoice receipts, timesheet intimations, and digest reports.
+- **DigestQueue** library for batching and deduplicating notification sends.
+- Browser-console debug logging of all API responses (`response.data.debug`) in non-production environments.
+
+---
+
+## 🗄️ Database
+
+**PostgreSQL 14+** is the sole database. 44 migrations cover the full schema:
+
+| Migration range | Coverage |
+|---|---|
+| 001–010 | Initial schema, SSO, OTP, service categories, payments, opening balances, client groups, leads, portal types |
+| 011–020 | Transactions, contact–org linking, engagement subcategories, quotation setup, GST breakdown, delegate permissions |
+| 021–030 | Audit log, affiliate commissions, billing closure, time entries, appointments + Zoom + Razorpay, client referral, service assignees, app grants, client portal login |
+| 031–040 | Super-admin digest, client group uniqueness, contact/org status fields, time-entry timers, staff leaves, temp assignments, service logs |
+| 041–044 | Shift targets, calendar sync, KYC documents, **recurring service definitions + extended registers** |
+
+Run migrations in order:
+
+```bash
+psql -h <host> -U <user> -d <dbname> -f server-php/database/migrations/001_initial_schema.sql
+# ... through ...
+psql -h <host> -U <user> -d <dbname> -f server-php/database/migrations/044_registers_recurring.sql
 ```
-┌─────────────────────────────────────────────────────────┐
-│                   FRONTEND LAYER                        │
-│  React Web App  │  Team Mobile App  │  Client Mobile App│
-└────────┬────────┴─────────┬─────────┴─────────┬─────────┘
-         │        REST / GraphQL APIs           │
-         ▼                                      ▼
-┌─────────────────────────────────────────────────────────┐
-│                  BACKEND / API LAYER                    │
-│         Node.js / .NET / PHP (Laravel)                  │
-├─────────────┬──────────────┬──────────────┬─────────────┤
-│ PostgreSQL  │   MongoDB    │  Redis Cache │ S3 / MinIO  │
-│ (Primary)   │ (Events/Logs)│  (Sessions)  │ (Documents) │
-├─────────────┴──────────────┴──────────────┴─────────────┤
-│         Elasticsearch / Meilisearch (Search)            │
-└─────────────────────────────────────────────────────────┘
-```
-
-### Why Not Firebase / Firestore?
-
-While Firebase is excellent for rapid prototyping and small apps, a CA firm's portal has:
-- Complex relational data (multi‑entity invoicing, ledger reconciliation).
-- Strict data‑sovereignty and compliance needs (Indian data residency).
-- Need for advanced reporting/analytics that Firestore's query model doesn't support well.
-- Cost unpredictability at scale.
-
-**PostgreSQL gives you full control, compliance, and cost predictability.**
 
 ---
 
-## 📱 React Native Mobile Applications
+## 🔗 Third-Party Integrations
 
-The project includes **two separate React Native mobile applications**, built from a **shared monorepo** for maximum code reuse while maintaining distinct user experiences and permission boundaries.
+| Integration | Purpose | Library |
+|---|---|---|
+| **Google OAuth** | Staff SSO | `@react-oauth/google` (frontend) |
+| **Microsoft (MSAL)** | Staff SSO | `@azure/msal-browser` (frontend) |
+| **Google Calendar** | Two-way calendar sync | `GoogleCalendarClient.php` |
+| **Outlook Calendar** | Two-way calendar sync | `OutlookCalendarClient.php` |
+| **Apple CalDAV** | Two-way calendar sync | `AppleCalDAVClient.php` |
+| **Zoom** | Auto-create meetings for paid appointments | `ZoomOAuthClient.php`, `ZoomMeetingService.php` |
+| **Razorpay** | Appointment payment gateway | `RazorpayClient.php`, webhook handler |
+| **Brevo** | Transactional email (OTP, invoices, digests) | `BrevoMailer.php`, `backend/` Node service |
 
-### Why Two Separate Apps?
+---
 
-| Concern | Team App | Client App |
-|---------|----------|------------|
+## 📱 Mobile Applications (Planned — Phase 12 & 13)
+
+Two separate React Native apps will be built from a **shared monorepo** (`mobile/`) for maximum code reuse while maintaining distinct user experiences and permission boundaries.
+
+| Concern | Team App (`ca-team-app`) | Client App (`ca-client-app`) |
+|---|---|---|
 | **Users** | 15+ CA staff, partners, managers | 100+ clients and their representatives |
-| **Operations** | Heavy read + write (create tasks, assign work, generate invoices, manage docs) | Primarily read + limited write (view docs, book appointments, submit requests) |
-| **Security** | Access to all clients, internal dashboards, credentials vault, admin features | Isolated to own data only — documents, invoices, tasks, appointments |
-| **Complexity** | High — role‑based workflows, bulk operations, analytics | Low to medium — clean dashboard, document viewer, request forms |
-| **App Store** | Internal distribution (MDM / Enterprise) or Play Store / App Store | Public distribution on Play Store & App Store |
-
-### 📲 Team App — `ca-team-app`
-
-**Purpose:** The internal command center for the CA firm's professionals.
-
-**Key Features:**
-- 🏠 **Dashboard** — Today's tasks, pending deadlines, overdue items, team workload heatmap.
-- 📋 **Task Manager** — Create, assign, track, and close tasks/sub‑tasks with real‑time status updates.
-- 👥 **Client Management** — Full client directory with contact, PAN, GSTIN, engagement details.
-- 📂 **Document Hub** — Upload, tag, categorize, and share documents on the go (camera + file picker).
-- 💰 **Invoicing & Ledger** — Raise invoices, record payments, view client ledger and aging reports.
-- 📅 **Calendar** — Task deadlines, client meetings, filing due dates, staff leave calendar.
-- 🔑 **Credentials Vault** — Securely access stored client portal credentials (biometric‑protected).
-- 📊 **Reports & Registers** — Auto‑generated GST, TDS, ROC filing registers; practice analytics.
-- 🔔 **Push Notifications** — Deadline reminders, client document uploads, payment receipts, task assignments.
-- 💬 **Internal Chat** — Quick team communication without leaving the app.
-
-### 📲 Client App — `ca-client-app`
-
-**Purpose:** A transparent, self‑service portal for the firm's clients.
-
-**Key Features:**
-- 🏠 **Dashboard** — Overview of active services, pending tasks, recent invoices, upcoming deadlines.
-- 📂 **My Documents** — View, download, and upload documents requested by the firm.
-- 🧾 **Invoices & Payments** — View invoice history, download PDFs, check outstanding balances.
-- 📅 **Appointments** — Book meetings with assigned CA/staff, view available slots, receive confirmations.
-- 📝 **Service Requests** — Submit new requests (e.g., "Need ITR filed", "Send me Form 16") with attachments.
-- 🔔 **Push Notifications** — Alerts for new documents shared, invoice raised, task completed, appointment reminders.
-- 💬 **Messaging** — Communicate with the assigned professional directly from the app.
-- 🔐 **Security** — Biometric login, OTP verification, encrypted data at rest.
-
-### 🏗️ Monorepo Architecture
-
-We use a **monorepo** (powered by **Nx** or **Turborepo**) to share common code between both apps while keeping them independently deployable:
-
-```
-/mobile
-├── /packages
-│   ├── /shared-ui          # Reusable UI components (buttons, cards, modals, lists)
-│   ├── /shared-services    # API clients, auth logic, push notification handlers
-│   ├── /shared-types       # TypeScript interfaces & types (Client, Invoice, Task, etc.)
-│   └── /shared-utils       # Date formatting, currency helpers, validation schemas
-│
-├── /apps
-│   ├── /team-app           # CA Team App (ca-team-app)
-│   │   ├── /src
-│   │   │   ├── /screens    # Dashboard, Tasks, Clients, Documents, Invoices, Calendar, etc.
-│   │   │   ├── /navigation # Stack & Tab navigators (admin‑level routes)
-│   │   │   ├── /store      # Redux Toolkit slices + React Query hooks
-│   │   │   └── /config     # Environment config, feature flags
-│   │   ├── android/
-│   │   ├── ios/
-│   │   └── package.json
-│   │
-│   └── /client-app         # Client App (ca-client-app)
-│       ├── /src
-│       │   ├── /screens    # Dashboard, Documents, Invoices, Appointments, Requests, etc.
-│       │   ├── /navigation # Stack & Tab navigators (client‑level routes)
-│       │   ├── /store      # Redux Toolkit slices + React Query hooks
-│       │   └── /config     # Environment config, feature flags
-│       ├── android/
-│       ├── ios/
-│       └── package.json
-│
-├── nx.json / turbo.json    # Monorepo orchestration config
-├── tsconfig.base.json
-└── package.json
-```
+| **Operations** | Heavy read + write (tasks, invoices, docs, credentials) | Primarily read + limited write (view docs, book appointments, submit requests) |
+| **Security** | Access to all clients, internal dashboards, credentials vault | Isolated to own data only |
+| **Distribution** | Internal (MDM / Enterprise) or Play Store / App Store | Public — Play Store & App Store |
 
 ### Mobile Tech Stack
 
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Framework** | React Native (with Expo or bare workflow) | Cross‑platform iOS & Android development |
-| **Language** | TypeScript | Type safety across the entire codebase |
-| **Navigation** | React Navigation v7+ | Type‑safe stack, tab, and drawer navigators |
-| **State Management** | Redux Toolkit + React Query (TanStack Query) | Global state + server‑state caching & sync |
-| **Forms** | React Hook Form + Zod | Performant forms with schema‑based validation |
-| **HTTP Client** | Axios | API communication with interceptors for auth |
-| **Push Notifications** | Firebase Cloud Messaging (FCM) + APNs | Real‑time alerts and reminders |
-| **File Handling** | react-native-document-picker + react-native-camera | Upload documents and scan physical papers |
-| **Secure Storage** | react-native-keychain / expo-secure-store | Biometric auth, token storage, credential vault |
-| **Offline Support** | WatermelonDB / MMKV | Local caching for low‑connectivity scenarios |
-| **PDF Viewer** | react-native-pdf | View invoices and documents in‑app |
-| **Charts** | react-native-chart-kit / Victory Native | Dashboard analytics and reports |
-| **Testing** | Jest + React Native Testing Library + Detox | Unit, integration, and E2E testing |
-| **CI/CD** | GitHub Actions + Fastlane + EAS Build | Automated builds, testing, and store deployment |
+| Layer | Technology |
+|---|---|
+| Framework | React Native (Expo or bare workflow) |
+| Language | TypeScript |
+| Navigation | React Navigation v7+ |
+| State | Redux Toolkit + TanStack Query |
+| Forms | React Hook Form + Zod |
+| HTTP | Axios (shared interceptors from `shared-services`) |
+| Push Notifications | Firebase Cloud Messaging (FCM) + APNs |
+| File Handling | `react-native-document-picker` + `react-native-camera` |
+| Secure Storage | `react-native-keychain` / `expo-secure-store` (biometric auth) |
+| Offline | WatermelonDB / MMKV for low-connectivity caching |
+| PDF Viewer | `react-native-pdf` |
+| Charts | Victory Native |
+| Testing | Jest + React Native Testing Library + Detox |
+| CI/CD | GitHub Actions + Fastlane + EAS Build |
+
+### Mock API for Mobile Dev
+
+During mobile development the `mock-api/` JSON server will stand in for the live PHP backend:
+
+```bash
+cd mock-api
+npx json-server --watch db.json --port 3001
+```
+
+Point the mobile apps at `http://localhost:3001` via the `EXPO_PUBLIC_API_BASE_URL` env variable in `mobile/apps/team-app/.env`.
 
 ---
 
-## 🛠 Web Frontend Tech Stack
-
-| Layer | Technology | Purpose |
-|-------|-----------|---------|
-| **Core** | React 18+ | UI framework |
-| **Routing** | React Router v6+ | Module‑based routing |
-| **State** | Redux Toolkit + React Query | Global + server state management |
-| **Forms** | React Hook Form + Zod | Invoice, task, client, and quotation forms |
-| **HTTP** | Axios | REST API communication |
-| **Styling** | Tailwind CSS or Material UI (MUI) | Responsive, modern UI design |
-| **Tables** | TanStack Table (React Table) | Client lists, registers, ledger views |
-| **Charts** | Recharts or Chart.js | Dashboard analytics |
-| **PDF** | react-pdf / jsPDF | Invoice generation and document viewing |
-| **Calendar** | FullCalendar or react-big-calendar | Task deadlines, appointments, events |
-| **Auth** | JWT + OAuth 2.0 | Secure authentication and authorization |
-
----
-
-## 📂 Full Project Structure (High‑Level)
+## 📂 Actual Project Structure
 
 ```
 /
-├── /web-public                   # Public marketing website (carahulgupta.in)
+├── /web                          # React Portal App (app.carahulgupta.in)
 │   ├── /src
-│   │   ├── /assets
+│   │   ├── /auth                 # AuthContext, MsalConfig, ProtectedRoute
 │   │   ├── /components
-│   │   │   ├── /layout           # NavBar (with portal dropdown), Footer
-│   │   │   ├── /sections         # Hero, ServicesGrid, WhyUs, FaqAccordion, CtaBanner
-│   │   │   └── /ui               # Container, Button
+│   │   │   ├── /calendar         # CalendarSyncSettings
+│   │   │   ├── /common           # ClientSearchDropdown, DateInput, StatusBadge,
+│   │   │   │                     # ListPaginationBar, RegisterSubFilters, etc.
+│   │   │   ├── /documents        # KycDocumentTab
+│   │   │   ├── /layout           # Sidebar, TopBar, AffiliateLayout, ClientLayout
+│   │   │   ├── /leaves           # HandoverAssignmentModal
+│   │   │   ├── /registers        # RegisterEntryModal
+│   │   │   └── /services         # AddLogModal, AddTaskModal, ServiceLogPanel,
+│   │   │                         # TimerHandoffModal, TimeEntryModifyModal, etc.
+│   │   ├── /constants            # billingProfiles, config, registerConfig, roles, etc.
+│   │   ├── /context              # NotificationContext
+│   │   ├── /hooks                # useElapsedTimer, useServiceTimer, useStaffUsers,
+│   │   │                         # useTimesheetReportFilters
+│   │   ├── /pages
+│   │   │   ├── /affiliate        # AffiliateDashboard, AffiliateCommissions,
+│   │   │   │                     # AffiliateServices, AffiliateBank, AffiliatePayouts,
+│   │   │   │                     # AffiliateSubAffiliates
+│   │   │   ├── /client           # ClientActiveServices, ClientCompletedServices,
+│   │   │   │                     # ClientLedger, ClientProfile, ClientServiceDetails
+│   │   │   ├── Dashboard, DashboardMetricDetail
+│   │   │   ├── Clients, Contacts, ContactCreatePage, Organizations, OrganizationCreatePage
+│   │   │   ├── ClientGroups, AdminAffiliates
+│   │   │   ├── Services, NewServiceEngagement, ServiceEngagementEdit,
+│   │   │   │   ServiceEngagementManage, ServiceEngagementFiles, ServicesKpiList
+│   │   │   ├── RecurringServices
+│   │   │   ├── Documents, Credentials
+│   │   │   ├── Registers
+│   │   │   ├── Invoices
+│   │   │   ├── Calendar, AppointmentFeeRules
+│   │   │   ├── Leads, PendingFollowUps
+│   │   │   ├── LeaveManagement
+│   │   │   ├── TimesheetsReport, ShiftTargetTimesheetReport
+│   │   │   ├── GlobalSearchPage
+│   │   │   ├── ContactExceptionsReport, OrganizationExceptionsReport,
+│   │   │   │   ContactKycExceptionsReport, OrganizationKycExceptionsReport
+│   │   │   ├── UserManagement, Settings, Profile
+│   │   │   └── Login
+│   │   └── /services             # Axios API service layer
+│   ├── tailwind.config.js
+│   └── package.json
+│
+├── /web-public                   # Public Marketing Site (carahulgupta.in)
+│   ├── /src
+│   │   ├── /components           # NavBar (portal dropdown), Footer, Hero,
+│   │   │                         # ServicesGrid, WhyUs, FaqAccordion, CtaBanner
 │   │   ├── /config               # site.config.js (PORTAL_URL, contact info)
 │   │   ├── /content              # services.js, faqs.js, blogPosts.js
-│   │   └── /pages                # Home, About, Services, Blog, BlogPost, Contact
-│   ├── /public                   # .htaccess, favicon, robots.txt
+│   │   └── /pages                # Home, About, Services, Blog, BlogPost, Contact, NotFound
 │   └── package.json
 │
-├── /web                          # React Web Application (portal at app.carahulgupta.in)
-│   ├── /public
+├── /server-php                   # PHP 8.1 API Backend (carahulgupta.in/api/)
+│   ├── /app
+│   │   ├── /Config               # App, Auth, Database, Routes
+│   │   ├── /Controllers
+│   │   │   ├── /Admin            # All admin-facing CRUD controllers
+│   │   │   ├── /Affiliate        # AffiliatePortalController
+│   │   │   ├── /Auth             # AuthController (JWT, OTP, SSO)
+│   │   │   ├── /Client           # ClientPortalController, Client ServiceLogController
+│   │   │   ├── /Integrations     # Google/Outlook/Apple calendar callbacks, ZoomCallback
+│   │   │   └── /Webhooks         # RazorpayWebhookController
+│   │   ├── /Filters              # AuthFilter, RoleFilter, PermissionFilter
+│   │   ├── /Helpers              # response_helper (standard JSON envelope)
+│   │   ├── /Libraries            # BrevoMailer, CalendarSyncService, CommissionSyncService,
+│   │   │                         # DigestQueue, GoogleCalendarClient, OutlookCalendarClient,
+│   │   │                         # AppleCalDAVClient, GstInvoiceTax, InvoiceLineCommission,
+│   │   │                         # JWT, OtpService, PasswordHasher, RazorpayClient,
+│   │   │                         # ZoomOAuthClient, ZoomMeetingService,
+│   │   │                         # AppointmentBookingService, AppointmentInvoiceBuilder,
+│   │   │                         # AppointmentPaymentHooks
+│   │   ├── /Models               # 40+ Eloquent-style models for every entity
+│   │   └── /Templates            # Email HTML templates
+│   ├── /cli                      # Cron scripts (send-digest, timesheet-report, intimation)
+│   ├── /database
+│   │   └── /migrations           # 044 idempotent SQL migrations (001 → 044)
+│   └── /public                   # Entry point (index.php + .htaccess)
+│
+├── /backend                      # Node.js email-notification service (Brevo)
 │   ├── /src
-│   │   ├── /assets               # Images, icons, fonts
-│   │   ├── /components           # Reusable UI components
-│   │   │   ├── /common           # Buttons, modals, cards, loaders
-│   │   │   ├── /layout           # Sidebar, header, footer, page wrappers
-│   │   │   └── /forms            # Form components (invoice, task, client, etc.)
-│   │   ├── /features             # Feature modules
-│   │   │   ├── /dashboard        # Main dashboard
-│   │   │   ├── /clients          # Client management
-│   │   │   ├── /services         # Services, tasks, sub‑tasks
-│   │   │   ├── /documents        # Document library & management
-│   │   │   ├── /invoicing        # Invoices, ledger, payments
-│   │   │   ├── /calendar         # Calendar & appointments
-│   │   │   ├── /credentials      # Secure credentials vault
-│   │   │   ├── /registers        # Auto‑generated registers
-│   │   │   ├── /quotations       # Quotations & leads
-│   │   │   └── /settings         # Firm settings, user management, roles
-│   │   ├── /hooks                # Custom React hooks
-│   │   ├── /services             # API service layer (Axios instances)
-│   │   ├── /store                # Redux store, slices, middleware
-│   │   ├── /utils                # Helper functions, formatters, validators
-│   │   ├── /types                # TypeScript interfaces and types
-│   │   ├── /routes               # Route definitions and guards
-│   │   ├── App.tsx
-│   │   └── index.tsx
-│   ├── tailwind.config.js
-│   ├── tsconfig.json
+│   │   ├── /config
+│   │   ├── /routes
+│   │   ├── /services
+│   │   ├── /templates
+│   │   └── /__tests__
 │   └── package.json
 │
-├── /mobile                       # React Native Mobile Applications
-│   ├── /packages                 # Shared packages (see monorepo structure above)
+├── /mobile                       # 🗓 PLANNED — React Native Mobile Apps (monorepo)
+│   ├── /packages
+│   │   ├── /shared-ui            # Reusable UI components (buttons, cards, modals)
+│   │   ├── /shared-services      # API clients, auth logic, push notification handlers
+│   │   ├── /shared-types         # TypeScript interfaces (Client, Invoice, Task, etc.)
+│   │   └── /shared-utils         # Date formatting, currency helpers, validators
 │   ├── /apps
-│   │   ├── /team-app             # Internal team app
-│   │   └── /client-app           # Client‑facing app
-│   ├── nx.json
+│   │   ├── /team-app             # Internal CA team app (ca-team-app)
+│   │   └── /client-app           # Client-facing app (ca-client-app)
+│   ├── nx.json / turbo.json      # Monorepo orchestration
 │   └── package.json
 │
-├── /docs                         # Documentation
-│   ├── API-CONTRACTS.md          # Mock API contracts for backend integration
-│   ├── DATABASE-SCHEMA.md        # PostgreSQL schema design
-│   ├── DEPLOYMENT.md             # Deployment guides (web + mobile)
-│   └── CONTRIBUTING.md           # Contribution guidelines
-│
-├── /mock-api                     # Mock JSON server for development
-│   ├── db.json
-│   └── routes.json
+├── /mock-api                     # 🗓 PLANNED — JSON mock server for mobile dev
+│   ├── db.json                   # Seed data for all entities
+│   └── routes.json               # Route overrides
 │
 ├── .github
-│   └── /workflows                # GitHub Actions CI/CD pipelines
-│       ├── web-ci.yml
-│       ├── team-app-ci.yml
-│       └── client-app-ci.yml
+│   └── /workflows
+│       └── deploy-cpanel.yml     # Manual build + rsync to cPanel
 │
-├── README.md                     # ← You are here
-├── LICENSE
-└── .gitignore
+└── README.md
 ```
 
 ---
 
-## 🔐 Security Considerations
+## 🛠 Tech Stack
 
-| Area | Implementation |
-|------|---------------|
-| **Authentication** | JWT tokens with refresh rotation; OAuth 2.0 for SSO; OTP for client login |
-| **Authorization** | Role‑based access control (RBAC) — Admin, Partner, Manager, Staff, Client |
-| **Data Encryption** | TLS 1.3 in transit; AES‑256 at rest for credentials vault |
-| **API Security** | Rate limiting (Redis), input validation (Zod), CORS policies, CSRF protection |
-| **Mobile Security** | Biometric authentication, certificate pinning, secure storage for tokens |
-| **Audit Trail** | All create/update/delete operations are recorded in the database; no server-side log files are written - debug traces are surfaced to the browser console via API responses |
-| **Compliance** | Designed for Indian data residency; GST‑compliant invoicing |
+### Web App (`web/`)
+
+| Layer | Technology |
+|---|---|
+| Framework | React 18 + Vite |
+| Routing | React Router v6 |
+| Styling | Tailwind CSS |
+| HTTP | Axios (with debug-console interceptor) |
+| Auth | JWT + Google OAuth (`@react-oauth/google`) + Microsoft MSAL |
+| Forms | Controlled components + custom validation |
+| Calendar UI | FullCalendar |
+| Charts | Recharts |
+
+### PHP Backend (`server-php/`)
+
+| Layer | Technology |
+|---|---|
+| Language | PHP 8.1 |
+| Architecture | Lightweight MVC (CodeIgniter-style, no framework dependency) |
+| Database | PostgreSQL 14 via PDO prepared statements |
+| Auth | JWT (HS256) + bcrypt passwords + OTP |
+| Email | Brevo (Sendinblue) REST API |
+| Payments | Razorpay (orders + webhooks) |
+| Video | Zoom OAuth + Meetings API |
+| Calendar | Google Calendar API, Microsoft Graph, Apple CalDAV |
+| Hosting | cPanel shared hosting (Apache + `mod_rewrite`) |
+
+### Node.js Service (`backend/`)
+
+| Layer | Technology |
+|---|---|
+| Runtime | Node.js 18 + Express |
+| Purpose | Supplementary email rendering and Brevo dispatch |
+| Testing | Jest + Supertest |
 
 ---
 
@@ -371,62 +385,78 @@ We use a **monorepo** (powered by **Nx** or **Turborepo**) to share common code 
 
 ### Prerequisites
 
-- **Node.js** >= 18.x
-- **npm** >= 9.x or **yarn** >= 1.22 or **pnpm** >= 8.x
-- **React Native CLI** or **Expo CLI** (for mobile apps)
-- **Xcode** (for iOS development, macOS only)
-- **Android Studio** (for Android development)
+- **Node.js** >= 18.x, **npm** >= 9.x
+- **PHP** >= 8.1 with extensions: `pdo`, `pdo_pgsql`, `json`, `openssl`
+- **PostgreSQL** >= 14
+- **Apache** 2.4+ with `mod_rewrite` (for local PHP dev) or **cPanel** hosting
 
-### Web Application
+### Web Portal (`web/`)
 
 ```bash
-# Clone the repository
-git clone https://github.com/<your-org>/ca-office-portal.git
-cd ca-office-portal/web
-
-# Install dependencies
+cd web
 npm install
-
-# Start development server
-npm run dev
+npm run dev          # http://localhost:5173
 
 # Build for production
-npm run build
+npm run build        # outputs web/dist/  → upload to public_html/app/
 ```
 
-> **Production deployment note:** The web app is built locally (`npm run build`) and the resulting `dist/` folder is uploaded directly to the cPanel `public_html/app/` directory of the **`app.carahulgupta.in`** subdomain (see "Public Marketing Site" below). All testing is performed against the live production URL — there is no separate staging environment. See [`server-php/README.md`](server-php/README.md) for backend deployment details and the browser-console logging strategy used during production testing.
+> **Production note:** Build locally and upload `dist/` to `public_html/app/` on cPanel. All testing is against the live URL — there is no staging environment. See [`server-php/README.md`](server-php/README.md) for the browser-console logging strategy.
 
-### Public Marketing Site (`carahulgupta.in`)
-
-The repo also contains [`web-public/`](web-public/) — a separate React/Vite project that powers the firm's public-facing marketing website at **`https://carahulgupta.in`**. It is fully decoupled from the practice portal: no shared auth, no shared API. Its only job is to introduce the firm and hand visitors off to the right portal via the dropdown in the navbar.
+### Public Marketing Site (`web-public/`)
 
 ```bash
 cd web-public
-
-# Install dependencies (one-time)
 npm install
-
-# Start dev server (http://localhost:5174)
-npm run dev
-
-# Build for production (outputs web-public/dist/)
-npm run build
+npm run dev          # http://localhost:5174
+npm run build        # outputs web-public/dist/ → upload to public_html/
 ```
 
-#### What's in the marketing site
+### PHP Backend (`server-php/`)
 
-| Path | Content |
-|---|---|
-| `/`              | Hero, services grid, why-us, FAQ, CTA |
-| `/about`         | Firm bio, credentials, areas of practice |
-| `/services`      | Full services catalogue with bullets |
-| `/blog`, `/blog/:slug` | Static articles (data lives in [`web-public/src/content/blogPosts.js`](web-public/src/content/blogPosts.js)) |
-| `/contact`       | Contact form (uses `mailto:` for now), office details, embedded map |
-| Login dropdown   | Three portal links — see below |
+```bash
+# 1. Copy env
+cp server-php/.env.example server-php/.env
+# Fill in DB_HOST, DB_NAME, DB_USER, DB_PASS, JWT_SECRET, CORS_ORIGIN, etc.
 
-#### Portal handoff (the URL parameter contract)
+# 2. Run all migrations in order
+psql -h <host> -U <user> -d <dbname> \
+  -f server-php/database/migrations/001_initial_schema.sql
+# ... repeat for 002 through 044
 
-The login dropdown in the marketing site's navbar is a plain `<a>` link (not JS state) so the receiving portal sees the parameter on the very first paint:
+# 3. Point Apache DocumentRoot at server-php/public/
+# OR upload server-php/ as public_html/api/ on cPanel (see server-php/README.md)
+```
+
+### Node.js Email Service (`backend/`)
+
+```bash
+cd backend
+cp .env.example .env   # fill in BREVO_API_KEY, etc.
+npm install
+npm run dev            # starts on configured port
+```
+
+### Cron Jobs (PHP CLI)
+
+Schedule in cPanel → Cron Jobs:
+
+```bash
+# 5:00 AM — Super-admin consolidated timesheet digest
+0 5 * * * php /home/carahulgupta/public_html/api/cli/send-superadmin-timesheet-report.php
+
+# 6:00 AM — Per-staff low-timesheet intimation emails
+0 6 * * * php /home/carahulgupta/public_html/api/cli/send-timesheet-intimation.php
+
+# Daily digest queue flush (frequency as needed)
+0 7 * * * php /home/carahulgupta/public_html/api/cli/send-digest.php
+```
+
+---
+
+## 🌐 Public Marketing Site & Portal Handoff
+
+The marketing site (`web-public/`) and the portal (`web/`) are fully decoupled. The navbar login dropdown passes a `?portal=` parameter so the portal's Login page can lock to the correct tab:
 
 ```
 https://app.carahulgupta.in/login?portal=staff
@@ -434,111 +464,115 @@ https://app.carahulgupta.in/login?portal=affiliate
 https://app.carahulgupta.in/login?portal=client
 ```
 
-The portal's [`web/src/pages/Login.jsx`](web/src/pages/Login.jsx) reads `?portal=` via `useSearchParams`, locks the portal selection (no tab switcher is shown), and renders a full-width banner identifying which portal the visitor is signing in to. A small "Wrong portal? Choose another at carahulgupta.in" link sends them back here if they followed a wrong link.
+If `/login` is opened without a `portal=` parameter (e.g. a direct bookmark), the portal falls back to the 3-tab selector.
 
-If `/login` is opened **without** a `portal=` parameter (e.g. a direct bookmark), the portal falls back to the original 3-tab selector so existing behavior is preserved.
-
-#### Environment variables
-
-Marketing site — [`web-public/.env.example`](web-public/.env.example):
-
-| Variable | Purpose | Default |
-|---|---|---|
-| `VITE_PORTAL_URL` | Base URL of the portal that the login dropdown points at | `https://app.carahulgupta.in` |
-
-Portal — [`web/.env.example`](web/.env.example) gains:
-
-| Variable | Purpose | Default |
-|---|---|---|
-| `VITE_MARKETING_URL` | Used by the "Wrong portal?" escape link on the locked login page | `https://carahulgupta.in` |
-
-In local dev you can point the marketing site at the local portal:
-
-```env
-# web-public/.env
-VITE_PORTAL_URL=http://localhost:5173
-```
-
-#### cPanel deployment (subdomain split)
-
-Single cPanel account hosts both the marketing site and the portal:
+### cPanel Subdomain Layout
 
 | Hostname | DocumentRoot | Source |
 |---|---|---|
-| `carahulgupta.in` (and `www.`) | `public_html/`     | Upload `web-public/dist/` here |
-| `app.carahulgupta.in`          | `public_html/app/` | Upload `web/dist/` here (cPanel → "Subdomains" → create) |
+| `carahulgupta.in` (and `www.`) | `public_html/` | `web-public/dist/` |
+| `app.carahulgupta.in` | `public_html/app/` | `web/dist/` |
+| `carahulgupta.in/api/` | `public_html/api/` | `server-php/` |
 
-The PHP API (`server-php/`) lives at **`https://carahulgupta.in/api/`** (folder `public_html/api/`). The portal on **`app.carahulgupta.in`** should call that URL from the browser (`VITE_API_BASE_URL`). In the **`app/`** document root, use an `.htaccess` that only does the SPA fallback (no `/api/` rewrite to the wrong path). A template is in [`web/public/.htaccess.subdomain-app`](web/public/.htaccess.subdomain-app) — copy its rules into `public_html/app/.htaccess` on the server (the cPanel workflow excludes `.htaccess` from rsync so server copies are not overwritten).
+### Environment Variables
 
-PostgreSQL on this cPanel account uses the role **`carahulgupta_cagupta_user`**. Set `DB_USER` in `server-php/.env` to that value on the server; the backend defaults to it in [`server-php/app/Config/Database.php`](server-php/app/Config/Database.php) when `DB_USER` is omitted. For local machines that still use the `postgres` superuser, set `DB_USER=postgres` in `.env`. See [`server-php/README.md`](server-php/README.md) and [`server-php/.env.example`](server-php/.env.example).
+**`web-public/.env`**
 
-`web-public/public/.htaccess` ships with two rules: an SPA fallback for client-side routes, and a hard 301 from `/login` on the marketing domain to the portal subdomain so any old bookmarks keep working.
-
-#### One-time configuration changes after the split
-
-1. **CORS** — in `server-php/.env` set a comma-separated list so the API accepts the portal **and** any origin that actually loads the SPA, e.g. `CORS_ORIGIN=https://app.carahulgupta.in,https://carahulgupta.in,https://www.carahulgupta.in`. Put **`https://app.carahulgupta.in` first** (used by the Zoom OAuth callback `postMessage` target). The marketing site does not call the API. The API now matches `Origin` against each entry (www/non-www normalized).
-2. **Google OAuth** — in Google Cloud Console → Credentials, add `https://app.carahulgupta.in` to **Authorised JavaScript Origins**.
-3. **Microsoft / Azure App Registration** — add `https://app.carahulgupta.in/` (with trailing slash) as a **Single-Page Application redirect URI**.
-
-#### GitHub Actions — [`deploy-cpanel.yml`](.github/workflows/deploy-cpanel.yml)
-
-One manual workflow builds and rsyncs **portal** (`web/dist` → `CPANEL_REMOTE_ROOT`), **API** (`server-php/` → `CPANEL_SITE_ROOT/api/`), and **marketing** (`web-public/dist` → `CPANEL_SITE_ROOT/` with `--exclude` for `app/` and `api/` so `rsync --delete` does not remove those folders).
-
-| GitHub secret | Example | Used for |
+| Variable | Purpose | Default |
 |---|---|---|
-| `CPANEL_REMOTE_ROOT` | `/home/carahulgupta/public_html/app` | Portal only (`app.carahulgupta.in`) |
-| `CPANEL_SITE_ROOT` | `/home/carahulgupta/public_html` | API (`…/api/`) + marketing (site root) |
-| `VITE_PORTAL_URL` | `https://app.carahulgupta.in` | `web-public` build (login links in navbar) |
-| `VITE_MARKETING_URL` | `https://carahulgupta.in` | Optional; portal “Wrong portal?” link ([`web/.env.example`](web/.env.example)) |
+| `VITE_PORTAL_URL` | Portal base URL for login dropdown links | `https://app.carahulgupta.in` |
 
-### Mobile Applications
+**`web/.env`**
 
-```bash
-# Navigate to mobile directory
-cd ca-office-portal/mobile
+| Variable | Purpose | Default |
+|---|---|---|
+| `VITE_API_BASE_URL` | PHP API base URL | *(omit for mock/dev mode)* |
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth client ID | — |
+| `VITE_MSAL_CLIENT_ID` | Azure App Registration client ID | — |
+| `VITE_MSAL_TENANT_ID` | Azure tenant ID | `common` |
+| `VITE_MARKETING_URL` | "Wrong portal?" escape link target | `https://carahulgupta.in` |
 
-# Install all dependencies (monorepo)
-npm install
+### GitHub Actions Deployment
 
-# Start Team App
-npx nx run team-app:start
-# OR
-cd apps/team-app && npx react-native run-android
+One manual workflow (`.github/workflows/deploy-cpanel.yml`) builds and rsyncs all three artifacts:
 
-# Start Client App
-npx nx run client-app:start
-# OR
-cd apps/client-app && npx react-native run-ios
-```
+| GitHub Secret | Example Value | Used For |
+|---|---|---|
+| `CPANEL_REMOTE_ROOT` | `/home/carahulgupta/public_html/app` | Portal (`web/dist/`) |
+| `CPANEL_SITE_ROOT` | `/home/carahulgupta/public_html` | API + marketing |
+| `VITE_PORTAL_URL` | `https://app.carahulgupta.in` | `web-public` build |
+| `VITE_MARKETING_URL` | `https://carahulgupta.in` | Portal "Wrong portal?" link |
 
-### Mock API Server
+---
 
-```bash
-cd mock-api
-npx json-server --watch db.json --port 3001
-```
+## 🔐 Authentication Setup
+
+### Dev / Mock Mode
+
+Run `npm run dev` inside `web/` — no backend required.
+
+| Method | Behaviour in mock mode |
+|---|---|
+| Email OTP | Any email works; enter **`123456`** as the OTP |
+| Google | Fallback button that sets a dummy session |
+| Microsoft | MSAL popup; fails gracefully if not configured |
+
+### Backend Auth Endpoints
+
+| Method | Endpoint | Body |
+|---|---|---|
+| `POST` | `/api/auth/login` | `{ email, password }` |
+| `POST` | `/api/auth/sso` | `{ provider, sso_token, name, email, avatar_url }` |
+| `POST` | `/api/auth/request-otp` | `{ email }` (client portal) |
+| `POST` | `/api/auth/verify-otp` | `{ email, otp }` (client portal) |
+| `GET` | `/api/auth/me` | Bearer token |
+| `POST` | `/api/auth/logout` | Bearer token |
+
+All endpoints return: `{ success, message, data: { token, user }, errors, debug }`.
+
+---
+
+## 🔐 Security
+
+| Area | Implementation |
+|---|---|
+| **Authentication** | JWT (HS256) with DB-stored sessions; server-side revocation on logout |
+| **Authorization** | RBAC — `super_admin`, `admin`, `manager`, `staff`, `viewer`; delegate permission overrides |
+| **Data integrity** | PDO prepared statements throughout — no raw SQL interpolation |
+| **Passwords** | bcrypt (cost factor 12) |
+| **API Security** | CORS per-origin allowlist, `.env` blocked via `.htaccess` |
+| **Audit Trail** | `admin_audit_log` records all create/update/delete with actor, entity, and diff |
+| **Debug logs** | In non-production: `response.data.debug[]` returned in JSON, forwarded to `console.debug` by Axios interceptor — no disk log files |
+| **Compliance** | Indian data residency; GST-compliant invoicing (CGST/SGST/IGST) |
+| **Payments** | Razorpay webhook signature verification before recording payment |
+| **Calendar OAuth** | Tokens stored encrypted in DB; refresh handled server-side |
 
 ---
 
 ## 🗺️ Roadmap
 
-| Phase | Focus | Timeline |
-|-------|-------|----------|
-| **Phase 1** | Web portal — Dashboard, Client Management, Services & Tasks | Month 1–2 |
-| **Phase 2** | Document Management, Library, and Sharing | Month 2–3 |
-| **Phase 3** | Invoicing, Ledger, and Financial Modules | Month 3–4 |
-| **Phase 4** | Calendar, Appointments, Credentials Vault | Month 4–5 |
-| **Phase 5** | Quotations, Leads, and Registers | Month 5–6 |
-| **Phase 6** | Team Mobile App (React Native) | Month 6–8 |
-| **Phase 7** | Client Mobile App (React Native) | Month 8–9 |
-| **Phase 8** | Backend Integration, Testing, and Deployment | Month 9–11 |
-| **Phase 9** | Tally Integration, AI Search, Advanced Analytics | Month 11–12 |
+| Phase | Focus | Status |
+|---|---|---|
+| **Phase 1** | Authentication (Email OTP, Google, Microsoft SSO), Dashboard, Client & Organization management | ✅ Complete |
+| **Phase 2** | Services & Engagement management, time tracking, service logs, multi-assignee | ✅ Complete |
+| **Phase 3** | Invoicing, GST transactions, ledger, opening balances, Razorpay payments | ✅ Complete |
+| **Phase 4** | Calendar, appointment booking, Zoom integration, Google/Outlook/Apple calendar sync | ✅ Complete |
+| **Phase 5** | Credentials vault, Leads & Quotations, Affiliate portal, Client portal | ✅ Complete |
+| **Phase 6** | Compliance Registers (GST/TDS/IT/ROC/PF), Recurring Service Definitions | ✅ Complete (migration 044) |
+| **Phase 7** | Leave management, timesheet reporting, shift targets, cron digests | ✅ Complete |
+| **Phase 8** | KYC document management, exception reports, global search, client groups | ✅ Complete |
+| **Phase 9** | **Recurring register auto-population** — backend scheduler to create register rows from `recurring_service_definitions` | 🔄 In Progress |
+| **Phase 10** | **Client Portal enhancements** — appointment booking from client side, document upload requests, in-app messaging | 🗓 Planned |
+| **Phase 11** | **Mock API server** — `mock-api/` JSON server (`json-server`) to unblock mobile development without requiring a live backend | 🗓 Planned |
+| **Phase 12** | **React Native Team App** (`mobile/apps/team-app`) — Dashboard, Task Manager, Client directory, Document Hub, Invoicing, Credentials Vault, push notifications, biometric auth | 🗓 Planned |
+| **Phase 13** | **React Native Client App** (`mobile/apps/client-app`) — Active/completed services, document viewer, ledger, appointment booking, in-app messaging | 🗓 Planned |
+| **Phase 14** | **Tally integration**, AI-assisted compliance search, advanced analytics dashboards | 🗓 Planned |
 
 ---
 
 ## 🤝 Contributing
 
-We welcome contributions! Please read our [Contributing Guide](docs/CONTRIBUTING.md) for details on our code of conduct, development workflow, and how to submit pull requests.
+Open an issue or submit a PR. Please follow the existing file naming conventions (PascalCase for React components, `snake_case` for PHP) and ensure new migrations are idempotent (use `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`).
 
 ---
 
@@ -550,59 +584,7 @@ This project is licensed under the [MIT License](LICENSE).
 
 ## 📞 Contact
 
-For questions, suggestions, or collaboration inquiries, please open an issue or reach out to the maintainers.
-
----
-
-## 🔐 Authentication Setup
-
-The web app ships with an **authentication-first flow**: unauthenticated users always land on the Login page before reaching the Dashboard.
-
-### Quick Start (Dev / Mock Mode)
-
-No configuration needed.  Just run `npm run dev` inside the `web/` folder.
-
-| Method | Behaviour in mock mode |
-|---|---|
-| Email OTP | Any email works; enter **`123456`** as the OTP |
-| Google | Shows a fallback button that sets a dummy session |
-| Microsoft | Opens the MSAL popup; fails gracefully with a message if not configured |
-
-### Environment Variables (`web/.env`)
-
-Copy `web/.env.example` to `web/.env` and fill in the values:
-
-```env
-VITE_API_BASE_URL=          # optional – omit to use mock/dev mode
-VITE_GOOGLE_CLIENT_ID=      # Google OAuth client ID
-VITE_MSAL_CLIENT_ID=        # Azure App Registration client ID
-VITE_MSAL_TENANT_ID=common  # Tenant ID or "common"
-```
-
-### Google OAuth Setup
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/) → **APIs & Services** → **Credentials**.
-2. Create an **OAuth 2.0 Client ID** (Web application).
-3. Add your domain as an **Authorised JavaScript Origin** (e.g. `https://yourdomain.com`).
-4. Copy the **Client ID** into `VITE_GOOGLE_CLIENT_ID`.
-
-### Microsoft / Outlook OAuth Setup
-
-1. Go to [Azure Portal](https://portal.azure.com/) → **Azure Active Directory** → **App Registrations** → **New registration**.
-2. Under **Redirect URIs**, add a **Single-Page Application** URI matching your deployed URL exactly (including any base path and trailing slash).
-3. Copy the **Application (client) ID** into `VITE_MSAL_CLIENT_ID`.
-4. Set `VITE_MSAL_TENANT_ID` to your Directory (tenant) ID, or keep `common` to allow any Microsoft account.
-
-### Backend Endpoints (if `VITE_API_BASE_URL` is set)
-
-| Method | Endpoint | Body |
-|---|---|---|
-| `POST` | `/auth/google` | `{ credential: "<google-id-token>" }` |
-| `POST` | `/auth/microsoft` | `{ idToken, email, name }` |
-| `POST` | `/auth/request-otp` | `{ email }` |
-| `POST` | `/auth/verify-otp` | `{ email, otp }` |
-
-All endpoints should return `{ token: "...", user: { name, email, initials } }` on success.
+For questions or collaboration inquiries, open an issue or reach out to the maintainers.
 
 ---
 

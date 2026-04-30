@@ -28,6 +28,7 @@ import Leads from './pages/Leads';
 import Settings from './pages/Settings';
 import UserManagement from './pages/UserManagement';
 import ClientGroups from './pages/ClientGroups';
+import ReportsHub from './pages/ReportsHub';
 import TimesheetsReport from './pages/TimesheetsReport';
 import ShiftTargetTimesheetReport from './pages/ShiftTargetTimesheetReport';
 import ContactExceptionsReport from './pages/ContactExceptionsReport';
@@ -77,6 +78,7 @@ const pageTitles = {
   '/services/files':            '📂 Engagement Files',
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
+  '/reports':                            '📊 Reports',
   '/reports/timesheets':                 '🕐 Timesheet report',
   '/reports/timesheets/shift-target':    '📊 Staff punch vs target',
   '/reports/exceptions/contacts':          '📋 Contact data exceptions',
@@ -150,6 +152,11 @@ export default function App() {
           <Route path="/services/:id/files" element={<ProtectedRoute staffOnly><Layout routePath="/services/files"><ServiceEngagementFiles /></Layout></ProtectedRoute>} />
           <Route path="/documents" element={<ProtectedRoute staffOnly><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute staffOnly><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
+          <Route path="/reports" element={
+            <ProtectedRoute staffOnly requiredPermission="services.view">
+              <Layout routePath="/reports"><ReportsHub /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/reports/timesheets" element={
             <ProtectedRoute staffOnly requiredPermission="services.view">
               <Layout routePath="/reports/timesheets"><TimesheetsReport /></Layout>

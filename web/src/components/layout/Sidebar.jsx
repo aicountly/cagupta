@@ -6,7 +6,7 @@ import { getInitials } from '../../utils/getInitials';
 import { getOverdueFollowUpCount } from '../../services/serviceLogService';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
-  Receipt, CalendarDays, KeyRound, BookOpen, Clock,
+  Receipt, CalendarDays, KeyRound, BookOpen,
   Target, Settings, ChevronRight, ChevronDown,
   UserRound, Building2, ShieldCheck, Layers, Handshake, BarChart3, CalendarOff, Bell, RefreshCw,
 } from 'lucide-react';
@@ -26,19 +26,7 @@ const navSections = [
           { to: '/clients/groups', label: 'Groups', icon: Layers },
         ],
       },
-      {
-        label: 'Reports',
-        icon: BarChart3,
-        navKey: 'reports',
-        children: [
-          { to: '/reports/timesheets', label: 'Timesheet report', icon: Clock, permission: 'services.view' },
-          { to: '/reports/timesheets/shift-target', label: 'Staff punch vs target', icon: Target, permission: 'services.view' },
-          { to: '/reports/exceptions/contacts', label: 'Contact exceptions', icon: UserRound, permission: 'clients.view' },
-          { to: '/reports/exceptions/organizations', label: 'Organization exceptions', icon: Building2, permission: 'clients.view' },
-          { to: '/reports/exceptions/contact-kyc', label: 'Contact KYC exceptions', icon: ShieldCheck, permission: 'clients.view' },
-          { to: '/reports/exceptions/organization-kyc', label: 'Organization KYC exceptions', icon: ShieldCheck, permission: 'clients.view' },
-        ],
-      },
+      { to: '/reports', label: 'Reports', icon: BarChart3, permission: 'services.view' },
       { to: '/services', label: 'Services & Tasks', icon: ClipboardList },
       { to: '/services/follow-ups', label: 'Pending Follow-ups', icon: Bell, permission: 'services.view', badge: 'overdue' },
       { to: '/documents', label: 'Documents', icon: FolderOpen },
@@ -72,10 +60,7 @@ export default function Sidebar() {
   const loc = useLocation();
   const { session, hasPermission, hasAnyPermission } = useAuth();
   const isClientsActive = loc.pathname.startsWith('/clients');
-  const isReportsActive = loc.pathname.startsWith('/reports');
   const [clientsOpen, setClientsOpen] = useState(isClientsActive);
-  /** Default expanded so report links (incl. punch vs target) are visible without an extra click. */
-  const [reportsOpen, setReportsOpen] = useState(true);
   const [overdueCount, setOverdueCount] = useState(0);
 
   const user = session?.user;
@@ -95,10 +80,6 @@ export default function Sidebar() {
   useEffect(() => {
     if (isClientsActive) setClientsOpen(true);
   }, [isClientsActive]);
-
-  useEffect(() => {
-    if (isReportsActive) setReportsOpen(true);
-  }, [isReportsActive]);
 
   // Build admin section if user has any admin items visible
   const visibleAdminItems = adminNavItems.filter((item) => {
@@ -126,10 +107,9 @@ export default function Sidebar() {
 
               // Clients: render as expandable parent with sub-items
               if (item.children) {
-                const navKey = item.navKey || 'clients';
-                const parentActive = navKey === 'reports' ? isReportsActive : isClientsActive;
-                const subOpen = navKey === 'reports' ? reportsOpen : clientsOpen;
-                const setSubOpen = navKey === 'reports' ? setReportsOpen : setClientsOpen;
+                const parentActive = isClientsActive;
+                const subOpen = clientsOpen;
+                const setSubOpen = setClientsOpen;
                 const visibleChildren = item.children.filter(
                   (ch) => !ch.permission || hasPermission(ch.permission),
                 );

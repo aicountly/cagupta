@@ -47,7 +47,7 @@ async function parseJson(res) {
  * @param {number} entityId
  */
 export async function getKycDocuments(entityType, entityId) {
-  const url = `${API_BASE}/api/admin/kyc-documents?entity_type=${encodeURIComponent(entityType)}&entity_id=${entityId}`;
+  const url = `${API_BASE}/admin/kyc-documents?entity_type=${encodeURIComponent(entityType)}&entity_id=${entityId}`;
   const res = await fetch(url, { headers: jsonHeaders() });
   const data = await parseJson(res);
   return data.data ?? { documents: [], categories: {} };
@@ -66,7 +66,7 @@ export async function listAllKycDocuments({ page = 1, perPage = 50, search = '',
     ...(entityType ? { entity_type: entityType } : {}),
     ...(category   ? { category }               : {}),
   });
-  const res  = await fetch(`${API_BASE}/api/admin/kyc-documents?${params}`, { headers: jsonHeaders() });
+  const res  = await fetch(`${API_BASE}/admin/kyc-documents?${params}`, { headers: jsonHeaders() });
   const json = await parseJson(res);
   return { docs: json.data ?? [], pagination: json.meta?.pagination ?? null };
 }
@@ -77,7 +77,7 @@ export async function listAllKycDocuments({ page = 1, perPage = 50, search = '',
  * @param {number} docId
  */
 export async function getKycDocument(docId) {
-  const res  = await fetch(`${API_BASE}/api/admin/kyc-documents/${docId}`, { headers: jsonHeaders() });
+  const res  = await fetch(`${API_BASE}/admin/kyc-documents/${docId}`, { headers: jsonHeaders() });
   const json = await parseJson(res);
   return json.data;
 }
@@ -91,7 +91,7 @@ export async function getKycDocument(docId) {
 export function getDocumentFileUrl(docId, forceDownload = false) {
   const token = authToken();
   const dl    = forceDownload ? '&download=1' : '';
-  return `${API_BASE}/api/admin/kyc-documents/${docId}/file?token=${encodeURIComponent(token)}${dl}`;
+  return `${API_BASE}/admin/kyc-documents/${docId}/file?token=${encodeURIComponent(token)}${dl}`;
 }
 
 /**
@@ -105,7 +105,7 @@ export function getDocumentFileUrl(docId, forceDownload = false) {
  */
 export async function fetchDocumentBlob(docId, forceDownload = false) {
   const dl  = forceDownload ? '?download=1' : '';
-  const res = await fetch(`${API_BASE}/api/admin/kyc-documents/${docId}/file${dl}`, {
+  const res = await fetch(`${API_BASE}/admin/kyc-documents/${docId}/file${dl}`, {
     headers: authOnlyHeaders(),
   });
   if (!res.ok) {
@@ -121,7 +121,7 @@ export async function fetchDocumentBlob(docId, forceDownload = false) {
  * @param {number} docId
  */
 export async function getKycDocumentAudit(docId) {
-  const res  = await fetch(`${API_BASE}/api/admin/kyc-documents/${docId}/audit`, { headers: jsonHeaders() });
+  const res  = await fetch(`${API_BASE}/admin/kyc-documents/${docId}/audit`, { headers: jsonHeaders() });
   const json = await parseJson(res);
   return json.data ?? [];
 }
@@ -166,7 +166,7 @@ export async function uploadKycDocuments({
   }
 
   const headers = authOnlyHeaders(otpCode ? { 'X-Superadmin-Otp': otpCode } : {});
-  const res     = await fetch(`${API_BASE}/api/admin/kyc-documents`, {
+  const res     = await fetch(`${API_BASE}/admin/kyc-documents`, {
     method:  'POST',
     headers,
     body:    fd,
@@ -188,7 +188,7 @@ export async function uploadNewVersion(existingDocId, { notes = '', skipCompress
   fd.append('files[]', file);
 
   const headers = authOnlyHeaders(otpCode ? { 'X-Superadmin-Otp': otpCode } : {});
-  const res     = await fetch(`${API_BASE}/api/admin/kyc-documents/${existingDocId}/new-version`, {
+  const res     = await fetch(`${API_BASE}/admin/kyc-documents/${existingDocId}/new-version`, {
     method:  'POST',
     headers,
     body:    fd,
@@ -210,7 +210,7 @@ export async function updateKycDocument(docId, { docLabel, notes }) {
   if (docLabel !== undefined) body.doc_label = docLabel;
   if (notes    !== undefined) body.notes     = notes;
 
-  const res  = await fetch(`${API_BASE}/api/admin/kyc-documents/${docId}`, {
+  const res  = await fetch(`${API_BASE}/admin/kyc-documents/${docId}`, {
     method:  'PUT',
     headers: jsonHeaders(),
     body:    JSON.stringify(body),
@@ -229,7 +229,7 @@ export async function deleteKycDocument(docId, otpCode = '') {
   const headers = jsonHeaders();
   if (otpCode) headers['X-Superadmin-Otp'] = otpCode;
 
-  const res = await fetch(`${API_BASE}/api/admin/kyc-documents/${docId}`, {
+  const res = await fetch(`${API_BASE}/admin/kyc-documents/${docId}`, {
     method: 'DELETE',
     headers,
   });
@@ -244,7 +244,7 @@ export async function deleteKycDocument(docId, otpCode = '') {
  * @returns {Promise<{ otp_sent: boolean, masked_email: string }>}
  */
 export async function requestUncompressedOtp() {
-  const res  = await fetch(`${API_BASE}/api/admin/kyc-documents/request-uncompressed-otp`, {
+  const res  = await fetch(`${API_BASE}/admin/kyc-documents/request-uncompressed-otp`, {
     method:  'POST',
     headers: jsonHeaders(),
   });
@@ -258,7 +258,7 @@ export async function requestUncompressedOtp() {
  * @returns {Promise<{ otp_sent: boolean, masked_email: string }>}
  */
 export async function requestDocumentDeleteOtp() {
-  const res  = await fetch(`${API_BASE}/api/admin/kyc-documents/request-delete-otp`, {
+  const res  = await fetch(`${API_BASE}/admin/kyc-documents/request-delete-otp`, {
     method:  'POST',
     headers: jsonHeaders(),
   });

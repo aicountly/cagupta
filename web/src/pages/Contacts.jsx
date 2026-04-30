@@ -173,8 +173,8 @@ export default function Contacts() {
                 <td style={tdStyle}>
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{c.clientCode}</code>
                 </td>
-                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920' }}>
-                  {c.displayName}{c.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4 }}>({c.reference})</span>}
+                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920', cursor: 'pointer' }} onClick={() => setSelected(c)} title="View details">
+                  <span style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}>{c.displayName}</span>{c.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4, textDecoration: 'none' }}>({c.reference})</span>}
                 </td>
                 <td style={tdStyle}>
                   {c.linkedOrgsCount > 1 ? (

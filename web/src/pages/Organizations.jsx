@@ -194,8 +194,8 @@ export default function Organizations() {
                 <td style={tdStyle}>
                   <code style={{ fontSize: 11, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{o.clientCode}</code>
                 </td>
-                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920' }}>
-                  {o.displayName}{o.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4 }}>({o.reference})</span>}
+                <td style={{ ...tdStyle, fontWeight: 600, color: '#F37920', cursor: 'pointer' }} onClick={() => setSelected(o)} title="View details">
+                  <span style={{ textDecoration: 'underline', textUnderlineOffset: 3 }}>{o.displayName}</span>{o.reference && <span style={{ fontWeight: 400, color: '#64748b', marginLeft: 4, textDecoration: 'none' }}>({o.reference})</span>}
                 </td>
                 <td style={tdStyle}>
                   {o.groupName ? (
