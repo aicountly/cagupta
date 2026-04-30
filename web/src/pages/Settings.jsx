@@ -22,6 +22,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { getZoomIntegrationStatus, getZoomAuthorizeUrl } from '../services/zoomIntegrationService';
 
 // ── Available permission modules ─────────────────────────────────────────────
+const PERMISSION_LABELS = {
+  'services.assignees.manage': 'Manage Assignees',
+};
+
 const PERMISSION_GROUPS = [
   { group: 'Dashboard',   keys: ['dashboard.view'] },
   { group: 'Clients',     keys: ['clients.view', 'clients.create', 'clients.edit', 'clients.delete'] },
@@ -122,7 +126,7 @@ function ConfigureRoleModal({ role, onClose, onSaved }) {
                         onChange={() => toggle(key)}
                         style={{ accentColor:'#2563eb', cursor:'pointer' }}
                       />
-                      {key.split('.').slice(1).join('.')}
+                      {PERMISSION_LABELS[key] ?? key.split('.').slice(1).join('.')}
                     </label>
                   ))}
                 </div>

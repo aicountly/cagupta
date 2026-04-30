@@ -45,7 +45,10 @@ class UserController extends BaseController
         $acting      = $this->authUser();
         $delegatorId = 0;
         if ($acting !== null && !$this->userHasManageAll() && $this->userHasDelegate()) {
-            $delegatorId = (int)$acting['id'];
+            $p = $acting['role_permissions_array'] ?? [];
+            if (!in_array('services.assignees.manage', $p, true)) {
+                $delegatorId = (int)$acting['id'];
+            }
         }
 
         $result = $this->users->paginate($page, $perPage, $search, $role, $status, $delegatorId);
