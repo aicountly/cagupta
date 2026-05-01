@@ -22,12 +22,15 @@ import QRCode from 'qrcode';
 import { existsSync, mkdirSync, rmSync, appendFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import makeWASocket, {
+import baileys from '@whiskeysockets/baileys';
+// CJS→ESM interop: default export is the module.exports object, not the function
+const {
+  makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
   makeCacheableSignalKeyStore,
-} from '@whiskeysockets/baileys';
+} = baileys;
 import pino from 'pino';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -203,6 +206,17 @@ app.get('/session/:id/status', (req, res) => {
   // #region agent log
   try { appendFileSync(DEBUG_LOG, JSON.stringify({sessionId:'d6fd84',hypothesisId:'H-A/C',location:'index.js:status-endpoint',message:'status check',data:{sessionInMemory:!!sess,sessionStatus:sess?.status??null,authExists,sessionId:req.params.id},timestamp:Date.now()})+'\n'); } catch {}
   // #endregion
+
+  // Auto-reconnect: if session not in memory but saved credentials exist on disk
+  // (e.g. bridge restarted), silently reconnect so user doesn't need to re-scan QR.
+  if (!sess && authExists) {
+    console.log(`[${req.params.id}] Auth found on disk — auto-reconnecting after restart…`);
+    initSession(req.params.id).catch((e) =>
+      console.error(`[${req.params.id}] Auto-reconnect failed: ${e.message}`)
+    );
+    return res.json({ status: 'connecting', qr: null });
+  }
+
   if (!sess) return res.json({ status: 'disconnected' });
   return res.json({ status: sess.status, qr: sess.qrDataUrl || null });
 });
