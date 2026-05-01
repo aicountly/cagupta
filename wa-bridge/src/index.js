@@ -15,11 +15,15 @@
  * Session statuses: disconnected | connecting | connected
  */
 
+// Polyfill Web Crypto API for Node.js 18 (required by Baileys 6.7+; native in Node 19+)
+import { webcrypto } from 'node:crypto';
+if (!globalThis.crypto) globalThis.crypto = webcrypto;
+
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import QRCode from 'qrcode';
-import { existsSync, mkdirSync, rmSync, appendFileSync } from 'fs';
+import { existsSync, mkdirSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import baileys from '@whiskeysockets/baileys';
@@ -35,8 +39,7 @@ import pino from 'pino';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUTH_DIR  = join(__dirname, '..', '.wwebjs_auth');
-const DEBUG_LOG = join(__dirname, '..', 'debug-d6fd84.log');
-const PORT      = process.env.PORT || 3001;
+const PORT      = process.env.PORT || 3099;
 
 const app = express();
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
@@ -66,21 +69,33 @@ async function initSession(sessionId) {
     try { existing.socket.end(undefined); } catch {}
   }
 
-  const authPath = sessionAuthPath(sessionId);
-  mkdirSync(authPath, { recursive: true });
-
-  const { state, saveCreds } = await useMultiFileAuthState(authPath);
-  const { version } = await fetchLatestBaileysVersion();
-
+  // Register session immediately so status polls see 'connecting' right away,
+  // even before the async auth/version lookups complete.
   const sess = {
     socket:         null,
     status:         'connecting',
-    qrDataUrl:      existing?.qrDataUrl ?? null,  // preserve last QR across reconnects
+    qrDataUrl:      existing?.qrDataUrl ?? null,
     contacts:       existing?.contacts ?? [],
     groups:         existing?.groups ?? [],
     reconnectTimer: null,
   };
   sessions.set(sessionId, sess);
+
+  const authPath = sessionAuthPath(sessionId);
+  mkdirSync(authPath, { recursive: true });
+
+  const { state, saveCreds } = await useMultiFileAuthState(authPath);
+
+  // Fetch the latest WA version from WhatsApp's own endpoint.
+  // Fallback: last known good version (update if WhatsApp rejects connections).
+  let version = [2, 2413, 51];
+  try {
+    const v = await fetchLatestBaileysVersion();
+    version = v.version;
+    console.log(`[${sessionId}] WA version: ${version.join('.')}`);
+  } catch (e) {
+    console.log(`[${sessionId}] Using fallback WA version: ${version.join('.')} (fetch error: ${e.message})`);
+  }
 
   const sock = makeWASocket({
     version,
@@ -136,8 +151,9 @@ async function initSession(sessionId) {
     if (connection === 'close') {
       const code   = lastDisconnect?.error?.output?.statusCode;
       const loggedOut = code === DisconnectReason.loggedOut;
+      const errMsg = lastDisconnect?.error?.message || lastDisconnect?.error?.toString() || 'no error';
 
-      console.log(`[${sessionId}] Closed (code=${code}, loggedOut=${loggedOut})`);
+      console.log(`[${sessionId}] Closed (code=${code}, loggedOut=${loggedOut}, err=${errMsg})`);
       sess.status = 'disconnected';
       sess.socket = null;
 
@@ -145,14 +161,14 @@ async function initSession(sessionId) {
         // Delete auth so user must scan QR again
         rmSync(sessionAuthPath(sessionId), { recursive: true, force: true });
       } else {
-        // Auto-reconnect after 5 s (network blip etc.)
+        // Auto-reconnect: use 15 s to avoid WhatsApp rate-limiting (405/connection failure)
         if (sess.reconnectTimer) clearTimeout(sess.reconnectTimer);
         sess.reconnectTimer = setTimeout(() => {
           console.log(`[${sessionId}] Reconnecting…`);
           initSession(sessionId).catch((e) =>
             console.error(`[${sessionId}] Reconnect failed: ${e.message}`)
           );
-        }, 5_000);
+        }, 15_000);
       }
     }
   });
@@ -203,9 +219,6 @@ app.get('/session/:id/status', (req, res) => {
   const sess = sessions.get(req.params.id);
   const authPath = sessionAuthPath(req.params.id);
   const authExists = existsSync(authPath);
-  // #region agent log
-  try { appendFileSync(DEBUG_LOG, JSON.stringify({sessionId:'d6fd84',hypothesisId:'H-A/C',location:'index.js:status-endpoint',message:'status check',data:{sessionInMemory:!!sess,sessionStatus:sess?.status??null,authExists,sessionId:req.params.id},timestamp:Date.now()})+'\n'); } catch {}
-  // #endregion
 
   // Auto-reconnect: if session not in memory but saved credentials exist on disk
   // (e.g. bridge restarted), silently reconnect so user doesn't need to re-scan QR.
@@ -282,7 +295,10 @@ app.post('/send', async (req, res) => {
 
 mkdirSync(AUTH_DIR, { recursive: true });
 
-app.listen(PORT, () => {
-  console.log(`WA Bridge v2 (Baileys) running on port ${PORT}`);
-  console.log(`Health: http://localhost:${PORT}/health`);
+// Bind to 0.0.0.0 to ensure both IPv4 (127.0.0.1) and IPv6 (::1) are reachable.
+// Some cPanel environments bind Express to :: (IPv6-only) by default, which
+// causes PHP curl calls to 127.0.0.1 to get ECONNREFUSED.
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`WA Bridge v2 (Baileys) running on port ${PORT} (0.0.0.0)`);
+  console.log(`Health: http://127.0.0.1:${PORT}/health`);
 });
