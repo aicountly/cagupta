@@ -9,6 +9,7 @@ import {
   Receipt, CalendarDays, KeyRound, BookOpen,
   Target, Settings, ChevronRight, ChevronDown,
   UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, CalendarOff, Bell, RefreshCw,
+  MessageSquare, Smartphone, Share2, Megaphone, UsersRound,
 } from 'lucide-react';
 
 const navSections = [
@@ -44,6 +45,25 @@ const navSections = [
     ],
   },
   {
+    label: 'MARKETING',
+    items: [
+      {
+        label: 'WA Marketing',
+        icon: MessageSquare,
+        navKey: 'wa-marketing',
+        children: [
+          { to: '/marketing/wa/web', label: 'WA Web (Browser)', icon: Smartphone },
+          { to: '/marketing/wa/api', label: 'WA Native (API)', icon: MessageSquare },
+        ],
+      },
+      { to: '/marketing/sms', label: 'SMS Marketing', icon: Smartphone },
+      { to: '/marketing/social', label: 'Social Posting', icon: Share2 },
+      { to: '/marketing/affiliate', label: 'Affiliate Outreach', icon: UsersRound },
+      { to: '/marketing/campaigns', label: 'Campaigns', icon: Megaphone },
+      { to: '/marketing/triggers', label: 'Trigger Settings', icon: Bell },
+    ],
+  },
+  {
     label: 'SYSTEM',
     items: [{ to: '/settings', label: 'Settings', icon: Settings }],
   },
@@ -60,16 +80,23 @@ const adminNavItems = [
 export default function Sidebar() {
   const loc = useLocation();
   const { session, hasPermission, hasAnyPermission } = useAuth();
-  const isClientsActive = loc.pathname.startsWith('/clients');
-  const [clientsOpen, setClientsOpen] = useState(isClientsActive);
   const [overdueCount, setOverdueCount] = useState(0);
+
+  // Generic open-state map for expandable nav items, keyed by navKey
+  const [openMenus, setOpenMenus] = useState(() => {
+    const initial = {};
+    if (loc.pathname.startsWith('/clients')) initial['clients'] = true;
+    if (loc.pathname.startsWith('/marketing/wa')) initial['wa-marketing'] = true;
+    return initial;
+  });
+
+  const toggleMenu = (key) => setOpenMenus((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const user = session?.user;
   const displayName = user?.name || 'CA Rahul Gupta';
   const initials = user?.initials || getInitials(displayName);
   const roleName = user?.role || '';
 
-  // Fetch overdue follow-up count for badge (only for staff with services.view)
   useEffect(() => {
     if (!hasPermission('services.view')) return;
     getOverdueFollowUpCount()
@@ -77,17 +104,124 @@ export default function Sidebar() {
       .catch(() => setOverdueCount(0));
   }, [hasPermission]);
 
-  // Keep the sub-menu open whenever navigating to a /clients/* route
+  // Auto-open parent menus when a child route is active
   useEffect(() => {
-    if (isClientsActive) setClientsOpen(true);
-  }, [isClientsActive]);
+    if (loc.pathname.startsWith('/clients')) setOpenMenus((p) => ({ ...p, clients: true }));
+    if (loc.pathname.startsWith('/marketing/wa')) setOpenMenus((p) => ({ ...p, 'wa-marketing': true }));
+  }, [loc.pathname]);
 
-  // Build admin section if user has any admin items visible
   const visibleAdminItems = adminNavItems.filter((item) => {
     if (item.permission && !hasPermission(item.permission)) return false;
     if (item.anyOf && !hasAnyPermission(item.anyOf)) return false;
     return true;
   });
+
+  const renderNavItem = (item) => {
+    const Icon = item.icon;
+    if (item.permission && !hasPermission(item.permission)) return null;
+    if (item.anyOf && !hasAnyPermission(item.anyOf)) return null;
+
+    // Expandable parent with children
+    if (item.children) {
+      const key = item.navKey || item.label;
+      const isOpen = Boolean(openMenus[key]);
+      const parentActive = item.children.some((ch) => loc.pathname.startsWith(ch.to));
+      const visibleChildren = item.children.filter(
+        (ch) => !ch.permission || hasPermission(ch.permission),
+      );
+      if (visibleChildren.length === 0) return null;
+      return (
+        <div key={item.label}>
+          <button
+            type="button"
+            onClick={() => toggleMenu(key)}
+            style={{
+              ...styles.navLink,
+              width: '100%',
+              background: 'none',
+              border: 'none',
+              textAlign: 'left',
+              cursor: 'pointer',
+              ...(parentActive ? styles.navLinkActive : {}),
+            }}
+          >
+            <span style={{ ...styles.navIcon, ...(parentActive ? styles.navIconActive : {}) }}>
+              <Icon size={15} />
+            </span>
+            <span style={styles.navText}>{item.label}</span>
+            {isOpen
+              ? <ChevronDown size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+              : <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
+            }
+          </button>
+          {isOpen && (
+            <div style={{ paddingLeft: 16 }}>
+              {visibleChildren.map((child) => {
+                const ChildIcon = child.icon;
+                return (
+                  <NavLink
+                    key={child.to}
+                    to={child.to}
+                    end={Boolean(child.exact)}
+                    style={({ isActive }) => ({
+                      ...styles.navLink,
+                      fontSize: 12,
+                      paddingTop: 6,
+                      paddingBottom: 6,
+                      ...(isActive ? styles.navLinkActive : {}),
+                    })}
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <span style={{ ...styles.navIcon, ...(isActive ? styles.navIconActive : {}) }}>
+                          <ChildIcon size={14} />
+                        </span>
+                        <span style={styles.navText}>{child.label}</span>
+                        {isActive && <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
+                      </>
+                    )}
+                  </NavLink>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const badgeCount = item.badge === 'overdue' ? overdueCount : 0;
+    return (
+      <NavLink
+        key={item.to}
+        to={item.to}
+        end={item.exact}
+        style={({ isActive }) => ({
+          ...styles.navLink,
+          ...(isActive ? styles.navLinkActive : {}),
+        })}
+      >
+        {({ isActive }) => (
+          <>
+            <span style={{ ...styles.navIcon, ...(isActive ? styles.navIconActive : {}) }}>
+              <Icon size={15} />
+            </span>
+            <span style={styles.navText}>{item.label}</span>
+            {badgeCount > 0 && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                background: '#dc2626', color: '#fff', borderRadius: 10,
+                fontSize: 10, fontWeight: 700, minWidth: 17, height: 17,
+                padding: '0 4px', marginLeft: 4, flexShrink: 0,
+              }}>
+                {badgeCount > 99 ? '99+' : badgeCount}
+              </span>
+            )}
+            {isActive && badgeCount === 0 && <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
+          </>
+        )}
+      </NavLink>
+    );
+  };
 
   return (
     <aside style={styles.sidebar}>
@@ -100,115 +234,7 @@ export default function Sidebar() {
         {navSections.map((section) => (
           <div key={section.label}>
             <div style={styles.sectionLabel}>{section.label}</div>
-            {section.items.map((item) => {
-              const Icon = item.icon;
-              if (item.permission && !hasPermission(item.permission)) {
-                return null;
-              }
-
-              // Clients: render as expandable parent with sub-items
-              if (item.children) {
-                const parentActive = isClientsActive;
-                const subOpen = clientsOpen;
-                const setSubOpen = setClientsOpen;
-                const visibleChildren = item.children.filter(
-                  (ch) => !ch.permission || hasPermission(ch.permission),
-                );
-                if (visibleChildren.length === 0) {
-                  return null;
-                }
-                return (
-                  <div key={item.label}>
-                    <button
-                      type="button"
-                      onClick={() => setSubOpen((v) => !v)}
-                      style={{
-                        ...styles.navLink,
-                        width: '100%',
-                        background: 'none',
-                        border: 'none',
-                        textAlign: 'left',
-                        cursor: 'pointer',
-                        ...(parentActive ? styles.navLinkActive : {}),
-                      }}
-                    >
-                      <span style={{ ...styles.navIcon, ...(parentActive ? styles.navIconActive : {}) }}>
-                        <Icon size={15} />
-                      </span>
-                      <span style={styles.navText}>{item.label}</span>
-                      {subOpen
-                        ? <ChevronDown size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
-                        : <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />
-                      }
-                    </button>
-                    {subOpen && (
-                      <div style={{ paddingLeft: 16 }}>
-                        {visibleChildren.map((child) => {
-                          const ChildIcon = child.icon;
-                          return (
-                            <NavLink
-                              key={child.to}
-                              to={child.to}
-                              end={Boolean(child.exact)}
-                              style={({ isActive }) => ({
-                                ...styles.navLink,
-                                fontSize: 12,
-                                paddingTop: 6,
-                                paddingBottom: 6,
-                                ...(isActive ? styles.navLinkActive : {}),
-                              })}
-                            >
-                              {({ isActive }) => (
-                                <>
-                                  <span style={{ ...styles.navIcon, ...(isActive ? styles.navIconActive : {}) }}>
-                                    <ChildIcon size={14} />
-                                  </span>
-                                  <span style={styles.navText}>{child.label}</span>
-                                  {isActive && <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
-                                </>
-                              )}
-                            </NavLink>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-
-              const badgeCount = item.badge === 'overdue' ? overdueCount : 0;
-              return (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.exact}
-                  style={({ isActive }) => ({
-                    ...styles.navLink,
-                    ...(isActive ? styles.navLinkActive : {}),
-                  })}
-                >
-                  {({ isActive }) => (
-                    <>
-                      <span style={{ ...styles.navIcon, ...(isActive ? styles.navIconActive : {}) }}>
-                        <Icon size={15} />
-                      </span>
-                      <span style={styles.navText}>{item.label}</span>
-                      {badgeCount > 0 && (
-                        <span style={{
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                          background: '#dc2626', color: '#fff', borderRadius: 10,
-                          fontSize: 10, fontWeight: 700, minWidth: 17, height: 17,
-                          padding: '0 4px', marginLeft: 4, flexShrink: 0,
-                        }}>
-                          {badgeCount > 99 ? '99+' : badgeCount}
-                        </span>
-                      )}
-                      {isActive && badgeCount === 0 && <ChevronRight size={12} style={{ marginLeft: 'auto', opacity: 0.5 }} />}
-                    </>
-                  )}
-                </NavLink>
-              );
-            })}
+            {section.items.map((item) => renderNavItem(item))}
           </div>
         ))}
 

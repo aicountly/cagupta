@@ -1478,6 +1478,182 @@ class Routes
                 'handler'    => 'Client\ServiceLogController@index',
                 'middleware' => ['auth', 'permission:client.services.view'],
             ],
+
+            // ── Marketing — WA Web Session ────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/wa/session/status',
+                'handler'    => 'Admin\MarketingController@waSessionStatus',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/wa/session/start',
+                'handler'    => 'Admin\MarketingController@waSessionStart',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/wa/session/stop',
+                'handler'    => 'Admin\MarketingController@waSessionStop',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/wa/contacts',
+                'handler'    => 'Admin\MarketingController@waContacts',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/wa/groups',
+                'handler'    => 'Admin\MarketingController@waGroups',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/wa/send',
+                'handler'    => 'Admin\MarketingController@waSend',
+                'middleware' => ['auth'],
+            ],
+
+            // ── Marketing — WA Native / Business API ─────────────────────────
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/wa/native/config',
+                'handler'    => 'Admin\MarketingController@waNativeConfig',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/wa/native/send',
+                'handler'    => 'Admin\MarketingController@waNativeSend',
+                'middleware' => ['auth'],
+            ],
+
+            // ── Marketing — SMS ───────────────────────────────────────────────
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/sms/send',
+                'handler'    => 'Admin\MarketingController@smsSend',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/sms/templates',
+                'handler'    => 'Admin\MarketingController@smsTemplates',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/sms/templates',
+                'handler'    => 'Admin\MarketingController@smsTemplateStore',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/sms/logs',
+                'handler'    => 'Admin\MarketingController@smsLogs',
+                'middleware' => ['auth'],
+            ],
+
+            // ── Marketing — Social Posting ────────────────────────────────────
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/social/post',
+                'handler'    => 'Admin\MarketingController@socialPost',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/social/config',
+                'handler'    => 'Admin\MarketingController@socialConfig',
+                'middleware' => ['auth'],
+            ],
+
+            // ── Marketing — Campaigns ─────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/campaigns',
+                'handler'    => 'Admin\MarketingController@campaignIndex',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/campaigns',
+                'handler'    => 'Admin\MarketingController@campaignStore',
+                'middleware' => ['auth'],
+            ],
+
+            // ── Marketing — Affiliate Prospects ───────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/prospects',
+                'handler'    => 'Admin\MarketingController@prospectIndex',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/prospects',
+                'handler'    => 'Admin\MarketingController@prospectStore',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/marketing/prospects/:id',
+                'handler'    => 'Admin\MarketingController@prospectUpdate',
+                'middleware' => ['auth'],
+            ],
+
+            // ── Marketing — Document Share ─────────────────────────────────────
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/documents/:id/share',
+                'handler'    => 'Admin\MarketingController@documentShare',
+                'middleware' => ['auth'],
+            ],
+
+            // ── Marketing — Marketing Logs ────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/logs',
+                'handler'    => 'Admin\MarketingController@marketingLogs',
+                'middleware' => ['auth'],
+            ],
+
+            // ── Contact Verification ──────────────────────────────────────────
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/contacts/:id/verify/send-otp',
+                'handler'    => 'Admin\ContactVerificationController@sendOtp',
+                'middleware' => ['auth', 'permission:clients.edit'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/contacts/:id/verify/confirm',
+                'handler'    => 'Admin\ContactVerificationController@confirm',
+                'middleware' => ['auth', 'permission:clients.edit'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/contacts/verification/exceptions',
+                'handler'    => 'Admin\ContactVerificationController@exceptions',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+
+            // ── Activity Trigger Config ───────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/settings/triggers',
+                'handler'    => 'Admin\ActivityTriggerController@index',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/settings/triggers/:id',
+                'handler'    => 'Admin\ActivityTriggerController@update',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
         ];
     }
 }

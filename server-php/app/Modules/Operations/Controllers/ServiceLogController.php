@@ -148,6 +148,22 @@ class ServiceLogController extends BaseController
         ]);
 
         $entry = $this->logs->find($newId);
+
+        // ── Activity trigger: fire email on visible log entries ─────────────
+        // Visibility 'client' or 'affiliate' triggers a notification email.
+        // In testing mode, email goes to the static test address only.
+        if (in_array($visibility, ['client', 'affiliate'], true)) {
+            $this->dispatchActivityTrigger('service_log_created', [
+                'service_id'    => $serviceId,
+                'service'       => $service,
+                'log_id'        => $newId,
+                'log_type'      => $logType,
+                'message'       => $message,
+                'visibility'    => $visibility,
+                'actor'         => $actor,
+            ]);
+        }
+
         $this->success($entry, 'Log entry created', 201);
     }
 
@@ -371,6 +387,140 @@ class ServiceLogController extends BaseController
         }
 
         return ['', (string)($service['client_name'] ?? '')];
+    }
+
+    /**
+     * Dispatch an activity trigger notification.
+     *
+     * Reads the trigger config from activity_trigger_config table.
+     * In testing_mode, sends to test_email only (never to the real client).
+     * Logs the dispatch in activity_trigger_log.
+     */
+    private function dispatchActivityTrigger(string $triggerType, array $context): void
+    {
+        try {
+            $db  = \App\Config\Database::connect();
+            $row = $db->prepare('SELECT * FROM activity_trigger_config WHERE trigger_type = :type AND enabled = TRUE LIMIT 1');
+            $row->execute([':type' => $triggerType]);
+            $config = $row->fetch(\PDO::FETCH_ASSOC);
+            if (!$config) return;
+
+            $testingMode = (bool)$config['testing_mode'];
+            $service     = $context['service'] ?? [];
+            $actor       = $context['actor'] ?? [];
+
+            // Determine recipient
+            if ($testingMode) {
+                $toEmail = $config['test_email'] ?: 'testing@logicmail.in';
+            } else {
+                // Fetch client email from the service's client
+                $clientId = $service['client_id'] ?? null;
+                $toEmail  = '';
+                if ($clientId) {
+                    $c = $db->prepare('SELECT email FROM clients WHERE id = :id LIMIT 1');
+                    $c->execute([':id' => $clientId]);
+                    $toEmail = (string)($c->fetchColumn() ?: '');
+                }
+            }
+
+            if ($toEmail === '') return;
+
+            $serviceName = $service['service_name'] ?? $service['engagement_type'] ?? 'Service';
+            $clientName  = $service['client_name'] ?? ($testingMode ? '[Test Mode — Real client hidden]' : 'Client');
+            $actorName   = $actor['name'] ?? 'Team';
+            $logMessage  = $context['message'] ?? '';
+            $logType     = $context['log_type'] ?? 'note';
+
+            $html = $this->buildActivityTriggerEmail([
+                'clientName'   => $clientName,
+                'serviceName'  => $serviceName,
+                'actorName'    => $actorName,
+                'logType'      => ucfirst(str_replace('_', ' ', $logType)),
+                'message'      => htmlspecialchars($logMessage, ENT_QUOTES, 'UTF-8'),
+                'testingMode'  => $testingMode,
+            ]);
+
+            $subject = $testingMode
+                ? "[TEST] Activity Update — {$serviceName}"
+                : "Update on your {$serviceName} — CA Rahul Gupta";
+
+            // Send via Node mailer service
+            $nodeUrl = rtrim($_ENV['NODE_MAILER_URL'] ?? 'http://localhost:3000', '/');
+            $payload = json_encode(['to' => $toEmail, 'subject' => $subject, 'html' => $html]);
+            $ch = curl_init("{$nodeUrl}/api/email/send");
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST           => true,
+                CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+                CURLOPT_POSTFIELDS     => $payload,
+                CURLOPT_TIMEOUT        => 5,
+            ]);
+            $res    = curl_exec($ch);
+            $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+            $ok = $status >= 200 && $status < 300;
+
+            // Log the trigger event
+            $db->prepare('
+                INSERT INTO activity_trigger_log
+                    (trigger_type, channel, service_id, service_log_id, client_id, sent_to, testing_mode, status)
+                VALUES
+                    (:type, \'email\', :sid, :lid, :cid, :sent_to, :testing, :status)
+            ')->execute([
+                ':type'     => $triggerType,
+                ':sid'      => $context['service_id'] ?? null,
+                ':lid'      => $context['log_id'] ?? null,
+                ':cid'      => $service['client_id'] ?? null,
+                ':sent_to'  => $toEmail,
+                ':testing'  => $testingMode ? 'TRUE' : 'FALSE',
+                ':status'   => $ok ? 'sent' : 'failed',
+            ]);
+        } catch (\Throwable $e) {
+            // Never let trigger errors bubble up to the API response
+            error_log('[ActivityTrigger] Error: ' . $e->getMessage());
+        }
+    }
+
+    private function buildActivityTriggerEmail(array $v): string
+    {
+        $testBanner = $v['testingMode']
+            ? '<div style="background:#fef08a;border:1px solid #ca8a04;padding:10px 16px;border-radius:6px;font-size:12px;color:#854d0e;margin-bottom:16px;"><strong>⚠ TESTING MODE:</strong> This email was sent to the test address. Real client was NOT notified.</div>'
+            : '';
+
+        return <<<HTML
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"></head>
+<body style="font-family:sans-serif;background:#f6f7fb;margin:0;padding:24px;">
+  <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e6e8f0;">
+    <div style="background:#fff;padding:16px 24px;text-align:center;border-bottom:3px solid #F37920;">
+      <img src="https://carahulgupta.in/cropped_logo.png" alt="CA Rahul Gupta" height="48" style="display:block;margin:0 auto;" />
+    </div>
+    <div style="background:#F37920;padding:20px 24px;">
+      <h2 style="margin:0;color:#fff;font-size:18px;">Activity Update</h2>
+      <div style="color:rgba(255,255,255,0.85);font-size:13px;margin-top:4px;">{$v['serviceName']}</div>
+    </div>
+    <div style="padding:24px;">
+      {$testBanner}
+      <p style="margin:0 0 12px;">Dear {$v['clientName']},</p>
+      <p style="margin:0 0 16px;">
+        <strong>{$v['actorName']}</strong> has added a <strong>{$v['logType']}</strong>
+        to your <strong>{$v['serviceName']}</strong> engagement.
+      </p>
+      <div style="background:#f8fafc;border-left:4px solid #F37920;padding:12px 16px;border-radius:0 8px 8px 0;margin-bottom:20px;">
+        <p style="margin:0;font-size:14px;color:#334155;">{$v['message']}</p>
+      </div>
+      <p style="font-size:13px;color:#64748b;margin:0 0 8px;">
+        Log in to <a href="https://app.carahulgupta.in" style="color:#F37920;font-weight:600;">My CA Portal</a> to view full details.
+      </p>
+    </div>
+    <div style="padding:16px 24px;border-top:1px solid #e6e8f0;font-size:12px;color:#94a3b8;text-align:center;">
+      CA Rahul Gupta &amp; Associates &mdash; office@carahulgupta.in
+    </div>
+  </div>
+</body>
+</html>
+HTML;
     }
 
     /**

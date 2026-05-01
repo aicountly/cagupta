@@ -67,6 +67,14 @@ const REPORT_CATEGORIES = [
         to: '/reports/exceptions/organization-kyc',
         permission: 'clients.view',
       },
+      {
+        id: 'verification-exceptions',
+        label: 'Verification Exceptions',
+        description: 'Clients with unverified email or mobile — view and trigger OTP verification.',
+        icon: ShieldCheck,
+        to: '/reports/exceptions/verification',
+        permission: 'clients.view',
+      },
     ],
   },
 ];

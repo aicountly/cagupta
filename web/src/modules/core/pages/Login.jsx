@@ -150,7 +150,7 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      const { token, user: u } = await loginWithGoogle(credentialResponse.credential);
+      const { token, user: u } = await loginWithGoogle(credentialResponse.credential, { portal: loginPortal });
       const msg = portalMismatchMessage(loginPortal, u);
       if (msg) {
         setError(msg);
@@ -467,7 +467,8 @@ export default function LoginPage() {
           ) : (
             /* ── Email + Password Step ─────────────────────────────────── */
             <>
-              {loginPortal !== 'client' && <div style={s.socialSection}>
+              {/* SSO — shown for all portals including client */}
+              <div style={s.socialSection}>
                 {GOOGLE_CLIENT_ID ? (
                   <div style={s.googleWrap}>
                     <GoogleLogin
@@ -489,19 +490,30 @@ export default function LoginPage() {
                     <GoogleIcon /> Continue with Google
                   </button>
                 )}
-                <button
-                  style={{ ...s.socialBtn, opacity: loading ? 0.7 : 1 }}
-                  onClick={handleMicrosoftLogin}
-                  disabled={loading}
-                >
-                  <MicrosoftIcon /> {loading ? 'Redirecting…' : 'Continue with Outlook'}
-                </button>
-              </div>}
-              {loginPortal !== 'client' && <div style={s.divider}>
+                {loginPortal !== 'client' && (
+                  <button
+                    style={{ ...s.socialBtn, opacity: loading ? 0.7 : 1 }}
+                    onClick={handleMicrosoftLogin}
+                    disabled={loading}
+                  >
+                    <MicrosoftIcon /> {loading ? 'Redirecting…' : 'Continue with Outlook'}
+                  </button>
+                )}
+                {loginPortal === 'client' && (
+                  <button
+                    style={{ ...s.socialBtn, opacity: 0.5 }}
+                    disabled
+                    title="Apple Sign-In — coming soon"
+                  >
+                    <AppleIcon /> Continue with Apple
+                  </button>
+                )}
+              </div>
+              <div style={s.divider}>
                 <div style={s.dividerLine} />
                 <span style={s.dividerText}>or</span>
                 <div style={s.dividerLine} />
-              </div>}
+              </div>
               <form onSubmit={handlePasswordLogin} style={s.form} noValidate>
                 {loginPortal === 'client' ? (
                   <>
@@ -554,7 +566,11 @@ export default function LoginPage() {
             </>
           )}
 
-          {error && <div style={s.errorBox}>{error}</div>}
+          {error && (
+            <div role="alert" aria-live="assertive" style={s.errorBox}>
+              <strong>Error:</strong> {error}
+            </div>
+          )}
           <p style={s.adminNote}>
             Access is provided by admin. Contact support if you need access.
           </p>
@@ -582,6 +598,14 @@ function MicrosoftIcon() {
       <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
       <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
       <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+    </svg>
+  );
+}
+
+function AppleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 814 1000" style={{ flexShrink: 0 }}>
+      <path fill="#000" d="M788.1 340.9c-5.8 4.5-108.2 62.2-108.2 190.5 0 148.4 130.3 200.9 134.2 202.2-.6 3.2-20.7 71.9-68.7 141.9-42.8 61.6-87.5 123.1-155.5 123.1s-85.5-39.5-164-39.5c-76.5 0-103.7 40.8-165.9 40.8s-105.6-57.8-155.5-127.4C46 407.5 16.5 300.8 16.5 199.5c0-183.1 119.1-280.1 238.9-280.1 75.6 0 138.3 49.3 185.8 49.3 45.5 0 116.5-54.8 201.5-54.8zm-86.4-190.9c-31.3 33.3-58.9 80.8-58.9 128.3s2.6 7.4 5.2 10.6c29.1 3.2 70.7-21.8 93.5-50.4 21.8-27.1 37.1-70.7 37.1-110.1 0-5.2-.5-10.4-2.9-14.5-2.5-.6-5.2-.6-7.8-.6-26.4 0-58.9 14.5-66.2 36.7z"/>
     </svg>
   );
 }

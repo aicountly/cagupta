@@ -17,6 +17,7 @@ import LeaveManagement from './modules/core/pages/LeaveManagement';
 import Contacts from './modules/crm/pages/Contacts';
 import ContactCreatePage from './modules/crm/pages/ContactCreatePage';
 import ContactExceptionsReport from './modules/crm/pages/ContactExceptionsReport';
+import ContactVerificationExceptions from './modules/crm/pages/ContactVerificationExceptions';
 import ContactKycExceptionsReport from './modules/crm/pages/ContactKycExceptionsReport';
 import Organizations from './modules/crm/pages/Organizations';
 import OrganizationCreatePage from './modules/crm/pages/OrganizationCreatePage';
@@ -47,6 +48,15 @@ import ShiftTargetTimesheetReport from './modules/operations/pages/ShiftTargetTi
 
 // ── Finance module ───────────────────────────────────────────────────────────
 import Invoices from './modules/finance/pages/Invoices';
+
+// ── Marketing module ─────────────────────────────────────────────────────────
+import WAWebMarketing from './modules/marketing/pages/WAWebMarketing';
+import WANativeMarketing from './modules/marketing/pages/WANativeMarketing';
+import SMSMarketing from './modules/marketing/pages/SMSMarketing';
+import SocialPosting from './modules/marketing/pages/SocialPosting';
+import AffiliateOutreach from './modules/marketing/pages/AffiliateOutreach';
+import MarketingCampaigns from './modules/marketing/pages/MarketingCampaigns';
+import TriggerSettings from './modules/marketing/pages/TriggerSettings';
 
 // ── Affiliate module ─────────────────────────────────────────────────────────
 import AdminAffiliates from './modules/affiliate/pages/AdminAffiliates';
@@ -116,6 +126,14 @@ const pageTitles = {
   '/admin/leaves':              '📅 Leave Management',
   '/admin/affiliates':          '🤝 Affiliates',
   '/admin/partners':            '🤝 Partners',
+  '/marketing/wa/web':          '📱 WA Web Marketing',
+  '/marketing/wa/api':          '📱 WA Native (API)',
+  '/marketing/sms':             '📲 SMS Marketing',
+  '/marketing/social':          '🌐 Social Posting',
+  '/marketing/affiliate':       '🤝 Affiliate Outreach',
+  '/marketing/campaigns':       '📣 Marketing Campaigns',
+  '/marketing/triggers':        '🔔 Trigger Settings',
+  '/reports/exceptions/verification': '🔒 Verification Exceptions',
   '/search':                    '🔍 Search',
   '/profile':                   '👤 My Profile',
 };
@@ -208,6 +226,11 @@ export default function App() {
               <Layout routePath="/reports/exceptions/organization-kyc"><OrganizationKycExceptionsReport /></Layout>
             </ProtectedRoute>
           } />
+          <Route path="/reports/exceptions/verification" element={
+            <ProtectedRoute staffOnly requiredPermission="clients.view">
+              <Layout routePath="/reports/exceptions/verification"><ContactVerificationExceptions /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/calendar" element={<ProtectedRoute staffOnly><Layout routePath="/calendar"><Calendar /></Layout></ProtectedRoute>} />
           <Route path="/credentials" element={<ProtectedRoute staffOnly><Layout routePath="/credentials"><Credentials /></Layout></ProtectedRoute>} />
           <Route path="/registers" element={<ProtectedRoute staffOnly><Layout routePath="/registers"><Registers /></Layout></ProtectedRoute>} />
@@ -245,6 +268,16 @@ export default function App() {
               </Layout>
             </ProtectedRoute>
           } />
+
+          {/* ── Marketing routes ───────────────────────────────────────────── */}
+          <Route path="/marketing/wa/web" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/wa/web"><WAWebMarketing /></Layout></ProtectedRoute>} />
+          <Route path="/marketing/wa/api" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/wa/api"><WANativeMarketing /></Layout></ProtectedRoute>} />
+          <Route path="/marketing/sms" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/sms"><SMSMarketing /></Layout></ProtectedRoute>} />
+          <Route path="/marketing/social" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/social"><SocialPosting /></Layout></ProtectedRoute>} />
+          <Route path="/marketing/affiliate" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/affiliate"><AffiliateOutreach /></Layout></ProtectedRoute>} />
+          <Route path="/marketing/campaigns" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/campaigns"><MarketingCampaigns /></Layout></ProtectedRoute>} />
+          <Route path="/marketing/triggers" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/triggers"><TriggerSettings /></Layout></ProtectedRoute>} />
+          <Route path="/marketing" element={<ProtectedRoute staffOnly><Navigate to="/marketing/campaigns" replace /></ProtectedRoute>} />
 
           <Route path="/affiliate" element={<ProtectedRoute affiliateOnly><AffiliateDashboard /></ProtectedRoute>} />
           <Route path="/affiliate/services" element={<ProtectedRoute affiliateOnly><AffiliateServices /></ProtectedRoute>} />

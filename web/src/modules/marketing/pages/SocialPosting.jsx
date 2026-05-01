@@ -1,0 +1,326 @@
+import { useState } from 'react';
+import {
+  Share2, Send, Image, FileText, Link2, Calendar,
+  CheckCircle2, AlertCircle, Settings, Plus, Trash2,
+  Youtube, Twitter, Linkedin, Facebook, Instagram,
+  Globe, Zap, Clock,
+} from 'lucide-react';
+import { API_BASE_URL } from '../../../constants/config';
+
+function authHeaders() {
+  const token = localStorage.getItem('auth_token');
+  return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+}
+
+const PLATFORMS = [
+  { id: 'youtube', label: 'YouTube', icon: '▶', color: '#FF0000', bg: '#fff5f5', connected: false },
+  { id: 'facebook', label: 'Facebook', icon: 'f', color: '#1877F2', bg: '#eff6ff', connected: true },
+  { id: 'instagram', label: 'Instagram', icon: '📷', color: '#E1306C', bg: '#fdf2f8', connected: true },
+  { id: 'twitter', label: 'X (Twitter)', icon: '𝕏', color: '#000000', bg: '#f8fafc', connected: false },
+  { id: 'linkedin', label: 'LinkedIn', icon: 'in', color: '#0A66C2', bg: '#eff6ff', connected: true },
+  { id: 'threads', label: 'Threads', icon: '@', color: '#000000', bg: '#f8fafc', connected: false },
+];
+
+const QUICK_TEMPLATES = [
+  { id: 1, name: 'Budget Update Alert', category: 'tax', content: '📢 Budget 2026-27 Update!\n\nKey highlights:\n• Income Tax Slab Changes\n• New GST provisions\n• Infrastructure boost\n\nContact CA Rahul Gupta for personalized tax planning.\n\n#Budget2026 #TaxPlanning #CA #Finance' },
+  { id: 2, name: 'GST Due Date Reminder', category: 'gst', content: '⚠️ GST Filing Deadline Alert!\n\nGSTR-3B for April 2026 is due on 20th May 2026.\n\nDon\'t miss it — penalties apply!\nContact us for hassle-free GST filing.\n\n#GST #GSTReturn #Deadline #CA' },
+  { id: 3, name: 'Income Tax Tip', category: 'tax', content: '💡 Tax Saving Tip!\n\nDid you know? You can save up to ₹1.5L under Section 80C!\n\nInvest in:\n✅ PPF\n✅ ELSS Mutual Funds\n✅ NSC\n✅ Term Insurance\n\n#TaxSaving #80C #IncomeTax #FinancialPlanning' },
+  { id: 4, name: 'Practice Achievement', category: 'practice', content: '🏆 Milestone Alert!\n\nProud to announce we\'ve helped 500+ clients with their financial goals this year!\n\nThank you for your trust.\n\n#CAFirm #FinancialSuccess #Milestone #CARahulGupta' },
+];
+
+export default function SocialPosting() {
+  const [activeTab, setActiveTab] = useState('compose');
+  const [content, setContent] = useState('');
+  const [selectedPlatforms, setSelectedPlatforms] = useState(['facebook', 'linkedin']);
+  const [mediaFiles, setMediaFiles] = useState([]);
+  const [scheduleType, setScheduleType] = useState('now');
+  const [scheduleTime, setScheduleTime] = useState('');
+  const [apiProvider, setApiProvider] = useState('ayrshare');
+  const [apiKey, setApiKey] = useState('');
+  const [posting, setPosting] = useState(false);
+  const [result, setResult] = useState(null);
+
+  function togglePlatform(id) {
+    setSelectedPlatforms((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
+    );
+  }
+
+  function applyTemplate(tpl) {
+    setContent(tpl.content);
+  }
+
+  async function handlePost() {
+    if (!content.trim() || selectedPlatforms.length === 0) return;
+    setPosting(true);
+    setResult(null);
+    try {
+      const formData = new FormData();
+      formData.append('content', content);
+      formData.append('platforms', JSON.stringify(selectedPlatforms));
+      formData.append('schedule_type', scheduleType);
+      if (scheduleType === 'later') formData.append('schedule_time', scheduleTime);
+      mediaFiles.forEach((f) => formData.append('media[]', f));
+
+      const token = localStorage.getItem('auth_token');
+      const res = await fetch(`${API_BASE_URL}/marketing/social/post`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: formData,
+      });
+      const data = await res.json();
+      setResult({ success: res.ok, message: data.message || (res.ok ? 'Post published!' : 'Failed to post.'), results: data.platform_results });
+    } catch {
+      setResult({ success: false, message: 'Network error. Check your API configuration.' });
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  const charCount = content.length;
+  const charLimit = selectedPlatforms.includes('twitter') ? 280 : 2200;
+
+  return (
+    <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>Social Posting</h1>
+          <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>
+            Publish tax alerts & practice updates to all social platforms simultaneously
+          </p>
+        </div>
+        <button onClick={() => setActiveTab('settings')} style={btnOutline}>
+          <Settings size={13} /> API Settings
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0', alignSelf: 'flex-start', marginBottom: 20, width: 'fit-content' }}>
+        {[['compose', 'Compose'], ['scheduled', 'Scheduled'], ['history', 'History'], ['settings', 'Settings']].map(([tab, label]) => (
+          <button key={tab} onClick={() => setActiveTab(tab)} style={{
+            padding: '8px 20px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
+            background: activeTab === tab ? '#F37920' : '#f8fafc',
+            color: activeTab === tab ? '#fff' : '#64748b',
+            borderRight: '1px solid #e2e8f0',
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {activeTab === 'compose' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 20 }}>
+          {/* Platform selector */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={card}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: '0 0 12px' }}>
+                Select Platforms
+              </h3>
+              {PLATFORMS.map((p) => {
+                const selected = selectedPlatforms.includes(p.id);
+                return (
+                  <div key={p.id} onClick={() => p.connected && togglePlatform(p.id)} style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 12px', borderRadius: 8, marginBottom: 6, cursor: p.connected ? 'pointer' : 'not-allowed',
+                    border: selected ? `2px solid ${p.color}` : '1px solid #e2e8f0',
+                    background: selected ? p.bg : '#f8fafc',
+                    opacity: p.connected ? 1 : 0.5,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <div style={{
+                        width: 30, height: 30, borderRadius: 8, background: p.connected ? p.bg : '#f1f5f9',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 13, fontWeight: 700, color: p.color, border: `1px solid ${p.color}30`,
+                      }}>{p.icon}</div>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: '#1e293b' }}>{p.label}</div>
+                        <div style={{ fontSize: 10, color: p.connected ? '#16a34a' : '#94a3b8' }}>
+                          {p.connected ? '● Connected' : '○ Not connected'}
+                        </div>
+                      </div>
+                    </div>
+                    {selected && <CheckCircle2 size={14} color={p.color} />}
+                    {!p.connected && <span style={{ fontSize: 10, color: '#94a3b8' }}>Connect →</span>}
+                  </div>
+                );
+              })}
+              {selectedPlatforms.length > 0 && (
+                <div style={{ marginTop: 4, padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', fontSize: 12, color: '#16a34a', fontWeight: 600 }}>
+                  Posting to {selectedPlatforms.length} platform{selectedPlatforms.length > 1 ? 's' : ''}
+                </div>
+              )}
+            </div>
+
+            {/* Quick templates */}
+            <div style={card}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: '0 0 12px' }}>Quick Templates</h3>
+              {QUICK_TEMPLATES.map((t) => (
+                <div key={t.id} style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 6, cursor: 'pointer' }}
+                  onClick={() => applyTemplate(t)}>
+                  <div style={{ fontSize: 12, fontWeight: 600, color: '#1e293b', marginBottom: 2 }}>{t.name}</div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {t.content.slice(0, 60)}…
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Composer */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={card}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: 0 }}>Content</h3>
+                <span style={{ fontSize: 12, color: charCount > charLimit ? '#ef4444' : '#94a3b8' }}>
+                  {charCount} / {charLimit}
+                </span>
+              </div>
+              <textarea
+                value={content} onChange={(e) => setContent(e.target.value)}
+                placeholder="Write your post… Add hashtags, emojis, and links for better reach."
+                rows={8}
+                style={{ ...inputStyle, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.7 }}
+              />
+
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <label style={btnOutline}>
+                  <Image size={13} /> Add Image/Video
+                  <input type="file" accept="image/*,video/*" multiple style={{ display: 'none' }}
+                    onChange={(e) => setMediaFiles((prev) => [...prev, ...Array.from(e.target.files)])} />
+                </label>
+                <button style={btnOutline}><Link2 size={13} /> Add Link</button>
+              </div>
+
+              {mediaFiles.length > 0 && (
+                <div style={{ marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {mediaFiles.map((f, i) => (
+                    <div key={i} style={{ position: 'relative', width: 80, height: 80, borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                      {f.type.startsWith('image/') ? (
+                        <img src={URL.createObjectURL(f)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <div style={{ width: '100%', height: '100%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <FileText size={24} color="#94a3b8" />
+                        </div>
+                      )}
+                      <button onClick={() => setMediaFiles((prev) => prev.filter((_, j) => j !== i))}
+                        style={{ position: 'absolute', top: 2, right: 2, background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: 18, height: 18, cursor: 'pointer', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div style={card}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: '0 0 12px' }}>Schedule</h3>
+              <div style={{ display: 'flex', gap: 12 }}>
+                {[['now', 'Post Now', Zap], ['later', 'Schedule', Clock]].map(([val, label, Icon]) => (
+                  <label key={val} style={{
+                    display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px',
+                    borderRadius: 8, cursor: 'pointer', flex: 1,
+                    border: scheduleType === val ? '2px solid #F37920' : '1px solid #e2e8f0',
+                    background: scheduleType === val ? '#FEF0E6' : '#f8fafc',
+                  }}>
+                    <input type="radio" value={val} checked={scheduleType === val} onChange={() => setScheduleType(val)} style={{ display: 'none' }} />
+                    <Icon size={14} color={scheduleType === val ? '#F37920' : '#94a3b8'} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: scheduleType === val ? '#F37920' : '#64748b' }}>{label}</span>
+                  </label>
+                ))}
+              </div>
+              {scheduleType === 'later' && (
+                <input type="datetime-local" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)}
+                  style={{ ...inputStyle, marginTop: 10 }} />
+              )}
+            </div>
+
+            {result && (
+              <div style={{
+                padding: '12px 16px', borderRadius: 10,
+                background: result.success ? '#f0fdf4' : '#fef2f2',
+                border: `1px solid ${result.success ? '#bbf7d0' : '#fecaca'}`,
+                color: result.success ? '#16a34a' : '#dc2626', fontSize: 13,
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: result.results ? 8 : 0 }}>{result.message}</div>
+                {result.results && Object.entries(result.results).map(([platform, r]) => (
+                  <div key={platform} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, paddingTop: 4 }}>
+                    <span style={{ textTransform: 'capitalize' }}>{platform}</span>
+                    <span style={{ color: r.success ? '#16a34a' : '#dc2626' }}>{r.success ? '✓ Published' : `✗ ${r.error}`}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button onClick={handlePost} disabled={posting || !content.trim() || selectedPlatforms.length === 0}
+              style={{
+                ...btnPrimary, width: '100%', justifyContent: 'center', padding: '12px',
+                fontSize: 14, opacity: posting ? 0.7 : 1,
+              }}>
+              <Zap size={15} /> {posting ? 'Publishing…' : scheduleType === 'later' ? 'Schedule Post' : `Publish to ${selectedPlatforms.length} Platform${selectedPlatforms.length > 1 ? 's' : ''}`}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'settings' && (
+        <div style={{ maxWidth: 500 }}>
+          <div style={card}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: '0 0 16px' }}>Social API Provider</h3>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 14 }}>
+              {[['ayrshare', 'Ayrshare'], ['buffer', 'Buffer'], ['socialpilot', 'SocialPilot']].map(([val, label]) => (
+                <button key={val} onClick={() => setApiProvider(val)} style={{
+                  flex: 1, padding: '8px 0', fontSize: 13, fontWeight: 600, borderRadius: 8, cursor: 'pointer',
+                  border: apiProvider === val ? '2px solid #F37920' : '1px solid #e2e8f0',
+                  background: apiProvider === val ? '#FEF0E6' : '#f8fafc',
+                  color: apiProvider === val ? '#F37920' : '#64748b',
+                }}>{label}</button>
+              ))}
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>API Key</label>
+              <input value={apiKey} onChange={(e) => setApiKey(e.target.value)} type="password"
+                placeholder={`Enter your ${apiProvider} API key`} style={inputStyle} />
+            </div>
+            <button style={{ ...btnPrimary, width: '100%', justifyContent: 'center' }}>
+              <Settings size={13} /> Save & Connect Platforms
+            </button>
+            <div style={{ marginTop: 14 }}>
+              <h4 style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', margin: '0 0 10px' }}>Platform Connection Status</h4>
+              {PLATFORMS.map((p) => (
+                <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #f1f5f9' }}>
+                  <span style={{ fontSize: 13, color: '#1e293b' }}>{p.label}</span>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: p.connected ? '#16a34a' : '#94a3b8' }}>
+                      {p.connected ? '● Connected' : '○ Not connected'}
+                    </span>
+                    <button style={{ ...btnOutline, padding: '3px 10px', fontSize: 11 }}>
+                      {p.connected ? 'Disconnect' : 'Connect'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {(activeTab === 'scheduled' || activeTab === 'history') && (
+        <div style={card}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: '0 0 16px' }}>
+            {activeTab === 'scheduled' ? 'Scheduled Posts' : 'Post History'}
+          </h3>
+          <div style={{ textAlign: 'center', padding: '40px 20px', color: '#94a3b8' }}>
+            <Clock size={40} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
+            <div style={{ fontSize: 13 }}>
+              {activeTab === 'scheduled' ? 'No scheduled posts.' : 'No published posts yet.'}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const card = { background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' };
+const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
+const btnOutline = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#334155', border: '1px solid #e2e8f0', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer' };
+const inputStyle = { width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' };
+const labelStyle = { fontSize: 12, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 };

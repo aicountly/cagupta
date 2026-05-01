@@ -1,0 +1,350 @@
+import { useState, useEffect } from 'react';
+import {
+  Smartphone, Send, Plus, Search, Filter, BarChart3,
+  CheckCircle2, AlertCircle, Clock, Users, FileText,
+  Settings, Eye, Trash2, RefreshCw,
+} from 'lucide-react';
+import { API_BASE_URL } from '../../../constants/config';
+
+function authHeaders() {
+  const token = localStorage.getItem('auth_token');
+  return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+}
+
+const MOCK_TEMPLATES = [
+  {
+    id: 1, name: 'Tax Deadline Reminder', dltId: 'DLT-TAX-001', category: 'tax',
+    body: 'Dear {name}, your {service} deadline is {date}. Please contact CA Rahul Gupta at {phone}. CAOFFICE',
+    status: 'approved',
+  },
+  {
+    id: 2, name: 'GST Return Due', dltId: 'DLT-GST-002', category: 'gst',
+    body: 'Dear {name}, GST Return for {period} is due on {date}. Share docs to avoid penalty. CA Rahul Gupta. CAOFFICE',
+    status: 'approved',
+  },
+  {
+    id: 3, name: 'Payment Reminder', dltId: 'DLT-PAY-003', category: 'finance',
+    body: 'Dear {name}, invoice #{invoice_no} of Rs.{amount} is pending since {due_date}. CA Rahul Gupta & Associates. CAOFFICE',
+    status: 'approved',
+  },
+  {
+    id: 4, name: 'Document Request', dltId: 'DLT-DOC-004', category: 'operations',
+    body: 'Dear {name}, please share {document_list} for {purpose}. Contact: {email}. CA Rahul Gupta. CAOFFICE',
+    status: 'pending',
+  },
+];
+
+const MOCK_GROUPS = [
+  { id: 1, name: 'All Clients', count: 248 },
+  { id: 2, name: 'GST Filers', count: 142 },
+  { id: 3, name: 'ITR Clients', count: 186 },
+  { id: 4, name: 'Corporate Clients', count: 67 },
+  { id: 5, name: 'Individual Clients', count: 181 },
+  { id: 6, name: 'Overdue Payments', count: 23 },
+];
+
+const MOCK_LOGS = [
+  { id: 1, template: 'Tax Deadline Reminder', group: 'GST Filers', sent: 142, delivered: 138, failed: 4, status: 'completed', date: '2026-04-30 14:30' },
+  { id: 2, template: 'Payment Reminder', group: 'Overdue Payments', sent: 23, delivered: 21, failed: 2, status: 'completed', date: '2026-04-28 10:15' },
+  { id: 3, template: 'GST Return Due', group: 'All Clients', sent: 248, delivered: 0, failed: 0, status: 'scheduled', date: '2026-05-05 09:00' },
+];
+
+export default function SMSMarketing() {
+  const [activeTab, setActiveTab] = useState('compose');
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [selectedGroups, setSelectedGroups] = useState([]);
+  const [customRecipients, setCustomRecipients] = useState('');
+  const [scheduleType, setScheduleType] = useState('now');
+  const [scheduleTime, setScheduleTime] = useState('');
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState(null);
+  const [senderIdConfig, setSenderIdConfig] = useState({ senderId: 'CAOFFICE', apiKey: '', apiUrl: 'https://smsgatewayhub.com/api/mt/SendSMS' });
+
+  const totalRecipients = selectedGroups.reduce((sum, g) => {
+    const grp = MOCK_GROUPS.find((x) => x.id === g);
+    return sum + (grp?.count || 0);
+  }, 0) + customRecipients.split('\n').filter((r) => r.trim()).length;
+
+  async function handleSend() {
+    if (!selectedTemplate) return;
+    setSending(true);
+    setResult(null);
+    try {
+      const res = await fetch(`${API_BASE_URL}/marketing/sms/send`, {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({
+          template_id: selectedTemplate.id,
+          group_ids: selectedGroups,
+          custom_recipients: customRecipients.split('\n').filter((r) => r.trim()),
+          schedule_type: scheduleType,
+          schedule_time: scheduleType === 'later' ? scheduleTime : null,
+        }),
+      });
+      const data = await res.json();
+      setResult({ success: res.ok, message: data.message || (res.ok ? 'SMS campaign queued!' : 'Send failed.') });
+    } catch {
+      setResult({ success: false, message: 'Network error. Please try again.' });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: 24, maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <div>
+          <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>SMS Marketing</h1>
+          <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>
+            Bulk SMS with DLT-compliant templates via SMSGatewayHub
+          </p>
+        </div>
+        <button onClick={() => setActiveTab('settings')} style={btnOutline}>
+          <Settings size={13} /> API Settings
+        </button>
+      </div>
+
+      {/* Stats Row */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
+        {[
+          { label: 'Messages Sent', value: '413', icon: Send, color: '#F37920', bg: '#FEF0E6' },
+          { label: 'Delivered', value: '397', icon: CheckCircle2, color: '#22c55e', bg: '#f0fdf4' },
+          { label: 'Failed', value: '6', icon: AlertCircle, color: '#ef4444', bg: '#fef2f2' },
+          { label: 'Scheduled', value: '248', icon: Clock, color: '#8b5cf6', bg: '#f5f3ff' },
+        ].map((stat) => {
+          const Icon = stat.icon;
+          return (
+            <div key={stat.label} style={{ ...card, display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 10, background: stat.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon size={18} color={stat.color} />
+              </div>
+              <div>
+                <div style={{ fontSize: 20, fontWeight: 700, color: '#1e293b' }}>{stat.value}</div>
+                <div style={{ fontSize: 12, color: '#64748b' }}>{stat.label}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0', alignSelf: 'flex-start', marginBottom: 20, width: 'fit-content' }}>
+        {[['compose', 'Compose & Send'], ['templates', 'Templates'], ['logs', 'Delivery Logs'], ['settings', 'API Settings']].map(([tab, label]) => (
+          <button key={tab} onClick={() => setActiveTab(tab)} style={{
+            padding: '8px 20px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
+            background: activeTab === tab ? '#F37920' : '#f8fafc',
+            color: activeTab === tab ? '#fff' : '#64748b',
+            borderRight: '1px solid #e2e8f0',
+          }}>{label}</button>
+        ))}
+      </div>
+
+      {activeTab === 'compose' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 20 }}>
+          {/* Recipient groups */}
+          <div style={card}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: '0 0 12px' }}>Select Recipients</h3>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Contact Groups (from CRM)</label>
+              {MOCK_GROUPS.map((g) => {
+                const selected = selectedGroups.includes(g.id);
+                return (
+                  <div key={g.id} onClick={() => setSelectedGroups((prev) => selected ? prev.filter((x) => x !== g.id) : [...prev, g.id])}
+                    style={{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                      padding: '8px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
+                      border: selected ? '1px solid #F37920' : '1px solid #e2e8f0',
+                      background: selected ? '#FEF0E6' : '#f8fafc',
+                    }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Users size={13} color={selected ? '#F37920' : '#94a3b8'} />
+                      <span style={{ fontSize: 13, fontWeight: selected ? 600 : 400, color: '#1e293b' }}>{g.name}</span>
+                    </div>
+                    <span style={{ fontSize: 11, color: '#64748b' }}>{g.count}</span>
+                  </div>
+                );
+              })}
+            </div>
+            <div>
+              <label style={labelStyle}>Or enter mobile numbers (one per line)</label>
+              <textarea value={customRecipients} onChange={(e) => setCustomRecipients(e.target.value)}
+                placeholder={'91XXXXXXXXXX\n91XXXXXXXXXX'} rows={4}
+                style={{ ...inputStyle, resize: 'vertical', fontFamily: 'monospace' }} />
+            </div>
+            {totalRecipients > 0 && (
+              <div style={{ marginTop: 10, padding: '8px 12px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0', fontSize: 12, color: '#16a34a', fontWeight: 600 }}>
+                Total: {totalRecipients} recipients
+              </div>
+            )}
+          </div>
+
+          {/* Composer */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={card}>
+              <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: '0 0 14px' }}>Select Template</h3>
+              {MOCK_TEMPLATES.filter((t) => t.status === 'approved').map((t) => (
+                <div key={t.id} onClick={() => setSelectedTemplate(t)} style={{
+                  padding: '12px 14px', borderRadius: 8, cursor: 'pointer', marginBottom: 10,
+                  border: selectedTemplate?.id === t.id ? '2px solid #F37920' : '1px solid #e2e8f0',
+                  background: selectedTemplate?.id === t.id ? '#FEF0E6' : '#f8fafc',
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{t.name}</div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span style={{ fontSize: 10, color: '#94a3b8', background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{t.dltId}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#16a34a', background: '#f0fdf4', padding: '2px 6px', borderRadius: 4, border: '1px solid #bbf7d0' }}>APPROVED</span>
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.5 }}>{t.body}</div>
+                </div>
+              ))}
+
+              <div style={{ marginTop: 4 }}>
+                <label style={labelStyle}>Schedule</label>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                    <input type="radio" value="now" checked={scheduleType === 'now'} onChange={() => setScheduleType('now')} />
+                    Send Now
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                    <input type="radio" value="later" checked={scheduleType === 'later'} onChange={() => setScheduleType('later')} />
+                    Schedule
+                  </label>
+                </div>
+                {scheduleType === 'later' && (
+                  <input type="datetime-local" value={scheduleTime} onChange={(e) => setScheduleTime(e.target.value)}
+                    style={{ ...inputStyle, marginTop: 8 }} />
+                )}
+              </div>
+
+              {result && (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 8, marginTop: 12,
+                  background: result.success ? '#f0fdf4' : '#fef2f2',
+                  border: `1px solid ${result.success ? '#bbf7d0' : '#fecaca'}`,
+                  color: result.success ? '#16a34a' : '#dc2626', fontSize: 13,
+                }}>
+                  {result.message}
+                </div>
+              )}
+
+              <button onClick={handleSend} disabled={sending || !selectedTemplate || totalRecipients === 0}
+                style={{ ...btnPrimary, marginTop: 14, width: '100%', justifyContent: 'center', opacity: (sending || !selectedTemplate || totalRecipients === 0) ? 0.6 : 1 }}>
+                <Send size={13} /> {sending ? 'Queuing…' : scheduleType === 'later' ? 'Schedule SMS Campaign' : `Send to ${totalRecipients} Recipients`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'templates' && (
+        <div style={card}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: 0 }}>DLT Compliant Templates</h3>
+            <button style={btnPrimary}><Plus size={13} /> New Template</button>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                {['Template Name', 'DLT ID', 'Category', 'Status', 'Actions'].map((h) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '8px 12px', fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {MOCK_TEMPLATES.map((t) => (
+                <tr key={t.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '12px', fontSize: 13, fontWeight: 500, color: '#1e293b' }}>{t.name}</td>
+                  <td style={{ padding: '12px', fontSize: 12, color: '#64748b', fontFamily: 'monospace' }}>{t.dltId}</td>
+                  <td style={{ padding: '12px' }}><span style={{ fontSize: 11, background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: 4 }}>{t.category}</span></td>
+                  <td style={{ padding: '12px' }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+                      background: t.status === 'approved' ? '#f0fdf4' : '#fffbeb',
+                      color: t.status === 'approved' ? '#16a34a' : '#d97706',
+                    }}>{t.status.toUpperCase()}</span>
+                  </td>
+                  <td style={{ padding: '12px' }}>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button style={{ ...btnOutline, padding: '4px 10px', fontSize: 11 }}><Eye size={11} /></button>
+                      <button style={{ ...btnOutline, padding: '4px 10px', fontSize: 11, color: '#ef4444' }}><Trash2 size={11} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {activeTab === 'logs' && (
+        <div style={card}>
+          <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: '0 0 16px' }}>Campaign Delivery Logs</h3>
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                {['Template', 'Group', 'Sent', 'Delivered', 'Failed', 'Status', 'Date'].map((h) => (
+                  <th key={h} style={{ textAlign: 'left', padding: '8px 12px', fontSize: 12, fontWeight: 700, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {MOCK_LOGS.map((log) => (
+                <tr key={log.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                  <td style={{ padding: '12px', fontSize: 13, fontWeight: 500, color: '#1e293b' }}>{log.template}</td>
+                  <td style={{ padding: '12px', fontSize: 13, color: '#64748b' }}>{log.group}</td>
+                  <td style={{ padding: '12px', fontSize: 13, color: '#1e293b' }}>{log.sent}</td>
+                  <td style={{ padding: '12px', fontSize: 13, color: '#16a34a', fontWeight: 600 }}>{log.delivered}</td>
+                  <td style={{ padding: '12px', fontSize: 13, color: '#ef4444', fontWeight: 600 }}>{log.failed}</td>
+                  <td style={{ padding: '12px' }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 20,
+                      background: log.status === 'completed' ? '#f0fdf4' : '#f5f3ff',
+                      color: log.status === 'completed' ? '#16a34a' : '#7c3aed',
+                    }}>{log.status.toUpperCase()}</span>
+                  </td>
+                  <td style={{ padding: '12px', fontSize: 12, color: '#64748b' }}>{log.date}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {activeTab === 'settings' && (
+        <div style={{ maxWidth: 500 }}>
+          <div style={card}>
+            <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: '0 0 16px' }}>SMSGatewayHub Configuration</h3>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>API Key</label>
+              <input value={senderIdConfig.apiKey} onChange={(e) => setSenderIdConfig((p) => ({ ...p, apiKey: e.target.value }))}
+                type="password" placeholder="Enter your API key" style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <label style={labelStyle}>Sender ID (DLT Registered)</label>
+              <input value={senderIdConfig.senderId} onChange={(e) => setSenderIdConfig((p) => ({ ...p, senderId: e.target.value }))}
+                placeholder="e.g. CAOFFICE" style={inputStyle} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={labelStyle}>API Endpoint URL</label>
+              <input value={senderIdConfig.apiUrl} onChange={(e) => setSenderIdConfig((p) => ({ ...p, apiUrl: e.target.value }))}
+                style={inputStyle} />
+            </div>
+            <button style={{ ...btnPrimary, width: '100%', justifyContent: 'center' }}>
+              <Settings size={13} /> Save Settings
+            </button>
+            <div style={{ marginTop: 14, padding: '10px 14px', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 12, color: '#92400e' }}>
+              <strong>Note:</strong> Ensure your Sender ID is registered under DLT portal (TRAI mandate). Transactional messages require different registration than promotional.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const card = { background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' };
+const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
+const btnOutline = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#334155', border: '1px solid #e2e8f0', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer' };
+const inputStyle = { width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' };
+const labelStyle = { fontSize: 12, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 };

@@ -58,7 +58,8 @@ function buildMockUser(name, email, role = null) {
 }
 
 /** Exchange a Google ID-token / credential for an app session. */
-export async function loginWithGoogle(googleCredential) {
+export async function loginWithGoogle(googleCredential, options = {}) {
+  const portal = options.portal || 'staff';
   if (API_BASE) {
     // Decode the Google JWT payload to extract name/email/avatar
     let name = 'Google User';
@@ -82,6 +83,7 @@ export async function loginWithGoogle(googleCredential) {
         name,
         email,
         avatar_url: avatarUrl,
+        portal,
       }),
     });
     const data = await parseResponse(res);
