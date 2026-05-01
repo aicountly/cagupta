@@ -1,20 +1,19 @@
 {
   "name": "wa-bridge",
-  "version": "1.0.0",
-  "description": "WhatsApp Web bridge for CA Office Portal — manages per-user WA Web sessions via whatsapp-web.js",
+  "version": "2.0.0",
+  "description": "WhatsApp Web bridge for CA Office Portal — Baileys (WebSocket, no Chromium needed)",
   "main": "src/index.js",
+  "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "node --watch src/index.js"
   },
   "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.9",
     "express": "^4.18.2",
-    "whatsapp-web.js": "^1.23.0",
     "qrcode": "^1.5.3",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.0.2"
+    "dotenv": "^16.3.1",
+    "pino": "^9.4.0"
   }
 }

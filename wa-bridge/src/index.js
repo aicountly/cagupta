@@ -1,8 +1,8 @@
 /**
- * WA Bridge — WhatsApp Web session manager for CA Office Portal
+ * WA Bridge v2 — Baileys-based WhatsApp Web session manager
  *
- * Manages multiple concurrent WA Web sessions (one per staff user).
- * Each session is isolated: user A cannot see user B's QR or contacts.
+ * Uses @whiskeysockets/baileys (WebSocket, no Chromium required).
+ * Works on shared hosting where Puppeteer/Chrome is unavailable.
  *
  * Endpoints:
  *   POST /session/start           { sessionId }   → starts/reconnects a session
@@ -10,109 +10,151 @@
  *   POST /session/stop            { sessionId }   → destroys the session
  *   GET  /session/:id/contacts    → { contacts: [...] }
  *   GET  /session/:id/groups      → { groups: [...] }
- *   POST /send                    { sessionId, targetId, targetType, message } → sends a message
+ *   POST /send                    { sessionId, targetId, targetType, message }
  *
  * Session statuses: disconnected | connecting | connected
  */
 
-require('dotenv').config();
+import 'dotenv/config';
+import express from 'express';
+import cors from 'cors';
+import QRCode from 'qrcode';
+import { existsSync, mkdirSync, rmSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+import makeWASocket, {
+  useMultiFileAuthState,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  makeCacheableSignalKeyStore,
+} from '@whiskeysockets/baileys';
+import pino from 'pino';
 
-const express = require('express');
-const cors    = require('cors');
-const QRCode  = require('qrcode');
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const AUTH_DIR  = join(__dirname, '..', '.wwebjs_auth');
+const PORT      = process.env.PORT || 3001;
 
-const app  = express();
-const PORT = process.env.PORT || 3001;
-
+const app = express();
 app.use(cors({ origin: process.env.ALLOWED_ORIGIN || '*' }));
 app.use(express.json({ limit: '10mb' }));
 
-// ── In-memory session map ─────────────────────────────────────────────────────
-// Map<sessionId, { client, status, qrDataUrl, contacts, groups }>
+// Silent logger to suppress Baileys' verbose output
+const silentLogger = pino({ level: 'silent' });
 
+// ── In-memory session map ─────────────────────────────────────────────────────
+// Map<sessionId, { socket, status, qrDataUrl, contacts, groups, reconnectTimer }>
 const sessions = new Map();
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getOrCreateSession(sessionId) {
-  if (!sessions.has(sessionId)) {
-    sessions.set(sessionId, {
-      client:    null,
-      status:    'disconnected',
-      qrDataUrl: null,
-      contacts:  [],
-      groups:    [],
-    });
-  }
-  return sessions.get(sessionId);
+function getSession(sessionId) {
+  return sessions.get(sessionId) ?? null;
 }
 
-async function initClient(sessionId) {
-  const sess = getOrCreateSession(sessionId);
+function sessionAuthPath(sessionId) {
+  return join(AUTH_DIR, sessionId.replace(/[^a-zA-Z0-9_-]/g, '_'));
+}
 
-  // Destroy existing client if any
-  if (sess.client) {
-    try { await sess.client.destroy(); } catch {}
+async function initSession(sessionId) {
+  // Clean up previous socket if reconnecting
+  const existing = sessions.get(sessionId);
+  if (existing?.socket) {
+    try { existing.socket.end(undefined); } catch {}
   }
 
-  const client = new Client({
-    authStrategy: new LocalAuth({ clientId: sessionId, dataPath: './.wwebjs_auth' }),
-    puppeteer: {
-      headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+  const authPath = sessionAuthPath(sessionId);
+  mkdirSync(authPath, { recursive: true });
+
+  const { state, saveCreds } = await useMultiFileAuthState(authPath);
+  const { version } = await fetchLatestBaileysVersion();
+
+  const sess = {
+    socket:         null,
+    status:         'connecting',
+    qrDataUrl:      existing?.qrDataUrl ?? null,  // preserve last QR across reconnects
+    contacts:       existing?.contacts ?? [],
+    groups:         existing?.groups ?? [],
+    reconnectTimer: null,
+  };
+  sessions.set(sessionId, sess);
+
+  const sock = makeWASocket({
+    version,
+    auth: {
+      creds: state.creds,
+      keys: makeCacheableSignalKeyStore(state.keys, silentLogger),
     },
+    logger: silentLogger,
+    printQRInTerminal: false,
+    browser: ['CA Office', 'Chrome', '120.0'],
+    connectTimeoutMs: 60_000,
+    keepAliveIntervalMs: 25_000,
   });
 
-  sess.client    = client;
-  sess.status    = 'connecting';
-  sess.qrDataUrl = null;
+  sess.socket = sock;
 
-  client.on('qr', async (qr) => {
-    try {
-      sess.qrDataUrl = await QRCode.toDataURL(qr);
-    } catch {
+  sock.ev.on('creds.update', saveCreds);
+
+  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
+    if (qr) {
+      try {
+        sess.qrDataUrl = await QRCode.toDataURL(qr);
+        sess.status    = 'connecting';
+        console.log(`[${sessionId}] QR generated`);
+      } catch (e) {
+        console.error(`[${sessionId}] QR error: ${e.message}`);
+      }
+    }
+
+    if (connection === 'open') {
+      sess.status    = 'connected';
       sess.qrDataUrl = null;
+      console.log(`[${sessionId}] Connected`);
+      loadContactsAndGroups(sessionId);
     }
-    sess.status = 'connecting';
-    console.log(`[${sessionId}] QR generated`);
-  });
 
-  client.on('ready', async () => {
-    sess.status    = 'connected';
-    sess.qrDataUrl = null;
-    console.log(`[${sessionId}] WhatsApp ready`);
+    if (connection === 'close') {
+      const code   = lastDisconnect?.error?.output?.statusCode;
+      const loggedOut = code === DisconnectReason.loggedOut;
 
-    // Pre-fetch contacts and groups
-    try {
-      const rawContacts = await client.getContacts();
-      sess.contacts = rawContacts
-        .filter((c) => c.isMyContact && !c.isGroup && c.name)
-        .map((c) => ({ id: c.id._serialized, name: c.name || c.pushname || c.number, type: 'contact' }));
+      console.log(`[${sessionId}] Closed (code=${code}, loggedOut=${loggedOut})`);
+      sess.status = 'disconnected';
+      sess.socket = null;
 
-      const rawChats = await client.getChats();
-      sess.groups = rawChats
-        .filter((c) => c.isGroup)
-        .map((c) => ({ id: c.id._serialized, name: c.name, type: 'group', membersCount: c.participants?.length || 0 }));
-
-      console.log(`[${sessionId}] Loaded ${sess.contacts.length} contacts, ${sess.groups.length} groups`);
-    } catch (e) {
-      console.error(`[${sessionId}] Failed to fetch contacts: ${e.message}`);
+      if (loggedOut) {
+        // Delete auth so user must scan QR again
+        rmSync(sessionAuthPath(sessionId), { recursive: true, force: true });
+      } else {
+        // Auto-reconnect after 5 s (network blip etc.)
+        if (sess.reconnectTimer) clearTimeout(sess.reconnectTimer);
+        sess.reconnectTimer = setTimeout(() => {
+          console.log(`[${sessionId}] Reconnecting…`);
+          initSession(sessionId).catch((e) =>
+            console.error(`[${sessionId}] Reconnect failed: ${e.message}`)
+          );
+        }, 5_000);
+      }
     }
   });
+}
 
-  client.on('disconnected', (reason) => {
-    sess.status = 'disconnected';
-    sess.client = null;
-    console.log(`[${sessionId}] Disconnected: ${reason}`);
-  });
+async function loadContactsAndGroups(sessionId) {
+  const sess = sessions.get(sessionId);
+  if (!sess?.socket) return;
 
-  client.on('auth_failure', (msg) => {
-    sess.status = 'disconnected';
-    console.log(`[${sessionId}] Auth failure: ${msg}`);
-  });
-
-  await client.initialize();
+  try {
+    // Baileys exposes contacts via store; for simplicity use chats
+    const chats = await sess.socket.groupFetchAllParticipating();
+    sess.groups = Object.values(chats).map((g) => ({
+      id:           g.id,
+      name:         g.subject || g.id,
+      type:         'group',
+      membersCount: g.participants?.length || 0,
+    }));
+    console.log(`[${sessionId}] Loaded ${sess.groups.length} groups`);
+  } catch (e) {
+    console.error(`[${sessionId}] Groups error: ${e.message}`);
+  }
 }
 
 // ── Routes ────────────────────────────────────────────────────────────────────
@@ -124,17 +166,16 @@ app.post('/session/start', async (req, res) => {
   const { sessionId } = req.body;
   if (!sessionId) return res.status(400).json({ error: 'sessionId required' });
 
-  try {
-    const sess = getOrCreateSession(sessionId);
-    if (sess.status === 'connected') {
-      return res.json({ status: 'connected' });
-    }
-    // Non-blocking start
-    initClient(sessionId).catch((e) => console.error(`[${sessionId}] Init error: ${e.message}`));
-    return res.json({ status: 'connecting' });
-  } catch (e) {
-    return res.status(500).json({ error: e.message });
+  const existing = sessions.get(sessionId);
+  if (existing?.status === 'connected') {
+    return res.json({ status: 'connected' });
   }
+
+  // Non-blocking: start and respond immediately
+  initSession(sessionId).catch((e) =>
+    console.error(`[${sessionId}] Init error: ${e.message}`)
+  );
+  return res.json({ status: 'connecting' });
 });
 
 // GET /session/:id/status
@@ -148,14 +189,18 @@ app.get('/session/:id/status', (req, res) => {
 app.post('/session/stop', async (req, res) => {
   const { sessionId } = req.body;
   const sess = sessions.get(sessionId);
-  if (sess?.client) {
-    try { await sess.client.destroy(); } catch {}
+  if (sess) {
+    if (sess.reconnectTimer) clearTimeout(sess.reconnectTimer);
+    if (sess.socket) {
+      try { sess.socket.end(undefined); } catch {}
+    }
+    sessions.delete(sessionId);
+    rmSync(sessionAuthPath(sessionId), { recursive: true, force: true });
   }
-  sessions.delete(sessionId);
   res.json({ status: 'disconnected' });
 });
 
-// GET /session/:id/contacts
+// GET /session/:id/contacts  (contacts not natively available in Baileys without a store; return empty for now)
 app.get('/session/:id/contacts', (req, res) => {
   const sess = sessions.get(req.params.id);
   if (!sess || sess.status !== 'connected') {
@@ -170,25 +215,26 @@ app.get('/session/:id/groups', (req, res) => {
   if (!sess || sess.status !== 'connected') {
     return res.status(423).json({ error: 'Session not connected' });
   }
+  // Refresh groups on request
+  loadContactsAndGroups(req.params.id);
   res.json({ groups: sess.groups });
 });
 
 // POST /send
 app.post('/send', async (req, res) => {
-  const { sessionId, targetId, targetType, message } = req.body;
+  const { sessionId, targetId, message } = req.body;
 
   if (!sessionId || !targetId) {
     return res.status(400).json({ error: 'sessionId and targetId required' });
   }
 
   const sess = sessions.get(sessionId);
-  if (!sess || sess.status !== 'connected' || !sess.client) {
+  if (!sess || sess.status !== 'connected' || !sess.socket) {
     return res.status(423).json({ error: 'Session not connected' });
   }
 
   try {
-    const chatId = targetType === 'group' ? targetId : targetId;
-    await sess.client.sendMessage(chatId, message || '');
+    await sess.socket.sendMessage(targetId, { text: message || '' });
     res.json({ ok: true });
   } catch (e) {
     console.error(`[${sessionId}] Send error: ${e.message}`);
@@ -198,7 +244,9 @@ app.post('/send', async (req, res) => {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 
+mkdirSync(AUTH_DIR, { recursive: true });
+
 app.listen(PORT, () => {
-  console.log(`WA Bridge running on port ${PORT}`);
+  console.log(`WA Bridge v2 (Baileys) running on port ${PORT}`);
   console.log(`Health: http://localhost:${PORT}/health`);
 });

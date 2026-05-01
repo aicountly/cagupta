@@ -42,12 +42,13 @@ export default function WAWebMarketing() {
     try {
       const res = await fetch(`${API_BASE_URL}/marketing/wa/session/status`, { headers: authHeaders() });
       if (res.ok) {
-        const data = await res.json();
-        setSessionStatus(data.status || SESSION_STATUS.DISCONNECTED);
-        if (data.status === SESSION_STATUS.CONNECTING && data.qr) {
-          setQrCode(data.qr);
+        const json = await res.json();
+        const payload = json.data || {};
+        setSessionStatus(payload.status || SESSION_STATUS.DISCONNECTED);
+        if (payload.status === SESSION_STATUS.CONNECTING && payload.qr) {
+          setQrCode(payload.qr);
         }
-        if (data.status === SESSION_STATUS.CONNECTED) {
+        if (payload.status === SESSION_STATUS.CONNECTED) {
           setQrCode(null);
           setShowQrModal(false);
           loadContactsAndGroups();
