@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen,
   Target, Settings, ChevronRight, ChevronDown,
-  UserRound, Building2, ShieldCheck, Layers, Handshake, BarChart3, CalendarOff, Bell, RefreshCw,
+  UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, CalendarOff, Bell, RefreshCw,
 } from 'lucide-react';
 
 const navSections = [
@@ -54,6 +54,7 @@ const adminNavItems = [
   { to: '/admin/users',   label: 'User Management',  icon: ShieldCheck,  anyOf: ['users.manage', 'users.delegate'] },
   { to: '/admin/leaves',  label: 'Leave Management', icon: CalendarOff,  permission: 'users.manage' },
   { to: '/admin/affiliates', label: 'Affiliates',    icon: Handshake,    permission: 'affiliates.manage' },
+  { to: '/admin/partners',   label: 'Partners',      icon: Briefcase,    permission: 'partners.manage' },
 ];
 
 export default function Sidebar() {

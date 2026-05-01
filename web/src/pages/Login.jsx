@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { GoogleOAuthProvider, GoogleLogin } from '@react-oauth/google';
 import { useMsal } from '@azure/msal-react';
-import { Handshake, UserCircle, Users } from 'lucide-react';
+import { Briefcase, Handshake, UserCircle, Users } from 'lucide-react';
 import logoUrl from '../assets/cropped_logo.png';
 import { useAuth } from '../auth/AuthContext';
 import {
@@ -15,22 +15,22 @@ import {
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const MARKETING_URL = import.meta.env.VITE_MARKETING_URL || 'https://carahulgupta.in';
 
-const VALID_PORTALS = ['staff', 'affiliate', 'client'];
+const VALID_PORTALS = ['staff', 'affiliate', 'client', 'partner'];
 
 const PORTAL_META = {
   staff: {
-    label: 'Team member',
+    label: 'Core',
     accent: '#2563eb',
     tint: '#eff6ff',
     Icon: Users,
-    sub: 'Internal team members of CA Rahul Gupta & Associates',
+    sub: 'For Staff & Team Members',
   },
   affiliate: {
-    label: 'Affiliate partner',
+    label: 'Affiliate',
     accent: '#7c3aed',
     tint: '#f5f3ff',
     Icon: Handshake,
-    sub: 'Referral & partnership network',
+    sub: 'For Affiliate Member',
   },
   client: {
     label: 'My CA',
@@ -38,6 +38,13 @@ const PORTAL_META = {
     tint: '#f0fdf4',
     Icon: UserCircle,
     sub: 'Clients of CA Rahul Gupta & Associates',
+  },
+  partner: {
+    label: 'Partner',
+    accent: '#ea580c',
+    tint: '#fff7ed',
+    Icon: Briefcase,
+    sub: 'For Professionals',
   },
 };
 
@@ -52,22 +59,29 @@ function isValidEmail(email) {
 
 function portalMismatchMessage(portal, user) {
   if (user?.role === 'affiliate' && portal !== 'affiliate') {
-    return 'This account is for affiliates. Select “Affiliate partner” above.';
+    return 'This account is for affiliates. Select “Affiliate” above.';
+  }
+  if (user?.role === 'partner' && portal !== 'partner') {
+    return 'This account is for partners. Select “Partner” above.';
   }
   if (user?.role === 'client' && portal !== 'client') {
     return 'This account is for clients. Select “My CA” above.';
   }
   if (user?.role && user.role !== 'affiliate' && portal === 'affiliate') {
-    return 'This is a staff account. Select “Team member” above.';
+    return 'This is not an affiliate account. Select “Core” above.';
+  }
+  if (user?.role && user.role !== 'partner' && portal === 'partner') {
+    return 'This is not a partner account. Select “Core” above.';
   }
   if (user?.role && user.role !== 'client' && portal === 'client') {
-    return 'This is not a client account. Select “Team member” or “Affiliate partner”.';
+    return 'This is not a client account. Select “Core” or “Affiliate”.';
   }
   return '';
 }
 
 function homeForUser(user) {
   if (user?.role === 'affiliate') return '/affiliate';
+  if (user?.role === 'partner') return '/partner';
   if (user?.role === 'client') return '/client';
   return '/';
 }
@@ -330,12 +344,13 @@ export default function LoginPage() {
               );
             })()
           ) : (
-            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
               <button
                 type="button"
                 onClick={() => setLoginPortal('client')}
                 style={{
                   flex: 1,
+                  minWidth: 80,
                   padding: '10px 12px',
                   borderRadius: 10,
                   border: loginPortal === 'client' ? '2px solid #15803d' : '1px solid #e2e8f0',
@@ -353,6 +368,7 @@ export default function LoginPage() {
                 onClick={() => setLoginPortal('affiliate')}
                 style={{
                   flex: 1,
+                  minWidth: 80,
                   padding: '10px 12px',
                   borderRadius: 10,
                   border: loginPortal === 'affiliate' ? '2px solid #7c3aed' : '1px solid #e2e8f0',
@@ -363,13 +379,32 @@ export default function LoginPage() {
                   color: '#0f172a',
                 }}
               >
-                Affiliate partner
+                Affiliate
+              </button>
+              <button
+                type="button"
+                onClick={() => setLoginPortal('partner')}
+                style={{
+                  flex: 1,
+                  minWidth: 80,
+                  padding: '10px 12px',
+                  borderRadius: 10,
+                  border: loginPortal === 'partner' ? '2px solid #ea580c' : '1px solid #e2e8f0',
+                  background: loginPortal === 'partner' ? '#fff7ed' : '#fff',
+                  fontWeight: 700,
+                  fontSize: 13,
+                  cursor: 'pointer',
+                  color: '#0f172a',
+                }}
+              >
+                Partner
               </button>
               <button
                 type="button"
                 onClick={() => setLoginPortal('staff')}
                 style={{
                   flex: 1,
+                  minWidth: 80,
                   padding: '10px 12px',
                   borderRadius: 10,
                   border: loginPortal === 'staff' ? '2px solid #2563eb' : '1px solid #e2e8f0',
@@ -380,7 +415,7 @@ export default function LoginPage() {
                   color: '#0f172a',
                 }}
               >
-                Team member
+                Core
               </button>
             </div>
           )}

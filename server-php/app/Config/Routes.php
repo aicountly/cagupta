@@ -1193,6 +1193,112 @@ class Routes
                 'handler'    => 'Affiliate\AffiliatePortalController@subAffiliateStore',
                 'middleware' => ['auth', 'permission:affiliate.sub_affiliates.create'],
             ],
+            // ── Admin — Partners ──────────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/partners',
+                'handler'    => 'Admin\PartnerAdminController@index',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/partners/create',
+                'handler'    => 'Admin\PartnerAdminController@create',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/partners/:id/approve',
+                'handler'    => 'Admin\PartnerAdminController@approve',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/partners/:id/suspend',
+                'handler'    => 'Admin\PartnerAdminController@suspend',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/partner-assignments',
+                'handler'    => 'Admin\PartnerAdminController@assignWork',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/partner-assignments',
+                'handler'    => 'Admin\PartnerAdminController@assignmentsIndex',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/partner-payout-requests',
+                'handler'    => 'Admin\PartnerAdminController@payoutIndex',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/partner-payout-requests/:id',
+                'handler'    => 'Admin\PartnerAdminController@payoutUpdate',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/partner-bank/:id/verify',
+                'handler'    => 'Admin\PartnerAdminController@bankVerify',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+
+            // ── Partner portal ───────────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/partner/dashboard',
+                'handler'    => 'Partner\PartnerPortalController@dashboard',
+                'middleware' => ['auth', 'permission:partner.portal'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/partner/assignments',
+                'handler'    => 'Partner\PartnerPortalController@assignments',
+                'middleware' => ['auth', 'permission:partner.portal'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/partner/assignments/:id',
+                'handler'    => 'Partner\PartnerPortalController@assignmentUpdate',
+                'middleware' => ['auth', 'permission:partner.assignments.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/partner/payouts',
+                'handler'    => 'Partner\PartnerPortalController@payoutIndex',
+                'middleware' => ['auth', 'permission:partner.payouts.request'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/partner/payouts',
+                'handler'    => 'Partner\PartnerPortalController@payoutStore',
+                'middleware' => ['auth', 'permission:partner.payouts.request'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/partner/bank',
+                'handler'    => 'Partner\PartnerPortalController@bankIndex',
+                'middleware' => ['auth', 'permission:partner.bank.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/partner/bank',
+                'handler'    => 'Partner\PartnerPortalController@bankStore',
+                'middleware' => ['auth', 'permission:partner.bank.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/partner/accruals',
+                'handler'    => 'Partner\PartnerPortalController@accruals',
+                'middleware' => ['auth', 'permission:partner.portal'],
+            ],
+
             // ── Admin — KYC Documents ────────────────────────────────────────
             // Static sub-routes (request-uncompressed-otp, request-delete-otp)
             // must appear BEFORE :id patterns so the router matches them first.

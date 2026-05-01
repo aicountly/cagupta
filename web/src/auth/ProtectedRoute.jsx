@@ -10,13 +10,15 @@ import { useAuth } from './AuthContext';
  * - Renders a blank screen while the token validation is in progress.
  *
  * `affiliateOnly` — only users with role affiliate.
- * `staffOnly` — blocks affiliate role from staff UI (redirects to /affiliate).
+ * `partnerOnly`   — only users with role partner.
+ * `staffOnly` — blocks affiliate/partner/client roles from staff UI.
  */
 export default function ProtectedRoute({
   children,
   requiredPermission,
   requiredAnyPermissions,
   affiliateOnly,
+  partnerOnly,
   clientOnly,
   staffOnly,
 }) {
@@ -37,11 +39,19 @@ export default function ProtectedRoute({
     return <Navigate to="/affiliate" replace />;
   }
 
+  if (staffOnly && role === 'partner') {
+    return <Navigate to="/partner" replace />;
+  }
+
   if (staffOnly && role === 'client') {
     return <Navigate to="/client" replace />;
   }
 
   if (affiliateOnly && role !== 'affiliate') {
+    return <Navigate to="/" replace />;
+  }
+
+  if (partnerOnly && role !== 'partner') {
     return <Navigate to="/" replace />;
   }
 

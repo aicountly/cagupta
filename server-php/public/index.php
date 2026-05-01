@@ -39,6 +39,8 @@ declare(strict_types=1);
 })();
 
 // ── PSR-4 autoloader (no Composer) ────────────────────────────────────────────
+// Supports both the legacy flat layout (Config/, Filters/, Libraries/, Helpers/)
+// and the domain-module layout under Modules/{Core,CRM,Operations,...}/.
 spl_autoload_register(function (string $class): void {
     $prefix = 'App\\';
     $base   = dirname(__DIR__) . '/app/';
@@ -48,10 +50,60 @@ spl_autoload_register(function (string $class): void {
     }
 
     $relative = substr($class, strlen($prefix));
-    $file     = $base . str_replace('\\', '/', $relative) . '.php';
+    $relPath  = str_replace('\\', '/', $relative) . '.php';
 
+    // 1. Try the standard PSR-4 path (handles Config/, Filters/, Libraries/, Controllers/BaseController, etc.)
+    $file = $base . $relPath;
     if (is_file($file)) {
         require_once $file;
+        return;
+    }
+
+    // 2. Search in Modules/{Module}/Controllers/ and Modules/{Module}/Models/
+    //    Maps:
+    //      App\Controllers\Admin\UserController  → Modules/*/Controllers/UserController.php
+    //      App\Controllers\Client\ServiceLogController → Modules/*/Controllers/ServiceLogController.php
+    //      App\Models\UserModel → Modules/*/Models/UserModel.php
+    //    When duplicate class names exist (e.g. ServiceLogController), namespace matching is
+    //    used: the file's declared namespace must match the requested fully-qualified class.
+    $className = basename($relPath, '.php');
+    $modulesDir = $base . 'Modules/';
+
+    if (is_dir($modulesDir)) {
+        $candidates = [];
+        foreach (scandir($modulesDir) as $module) {
+            if ($module[0] === '.') continue;
+
+            foreach (['Controllers', 'Models'] as $subDir) {
+                $candidate = $modulesDir . $module . '/' . $subDir . '/' . $className . '.php';
+                if (is_file($candidate)) {
+                    $candidates[] = $candidate;
+                }
+            }
+        }
+
+        if (count($candidates) === 1) {
+            require_once $candidates[0];
+            return;
+        }
+
+        // Multiple candidates — match by namespace declared in the file
+        $fqcn = 'App\\' . $relative;
+        foreach ($candidates as $candidate) {
+            $header = file_get_contents($candidate, false, null, 0, 512);
+            if ($header !== false && preg_match('/namespace\s+([^;]+);/', $header, $m)) {
+                $fileNs = $m[1] . '\\' . $className;
+                if ($fileNs === $fqcn) {
+                    require_once $candidate;
+                    return;
+                }
+            }
+        }
+
+        // Fallback: load first match
+        if ($candidates !== []) {
+            require_once $candidates[0];
+        }
     }
 });
 

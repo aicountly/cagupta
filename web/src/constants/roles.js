@@ -12,6 +12,7 @@ export const ROLES = {
   STAFF:       'staff',
   VIEWER:      'viewer',
   AFFILIATE:   'affiliate',
+  PARTNER:     'partner',
   CLIENT:      'client',
 };
 
@@ -23,6 +24,7 @@ export const ROLE_LABELS = {
   staff:       'Staff',
   viewer:      'Viewer',
   affiliate:   'Affiliate',
+  partner:     'Partner',
   client:      'Client',
 };
 
@@ -34,6 +36,7 @@ export const ROLE_BADGE_COLORS = {
   staff:       { bg: '#dcfce7', color: '#166534', border: '#86efac' }, // green
   viewer:      { bg: '#f3f4f6', color: '#374151', border: '#d1d5db' }, // gray
   affiliate:   { bg: '#ede9fe', color: '#5b21b6', border: '#c4b5fd' }, // violet
+  partner:     { bg: '#ffedd5', color: '#9a3412', border: '#fdba74' }, // orange
   client:      { bg: '#dcfce7', color: '#166534', border: '#86efac' }, // green
 };
 
@@ -95,6 +98,14 @@ export const PERMISSIONS = {
     'affiliate.payouts.request',
     'affiliate.sub_affiliates.create',
     'affiliate.bank.manage',
+  ],
+  partner: [
+    'partner.portal',
+    'partner.profile',
+    'partner.assignments.view',
+    'partner.assignments.manage',
+    'partner.payouts.request',
+    'partner.bank.manage',
   ],
   client: [
     'client.portal',

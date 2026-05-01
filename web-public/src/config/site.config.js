@@ -8,6 +8,7 @@ export const PORTAL_LINKS = {
   staff: `${PORTAL_URL}/login?portal=staff`,
   affiliate: `${PORTAL_URL}/login?portal=affiliate`,
   client: `${PORTAL_URL}/login?portal=client`,
+  partner: `${PORTAL_URL}/login?portal=partner`,
 };
 
 export const SITE = {

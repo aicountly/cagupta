@@ -25,7 +25,7 @@ export default function AffiliateLayout({ title, children }) {
       >
         <div style={{ padding: 16, borderBottom: '1px solid #f1f5f9' }}>
           <img src={logoUrl} alt="" style={{ height: 36, display: 'block' }} />
-          <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>Partner portal</div>
+          <div style={{ fontSize: 11, color: '#64748b', marginTop: 8 }}>Affiliate portal</div>
         </div>
         <nav style={{ flex: 1, padding: '12px 0' }}>
           {nav.map((item) => (

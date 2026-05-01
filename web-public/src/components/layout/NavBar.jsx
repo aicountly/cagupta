@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { ChevronDown, Handshake, LogIn, Menu, UserCircle, Users, X } from 'lucide-react';
+import { Briefcase, ChevronDown, Handshake, LogIn, Menu, UserCircle, Users, X } from 'lucide-react';
 import logoUrl from '../../assets/cropped_logo.png';
 import Button from '../ui/Button.jsx';
 import Container from '../ui/Container.jsx';
@@ -25,16 +25,24 @@ const PORTAL_OPTIONS = [
   },
   {
     key: 'affiliate',
-    label: 'Affiliate partner',
-    sub: 'For referral partners',
+    label: 'Affiliate',
+    sub: 'For Affiliate Member',
     href: PORTAL_LINKS.affiliate,
     Icon: Handshake,
     iconClass: 'login-dd__icon--affiliate',
   },
   {
+    key: 'partner',
+    label: 'Partner',
+    sub: 'For Professionals',
+    href: PORTAL_LINKS.partner,
+    Icon: Briefcase,
+    iconClass: 'login-dd__icon--partner',
+  },
+  {
     key: 'staff',
-    label: 'Team member',
-    sub: 'For internal team members',
+    label: 'Core',
+    sub: 'For Staff & Team Members',
     href: PORTAL_LINKS.staff,
     Icon: Users,
     iconClass: 'login-dd__icon--staff',

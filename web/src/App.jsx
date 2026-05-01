@@ -2,56 +2,76 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './auth/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import ProtectedRoute from './auth/ProtectedRoute';
-import LoginPage from './pages/Login';
-import Sidebar from './components/layout/Sidebar';
-import TopBar from './components/layout/TopBar';
-import Dashboard from './pages/Dashboard';
-import DashboardMetricDetail from './pages/DashboardMetricDetail';
-import Contacts from './pages/Contacts';
-import ContactCreatePage from './pages/ContactCreatePage';
-import Organizations from './pages/Organizations';
-import OrganizationCreatePage from './pages/OrganizationCreatePage';
-import Services from './pages/Services';
-import ServicesKpiList from './pages/ServicesKpiList';
-import NewServiceEngagement from './pages/NewServiceEngagement';
-import ServiceEngagementEdit from './pages/ServiceEngagementEdit';
-import ServiceEngagementManage from './pages/ServiceEngagementManage';
-import ServiceEngagementFiles from './pages/ServiceEngagementFiles';
-import Documents from './pages/Documents';
-import Invoices from './pages/Invoices';
-import Calendar from './pages/Calendar';
-import AppointmentFeeRules from './pages/AppointmentFeeRules';
-import Credentials from './pages/Credentials';
-import Registers from './pages/Registers';
-import RecurringServices from './pages/RecurringServices';
-import Leads from './pages/Leads';
-import Settings from './pages/Settings';
-import UserManagement from './pages/UserManagement';
-import ClientGroups from './pages/ClientGroups';
-import ReportsHub from './pages/ReportsHub';
-import TimesheetsReport from './pages/TimesheetsReport';
-import ShiftTargetTimesheetReport from './pages/ShiftTargetTimesheetReport';
-import ContactExceptionsReport from './pages/ContactExceptionsReport';
-import OrganizationExceptionsReport from './pages/OrganizationExceptionsReport';
-import ContactKycExceptionsReport from './pages/ContactKycExceptionsReport';
-import OrganizationKycExceptionsReport from './pages/OrganizationKycExceptionsReport';
-import GlobalSearchPage from './pages/GlobalSearchPage';
-import Profile from './pages/Profile';
-import AdminAffiliates from './pages/AdminAffiliates';
-import LeaveManagement from './pages/LeaveManagement';
-import PendingFollowUps from './pages/PendingFollowUps';
-import AffiliateLayout from './components/layout/AffiliateLayout';
-import AffiliateDashboard from './pages/affiliate/AffiliateDashboard';
-import AffiliateServices from './pages/affiliate/AffiliateServices';
-import AffiliateCommissions from './pages/affiliate/AffiliateCommissions';
-import AffiliatePayouts from './pages/affiliate/AffiliatePayouts';
-import AffiliateBank from './pages/affiliate/AffiliateBank';
-import AffiliateSubAffiliates from './pages/affiliate/AffiliateSubAffiliates';
-import ClientActiveServices from './pages/client/ClientActiveServices';
-import ClientCompletedServices from './pages/client/ClientCompletedServices';
-import ClientServiceDetails from './pages/client/ClientServiceDetails';
-import ClientLedger from './pages/client/ClientLedger';
-import ClientProfile from './pages/client/ClientProfile';
+// ── Core module ──────────────────────────────────────────────────────────────
+import LoginPage from './modules/core/pages/Login';
+import Sidebar from './modules/core/components/Sidebar';
+import TopBar from './modules/core/components/TopBar';
+import Dashboard from './modules/core/pages/Dashboard';
+import Profile from './modules/core/pages/Profile';
+import UserManagement from './modules/core/pages/UserManagement';
+import Settings from './modules/core/pages/Settings';
+import GlobalSearchPage from './modules/core/pages/GlobalSearchPage';
+import LeaveManagement from './modules/core/pages/LeaveManagement';
+
+// ── CRM module ───────────────────────────────────────────────────────────────
+import Contacts from './modules/crm/pages/Contacts';
+import ContactCreatePage from './modules/crm/pages/ContactCreatePage';
+import ContactExceptionsReport from './modules/crm/pages/ContactExceptionsReport';
+import ContactKycExceptionsReport from './modules/crm/pages/ContactKycExceptionsReport';
+import Organizations from './modules/crm/pages/Organizations';
+import OrganizationCreatePage from './modules/crm/pages/OrganizationCreatePage';
+import OrganizationExceptionsReport from './modules/crm/pages/OrganizationExceptionsReport';
+import OrganizationKycExceptionsReport from './modules/crm/pages/OrganizationKycExceptionsReport';
+import ClientGroups from './modules/crm/pages/ClientGroups';
+import Clients from './modules/crm/pages/Clients';
+import Leads from './modules/crm/pages/Leads';
+
+// ── Operations module ────────────────────────────────────────────────────────
+import Services from './modules/operations/pages/Services';
+import ServicesKpiList from './modules/operations/pages/ServicesKpiList';
+import NewServiceEngagement from './modules/operations/pages/NewServiceEngagement';
+import ServiceEngagementEdit from './modules/operations/pages/ServiceEngagementEdit';
+import ServiceEngagementManage from './modules/operations/pages/ServiceEngagementManage';
+import ServiceEngagementFiles from './modules/operations/pages/ServiceEngagementFiles';
+import Documents from './modules/operations/pages/Documents';
+import Calendar from './modules/operations/pages/Calendar';
+import AppointmentFeeRules from './modules/operations/pages/AppointmentFeeRules';
+import Credentials from './modules/operations/pages/Credentials';
+import Registers from './modules/operations/pages/Registers';
+import RecurringServices from './modules/operations/pages/RecurringServices';
+import PendingFollowUps from './modules/operations/pages/PendingFollowUps';
+import DashboardMetricDetail from './modules/operations/pages/DashboardMetricDetail';
+import ReportsHub from './modules/operations/pages/ReportsHub';
+import TimesheetsReport from './modules/operations/pages/TimesheetsReport';
+import ShiftTargetTimesheetReport from './modules/operations/pages/ShiftTargetTimesheetReport';
+
+// ── Finance module ───────────────────────────────────────────────────────────
+import Invoices from './modules/finance/pages/Invoices';
+
+// ── Affiliate module ─────────────────────────────────────────────────────────
+import AdminAffiliates from './modules/affiliate/pages/AdminAffiliates';
+import AffiliateLayout from './modules/affiliate/components/AffiliateLayout';
+import AffiliateDashboard from './modules/affiliate/pages/AffiliateDashboard';
+import AffiliateServices from './modules/affiliate/pages/AffiliateServices';
+import AffiliateCommissions from './modules/affiliate/pages/AffiliateCommissions';
+import AffiliatePayouts from './modules/affiliate/pages/AffiliatePayouts';
+import AffiliateBank from './modules/affiliate/pages/AffiliateBank';
+import AffiliateSubAffiliates from './modules/affiliate/pages/AffiliateSubAffiliates';
+
+// ── Partner module ───────────────────────────────────────────────────────────
+import AdminPartners from './modules/partner/pages/AdminPartners';
+import PartnerLayout from './modules/partner/components/PartnerLayout';
+import PartnerDashboard from './modules/partner/pages/PartnerDashboard';
+import PartnerAssignments from './modules/partner/pages/PartnerAssignments';
+import PartnerPayouts from './modules/partner/pages/PartnerPayouts';
+import PartnerBank from './modules/partner/pages/PartnerBank';
+
+// ── Client module ────────────────────────────────────────────────────────────
+import ClientActiveServices from './modules/client/pages/ClientActiveServices';
+import ClientCompletedServices from './modules/client/pages/ClientCompletedServices';
+import ClientServiceDetails from './modules/client/pages/ClientServiceDetails';
+import ClientLedger from './modules/client/pages/ClientLedger';
+import ClientProfile from './modules/client/pages/ClientProfile';
 
 /** Subpath deployments (e.g. `npm run build:github` → base `/cagupta/`) need this or /search opens the wrong URL. */
 const ROUTER_BASENAME =
@@ -95,6 +115,7 @@ const pageTitles = {
   '/admin/users':               '👥 User Management',
   '/admin/leaves':              '📅 Leave Management',
   '/admin/affiliates':          '🤝 Affiliates',
+  '/admin/partners':            '🤝 Partners',
   '/search':                    '🔍 Search',
   '/profile':                   '👤 My Profile',
 };
@@ -210,6 +231,13 @@ export default function App() {
               </Layout>
             </ProtectedRoute>
           } />
+          <Route path="/admin/partners" element={
+            <ProtectedRoute staffOnly requiredPermission="partners.manage">
+              <Layout routePath="/admin/partners">
+                <AdminPartners />
+              </Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/admin/leaves" element={
             <ProtectedRoute staffOnly requiredPermission="users.manage">
               <Layout routePath="/admin/leaves">
@@ -229,6 +257,18 @@ export default function App() {
               <AffiliateLayout title="My profile">
                 <Profile />
               </AffiliateLayout>
+            </ProtectedRoute>
+          } />
+
+          <Route path="/partner" element={<ProtectedRoute partnerOnly><PartnerDashboard /></ProtectedRoute>} />
+          <Route path="/partner/assignments" element={<ProtectedRoute partnerOnly><PartnerAssignments /></ProtectedRoute>} />
+          <Route path="/partner/payouts" element={<ProtectedRoute partnerOnly><PartnerPayouts /></ProtectedRoute>} />
+          <Route path="/partner/bank" element={<ProtectedRoute partnerOnly><PartnerBank /></ProtectedRoute>} />
+          <Route path="/partner/profile" element={
+            <ProtectedRoute partnerOnly>
+              <PartnerLayout title="My profile">
+                <Profile />
+              </PartnerLayout>
             </ProtectedRoute>
           } />
 
