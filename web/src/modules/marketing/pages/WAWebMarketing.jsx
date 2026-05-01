@@ -30,6 +30,7 @@ export default function WAWebMarketing() {
   const [sendLog, setSendLog] = useState([]);
   const [search, setSearch] = useState('');
   const fileRef = useRef(null);
+  const wasConnectedRef = useRef(false);
 
   // Poll session status
   useEffect(() => {
@@ -51,7 +52,13 @@ export default function WAWebMarketing() {
         if (payload.status === SESSION_STATUS.CONNECTED) {
           setQrCode(null);
           setShowQrModal(false);
-          loadContactsAndGroups();
+          // Only reload when first transitioning to connected, not on every poll
+          if (!wasConnectedRef.current) {
+            wasConnectedRef.current = true;
+            loadContactsAndGroups();
+          }
+        } else {
+          wasConnectedRef.current = false;
         }
       }
     } catch {
@@ -89,10 +96,14 @@ export default function WAWebMarketing() {
     } catch { /* ignore */ }
   }
 
+  function sameId(a, b) {
+    return a != null && b != null && String(a).trim() === String(b).trim();
+  }
+
   function toggleTarget(item) {
     setSelectedTargets((prev) =>
-      prev.find((t) => t.id === item.id)
-        ? prev.filter((t) => t.id !== item.id)
+      prev.find((t) => sameId(t.id, item.id))
+        ? prev.filter((t) => !sameId(t.id, item.id))
         : [...prev, item],
     );
   }
@@ -152,7 +163,7 @@ export default function WAWebMarketing() {
   }
 
   const displayList = (activeTab === 'groups' ? groups : contacts)
-    .filter((item) => item.name?.toLowerCase().includes(search.toLowerCase()));
+    .filter((item) => String(item.name || item.id || '').toLowerCase().includes(search.toLowerCase()));
 
   const statusColor = sessionStatus === SESSION_STATUS.CONNECTED ? '#22c55e'
     : sessionStatus === SESSION_STATUS.CONNECTING ? '#f59e0b' : '#94a3b8';
@@ -187,20 +198,29 @@ export default function WAWebMarketing() {
       <div style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 20 }}>
         {/* Left: Contact/Group picker */}
         <div style={card}>
-          <div style={{ display: 'flex', gap: 0, marginBottom: 16, borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-            {['groups', 'contacts'].map((tab) => (
-              <button key={tab} onClick={() => setActiveTab(tab)} style={{
-                flex: 1, padding: '8px 0', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
-                background: activeTab === tab ? '#F37920' : '#f8fafc',
-                color: activeTab === tab ? '#fff' : '#64748b',
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <div style={{ flex: 1, display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+              {['groups', 'contacts'].map((tab) => (
+                <button key={tab} onClick={() => { setActiveTab(tab); setSearch(''); }} style={{
+                  flex: 1, padding: '8px 0', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
+                  background: activeTab === tab ? '#F37920' : '#f8fafc',
+                  color: activeTab === tab ? '#fff' : '#64748b',
+                }}>
+                  {tab === 'groups' ? 'Groups' : 'Contacts'}
+                </button>
+              ))}
+            </div>
+            {sessionStatus === SESSION_STATUS.CONNECTED && (
+              <button onClick={loadContactsAndGroups} title="Refresh list" style={{
+                ...btnOutline, padding: '7px 10px', flexShrink: 0,
               }}>
-                {tab === 'groups' ? 'Groups' : 'Contacts'}
+                <RefreshCw size={13} />
               </button>
-            ))}
+            )}
           </div>
 
           <div style={{ position: 'relative', marginBottom: 12 }}>
-            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
+            <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
             <input
               value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder={`Search ${activeTab}…`}
@@ -215,18 +235,21 @@ export default function WAWebMarketing() {
             </div>
           ) : displayList.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: 13 }}>
-              No {activeTab} found
+              {search
+                ? `No ${activeTab} match "${search}"`
+                : `No ${activeTab} found`}
             </div>
           ) : (
             <div style={{ maxHeight: 400, overflowY: 'auto' }}>
               {displayList.map((item) => {
-                const selected = selectedTargets.some((t) => t.id === item.id);
+                const selected = selectedTargets.some((t) => sameId(t.id, item.id));
                 return (
-                  <div key={item.id} onClick={() => toggleTarget(item)} style={{
+                  <div key={item.id ?? item.name} onClick={() => toggleTarget(item)} style={{
                     display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
-                    borderRadius: 8, cursor: 'pointer', marginBottom: 4,
+                    borderRadius: 8, cursor: 'pointer', marginBottom: 4, userSelect: 'none',
                     background: selected ? '#FEF0E6' : 'transparent',
                     border: selected ? '1px solid #F37920' : '1px solid transparent',
+                    transition: 'background 0.12s, border-color 0.12s',
                   }}>
                     <div style={{
                       width: 32, height: 32, borderRadius: '50%', background: selected ? '#F37920' : '#e2e8f0',

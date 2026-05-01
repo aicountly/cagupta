@@ -95,6 +95,22 @@ async function initSession(sessionId) {
 
   sock.ev.on('creds.update', saveCreds);
 
+  // Populate contacts from Baileys push events
+  sock.ev.on('contacts.upsert', (incoming) => {
+    for (const c of incoming) {
+      const displayName = c.name || c.notify || c.verifiedName || null;
+      if (!displayName) continue; // skip contacts with no name
+      const existing = sess.contacts.findIndex((x) => x.id === c.id);
+      const entry = { id: c.id, name: displayName, type: 'contact' };
+      if (existing >= 0) {
+        sess.contacts[existing] = entry;
+      } else {
+        sess.contacts.push(entry);
+      }
+    }
+    console.log(`[${sessionId}] Contacts updated: ${sess.contacts.length} total`);
+  });
+
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
       try {
