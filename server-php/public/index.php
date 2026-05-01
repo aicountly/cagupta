@@ -258,10 +258,6 @@ foreach ($routes as $route) {
     [$controllerPath, $method] = explode('@', $route['handler']);
     $controllerClass = 'App\\Controllers\\' . str_replace('/', '\\', $controllerPath);
 
-    // #region agent log
-    $__debugLog = '/Users/rahulgupta/cagupta/.cursor/debug-dc1f76.log';
-    @file_put_contents($__debugLog, json_encode(['sessionId'=>'dc1f76','hypothesisId'=>'H-B','location'=>'index.php:dispatch','message'=>'class_exists check','data'=>['controllerClass'=>$controllerClass,'exists'=>class_exists($controllerClass)],'timestamp'=>(int)round(microtime(true)*1000)])."\n", FILE_APPEND|LOCK_EX);
-    // #endregion
     if (!class_exists($controllerClass)) {
         api_error("Controller not found: {$controllerClass}", 500);
     }

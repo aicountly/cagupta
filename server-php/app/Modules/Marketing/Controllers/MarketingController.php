@@ -38,14 +38,7 @@ class MarketingController extends BaseController
 
     public function __construct()
     {
-        // #region agent log
-        $__debugLog = '/Users/rahulgupta/cagupta/.cursor/debug-dc1f76.log';
-        @file_put_contents($__debugLog, json_encode(['sessionId'=>'dc1f76','hypothesisId'=>'H-A','location'=>'MarketingController.php:__construct','message'=>'constructor entered - about to call Database::connect()','timestamp'=>(int)round(microtime(true)*1000)])."\n", FILE_APPEND|LOCK_EX);
-        // #endregion
-        $this->db = \App\Config\Database::connect();
-        // #region agent log
-        @file_put_contents($__debugLog, json_encode(['sessionId'=>'dc1f76','hypothesisId'=>'H-A','location'=>'MarketingController.php:__construct','message'=>'constructor completed - Database::connect() succeeded','timestamp'=>(int)round(microtime(true)*1000)])."\n", FILE_APPEND|LOCK_EX);
-        // #endregion
+        $this->db = \App\Config\Database::getConnection();
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -124,11 +117,7 @@ class MarketingController extends BaseController
      */
     public function waSessionStatus(): never
     {
-        // #region agent log
-        $__debugLog = '/Users/rahulgupta/cagupta/.cursor/debug-dc1f76.log';
         $user      = $this->authUser();
-        @file_put_contents($__debugLog, json_encode(['sessionId'=>'dc1f76','hypothesisId'=>'H-C','location'=>'MarketingController.php:waSessionStatus','message'=>'authUser result','data'=>['user_is_null'=>$user===null,'user_id'=>$user['id']??null],'timestamp'=>(int)round(microtime(true)*1000)])."\n", FILE_APPEND|LOCK_EX);
-        // #endregion
         $sessionId = 'user_' . $user['id'];
         $bridgeUrl = $this->getWaBridgeUrl();
 
