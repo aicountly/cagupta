@@ -192,6 +192,7 @@ button, input, select, textarea { font-family: inherit; }
 .login-dd__icon--staff { background: var(--color-accent-blue-tint); color: var(--color-accent-blue); }
 .login-dd__icon--affiliate { background: var(--color-accent-purple-tint); color: var(--color-accent-purple); }
 .login-dd__icon--client { background: var(--color-accent-green-tint); color: var(--color-accent-green); }
+.login-dd__icon--partner { background: #fff7ed; color: #ea580c; }
 .login-dd__label { font-size: 14px; font-weight: 700; color: var(--color-navy); display: block; }
 .login-dd__sub { font-size: 12px; color: var(--color-text-soft); display: block; }
 
