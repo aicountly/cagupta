@@ -45,6 +45,9 @@ export default function WAWebMarketing() {
       if (res.ok) {
         const json = await res.json();
         const payload = json.data || {};
+        // #region agent log
+        fetch('http://127.0.0.1:7680/ingest/98bef636-b446-415e-8bd6-5036c92e86f1',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d6fd84'},body:JSON.stringify({sessionId:'d6fd84',hypothesisId:'H-B/D',location:'WAWebMarketing.jsx:checkSession',message:'status poll result',data:{status:payload.status,hasQr:!!payload.qr,wasConnected:wasConnectedRef.current},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         setSessionStatus(payload.status || SESSION_STATUS.DISCONNECTED);
         if (payload.status === SESSION_STATUS.CONNECTING && payload.qr) {
           setQrCode(payload.qr);

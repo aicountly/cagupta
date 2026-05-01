@@ -122,6 +122,10 @@ class MarketingController extends BaseController
         $bridgeUrl = $this->getWaBridgeUrl();
 
         $res = $this->httpGet("{$bridgeUrl}/session/{$sessionId}/status");
+        // #region agent log
+        $logEntry = json_encode(['sessionId'=>'d6fd84','hypothesisId'=>'H-A','location'=>'MarketingController.php:waSessionStatus','message'=>'bridge status check','data'=>['bridgeOk'=>$res['ok'],'body'=>$res['body'],'sessionId'=>$sessionId],'timestamp'=>round(microtime(true)*1000)]);
+        error_log('[WA-DEBUG] ' . $logEntry);
+        // #endregion
         if ($res['ok']) {
             $this->success($res['body']);
         }
@@ -140,6 +144,10 @@ class MarketingController extends BaseController
         $bridgeUrl = $this->getWaBridgeUrl();
 
         $res = $this->httpPost("{$bridgeUrl}/session/start", ['sessionId' => $sessionId]);
+        // #region agent log
+        $logEntry2 = json_encode(['sessionId'=>'d6fd84','hypothesisId'=>'H-A','location'=>'MarketingController.php:waSessionStart','message'=>'bridge start attempt','data'=>['bridgeOk'=>$res['ok'],'body'=>$res['body'],'sessionId'=>$sessionId,'bridgeUrl'=>$bridgeUrl],'timestamp'=>round(microtime(true)*1000)]);
+        error_log('[WA-DEBUG] ' . $logEntry2);
+        // #endregion
         if ($res['ok']) {
             // Upsert session record
             $stmt = $this->db->prepare('

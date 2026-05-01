@@ -19,7 +19,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import QRCode from 'qrcode';
-import { existsSync, mkdirSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, rmSync, appendFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import makeWASocket, {
@@ -32,6 +32,7 @@ import pino from 'pino';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const AUTH_DIR  = join(__dirname, '..', '.wwebjs_auth');
+const DEBUG_LOG = join(__dirname, '..', 'debug-d6fd84.log');
 const PORT      = process.env.PORT || 3001;
 
 const app = express();
@@ -197,6 +198,11 @@ app.post('/session/start', async (req, res) => {
 // GET /session/:id/status
 app.get('/session/:id/status', (req, res) => {
   const sess = sessions.get(req.params.id);
+  const authPath = sessionAuthPath(req.params.id);
+  const authExists = existsSync(authPath);
+  // #region agent log
+  try { appendFileSync(DEBUG_LOG, JSON.stringify({sessionId:'d6fd84',hypothesisId:'H-A/C',location:'index.js:status-endpoint',message:'status check',data:{sessionInMemory:!!sess,sessionStatus:sess?.status??null,authExists,sessionId:req.params.id},timestamp:Date.now()})+'\n'); } catch {}
+  // #endregion
   if (!sess) return res.json({ status: 'disconnected' });
   return res.json({ status: sess.status, qr: sess.qrDataUrl || null });
 });
