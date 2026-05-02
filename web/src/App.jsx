@@ -14,6 +14,7 @@ import Settings from './modules/core/pages/Settings';
 import GlobalSearchPage from './modules/core/pages/GlobalSearchPage';
 import InboxAndTickets from './modules/core/pages/InboxAndTickets';
 import TimesheetOverflowApprovals from './modules/core/pages/TimesheetOverflowApprovals';
+import AffiliatePayoutCycleAmendmentApprovals from './modules/core/pages/AffiliatePayoutCycleAmendmentApprovals';
 
 // ── CRM module ───────────────────────────────────────────────────────────────
 import Contacts from './modules/crm/pages/Contacts';
@@ -53,6 +54,7 @@ import ShiftTargetTimesheetReport from './modules/operations/pages/ShiftTargetTi
 import Invoices from './modules/finance/pages/Invoices';
 import BankFirmReports from './modules/finance/pages/BankFirmReports';
 import InvoiceCostVarianceReport from './modules/finance/pages/InvoiceCostVarianceReport';
+import AffiliatePayoutCycles from './modules/finance/pages/AffiliatePayoutCycles';
 
 // ── Marketing module ─────────────────────────────────────────────────────────
 import WAWebMarketing from './modules/marketing/pages/WAWebMarketing';
@@ -116,6 +118,7 @@ const pageTitles = {
   '/invoices':                  '💰 Invoices & Ledger',
   '/finance/bank-reports':      '🏦 Bank & firm txns',
   '/finance/invoice-cost-variance': '📉 Invoice cost variance',
+  '/finance/affiliate-payout-cycles': '📎 Affiliate payout cycles',
   '/reports':                            '📊 Reports',
   '/reports/timesheets':                 '🕐 Timesheet report',
   '/reports/timesheets/shift-target':    '📊 Staff punch vs target',
@@ -133,6 +136,7 @@ const pageTitles = {
   '/admin/users':               '👥 User Management',
   '/admin/leaves':              '📅 Leave Management',
   '/admin/timesheet-overflow-approvals': '📋 Timesheet overflow',
+  '/admin/affiliate-payout-cycle-amendments': '📎 Affiliate payout amendments',
   '/admin/affiliates':          '🤝 Affiliates',
   '/admin/partners':            '🤝 Partners',
   '/marketing/wa/web':          '📱 WA Web Marketing',
@@ -204,6 +208,11 @@ export default function App() {
           <Route path="/invoices" element={<ProtectedRoute staffOnly><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
           <Route path="/finance/bank-reports" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/finance/bank-reports"><BankFirmReports /></Layout></ProtectedRoute>} />
           <Route path="/finance/invoice-cost-variance" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/finance/invoice-cost-variance"><InvoiceCostVarianceReport /></Layout></ProtectedRoute>} />
+          <Route path="/finance/affiliate-payout-cycles" element={
+            <ProtectedRoute staffOnly requiredPermission="affiliates.manage">
+              <Layout routePath="/finance/affiliate-payout-cycles"><AffiliatePayoutCycles /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/reports" element={
             <ProtectedRoute staffOnly requiredPermission="services.view">
               <Layout routePath="/reports"><ReportsHub /></Layout>
@@ -295,6 +304,13 @@ export default function App() {
             <ProtectedRoute staffOnly>
               <Layout routePath="/admin/timesheet-overflow-approvals">
                 <TimesheetOverflowApprovals />
+              </Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/affiliate-payout-cycle-amendments" element={
+            <ProtectedRoute staffOnly>
+              <Layout routePath="/admin/affiliate-payout-cycle-amendments">
+                <AffiliatePayoutCycleAmendmentApprovals />
               </Layout>
             </ProtectedRoute>
           } />

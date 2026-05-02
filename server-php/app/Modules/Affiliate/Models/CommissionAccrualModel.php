@@ -215,4 +215,29 @@ final class CommissionAccrualModel
 
         return (float)$stmt->fetchColumn();
     }
+
+    /**
+     * Accruals available to sweep into an affiliate payout cycle for [period_start, period_end].
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listEligibleForAffiliatePayoutCycle(string $periodStart, string $periodEnd): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT ca.* FROM commission_accruals ca
+             WHERE ca.status = 'accrued'
+               AND ca.accrual_date >= :ps AND ca.accrual_date <= :pe
+               AND ca.affiliate_payout_cycle_id IS NULL
+               AND NOT EXISTS (
+                   SELECT 1 FROM payout_request_lines prl
+                   JOIN payout_requests pr ON pr.id = prl.payout_request_id
+                   WHERE prl.commission_accrual_id = ca.id
+                     AND pr.status IN ('pending', 'approved')
+               )
+             ORDER BY ca.accrual_date ASC, ca.id ASC"
+        );
+        $stmt->execute([':ps' => $periodStart, ':pe' => $periodEnd]);
+
+        return $stmt->fetchAll();
+    }
 }

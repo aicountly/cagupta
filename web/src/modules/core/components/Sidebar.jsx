@@ -6,7 +6,7 @@ import { getInitials } from '../../../utils/getInitials';
 import { getOverdueFollowUpCount } from '../../../services/serviceLogService';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
-  Receipt, CalendarDays, KeyRound, BookOpen, Landmark,
+  Receipt, CalendarDays, KeyRound, BookOpen, Landmark, Wallet,
   Target, Settings, ChevronRight, ChevronDown,
   UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, CalendarOff, Bell, RefreshCw, Timer,
   MessageSquare, Smartphone, Share2, Megaphone, UsersRound,
@@ -47,6 +47,7 @@ const navSections = [
         icon: BarChart3,
         rolesAllowed: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
       },
+      { to: '/finance/affiliate-payout-cycles', label: 'Affiliate payout cycles', icon: Wallet, permission: 'affiliates.manage' },
       { to: '/calendar', label: 'Calendar', icon: CalendarDays },
       { to: '/credentials', label: 'Credentials Vault', icon: KeyRound },
       { to: '/registers', label: 'Registers', icon: BookOpen },
@@ -90,6 +91,12 @@ const adminNavItems = [
     to: '/admin/timesheet-overflow-approvals',
     label: 'Timesheet overflow',
     icon: Timer,
+    rolesAllowed: [ROLES.SUPER_ADMIN],
+  },
+  {
+    to: '/admin/affiliate-payout-cycle-amendments',
+    label: 'Affiliate payout amendments',
+    icon: Wallet,
     rolesAllowed: [ROLES.SUPER_ADMIN],
   },
   { to: '/admin/affiliates', label: 'Affiliates',    icon: Handshake,    permission: 'affiliates.manage' },

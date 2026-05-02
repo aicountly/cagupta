@@ -492,6 +492,24 @@ class Routes
                 'middleware' => ['auth', 'role:super_admin'],
             ],
             [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/approvals/affiliate-payout-cycle-amendments',
+                'handler'    => 'Admin\AffiliatePayoutCycleAmendmentApprovalController@index',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/affiliate-payout-cycle-amendments/:id/approve',
+                'handler'    => 'Admin\AffiliatePayoutCycleAmendmentApprovalController@approve',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/affiliate-payout-cycle-amendments/:id/reject',
+                'handler'    => 'Admin\AffiliatePayoutCycleAmendmentApprovalController@reject',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/services/:id/time-entries/start',
                 'handler'    => 'Admin\TimeEntryController@startForService',
@@ -1360,6 +1378,48 @@ class Routes
                 'method'     => 'PATCH',
                 'pattern'    => '/api/admin/payout-requests/:id',
                 'handler'    => 'Admin\AffiliateAdminController@payoutUpdate',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/affiliate-payout-cycles',
+                'handler'    => 'Admin\AffiliatePayoutCycleController@index',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/affiliate-payout-cycles/ensure',
+                'handler'    => 'Admin\AffiliatePayoutCycleController@ensure',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/affiliate-payout-cycles/:id/preview',
+                'handler'    => 'Admin\AffiliatePayoutCycleController@preview',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/affiliate-payout-cycles/:id',
+                'handler'    => 'Admin\AffiliatePayoutCycleController@show',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/affiliate-payout-cycles/:id/finalise',
+                'handler'    => 'Admin\AffiliatePayoutCycleController@finalise',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/affiliate-payout-cycles/:id/disburse',
+                'handler'    => 'Admin\AffiliatePayoutCycleController@disburse',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/affiliate-payout-cycles/:id/amendments',
+                'handler'    => 'Admin\AffiliatePayoutCycleController@submitAmendment',
                 'middleware' => ['auth', 'permission:affiliates.manage'],
             ],
             [
