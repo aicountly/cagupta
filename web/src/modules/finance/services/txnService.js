@@ -292,6 +292,17 @@ export async function getOpeningBalance(clientId) {
   }));
 }
 
+/** POST /api/admin/txn/opening-balance */
+export async function setOpeningBalance(payload) {
+  const res  = await fetch(`${API_BASE}/admin/txn/opening-balance`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify(payload),
+  });
+  const data = await parseResponse(res);
+  return data.data;
+}
+
 /** GET /api/admin/txn/bank-ledger */
 export async function getBankLedger({ firmBankAccountId, dateFrom = '', dateTo = '' }) {
   const q = new URLSearchParams({ firm_bank_account_id: String(firmBankAccountId) });

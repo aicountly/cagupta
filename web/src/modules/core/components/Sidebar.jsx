@@ -9,10 +9,6 @@ import {
   Receipt, CalendarDays, KeyRound, BookOpen, Landmark,
   Target, Settings, ChevronRight, ChevronDown,
   UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, CalendarOff, Bell, RefreshCw,
-  LayoutDashboard, Users, ClipboardList, FolderOpen,
-  Receipt, CalendarDays, KeyRound, BookOpen, Landmark,
-  Target, Settings, ChevronRight, ChevronDown,
-  UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, CalendarOff, Bell, RefreshCw,
   MessageSquare, Smartphone, Share2, Megaphone, UsersRound,
   Mail,
 } from 'lucide-react';
