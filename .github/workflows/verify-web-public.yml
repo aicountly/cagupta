@@ -1,0 +1,31 @@
+# cPanel deploy also runs `web-public` (marketing). GitHub Pages only builds `web/`.
+# This workflow catches marketing build breaks before a manual cPanel deploy.
+
+name: Verify marketing site build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web-public/**"
+      - ".github/workflows/verify-web-public.yml"
+  pull_request:
+    paths:
+      - "web-public/**"
+      - ".github/workflows/verify-web-public.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: web-public/package-lock.json
+      - name: Install and build web-public
+        working-directory: web-public
+        run: |
+          npm ci
+          npm run build
