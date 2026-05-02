@@ -23,6 +23,7 @@ import ClientSearchDropdown from '../../../components/common/ClientSearchDropdow
 import EntitySearchDropdown from '../../../components/common/EntitySearchDropdown';
 import DateInput from '../../../components/common/DateInput';
 import { getBillingProfiles, getBillingProfileByCode } from '../../../constants/billingProfiles';
+import { listFirmBankAccounts } from '../../../services/firmBankAccountService';
 import { stateCodeFromGstin } from '../../../utils/gstUtils';
 import {
   collectIndianFYStartYearsWithFallback,
@@ -111,11 +112,6 @@ function buildLineItemApiRow(l) {
   const row = { description, amount };
   const kind = l.lineKind === 'cost_recovery' ? 'cost_recovery' : 'professional_fee';
   row.line_kind = kind;
-  if (kind === 'professional_fee' && l.manpowerIncluded) {
-    row.manpower_included = true;
-    const mc = typeof l.manpowerCostAmount === 'number' ? l.manpowerCostAmount : parseFloat(l.manpowerCostAmount, 10);
-    row.manpower_cost_amount = Number.isFinite(mc) && mc >= 0 ? mc : 0;
-  }
   if (l.engagementTypeId) row.engagement_type_id = l.engagementTypeId;
   return row;
 }
@@ -126,8 +122,6 @@ const emptyInvoiceLine = () => ({
   description: '',
   amount: '',
   lineKind: 'professional_fee',
-  manpowerIncluded: false,
-  manpowerCostAmount: '',
 });
 
 function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
@@ -413,31 +407,6 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
                         <option value="cost_recovery">Cost recovery</option>
                       </select>
                     </label>
-                    {row.lineKind !== 'cost_recovery' ? (
-                      <>
-                        <label style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <input
-                            type="checkbox"
-                            checked={row.manpowerIncluded}
-                            onChange={(e) => setLine(idx, 'manpowerIncluded', e.target.checked)}
-                          />
-                          <span>Manpower cost included</span>
-                        </label>
-                        {row.manpowerIncluded ? (
-                          <label style={{ display:'flex', alignItems:'center', gap:6 }}>
-                            <span>Manpower ₹</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              style={{ ...inputStyle, width:100, fontSize:12 }}
-                              value={row.manpowerCostAmount}
-                              onChange={(e) => setLine(idx, 'manpowerCostAmount', e.target.value)}
-                            />
-                          </label>
-                        ) : null}
-                      </>
-                    ) : null}
                   </div>
                 </div>
               ))}
@@ -613,9 +582,6 @@ function InvoiceViewModal({ txn, onClose, onEdit, onDelete, canEditInvoice, canD
                             {row.lineKind === 'cost_recovery' ? (
                               <div style={{ fontSize:10, fontWeight:700, color:'#b45309', marginTop:4 }}>Cost recovery</div>
                             ) : null}
-                            {row.manpowerIncluded && Number(row.manpowerCostAmount) > 0 ? (
-                              <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>Manpower in fee: ₹{Number(row.manpowerCostAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                            ) : null}
                           </td>
                           <td style={{ padding:'8px 0', textAlign:'right', fontWeight:600 }}>{Number(row.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         </tr>
@@ -738,10 +704,6 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
             description: l.description,
             amount: String(l.amount),
             lineKind: (l.lineKind === 'cost_recovery' || l.line_kind === 'cost_recovery') ? 'cost_recovery' : 'professional_fee',
-            manpowerIncluded: Boolean(l.manpowerIncluded ?? l.manpower_included),
-            manpowerCostAmount: l.manpowerCostAmount != null && l.manpowerCostAmount !== ''
-              ? String(l.manpowerCostAmount)
-              : (l.manpower_cost_amount != null ? String(l.manpower_cost_amount) : ''),
           }))
           : [emptyInvoiceLine()];
         setForm({
@@ -884,20 +846,6 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                         <option value="cost_recovery">Cost recovery</option>
                       </select>
                     </label>
-                    {line.lineKind !== 'cost_recovery' ? (
-                      <>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <input type="checkbox" checked={line.manpowerIncluded} onChange={(e) => setLine(idx, 'manpowerIncluded', e.target.checked)} />
-                          Manpower cost included
-                        </label>
-                        {line.manpowerIncluded ? (
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            Manpower ₹
-                            <input type="number" min="0" step="0.01" style={{ ...inputStyle, width: 100, fontSize: 12 }} value={line.manpowerCostAmount} onChange={(e) => setLine(idx, 'manpowerCostAmount', e.target.value)} />
-                          </label>
-                        ) : null}
-                      </>
-                    ) : null}
                   </div>
                 </div>
               ))}
@@ -997,10 +945,43 @@ function DeleteInvoiceModal({ invoice, onClose, onDeleted }) {
 // ── RecordPaymentModal ────────────────────────────────────────────────────────
 
 function RecordPaymentModal({ onClose, onSave, invoice }) {
-  const [form, setForm] = useState({ amount: '', paymentDate: new Date().toISOString().slice(0,10), method: 'NEFT', reference: '', billingProfileCode: invoice?.billingProfileCode || '' });
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const [form, setForm] = useState({
+    amount: '',
+    paymentDate: new Date().toISOString().slice(0, 10),
+    method: 'NEFT',
+    reference: '',
+    billingProfileCode: invoice?.billingProfileCode || '',
+    firmBankAccountId: '',
+  });
+  const [banks, setBanks] = useState([]);
+  const [banksLoading, setBanksLoading] = useState(false);
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    const code = form.billingProfileCode;
+    if (!code) {
+      setBanks([]);
+      return;
+    }
+    let cancel = false;
+    setBanksLoading(true);
+    listFirmBankAccounts(code)
+      .then((rows) => {
+        if (cancel) return;
+        const list = Array.isArray(rows) ? rows.filter((b) => b.isActive !== false) : [];
+        setBanks(list);
+        setForm((f) => {
+          if (f.firmBankAccountId && list.some((b) => String(b.id) === String(f.firmBankAccountId))) return f;
+          return { ...f, firmBankAccountId: list[0] ? String(list[0].id) : '' };
+        });
+      })
+      .catch(() => { if (!cancel) setBanks([]); })
+      .finally(() => { if (!cancel) setBanksLoading(false); });
+    return () => { cancel = true; };
+  }, [form.billingProfileCode]);
+
   const handleSave = () => {
-    if (!form.amount || !form.paymentDate) return;
+    if (!form.amount || !form.paymentDate || !form.billingProfileCode || !form.firmBankAccountId) return;
     onSave(form);
     onClose();
   };
@@ -1048,6 +1029,23 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
               ))}
             </select>
           </label>
+          <label style={labelStyle}>
+            Bank / cash account
+            <select
+              style={inputStyle}
+              value={form.firmBankAccountId}
+              onChange={(e) => set('firmBankAccountId', e.target.value)}
+              disabled={!form.billingProfileCode || banksLoading}
+            >
+              <option value="">{banksLoading ? 'Loading…' : '— Select account —'}</option>
+              {banks.map((b) => (
+                <option key={b.id} value={String(b.id)}>{b.name} ({b.accountType})</option>
+              ))}
+            </select>
+          </label>
+          {!banksLoading && form.billingProfileCode && banks.length === 0 && (
+            <div style={{ fontSize: 12, color: '#b45309' }}>No bank accounts for this firm. Add them under Finance → Bank &amp; firm txns.</div>
+          )}
         </div>
         <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }}>
           <button onClick={onClose} style={btnSecondary}>Cancel</button>
@@ -1072,12 +1070,39 @@ function PaymentExpenseModal({ onClose, onSave }) {
     paidFrom: '',
     referenceNumber: '',
     billingProfileCode: '',
+    firmBankAccountId: '',
     description: '',
     notes: '',
   });
+  const [banks, setBanks] = useState([]);
+  const [banksLoading, setBanksLoading] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    const code = form.billingProfileCode;
+    if (!code) {
+      setBanks([]);
+      return;
+    }
+    let cancel = false;
+    setBanksLoading(true);
+    listFirmBankAccounts(code)
+      .then((rows) => {
+        if (cancel) return;
+        const list = Array.isArray(rows) ? rows.filter((b) => b.isActive !== false) : [];
+        setBanks(list);
+        setForm((f) => {
+          if (f.firmBankAccountId && list.some((b) => String(b.id) === String(f.firmBankAccountId))) return f;
+          return { ...f, firmBankAccountId: list[0] ? String(list[0].id) : '' };
+        });
+      })
+      .catch(() => { if (!cancel) setBanks([]); })
+      .finally(() => { if (!cancel) setBanksLoading(false); });
+    return () => { cancel = true; };
+  }, [form.billingProfileCode]);
+
   const handleSave = () => {
-    if (!form.entityId || !form.amount || !form.txnDate || !form.description.trim()) return;
+    if (!form.entityId || !form.amount || !form.txnDate || !form.description.trim() || !form.billingProfileCode || !form.firmBankAccountId) return;
     onSave(form);
     onClose();
   };
@@ -1153,6 +1178,20 @@ function PaymentExpenseModal({ onClose, onSave }) {
             </select>
           </label>
           <label style={labelStyle}>
+            Bank / cash account
+            <select
+              style={inputStyle}
+              value={form.firmBankAccountId}
+              onChange={(e) => set('firmBankAccountId', e.target.value)}
+              disabled={!form.billingProfileCode || banksLoading}
+            >
+              <option value="">{banksLoading ? 'Loading…' : '— Select account —'}</option>
+              {banks.map((b) => (
+                <option key={b.id} value={String(b.id)}>{b.name} ({b.accountType})</option>
+              ))}
+            </select>
+          </label>
+          <label style={labelStyle}>
             Internal notes
             <input type="text" style={inputStyle} placeholder="Optional" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
           </label>
@@ -1169,10 +1208,47 @@ function PaymentExpenseModal({ onClose, onSave }) {
 // ── ReceiptModal ──────────────────────────────────────────────────────────────
 
 function ReceiptModal({ onClose, onSave, openInvoices }) {
-  const [form, setForm] = useState({ clientId: '', clientName: '', amount: '', txnDate: new Date().toISOString().slice(0,10), method: 'NEFT', referenceNumber: '', billingProfileCode: '', linkedTxnId: '', notes: '' });
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const [form, setForm] = useState({
+    clientId: '',
+    clientName: '',
+    amount: '',
+    txnDate: new Date().toISOString().slice(0, 10),
+    method: 'NEFT',
+    referenceNumber: '',
+    billingProfileCode: '',
+    firmBankAccountId: '',
+    linkedTxnId: '',
+    notes: '',
+  });
+  const [banks, setBanks] = useState([]);
+  const [banksLoading, setBanksLoading] = useState(false);
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    const code = form.billingProfileCode;
+    if (!code) {
+      setBanks([]);
+      return;
+    }
+    let cancel = false;
+    setBanksLoading(true);
+    listFirmBankAccounts(code)
+      .then((rows) => {
+        if (cancel) return;
+        const list = Array.isArray(rows) ? rows.filter((b) => b.isActive !== false) : [];
+        setBanks(list);
+        setForm((f) => {
+          if (f.firmBankAccountId && list.some((b) => String(b.id) === String(f.firmBankAccountId))) return f;
+          return { ...f, firmBankAccountId: list[0] ? String(list[0].id) : '' };
+        });
+      })
+      .catch(() => { if (!cancel) setBanks([]); })
+      .finally(() => { if (!cancel) setBanksLoading(false); });
+    return () => { cancel = true; };
+  }, [form.billingProfileCode]);
+
   const handleSave = () => {
-    if (!form.clientId || !form.amount || !form.txnDate) return;
+    if (!form.clientId || !form.amount || !form.txnDate || !form.billingProfileCode || !form.firmBankAccountId) return;
     onSave(form);
     onClose();
   };
@@ -1221,6 +1297,20 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
               <option value="">— Select Billing Profile —</option>
               {getBillingProfiles().map(p=>(
                 <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
+              ))}
+            </select>
+          </label>
+          <label style={labelStyle}>
+            Bank / cash account
+            <select
+              style={inputStyle}
+              value={form.firmBankAccountId}
+              onChange={(e) => set('firmBankAccountId', e.target.value)}
+              disabled={!form.billingProfileCode || banksLoading}
+            >
+              <option value="">{banksLoading ? 'Loading…' : '— Select account —'}</option>
+              {banks.map((b) => (
+                <option key={b.id} value={String(b.id)}>{b.name} ({b.accountType})</option>
               ))}
             </select>
           </label>
@@ -1565,7 +1655,17 @@ export default function Invoices() {
   const canCreateInvoice = hasPermission('invoices.create');
   const canBillingClosure = hasPermission('services.edit') || hasPermission('invoices.edit');
   const [searchParams, setSearchParams] = useSearchParams();
-  const [tab, setTab] = useState('invoices');
+  const [tab, setTab] = useState(() => {
+    const t = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null;
+    return t || 'invoices';
+  });
+
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    if (!t) return;
+    const allowed = ['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note', 'ledger', 'service_billing'];
+    if (allowed.includes(t)) setTab(t);
+  }, [searchParams]);
 
   // ── Invoice tab state ───────────────────────────────────────────────────────
   const [statusFilter, setStatusFilter]         = useState('all');
@@ -1837,10 +1937,6 @@ export default function Invoices() {
         amount: typeof l.amount === 'number' ? l.amount : parseFloat(l.amount, 10),
       };
       if (l.line_kind) row.line_kind = l.line_kind;
-      if (l.manpower_included) {
-        row.manpower_included = true;
-        row.manpower_cost_amount = typeof l.manpower_cost_amount === 'number' ? l.manpower_cost_amount : parseFloat(l.manpower_cost_amount, 10) || 0;
-      }
       if (l.engagement_type_id != null) row.engagement_type_id = l.engagement_type_id;
       return row;
     }).filter((l) => l.description && Number.isFinite(l.amount) && l.amount > 0);
@@ -1901,6 +1997,7 @@ export default function Invoices() {
       reference_number:     data.reference,
       billing_profile_code: data.billingProfileCode,
       linked_txn_id:        selectedInvoice.id,
+      firm_bank_account_id: parseInt(data.firmBankAccountId, 10),
     };
     if (selectedInvoice.organizationId) {
       receiptBody.organization_id = selectedInvoice.organizationId;
@@ -1932,6 +2029,7 @@ export default function Invoices() {
       payment_method: data.method,
       reference_number: data.referenceNumber || null,
       billing_profile_code: data.billingProfileCode || null,
+      firm_bank_account_id: parseInt(data.firmBankAccountId, 10),
       expense_purpose: data.expensePurpose || null,
       paid_from: data.paidFrom || null,
       narration,
@@ -1955,6 +2053,7 @@ export default function Invoices() {
       payment_method:       data.method,
       reference_number:     data.referenceNumber,
       billing_profile_code: data.billingProfileCode,
+      firm_bank_account_id: parseInt(data.firmBankAccountId, 10),
       linked_txn_id:        data.linkedTxnId || null,
       notes:                data.notes,
     })

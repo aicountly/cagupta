@@ -197,7 +197,7 @@ if (!$corsMatched && str_starts_with($origin, 'http://localhost') && $appConfig-
 // Do not send a mismatched Access-Control-Allow-Origin (breaks credentialed fetches).
 header('Access-Control-Allow-Credentials: true');
 header('Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE, OPTIONS');
-header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-Superadmin-Otp');
+header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With, X-Superadmin-Otp, X-Brevo-Inbound-Token, X-Webhook-Token');
 header('Content-Type: application/json; charset=UTF-8');
 
 // Handle OPTIONS preflight

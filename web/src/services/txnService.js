@@ -42,10 +42,6 @@ function normalizeLineItems(raw) {
     };
     const lk = row?.line_kind ?? row?.lineKind;
     o.lineKind = lk === 'cost_recovery' ? 'cost_recovery' : 'professional_fee';
-    if (o.lineKind === 'professional_fee') {
-      o.manpowerIncluded = Boolean(row?.manpower_included ?? row?.manpowerIncluded);
-      o.manpowerCostAmount = parseFloat(row?.manpower_cost_amount ?? row?.manpowerCostAmount ?? 0) || 0;
-    }
     if (row?.engagement_type_id != null) o.engagementTypeId = parseInt(row.engagement_type_id, 10) || null;
     if (row?.service_line_key) o.serviceLineKey = String(row.service_line_key);
     return o;

@@ -5,9 +5,12 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Models\AdminAuditLogModel;
+use App\Models\AffiliateActiveFeeMapModel;
 use App\Models\AffiliateBankDetailModel;
 use App\Models\AffiliateCommissionRateModel;
 use App\Models\AffiliateProfileModel;
+use App\Models\AffiliateRedemptionRequestModel;
+use App\Models\AffiliateRewardLedgerModel;
 use App\Models\FirmCommissionDefaultsModel;
 use App\Models\PayoutRequestModel;
 use App\Models\UserModel;
@@ -203,5 +206,114 @@ final class AffiliateAdminController extends BaseController
         $actor = $this->authUser();
         (new AffiliateBankDetailModel())->setVerification($id, $status, $actor ? (int)$actor['id'] : null);
         $this->success(null, 'Bank verification updated');
+    }
+
+    /** PATCH /api/admin/affiliates/:id/payout-model */
+    public function setPayoutModel(int $userId): never
+    {
+        $this->assertPerm();
+        $body = $this->getJsonBody();
+        $m    = strtolower(trim((string)($body['payout_model'] ?? '')));
+        if (!in_array($m, ['active', 'passive'], true)) {
+            $this->error('payout_model must be active or passive.', 422);
+        }
+        (new AffiliateProfileModel())->setPayoutModel($userId, $m);
+        $this->success((new AffiliateProfileModel())->findByUserId($userId));
+    }
+
+    /** GET /api/admin/affiliates/:id/active-fee-map */
+    public function activeFeeMapIndex(int $userId): never
+    {
+        $this->assertPerm();
+        $this->success((new AffiliateActiveFeeMapModel())->listForAffiliate($userId));
+    }
+
+    /** POST /api/admin/affiliates/:id/active-fee-map */
+    public function activeFeeMapStore(int $userId): never
+    {
+        $this->assertPerm();
+        $body = $this->getJsonBody();
+        $fx   = (float)($body['fixed_amount'] ?? 0);
+        if ($fx <= 0) {
+            $this->error('fixed_amount required.', 422);
+        }
+        $id = (new AffiliateActiveFeeMapModel())->insertRow([
+            'affiliate_user_id' => $userId,
+            'client_id'         => isset($body['client_id']) ? (int)$body['client_id'] : null,
+            'service_id'        => isset($body['service_id']) ? (int)$body['service_id'] : null,
+            'fixed_amount'      => $fx,
+            'effective_from'    => $body['effective_from'] ?? date('Y-m-d'),
+            'effective_to'      => $body['effective_to'] ?? null,
+            'notes'             => $body['notes'] ?? null,
+        ]);
+        $this->success(['id' => $id], 'Saved', 201);
+    }
+
+    /** DELETE /api/admin/affiliate-active-fee-map/:id */
+    public function activeFeeMapDestroy(int $id): never
+    {
+        $this->assertPerm();
+        (new AffiliateActiveFeeMapModel())->deleteRow($id);
+        $this->success(null, 'Deleted');
+    }
+
+    /** GET /api/admin/affiliate-redemptions */
+    public function redemptionsIndex(): never
+    {
+        $this->assertPerm();
+        $st   = trim((string)$this->query('status', 'pending'));
+        $page = max(1, (int)$this->query('page', 1));
+        $per  = min(100, max(1, (int)$this->query('per_page', 30)));
+        $res = (new AffiliateRedemptionRequestModel())->listAdmin($st, $page, $per);
+        $this->success($res['rows'], 'OK', 200, [
+            'pagination' => [
+                'page' => $page, 'per_page' => $per, 'total' => $res['total'],
+            ],
+        ]);
+    }
+
+    /** PATCH /api/admin/affiliate-redemptions/:id */
+    public function redemptionsUpdate(int $id): never
+    {
+        $this->assertPerm();
+        $body = $this->getJsonBody();
+        $st   = trim((string)($body['status'] ?? ''));
+        if (!in_array($st, ['approved', 'rejected', 'fulfilled'], true)) {
+            $this->error('status must be approved, rejected, or fulfilled.', 422);
+        }
+        $actor = $this->authUser();
+        $rr    = new AffiliateRedemptionRequestModel();
+        $row   = $rr->find($id);
+        if ($row === null) {
+            $this->error('Not found', 404);
+        }
+        $cur = (string)($row['status'] ?? '');
+        if ($cur === 'pending') {
+            if (!in_array($st, ['approved', 'rejected'], true)) {
+                $this->error('From pending, only approved or rejected.', 422);
+            }
+            if ($st === 'approved') {
+                $ledger = new AffiliateRewardLedgerModel();
+                $bal    = $ledger->balancePoints((int)$row['affiliate_user_id']);
+                $need   = (int)$row['points'];
+                if ($bal < $need) {
+                    $this->error('Affiliate insufficient points balance.', 422);
+                }
+                $ledger->insertRow([
+                    'affiliate_user_id' => (int)$row['affiliate_user_id'],
+                    'delta_points'      => -$need,
+                    'kind'              => 'redeem',
+                    'ref_type'          => 'redemption_request',
+                    'ref_id'            => $id,
+                    'label'             => 'Redemption: ' . (string)$row['catalog_key'],
+                ]);
+            }
+            $rr->setStatus($id, $st, $actor ? (int)$actor['id'] : null, $body['admin_notes'] ?? null);
+        } elseif ($cur === 'approved' && $st === 'fulfilled') {
+            $rr->setStatus($id, 'fulfilled', $actor ? (int)$actor['id'] : null, $body['admin_notes'] ?? null);
+        } else {
+            $this->error('Invalid status transition.', 422);
+        }
+        $this->success($rr->find($id));
     }
 }

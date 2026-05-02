@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Config\Database;
+use App\Libraries\BillingOpenNotifier;
 use PDO;
 
 /**
@@ -301,7 +302,8 @@ SQL;
                 subcategory_id, subcategory_name,
                 engagement_type_id, engagement_type_name,
                 tasks,
-                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
+                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted,
+                source_support_ticket_id
              ) VALUES (
                 :client_id, :organization_id, :service_type, :description,
                 :financial_year, :due_date, :status, :priority, :assigned_to,
@@ -311,7 +313,8 @@ SQL;
                 :subcategory_id, :subcategory_name,
                 :engagement_type_id, :engagement_type_name,
                 :tasks,
-                :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted
+                :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted,
+                :source_support_ticket_id
              ) RETURNING id'
         );
         $params = [
@@ -341,6 +344,8 @@ SQL;
             ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
             ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
             ':client_facing_restricted' => !empty($data['client_facing_restricted']) ? 'true' : 'false',
+            ':source_support_ticket_id' => isset($data['source_support_ticket_id']) && (int)$data['source_support_ticket_id'] > 0
+                ? (int)$data['source_support_ticket_id'] : null,
         ];
         $stmt->execute($params);
         return (int)$stmt->fetchColumn();
@@ -601,10 +606,15 @@ SQL;
             return;
         }
         $stmt = $this->db->prepare(
-            "UPDATE services SET billing_closure = 'open', updated_at = NOW()
+            "UPDATE services SET billing_closure = 'open',
+                 billing_open_since = COALESCE(billing_open_since, NOW()),
+                 updated_at = NOW()
              WHERE id = :id AND billing_closure IS NULL"
         );
         $stmt->execute([':id' => $id]);
+        if ($stmt->rowCount() > 0) {
+            BillingOpenNotifier::notify($id);
+        }
     }
 
     /**
@@ -624,6 +634,26 @@ SQL;
         $v = $stmt->fetchColumn();
 
         return round((float)$v, 2);
+    }
+
+    /**
+     * Count engagements that are due for billing but not yet built / closed.
+     */
+    public function countUnbilledBillingOpen(): int
+    {
+        $completionSql = "(s.status = 'completed' OR (
+                jsonb_array_length(COALESCE(s.tasks, '[]'::jsonb)) > 0 AND NOT EXISTS (
+                    SELECT 1 FROM jsonb_array_elements(COALESCE(s.tasks, '[]'::jsonb)) el
+                    WHERE COALESCE(el->>'status', '') <> 'done'
+                )
+            ))";
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*) FROM services s
+             WHERE {$completionSql} AND s.billing_closure = 'open'"
+        );
+        $stmt->execute();
+
+        return (int)$stmt->fetchColumn();
     }
 
     /**

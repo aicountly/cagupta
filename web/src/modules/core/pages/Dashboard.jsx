@@ -10,6 +10,7 @@ import StatusBadge from '../../../components/common/StatusBadge';
 const METRIC_CARD_CONFIG = [
   { key: 'activeClients', label: 'Active Clients', icon: '👥', color: '#2563eb', bg: '#EFF6FF', to: '/clients/contacts' },
   { key: 'activeServices', label: 'Active Services', icon: '📋', color: '#7c3aed', bg: '#F5F3FF', to: '/services' },
+  { key: 'unbilledServices', label: 'Unbilled (due)', icon: '🧾', color: '#c2410c', bg: '#FFF7ED', sub: 'billing open — raise invoice', to: '/invoices?tab=service_billing' },
   { key: 'pendingTasks', label: 'Pending Tasks', icon: '✅', color: '#d97706', bg: '#FFFBEB', sub: 'across all engagements', to: '/services' },
   { key: 'outstandingAmount', label: 'Outstanding Amount', icon: '💰', color: '#dc2626', bg: '#FEF2F2', sub: 'total receivable (txn ledger)', to: '/invoices' },
   { key: 'documentsThisMonth', label: 'Documents This Month', icon: '📂', color: '#0891b2', bg: '#ECFEFF', to: '/documents' },
@@ -47,7 +48,7 @@ export default function Dashboard() {
   const { hasPermission } = useAuth();
   const canViewTimesheetReports = hasPermission('services.view');
 
-  const [stats, setStats]           = useState({ activeClients: '—', activeServices: '—', pendingTasks: '—', totalOutstanding: 0, documentsThisMonth: '—', appointmentsToday: '—' });
+  const [stats, setStats]           = useState({ activeClients: '—', activeServices: '—', unbilledServices: 0, pendingTasks: '—', totalOutstanding: 0, documentsThisMonth: '—', appointmentsToday: '—' });
   const [tasks, setTasks]           = useState([]);
   const [invoices, setInvoices]     = useState([]);
   const [appointments, setAppointments] = useState([]);
@@ -82,6 +83,7 @@ export default function Dashboard() {
   const metricValues = useMemo(() => ({
     activeClients: loading ? '…' : stats.activeClients,
     activeServices: loading ? '…' : stats.activeServices,
+    unbilledServices: loading ? '…' : (typeof stats.unbilledServices === 'number' ? String(stats.unbilledServices) : (stats.unbilledServices ?? '0')),
     pendingTasks: loading ? '…' : stats.pendingTasks,
     outstandingAmount: loading ? '…' : outstandingFmt,
     documentsThisMonth: loading ? '…' : stats.documentsThisMonth,

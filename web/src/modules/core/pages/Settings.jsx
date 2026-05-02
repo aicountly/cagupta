@@ -3,7 +3,13 @@ import { useAuth } from '../../../auth/AuthContext';
 import { getPortalTypes } from '../../../constants/portalTypes';
 import { fetchPortalTypes, createPortalType, updatePortalType, deletePortalType } from '../../../services/portalTypeService';
 import { getRegisterTypes, saveRegisterTypes } from '../../../constants/registerTypes';
-import { loadBillingProfiles, saveBillingProfiles } from '../../../constants/billingProfiles';
+import {
+  listBillingFirms,
+  createBillingFirm,
+  updateBillingFirm,
+  deleteBillingFirm,
+} from '../../../services/billingFirmService';
+import { loadBillingProfiles, fetchBillingProfilesFromApi } from '../../../constants/billingProfiles';
 import { stateCodeFromGstin } from '../../../utils/gstUtils';
 import {
   getCategories,
@@ -387,6 +393,7 @@ export default function Settings() {
   const canManageUserRates = hasPermission('users.manage');
   const canManageUsers     = hasPermission('users.manage') || hasPermission('users.delegate');
   const canConfigureRoles  = hasPermission('users.manage');
+  const canManageBillingFirms = hasPermission('settings.view');
   const [tab, setTab] = useState('firm');
   const [zoomStatus, setZoomStatus] = useState({ connected: false, accountId: null });
   const [zoomLoading, setZoomLoading] = useState(false);
@@ -402,12 +409,14 @@ export default function Settings() {
   const [newRegister, setNewRegister] = useState('');
   const [registerError, setRegisterError] = useState('');
   const [billingProfiles, setBillingProfiles] = useState(() => loadBillingProfiles());
+  const [billingProfilesLoading, setBillingProfilesLoading] = useState(false);
   const [showBillingForm, setShowBillingForm] = useState(false);
   const [billingEdit, setBillingEdit] = useState(null);
   const [billingForm, setBillingForm] = useState({
     code: '', name: '', gstRegistered: false, gstin: '', stateCode: '', defaultGstRate: 18,
   });
   const [billingError, setBillingError] = useState('');
+  const [billingSaving, setBillingSaving] = useState(false);
 
   // ── Service Configuration state ────────────────────────────────────────────
   const [serviceCategories, setServiceCategories] = useState([]);
@@ -430,6 +439,27 @@ export default function Settings() {
   const [quoteOtpBusy, setQuoteOtpBusy] = useState(false);
   const [quoteOtpMsg, setQuoteOtpMsg] = useState('');
   const [quoteRowDrafts, setQuoteRowDrafts] = useState({});
+
+  useEffect(() => {
+    if (tab !== 'billing') return;
+    let cancelled = false;
+    (async () => {
+      setBillingProfilesLoading(true);
+      try {
+        const rows = await listBillingFirms();
+        if (!cancelled && Array.isArray(rows) && rows.length > 0) {
+          setBillingProfiles(rows);
+        } else if (!cancelled) {
+          setBillingProfiles(loadBillingProfiles());
+        }
+      } catch {
+        if (!cancelled) setBillingProfiles(loadBillingProfiles());
+      } finally {
+        if (!cancelled) setBillingProfilesLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tab]);
 
   useEffect(() => {
     if (!quotationRows.length) {
@@ -1050,13 +1080,22 @@ export default function Settings() {
           <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
             <div>
               <h2 style={{ margin:'0 0 4px 0', fontSize:18, fontWeight:700, color:'#1e293b' }}>🏢 Billing Firms</h2>
-              <p style={{ margin:0, fontSize:13, color:'#64748b' }}>Used when raising invoices. GST registration drives tax split (CGST/SGST/UTGST/IGST) from supplier vs client state codes.</p>
+              <p style={{ margin:0, fontSize:13, color:'#64748b' }}>Used when raising invoices. Firms are stored on the server for all users. GST registration drives tax split (CGST/SGST/UTGST/IGST) from supplier vs client state codes.</p>
+              {!canManageBillingFirms && (
+                <p style={{ margin:'8px 0 0 0', fontSize:12, color:'#b45309' }}>You need Settings permission to add, edit, or delete firms.</p>
+              )}
+              {billingProfilesLoading && <div style={{ fontSize:13, color:'#64748b', marginTop:8 }}>Loading…</div>}
             </div>
-            <button style={btnPrimary} onClick={() => {
-              setBillingForm({ code:'', name:'', gstRegistered:false, gstin:'', stateCode:'', defaultGstRate:18 });
-              setBillingEdit(null);
-              setShowBillingForm(true);
-            }}>➕ Add Billing Firm</button>
+            <button
+              type="button"
+              style={{ ...btnPrimary, opacity: canManageBillingFirms ? 1 : 0.5 }}
+              disabled={!canManageBillingFirms}
+              onClick={() => {
+                setBillingForm({ code:'', name:'', gstRegistered:false, gstin:'', stateCode:'', defaultGstRate:18 });
+                setBillingEdit(null);
+                setShowBillingForm(true);
+              }}
+            >➕ Add Billing Firm</button>
           </div>
           <div style={cardStyle}>
             <table style={tableStyle}>
@@ -1071,7 +1110,7 @@ export default function Settings() {
                     <td style={tdStyle}>{p.gstRegistered ? 'Registered' : '—'}</td>
                     <td style={{ ...tdStyle, fontFamily:'monospace' }}>{p.stateCode || '—'}</td>
                     <td style={tdStyle}>
-                      <button style={iconBtn} onClick={() => {
+                      <button type="button" style={iconBtn} disabled={!canManageBillingFirms} onClick={() => {
                         setBillingForm({
                           code: p.code,
                           name: p.name,
@@ -1083,13 +1122,17 @@ export default function Settings() {
                         setBillingEdit(p.id);
                         setShowBillingForm(true);
                       }}>✏️ Edit</button>
-                      <button style={{ ...iconBtn, color:'#ef4444' }} onClick={() => {
+                      <button type="button" style={{ ...iconBtn, color:'#ef4444' }} disabled={!canManageBillingFirms} onClick={async () => {
                         if (!window.confirm(`Delete "${p.name}"?`)) return;
-                        setBillingProfiles(prev => {
-                          const next = prev.filter(x => x.id !== p.id);
-                          saveBillingProfiles(next);
-                          return next;
-                        });
+                        setBillingError('');
+                        try {
+                          await deleteBillingFirm(p.code);
+                          await fetchBillingProfilesFromApi();
+                          const rows = await listBillingFirms();
+                          setBillingProfiles(Array.isArray(rows) && rows.length ? rows : loadBillingProfiles());
+                        } catch (e) {
+                          setBillingError(e.message || 'Delete failed.');
+                        }
                       }}>🗑️</button>
                     </td>
                   </tr>
@@ -1154,7 +1197,7 @@ export default function Settings() {
               )}
               {billingError && <div style={{ fontSize:11, color:'#dc2626', marginBottom:8 }}>{billingError}</div>}
               <div style={{ display:'flex', gap:8 }}>
-                <button style={btnPrimary} onClick={() => {
+                <button type="button" style={btnPrimary} disabled={billingSaving || !canManageBillingFirms} onClick={async () => {
                   if (!billingForm.code.trim()) { setBillingError('Code is required.'); return; }
                   if (!billingForm.name.trim()) { setBillingError('Firm name is required.'); return; }
                   let stateCode = String(billingForm.stateCode || '').trim();
@@ -1166,28 +1209,31 @@ export default function Settings() {
                       return;
                     }
                   }
-                  const row = {
-                    id: billingEdit || String(Date.now()),
-                    code: billingForm.code.trim(),
-                    name: billingForm.name.trim(),
-                    gstRegistered: billingForm.gstRegistered,
-                    gstin: billingForm.gstRegistered ? String(billingForm.gstin || '').replace(/\s/g,'').toUpperCase() : '',
-                    stateCode: billingForm.gstRegistered ? stateCode : '',
-                    defaultGstRate: billingForm.gstRegistered ? Math.min(40, Math.max(0, parseFloat(billingForm.defaultGstRate, 10) || 18)) : 18,
-                  };
-                  setBillingProfiles(prev => {
-                    let next;
-                    if (billingEdit) {
-                      next = prev.map(p => p.id === billingEdit ? { ...p, ...row } : p);
-                    } else {
-                      next = [...prev, row];
-                    }
-                    saveBillingProfiles(next);
-                    return next;
-                  });
+                  setBillingSaving(true);
                   setBillingError('');
-                  setShowBillingForm(false);
-                }}>💾 Save</button>
+                  try {
+                    const payload = {
+                      name: billingForm.name.trim(),
+                      gstRegistered: billingForm.gstRegistered,
+                      gstin: billingForm.gstRegistered ? String(billingForm.gstin || '').replace(/\s/g,'').toUpperCase() : '',
+                      stateCode: billingForm.gstRegistered ? stateCode : '',
+                      defaultGstRate: billingForm.gstRegistered ? Math.min(40, Math.max(0, parseFloat(billingForm.defaultGstRate, 10) || 18)) : 18,
+                    };
+                    if (billingEdit) {
+                      await updateBillingFirm(billingForm.code.trim(), payload);
+                    } else {
+                      await createBillingFirm({ code: billingForm.code.trim().toUpperCase(), ...payload });
+                    }
+                    await fetchBillingProfilesFromApi();
+                    const rows = await listBillingFirms();
+                    setBillingProfiles(Array.isArray(rows) && rows.length ? rows : loadBillingProfiles());
+                    setShowBillingForm(false);
+                  } catch (e) {
+                    setBillingError(e.message || 'Save failed.');
+                  } finally {
+                    setBillingSaving(false);
+                  }
+                }}>{billingSaving ? 'Saving…' : '💾 Save'}</button>
                 <button style={btnOutline} onClick={() => { setShowBillingForm(false); setBillingError(''); }}>Cancel</button>
               </div>
             </div>

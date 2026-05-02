@@ -14,6 +14,7 @@ export const ROLES = {
   AFFILIATE:   'affiliate',
   PARTNER:     'partner',
   CLIENT:      'client',
+  ACCOUNTS:    'accounts',
 };
 
 /** Human-readable display names for each role. */
@@ -26,6 +27,7 @@ export const ROLE_LABELS = {
   affiliate:   'Affiliate',
   partner:     'Partner',
   client:      'Client',
+  accounts:    'Accounts',
 };
 
 /** Tailwind-compatible badge colour classes for each role. */
@@ -38,6 +40,7 @@ export const ROLE_BADGE_COLORS = {
   affiliate:   { bg: '#ede9fe', color: '#5b21b6', border: '#c4b5fd' }, // violet
   partner:     { bg: '#ffedd5', color: '#9a3412', border: '#fdba74' }, // orange
   client:      { bg: '#dcfce7', color: '#166534', border: '#86efac' }, // green
+  accounts:    { bg: '#cffafe', color: '#155e75', border: '#67e8f9' }, // cyan
 };
 
 /**
@@ -112,6 +115,21 @@ export const PERMISSIONS = {
     'client.services.view',
     'client.ledger.view',
     'client.profile.view',
+  ],
+  accounts: [
+    'dashboard.view',
+    'clients.view',
+    'services.view',
+    'documents.view',
+    'calendar.view',
+    'registers.view',
+    'invoices.view',
+    'invoices.create',
+    'invoices.edit',
+    'invoices.delete',
+    'settings.view',
+    'affiliates.manage',
+    'partners.manage',
   ],
 };
 

@@ -119,10 +119,6 @@ final class AppointmentInvoiceBuilder
             if (!empty($o['line_kind'])) {
                 $ln['line_kind'] = $o['line_kind'];
             }
-            if (!empty($o['manpower_included'])) {
-                $ln['manpower_included']      = true;
-                $ln['manpower_cost_amount']   = (float)($o['manpower_cost_amount'] ?? 0);
-            }
             $out[] = $ln;
         }
 

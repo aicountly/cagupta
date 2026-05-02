@@ -111,11 +111,6 @@ function buildLineItemApiRow(l) {
   const row = { description, amount };
   const kind = l.lineKind === 'cost_recovery' ? 'cost_recovery' : 'professional_fee';
   row.line_kind = kind;
-  if (kind === 'professional_fee' && l.manpowerIncluded) {
-    row.manpower_included = true;
-    const mc = typeof l.manpowerCostAmount === 'number' ? l.manpowerCostAmount : parseFloat(l.manpowerCostAmount, 10);
-    row.manpower_cost_amount = Number.isFinite(mc) && mc >= 0 ? mc : 0;
-  }
   if (l.engagementTypeId) row.engagement_type_id = l.engagementTypeId;
   return row;
 }
@@ -126,8 +121,6 @@ const emptyInvoiceLine = () => ({
   description: '',
   amount: '',
   lineKind: 'professional_fee',
-  manpowerIncluded: false,
-  manpowerCostAmount: '',
 });
 
 function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
@@ -413,31 +406,6 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
                         <option value="cost_recovery">Cost recovery</option>
                       </select>
                     </label>
-                    {row.lineKind !== 'cost_recovery' ? (
-                      <>
-                        <label style={{ display:'flex', alignItems:'center', gap:6 }}>
-                          <input
-                            type="checkbox"
-                            checked={row.manpowerIncluded}
-                            onChange={(e) => setLine(idx, 'manpowerIncluded', e.target.checked)}
-                          />
-                          <span>Manpower cost included</span>
-                        </label>
-                        {row.manpowerIncluded ? (
-                          <label style={{ display:'flex', alignItems:'center', gap:6 }}>
-                            <span>Manpower ₹</span>
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              style={{ ...inputStyle, width:100, fontSize:12 }}
-                              value={row.manpowerCostAmount}
-                              onChange={(e) => setLine(idx, 'manpowerCostAmount', e.target.value)}
-                            />
-                          </label>
-                        ) : null}
-                      </>
-                    ) : null}
                   </div>
                 </div>
               ))}
@@ -613,9 +581,6 @@ function InvoiceViewModal({ txn, onClose, onEdit, onDelete, canEditInvoice, canD
                             {row.lineKind === 'cost_recovery' ? (
                               <div style={{ fontSize:10, fontWeight:700, color:'#b45309', marginTop:4 }}>Cost recovery</div>
                             ) : null}
-                            {row.manpowerIncluded && Number(row.manpowerCostAmount) > 0 ? (
-                              <div style={{ fontSize:11, color:'#64748b', marginTop:2 }}>Manpower in fee: ₹{Number(row.manpowerCostAmount).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                            ) : null}
                           </td>
                           <td style={{ padding:'8px 0', textAlign:'right', fontWeight:600 }}>{Number(row.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                         </tr>
@@ -738,10 +703,6 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
             description: l.description,
             amount: String(l.amount),
             lineKind: (l.lineKind === 'cost_recovery' || l.line_kind === 'cost_recovery') ? 'cost_recovery' : 'professional_fee',
-            manpowerIncluded: Boolean(l.manpowerIncluded ?? l.manpower_included),
-            manpowerCostAmount: l.manpowerCostAmount != null && l.manpowerCostAmount !== ''
-              ? String(l.manpowerCostAmount)
-              : (l.manpower_cost_amount != null ? String(l.manpower_cost_amount) : ''),
           }))
           : [emptyInvoiceLine()];
         setForm({
@@ -884,20 +845,6 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                         <option value="cost_recovery">Cost recovery</option>
                       </select>
                     </label>
-                    {line.lineKind !== 'cost_recovery' ? (
-                      <>
-                        <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <input type="checkbox" checked={line.manpowerIncluded} onChange={(e) => setLine(idx, 'manpowerIncluded', e.target.checked)} />
-                          Manpower cost included
-                        </label>
-                        {line.manpowerIncluded ? (
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                            Manpower ₹
-                            <input type="number" min="0" step="0.01" style={{ ...inputStyle, width: 100, fontSize: 12 }} value={line.manpowerCostAmount} onChange={(e) => setLine(idx, 'manpowerCostAmount', e.target.value)} />
-                          </label>
-                        ) : null}
-                      </>
-                    ) : null}
                   </div>
                 </div>
               ))}
@@ -1837,10 +1784,6 @@ export default function Invoices() {
         amount: typeof l.amount === 'number' ? l.amount : parseFloat(l.amount, 10),
       };
       if (l.line_kind) row.line_kind = l.line_kind;
-      if (l.manpower_included) {
-        row.manpower_included = true;
-        row.manpower_cost_amount = typeof l.manpower_cost_amount === 'number' ? l.manpower_cost_amount : parseFloat(l.manpower_cost_amount, 10) || 0;
-      }
       if (l.engagement_type_id != null) row.engagement_type_id = l.engagement_type_id;
       return row;
     }).filter((l) => l.description && Number.isFinite(l.amount) && l.amount > 0);

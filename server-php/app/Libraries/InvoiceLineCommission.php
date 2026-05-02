@@ -8,7 +8,6 @@ namespace App\Libraries;
  *
  * Legacy lines without line_kind count as professional_fee (full amount).
  * cost_recovery lines are excluded from the commission base.
- * professional_fee lines may deduct embedded manpower when manpower_included is true.
  */
 final class InvoiceLineCommission
 {
@@ -29,7 +28,6 @@ final class InvoiceLineCommission
 
         $feeSubtotal      = 0.0;
         $costSubtotal     = 0.0;
-        $manpowerDeducted = 0.0;
 
         foreach ($lines as $line) {
             $amount = (float)($line['amount'] ?? 0);
@@ -41,28 +39,33 @@ final class InvoiceLineCommission
                 $costSubtotal += $amount;
                 continue;
             }
-            // professional_fee (default)
             $feeSubtotal += $amount;
-            if (!empty($line['manpower_included'])) {
-                $mc = (float)($line['manpower_cost_amount'] ?? 0);
-                if ($mc < 0) {
-                    $mc = 0.0;
-                }
-                if ($mc > $amount) {
-                    $mc = $amount;
-                }
-                $manpowerDeducted += $mc;
-            }
         }
 
-        $netBase = max(0.0, round($feeSubtotal - $manpowerDeducted, 2));
+        $netBase = max(0.0, round($feeSubtotal, 2));
 
         return [
             'net_base'          => $netBase,
             'fee_subtotal'      => round($feeSubtotal, 2),
             'cost_subtotal'     => round($costSubtotal, 2),
-            'manpower_deducted' => round($manpowerDeducted, 2),
+            'manpower_deducted' => 0.0,
         ];
+    }
+
+    /** True if at least one line is explicitly or implicitly professional_fee. */
+    public static function hasProfessionalFeeLine(?array $lines): bool
+    {
+        if ($lines === null || $lines === []) {
+            return false;
+        }
+        foreach ($lines as $line) {
+            $kind = $line['line_kind'] ?? null;
+            if ($kind === null || $kind === '' || $kind === 'professional_fee') {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -79,19 +82,6 @@ final class InvoiceLineCommission
             }
             if (!in_array($kind, ['professional_fee', 'cost_recovery'], true)) {
                 throw new \InvalidArgumentException("Line " . ($i + 1) . ": line_kind must be professional_fee or cost_recovery.");
-            }
-            if ($kind !== 'professional_fee') {
-                continue;
-            }
-            $amount = (float)($line['amount'] ?? 0);
-            if (!empty($line['manpower_included'])) {
-                $mc = (float)($line['manpower_cost_amount'] ?? 0);
-                if ($mc < 0) {
-                    throw new \InvalidArgumentException('manpower_cost_amount cannot be negative.');
-                }
-                if ($mc - $amount > 0.02) {
-                    throw new \InvalidArgumentException('manpower_cost_amount cannot exceed line amount.');
-                }
             }
         }
     }

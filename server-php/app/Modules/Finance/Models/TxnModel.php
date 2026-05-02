@@ -345,7 +345,8 @@ class TxnModel
                 expense_purpose, paid_from,
                 tds_status, tds_section, tds_rate,
                 linked_txn_id, notes, status, created_by, line_items, gst_breakdown,
-                appointment_id
+                appointment_id,
+                firm_bank_account_id, counterparty_firm_bank_account_id, firm_expense_category
              ) VALUES (
                 :client_id, :organization_id, :txn_type, :txn_date, :narration,
                 :debit, :credit, :amount, :billing_profile_code,
@@ -355,7 +356,8 @@ class TxnModel
                 :expense_purpose, :paid_from,
                 :tds_status, :tds_section, :tds_rate,
                 :linked_txn_id, :notes, :status, :created_by, CAST(:line_items AS jsonb), CAST(:gst_breakdown AS jsonb),
-                :appointment_id
+                :appointment_id,
+                :firm_bank_account_id, :counterparty_firm_bank_account_id, :firm_expense_category
              ) RETURNING id'
         );
         $stmt->execute([
@@ -391,6 +393,10 @@ class TxnModel
             ':line_items'          => $lineItemsJson,
             ':gst_breakdown'       => $gstBreakdownJson,
             ':appointment_id'      => isset($data['appointment_id']) ? (int)$data['appointment_id'] : null,
+            ':firm_bank_account_id' => isset($data['firm_bank_account_id']) ? (int)$data['firm_bank_account_id'] : null,
+            ':counterparty_firm_bank_account_id' => isset($data['counterparty_firm_bank_account_id'])
+                ? (int)$data['counterparty_firm_bank_account_id'] : null,
+            ':firm_expense_category' => $data['firm_expense_category'] ?? null,
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -744,6 +750,244 @@ class TxnModel
     {
         $stmt = $this->db->prepare("DELETE FROM txn WHERE id = :id");
         return $stmt->execute([':id' => $id]);
+    }
+
+    /**
+     * Firm-only expense (salary, rent, etc.) — no client ledger impact.
+     *
+     * @param array<string, mixed> $data
+     */
+    public function createFirmExpense(array $data): int
+    {
+        $amount = (float)($data['amount'] ?? 0);
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('amount must be greater than zero.');
+        }
+        $bankId = (int)($data['firm_bank_account_id'] ?? 0);
+        if ($bankId <= 0) {
+            throw new \InvalidArgumentException('firm_bank_account_id is required.');
+        }
+        $cat = trim((string)($data['firm_expense_category'] ?? ''));
+        if ($cat === '') {
+            throw new \InvalidArgumentException('firm_expense_category is required.');
+        }
+        $banks = new FirmBankAccountModel();
+        $acc   = $banks->find($bankId);
+        if ($acc === null || empty($acc['is_active'])) {
+            throw new \InvalidArgumentException('Invalid or inactive bank account.');
+        }
+        $billingCode = (string)$acc['billing_firm_code'];
+
+        return $this->create(array_merge($data, [
+            'txn_type'               => 'firm_expense',
+            'client_id'              => null,
+            'organization_id'        => null,
+            'billing_profile_code'   => $billingCode,
+            'narration'              => $data['narration'] ?? ('Firm expense — ' . $cat),
+            'debit'                  => $amount,
+            'credit'                 => 0,
+            'amount'                 => $amount,
+            'firm_expense_category'  => $cat,
+            'firm_bank_account_id'   => $bankId,
+            'status'                 => 'active',
+        ]));
+    }
+
+    /**
+     * Inter-bank transfer (two linked txn rows).
+     *
+     * @param array<string, mixed> $data
+     * @return array{out_id:int, in_id:int}
+     */
+    public function createFirmBankTransferPair(array $data): array
+    {
+        $from   = (int)($data['from_firm_bank_account_id'] ?? 0);
+        $to     = (int)($data['to_firm_bank_account_id'] ?? 0);
+        $amount = (float)($data['amount'] ?? 0);
+        if ($from <= 0 || $to <= 0 || $from === $to) {
+            throw new \InvalidArgumentException('from and to bank accounts must differ and be valid.');
+        }
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('amount must be greater than zero.');
+        }
+        $banks  = new FirmBankAccountModel();
+        $aFrom  = $banks->find($from);
+        $aTo    = $banks->find($to);
+        if ($aFrom === null || $aTo === null || empty($aFrom['is_active']) || empty($aTo['is_active'])) {
+            throw new \InvalidArgumentException('Invalid or inactive bank account(s).');
+        }
+
+        $date = (string)($data['txn_date'] ?? date('Y-m-d'));
+        $narr = trim((string)($data['narration'] ?? ''));
+        if ($narr === '') {
+            $narr = 'Bank transfer';
+        }
+        $billingFrom = (string)$aFrom['billing_firm_code'];
+        $billingTo   = (string)$aTo['billing_firm_code'];
+
+        $this->db->beginTransaction();
+        try {
+            $idOut = $this->create(array_merge($data, [
+                'txn_type'                          => 'firm_bank_transfer',
+                'client_id'                         => null,
+                'organization_id'                   => null,
+                'billing_profile_code'              => $billingFrom,
+                'txn_date'                          => $date,
+                'narration'                         => $narr . ' (out)',
+                'debit'                             => $amount,
+                'credit'                            => 0,
+                'amount'                            => $amount,
+                'firm_bank_account_id'              => $from,
+                'counterparty_firm_bank_account_id' => $to,
+                'status'                            => 'active',
+                'linked_txn_id'                     => null,
+            ]));
+            $idIn = $this->create(array_merge($data, [
+                'txn_type'                          => 'firm_bank_transfer',
+                'client_id'                         => null,
+                'organization_id'                   => null,
+                'billing_profile_code'              => $billingTo,
+                'txn_date'                          => $date,
+                'narration'                         => $narr . ' (in)',
+                'debit'                             => 0,
+                'credit'                            => $amount,
+                'amount'                            => $amount,
+                'firm_bank_account_id'              => $to,
+                'counterparty_firm_bank_account_id' => $from,
+                'status'                            => 'active',
+                'linked_txn_id'                     => $idOut,
+            ]));
+            $this->update($idOut, ['linked_txn_id' => $idIn]);
+            $this->db->commit();
+            return ['out_id' => $idOut, 'in_id' => $idIn];
+        } catch (\Throwable $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Bank / cash book with running balance (opening_balance + movement).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getBankLedger(int $accountId, string $dateFrom = '', string $dateTo = ''): array
+    {
+        $banks = new FirmBankAccountModel();
+        $acc   = $banks->find($accountId);
+        if ($acc === null) {
+            return [];
+        }
+        $opening = (float)($acc['opening_balance'] ?? 0);
+        $openDate = (string)($acc['opening_balance_date'] ?? '');
+
+        $where  = ['t.firm_bank_account_id = :aid', "t.status = 'active'"];
+        $params = [':aid' => $accountId];
+        if ($dateFrom !== '') {
+            $where[]              = 't.txn_date >= :df';
+            $params[':df']        = $dateFrom;
+        }
+        if ($dateTo !== '') {
+            $where[]            = 't.txn_date <= :dt';
+            $params[':dt']      = $dateTo;
+        }
+        $whereClause = implode(' AND ', $where);
+
+        $stmt = $this->db->prepare(
+            "SELECT t.*
+             FROM txn t
+             WHERE {$whereClause}
+             ORDER BY t.txn_date ASC, t.id ASC"
+        );
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $balance = $opening;
+        $out     = [];
+        if ($opening !== 0.0 || $openDate !== '') {
+            $out[] = [
+                'row_type'       => 'opening',
+                'txn_date'       => $openDate !== '' ? $openDate : null,
+                'narration'      => 'Opening balance',
+                'debit'          => 0.0,
+                'credit'         => 0.0,
+                'movement'       => 0.0,
+                'balance'        => $opening,
+                'txn_type'       => null,
+                'id'             => null,
+            ];
+        }
+        foreach ($rows as $row) {
+            $this->decodeJsonbInvoiceFields($row);
+            $credit = (float)($row['credit'] ?? 0);
+            $debit  = (float)($row['debit'] ?? 0);
+            $mov    = $credit - $debit;
+            $balance += $mov;
+            $row['movement'] = $mov;
+            $row['balance']  = $balance;
+            $row['row_type'] = 'txn';
+            $out[] = $row;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Paginate contra transfers and firm expenses for reports.
+     *
+     * @return array{total: int, rows: array<int, array<string, mixed>>}
+     */
+    public function paginateFirmInternal(
+        int $page,
+        int $perPage,
+        string $kind,
+        string $dateFrom,
+        string $dateTo
+    ): array {
+        $where  = ["t.status = 'active'", "t.client_id IS NULL", "t.organization_id IS NULL"];
+        $params = [];
+        $kind   = strtolower(trim($kind));
+        if ($kind === 'expense') {
+            $where[] = "t.txn_type = 'firm_expense'";
+        } elseif ($kind === 'contra') {
+            $where[] = "t.txn_type = 'firm_bank_transfer'";
+        } else {
+            $where[] = "t.txn_type IN ('firm_expense', 'firm_bank_transfer')";
+        }
+        if ($dateFrom !== '') {
+            $where[]       = 't.txn_date >= :df';
+            $params[':df'] = $dateFrom;
+        }
+        if ($dateTo !== '') {
+            $where[]       = 't.txn_date <= :dt';
+            $params[':dt'] = $dateTo;
+        }
+        $whereClause = implode(' AND ', $where);
+        $offset      = ($page - 1) * $perPage;
+
+        $cnt = $this->db->prepare("SELECT COUNT(*) FROM txn t WHERE {$whereClause}");
+        $cnt->execute($params);
+        $total = (int)$cnt->fetchColumn();
+
+        $stmt = $this->db->prepare(
+            "SELECT t.* FROM txn t
+             WHERE {$whereClause}
+             ORDER BY t.txn_date DESC, t.id DESC
+             LIMIT :lim OFFSET :off"
+        );
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
+        $stmt->bindValue(':lim', $perPage, PDO::PARAM_INT);
+        $stmt->bindValue(':off', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($rows as &$r) {
+            $this->decodeJsonbInvoiceFields($r);
+        }
+        unset($r);
+
+        return ['total' => $total, 'rows' => $rows];
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────

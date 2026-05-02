@@ -11,7 +11,7 @@ import Profile from './modules/core/pages/Profile';
 import UserManagement from './modules/core/pages/UserManagement';
 import Settings from './modules/core/pages/Settings';
 import GlobalSearchPage from './modules/core/pages/GlobalSearchPage';
-import LeaveManagement from './modules/core/pages/LeaveManagement';
+import InboxAndTickets from './modules/core/pages/InboxAndTickets';
 
 // ── CRM module ───────────────────────────────────────────────────────────────
 import Contacts from './modules/crm/pages/Contacts';
@@ -23,7 +23,7 @@ import Organizations from './modules/crm/pages/Organizations';
 import OrganizationCreatePage from './modules/crm/pages/OrganizationCreatePage';
 import OrganizationExceptionsReport from './modules/crm/pages/OrganizationExceptionsReport';
 import OrganizationKycExceptionsReport from './modules/crm/pages/OrganizationKycExceptionsReport';
-import ClientGroups from './modules/crm/pages/ClientGroups';
+import ClientEngagementGaps from './modules/crm/pages/ClientEngagementGaps';
 import Clients from './modules/crm/pages/Clients';
 import Leads from './modules/crm/pages/Leads';
 
@@ -48,6 +48,7 @@ import ShiftTargetTimesheetReport from './modules/operations/pages/ShiftTargetTi
 
 // ── Finance module ───────────────────────────────────────────────────────────
 import Invoices from './modules/finance/pages/Invoices';
+import BankFirmReports from './modules/finance/pages/BankFirmReports';
 
 // ── Marketing module ─────────────────────────────────────────────────────────
 import WAWebMarketing from './modules/marketing/pages/WAWebMarketing';
@@ -67,6 +68,7 @@ import AffiliateCommissions from './modules/affiliate/pages/AffiliateCommissions
 import AffiliatePayouts from './modules/affiliate/pages/AffiliatePayouts';
 import AffiliateBank from './modules/affiliate/pages/AffiliateBank';
 import AffiliateSubAffiliates from './modules/affiliate/pages/AffiliateSubAffiliates';
+import AffiliateRewards from './modules/affiliate/pages/AffiliateRewards';
 
 // ── Partner module ───────────────────────────────────────────────────────────
 import AdminPartners from './modules/partner/pages/AdminPartners';
@@ -108,6 +110,7 @@ const pageTitles = {
   '/services/files':            '📂 Engagement Files',
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
+  '/finance/bank-reports':      '🏦 Bank & firm txns',
   '/reports':                            '📊 Reports',
   '/reports/timesheets':                 '🕐 Timesheet report',
   '/reports/timesheets/shift-target':    '📊 Staff punch vs target',
@@ -134,7 +137,9 @@ const pageTitles = {
   '/marketing/campaigns':       '📣 Marketing Campaigns',
   '/marketing/triggers':        '🔔 Trigger Settings',
   '/reports/exceptions/verification': '🔒 Verification Exceptions',
+  '/reports/client-engagement': '📊 Client engagement gaps',
   '/search':                    '🔍 Search',
+  '/inbox':                     '📥 Inbox & tickets',
   '/profile':                   '👤 My Profile',
 };
 
@@ -191,6 +196,7 @@ export default function App() {
           <Route path="/services/:id/files" element={<ProtectedRoute staffOnly><Layout routePath="/services/files"><ServiceEngagementFiles /></Layout></ProtectedRoute>} />
           <Route path="/documents" element={<ProtectedRoute staffOnly><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute staffOnly><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
+          <Route path="/finance/bank-reports" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/finance/bank-reports"><BankFirmReports /></Layout></ProtectedRoute>} />
           <Route path="/reports" element={
             <ProtectedRoute staffOnly requiredPermission="services.view">
               <Layout routePath="/reports"><ReportsHub /></Layout>
@@ -231,12 +237,22 @@ export default function App() {
               <Layout routePath="/reports/exceptions/verification"><ContactVerificationExceptions /></Layout>
             </ProtectedRoute>
           } />
+          <Route path="/reports/client-engagement" element={
+            <ProtectedRoute staffOnly requiredPermission="clients.view">
+              <Layout routePath="/reports/client-engagement"><ClientEngagementGaps /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/calendar" element={<ProtectedRoute staffOnly><Layout routePath="/calendar"><Calendar /></Layout></ProtectedRoute>} />
           <Route path="/credentials" element={<ProtectedRoute staffOnly><Layout routePath="/credentials"><Credentials /></Layout></ProtectedRoute>} />
           <Route path="/registers" element={<ProtectedRoute staffOnly><Layout routePath="/registers"><Registers /></Layout></ProtectedRoute>} />
           <Route path="/recurring-services" element={<ProtectedRoute staffOnly><Layout routePath="/recurring-services"><RecurringServices /></Layout></ProtectedRoute>} />
           <Route path="/leads" element={<ProtectedRoute staffOnly><Layout routePath="/leads"><Leads /></Layout></ProtectedRoute>} />
           <Route path="/search" element={<ProtectedRoute staffOnly><Layout routePath="/search"><GlobalSearchPage /></Layout></ProtectedRoute>} />
+          <Route path="/inbox" element={
+            <ProtectedRoute staffOnly requiredPermission="settings.view">
+              <Layout routePath="/inbox"><InboxAndTickets /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/settings" element={<ProtectedRoute staffOnly><Layout routePath="/settings"><Settings /></Layout></ProtectedRoute>} />
           <Route path="/settings/appointment-fees" element={<ProtectedRoute staffOnly><Layout routePath="/settings/appointment-fees"><AppointmentFeeRules /></Layout></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute staffOnly><Layout routePath="/profile"><Profile /></Layout></ProtectedRoute>} />
@@ -285,6 +301,7 @@ export default function App() {
           <Route path="/affiliate/payouts" element={<ProtectedRoute affiliateOnly><AffiliatePayouts /></ProtectedRoute>} />
           <Route path="/affiliate/bank" element={<ProtectedRoute affiliateOnly><AffiliateBank /></ProtectedRoute>} />
           <Route path="/affiliate/sub-affiliates" element={<ProtectedRoute affiliateOnly><AffiliateSubAffiliates /></ProtectedRoute>} />
+          <Route path="/affiliate/rewards" element={<ProtectedRoute affiliateOnly><AffiliateRewards /></ProtectedRoute>} />
           <Route path="/affiliate/profile" element={
             <ProtectedRoute affiliateOnly>
               <AffiliateLayout title="My profile">

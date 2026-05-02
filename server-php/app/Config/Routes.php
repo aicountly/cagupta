@@ -102,6 +102,12 @@ class Routes
                 'handler'    => 'Integrations\OutlookCalendarCallbackController@handle',
                 'middleware' => [],
             ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/integrations/brevo/inbound',
+                'handler'    => 'Integrations\BrevoInboundController@handle',
+                'middleware' => [],
+            ],
             // Apple CalDAV connect (requires auth — user submits credentials via the UI)
             [
                 'method'     => 'POST',
@@ -849,6 +855,90 @@ class Routes
                 'handler'    => 'Admin\DashboardController@stats',
                 'middleware' => ['auth', 'permission:dashboard.view'],
             ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/notifications',
+                'handler'    => 'Admin\NotificationController@index',
+                'middleware' => ['auth', 'permission:dashboard.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/notifications/mark-read',
+                'handler'    => 'Admin\NotificationController@markRead',
+                'middleware' => ['auth', 'permission:dashboard.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/inbound-emails',
+                'handler'    => 'Admin\SupportInboxController@inboundIndex',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/inbound-emails/:id',
+                'handler'    => 'Admin\SupportInboxController@inboundShow',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/inbound-emails/:id',
+                'handler'    => 'Admin\SupportInboxController@inboundPatch',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/support-tickets',
+                'handler'    => 'Admin\SupportInboxController@ticketsIndex',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/support-tickets/:id',
+                'handler'    => 'Admin\SupportInboxController@ticketsShow',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/support-tickets/:id',
+                'handler'    => 'Admin\SupportInboxController@ticketsPatch',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/support-tickets/:id/pick',
+                'handler'    => 'Admin\SupportInboxController@ticketsPick',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/support-tickets/:id/reply',
+                'handler'    => 'Admin\SupportInboxController@ticketsReply',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/support-tickets/:id/resolve',
+                'handler'    => 'Admin\SupportInboxController@ticketsResolve',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/settings/memorandum-revenue-types',
+                'handler'    => 'Admin\ClientEngagementReportController@memorandumIndex',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/settings/memorandum-revenue-types',
+                'handler'    => 'Admin\ClientEngagementReportController@memorandumUpdate',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/reports/client-engagement-gaps',
+                'handler'    => 'Admin\ClientEngagementReportController@gaps',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
 
             // ── Admin — Service Categories / Subcategories / Engagement Types ──
             [
@@ -912,6 +1002,57 @@ class Routes
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
 
+            // ── Admin — Billing firms (server-side; txn.billing_profile_code) ───
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/billing-firms',
+                'handler'    => 'Admin\BillingFirmController@index',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/billing-firms',
+                'handler'    => 'Admin\BillingFirmController@store',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/billing-firms/:slug',
+                'handler'    => 'Admin\BillingFirmController@update',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/billing-firms/:slug',
+                'handler'    => 'Admin\BillingFirmController@destroy',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/firm-bank-accounts',
+                'handler'    => 'Admin\FirmBankAccountController@index',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/firm-bank-accounts',
+                'handler'    => 'Admin\FirmBankAccountController@store',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/firm-bank-accounts/:id',
+                'handler'    => 'Admin\FirmBankAccountController@update',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/firm-bank-accounts/:id',
+                'handler'    => 'Admin\FirmBankAccountController@destroy',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+
             // ── Admin — Opening Balances ──────────────────────────────────────
             [
                 'method'     => 'GET',
@@ -939,6 +1080,18 @@ class Routes
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/ledger',
                 'handler'    => 'Admin\TxnController@ledger',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/bank-ledger',
+                'handler'    => 'Admin\TxnController@bankLedger',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/firm-internal',
+                'handler'    => 'Admin\TxnController@firmInternal',
                 'middleware' => ['auth', 'permission:invoices.view'],
             ],
             [
@@ -1137,6 +1290,42 @@ class Routes
                 'handler'    => 'Admin\AffiliateAdminController@bankVerify',
                 'middleware' => ['auth', 'permission:affiliates.manage'],
             ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/affiliates/:id/payout-model',
+                'handler'    => 'Admin\AffiliateAdminController@setPayoutModel',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/affiliates/:id/active-fee-map',
+                'handler'    => 'Admin\AffiliateAdminController@activeFeeMapIndex',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/affiliates/:id/active-fee-map',
+                'handler'    => 'Admin\AffiliateAdminController@activeFeeMapStore',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/affiliate-active-fee-map/:id',
+                'handler'    => 'Admin\AffiliateAdminController@activeFeeMapDestroy',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/affiliate-redemptions',
+                'handler'    => 'Admin\AffiliateAdminController@redemptionsIndex',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/affiliate-redemptions/:id',
+                'handler'    => 'Admin\AffiliateAdminController@redemptionsUpdate',
+                'middleware' => ['auth', 'permission:affiliates.manage'],
+            ],
 
             // ── Affiliate portal ─────────────────────────────────────────────
             [
@@ -1192,6 +1381,18 @@ class Routes
                 'pattern'    => '/api/affiliate/sub-affiliates',
                 'handler'    => 'Affiliate\AffiliatePortalController@subAffiliateStore',
                 'middleware' => ['auth', 'permission:affiliate.sub_affiliates.create'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/affiliate/rewards',
+                'handler'    => 'Affiliate\AffiliatePortalController@rewardsIndex',
+                'middleware' => ['auth', 'permission:affiliate.portal'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/affiliate/rewards/redeem',
+                'handler'    => 'Affiliate\AffiliatePortalController@rewardsRedeem',
+                'middleware' => ['auth', 'permission:affiliate.portal'],
             ],
             // ── Admin — Partners ──────────────────────────────────────────────
             [

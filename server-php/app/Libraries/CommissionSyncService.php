@@ -3,8 +3,10 @@ declare(strict_types=1);
 
 namespace App\Libraries;
 
+use App\Models\AffiliateActiveFeeMapModel;
 use App\Models\AffiliateCommissionRateModel;
 use App\Models\AffiliateProfileModel;
+use App\Models\AffiliateRewardLedgerModel;
 use App\Models\AffiliateUplineTrackerModel;
 use App\Models\CommissionAccrualModel;
 use App\Models\FirmCommissionDefaultsModel;
@@ -26,6 +28,8 @@ final class CommissionSyncService
     private AffiliateCommissionRateModel $rates;
     private AffiliateProfileModel $profiles;
     private AffiliateUplineTrackerModel $uplineTracker;
+    private AffiliateActiveFeeMapModel $activeFees;
+    private AffiliateRewardLedgerModel $rewardLedger;
 
     public function __construct()
     {
@@ -36,6 +40,8 @@ final class CommissionSyncService
         $this->rates        = new AffiliateCommissionRateModel();
         $this->profiles     = new AffiliateProfileModel();
         $this->uplineTracker = new AffiliateUplineTrackerModel();
+        $this->activeFees    = new AffiliateActiveFeeMapModel();
+        $this->rewardLedger  = new AffiliateRewardLedgerModel();
     }
 
     public function syncInvoice(int $invoiceTxnId): void
@@ -95,11 +101,17 @@ final class CommissionSyncService
 
         $this->accruals->deleteAccruedForInvoice($invoiceTxnId);
 
+        $this->rewardLedger->deleteDownlineEarningsForInvoice($invoiceTxnId);
+
         if ($oldChildAffiliateId > 0) {
             $this->reconcileUplineForChild($oldChildAffiliateId, $invoiceTxnId);
         }
 
         if (!$shouldAccrue || $netBase <= 0) {
+            return;
+        }
+
+        if (!InvoiceLineCommission::hasProfessionalFeeLine($lines)) {
             return;
         }
 
@@ -123,6 +135,11 @@ final class CommissionSyncService
             return;
         }
 
+        $payoutModel = strtolower((string)($profile['payout_model'] ?? 'passive'));
+        if ($payoutModel !== 'active' && $payoutModel !== 'passive') {
+            $payoutModel = 'passive';
+        }
+
         $mode = (string)($service['commission_mode'] ?? 'referral_only');
         if (!in_array($mode, ['referral_only', 'direct_interaction'], true)) {
             $mode = 'referral_only';
@@ -138,20 +155,44 @@ final class CommissionSyncService
         $tier    = $this->resolveTier($referralStart, $txnDate);
         $ratePct = null;
         $amount  = 0.0;
+        $metaExtra = [];
 
-        if ($mode === 'direct_interaction') {
-            $ratePct = (float)($def['direct_affiliate_pct'] ?? 50);
-            $amount  = round($netBase * $ratePct / 100, 2);
-        } else {
-            $ratePct = $this->rates->effectivePercent($affiliateId, $tier, $txnDate);
-            if ($ratePct === null) {
-                $ratePct = match ($tier) {
-                    1 => (float)($def['referral_year1_pct'] ?? 10),
-                    2 => (float)($def['referral_year2_pct'] ?? 7),
-                    default => (float)($def['referral_year3_plus_pct'] ?? 5),
-                };
+        if ($payoutModel === 'active') {
+            $invClientId = (int)($inv['client_id'] ?? 0);
+            $fixed       = $this->activeFees->resolveFixedAmount($affiliateId, $invClientId, (int)($service['organization_id'] ?? 0), $serviceId, $txnDate);
+            if ($fixed === null || $fixed <= 0) {
+                return;
             }
-            $amount = round($netBase * $ratePct / 100, 2);
+            $feeSub  = (float)($breakdown['fee_subtotal'] ?? $netBase);
+            $capHalf = round($feeSub * 0.5, 2);
+            $amount  = round(min($fixed, $capHalf), 2);
+            if ($amount <= 0) {
+                return;
+            }
+            if ($amount + 0.001 < $fixed) {
+                $metaExtra = [
+                    'payout_clamped'     => true,
+                    'configured_fixed'   => $fixed,
+                    'cap_half_prof_fee'  => $capHalf,
+                ];
+            }
+            $ratePct = null;
+            $tier    = null;
+        } else {
+            if ($mode === 'direct_interaction') {
+                $ratePct = (float)($def['direct_affiliate_pct'] ?? 50);
+                $amount  = round($netBase * $ratePct / 100, 2);
+            } else {
+                $ratePct = $this->rates->effectivePercent($affiliateId, $tier, $txnDate);
+                if ($ratePct === null) {
+                    $ratePct = match ($tier) {
+                        1 => (float)($def['referral_year1_pct'] ?? 10),
+                        2 => (float)($def['referral_year2_pct'] ?? 7),
+                        default => (float)($def['referral_year3_plus_pct'] ?? 5),
+                    };
+                }
+                $amount = round($netBase * $ratePct / 100, 2);
+            }
         }
 
         if ($amount <= 0) {
@@ -165,17 +206,47 @@ final class CommissionSyncService
             'accrual_type'      => 'invoice_commission',
             'accrual_date'      => $txnDate,
             'commission_mode'   => $mode,
-            'tier_used'         => $mode === 'referral_only' ? $tier : null,
+            'tier_used'         => ($payoutModel === 'passive' && $mode === 'referral_only') ? $tier : null,
             'net_fee_base'      => $netBase,
             'rate_percent'      => $ratePct,
             'amount'            => $amount,
             'status'            => 'accrued',
             'metadata'          => array_merge($breakdown, [
                 'invoice_number' => $inv['invoice_number'] ?? null,
-            ]),
+                'payout_model'   => $payoutModel,
+            ], $metaExtra),
         ]);
 
+        $this->creditParentRewardPoints($affiliateId, $amount, $invoiceTxnId);
         $this->reconcileUplineForChild($affiliateId, $invoiceTxnId);
+    }
+
+    private function creditParentRewardPoints(int $childAffiliateId, float $commissionAmount, int $invoiceTxnId): void
+    {
+        $prof = $this->profiles->findByUserId($childAffiliateId);
+        if ($prof === null) {
+            return;
+        }
+        $parentId = isset($prof['parent_affiliate_user_id']) ? (int)$prof['parent_affiliate_user_id'] : 0;
+        if ($parentId <= 0) {
+            return;
+        }
+        $parentProf = $this->profiles->findByUserId($parentId);
+        if ($parentProf === null || ($parentProf['status'] ?? '') !== 'approved') {
+            return;
+        }
+        $pts = (int)round($commissionAmount * 0.10);
+        if ($pts <= 0) {
+            return;
+        }
+        $this->rewardLedger->insertRow([
+            'affiliate_user_id' => $parentId,
+            'delta_points'      => $pts,
+            'kind'              => 'earn',
+            'ref_type'          => 'downline_commission',
+            'ref_id'            => $invoiceTxnId,
+            'label'             => 'Team performance credit',
+        ]);
     }
 
     public function onInvoiceDeleted(int $invoiceTxnId): void
@@ -192,6 +263,7 @@ final class CommissionSyncService
                 }
             }
             $this->accruals->deleteAccruedForInvoice($invoiceTxnId);
+            $this->rewardLedger->deleteDownlineEarningsForInvoice($invoiceTxnId);
             if ($childId > 0) {
                 $this->reconcileUplineForChild($childId, null);
             }

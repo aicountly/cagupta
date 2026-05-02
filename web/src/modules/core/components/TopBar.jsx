@@ -12,6 +12,7 @@ import { getLeads } from '../../../services/leadService';
 import { getTxns } from '../../../services/txnService';
 import { getAppointments } from '../../../services/appointmentService';
 import { kpiLabelFromSlug } from '../../../utils/serviceKpiFilters';
+import { fetchStaffNotifications, markStaffNotificationsRead } from '../../../services/notificationService';
 
 const breadcrumbMap = {
   '/':                       ['Home'],
@@ -26,6 +27,8 @@ const breadcrumbMap = {
   '/services/files':         ['Home', 'Services & Tasks', 'Engagement files'],
   '/documents':              ['Home', 'Documents'],
   '/invoices':               ['Home', 'Invoices & Ledger'],
+  '/inbox':                  ['Home', 'Inbox & tickets'],
+  '/reports/client-engagement': ['Home', 'Client engagement gaps'],
   '/calendar':               ['Home', 'Calendar'],
   '/credentials':            ['Home', 'Credentials Vault'],
   '/registers':              ['Home', 'Registers'],
@@ -41,6 +44,8 @@ export default function TopBar({ title }) {
   const [searchResults, setSearchResults] = useState([]);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [staffNotifs, setStaffNotifs] = useState([]);
+  const [staffUnread, setStaffUnread] = useState(0);
   const dropdownRef = useRef(null);
   const notifRef = useRef(null);
   const searchRef = useRef(null);
@@ -217,6 +222,26 @@ export default function TopBar({ title }) {
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
   }, []);
 
+  const loadStaffNotifications = useCallback(() => {
+    if (!session?.token) return;
+    fetchStaffNotifications(30)
+      .then(({ rows, unread }) => {
+        setStaffNotifs(Array.isArray(rows) ? rows : []);
+        setStaffUnread(typeof unread === 'number' ? unread : 0);
+      })
+      .catch(() => {});
+  }, [session?.token]);
+
+  useEffect(() => {
+    loadStaffNotifications();
+    const t = setInterval(loadStaffNotifications, 120000);
+    return () => clearInterval(t);
+  }, [loadStaffNotifications]);
+
+  useEffect(() => {
+    if (notifOpen) loadStaffNotifications();
+  }, [notifOpen, loadStaffNotifications]);
+
   return (
     <header style={styles.bar}>
       {/* Left: breadcrumb + title */}
@@ -281,26 +306,62 @@ export default function TopBar({ title }) {
             onClick={() => setNotifOpen(v => !v)}
           >
             <Bell size={18} color="#64748b" />
-            {notifications.length > 0 && <span style={styles.notifDot} />}
+            {(staffUnread > 0 || notifications.length > 0) && (
+              staffUnread > 0 ? (
+                <span style={styles.notifBadge}>{staffUnread > 9 ? '9+' : staffUnread}</span>
+              ) : (
+                <span style={styles.notifDot} />
+              )
+            )}
           </button>
           {notifOpen && (
             <div style={styles.notifDropdown}>
-              <div style={{ padding: '10px 14px 8px', fontWeight: 700, fontSize: 13, color: '#1e293b', borderBottom: '1px solid #f1f5f9' }}>
-                Notifications
+              <div style={{ padding: '10px 14px 8px', fontWeight: 700, fontSize: 13, color: '#1e293b', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                <span>Notifications</span>
+                {staffUnread > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => markStaffNotificationsRead({ all: true }).then(() => loadStaffNotifications()).catch(() => {})}
+                    style={{ background: 'none', border: 'none', color: '#2563eb', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}
+                  >
+                    Mark all read
+                  </button>
+                )}
               </div>
-              {notifications.length === 0 ? (
+              {staffNotifs.length === 0 && notifications.length === 0 ? (
                 <div style={{ padding: '16px 14px', fontSize: 13, color: '#94a3b8', textAlign: 'center' }}>No new notifications</div>
               ) : (
-                notifications.map(n => (
-                  <div key={n.id} style={styles.notifItem}>
-                    <span style={{ fontSize: 16 }}>{n.type === 'lead' ? '🎯' : n.type === 'appointment' ? '📅' : n.type === 'service' ? '📋' : '🔔'}</span>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, color: '#334155', fontWeight: 500 }}>{n.message}</div>
-                      <div style={{ fontSize: 11, color: '#94a3b8' }}>{formatTimestamp(n.timestamp)}</div>
+                <>
+                  {staffNotifs.map((row) => (
+                    <div key={`s-${row.id}`} style={styles.notifItem}>
+                      <span style={{ fontSize: 16 }}>🔔</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: '#334155', fontWeight: 600 }}>{row.title}</div>
+                        {row.body ? <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{row.body}</div> : null}
+                        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4 }}>{row.created_at ? formatTimestamp(row.created_at) : ''}{!row.read_at ? ' · Unread' : ''}</div>
+                      </div>
+                      {!row.read_at && (
+                        <button
+                          type="button"
+                          onClick={() => markStaffNotificationsRead({ ids: [row.id] }).then(() => loadStaffNotifications()).catch(() => {})}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb', fontSize: 11, flexShrink: 0, fontWeight: 600 }}
+                        >
+                          Read
+                        </button>
+                      )}
                     </div>
-                    <button onClick={() => clearNotification(n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 16, padding: '0 2px', flexShrink: 0 }}>✕</button>
-                  </div>
-                ))
+                  ))}
+                  {notifications.map(n => (
+                    <div key={n.id} style={styles.notifItem}>
+                      <span style={{ fontSize: 16 }}>{n.type === 'lead' ? '🎯' : n.type === 'appointment' ? '📅' : n.type === 'service' ? '📋' : '🔔'}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, color: '#334155', fontWeight: 500 }}>{n.message}</div>
+                        <div style={{ fontSize: 11, color: '#94a3b8' }}>{formatTimestamp(n.timestamp)}</div>
+                      </div>
+                      <button type="button" onClick={() => clearNotification(n.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', fontSize: 16, padding: '0 2px', flexShrink: 0 }}>✕</button>
+                    </div>
+                  ))}
+                </>
               )}
             </div>
           )}
@@ -446,6 +507,25 @@ const styles = {
     borderRadius: '50%',
     background: '#ef4444',
     border: '1.5px solid #fff',
+  },
+  notifBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    minWidth: 16,
+    height: 16,
+    padding: '0 4px',
+    borderRadius: 8,
+    background: '#ef4444',
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 700,
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    border: '1.5px solid #fff',
+    lineHeight: 1,
+    boxSizing: 'border-box',
   },
   notifDropdown: {
     position: 'absolute',

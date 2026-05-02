@@ -316,3 +316,18 @@ Email **`rahul@cagupta.in`** is hardcoded as `SUPER_ADMIN_EMAIL` in `app/Config/
 - Sessions are stored in the DB — tokens can be revoked server-side by deleting the row.
 - CORS allows browser `Origin` values listed in `CORS_ORIGIN` in `.env` (comma-separated; www/non-www normalized per entry).
 - `.env` is blocked by `.htaccess` from being served directly.
+
+---
+
+## Operational cron (cPanel)
+
+Add examples (adjust paths and PHP binary):
+
+| Schedule (IST suggestion) | Command |
+|---------------------------|---------|
+| Daily digest (existing) | `php /path/to/server-php/cli/send-digest.php >> /path/to/logs/digest.log 2>&1` |
+| Every 12h — Accounts unbilled reminder | `php /path/to/server-php/cli/notify-unbilled-accounts.php >> /path/to/logs/unbilled.log 2>&1` |
+| Daily — Superadmin stale unbilled (\>48h) | `php /path/to/server-php/cli/notify-superadmin-unbilled-stale.php >> /path/to/logs/unbilled-stale.log 2>&1` |
+| Weekly (Sat/Sun) — Client engagement gaps | `php /path/to/server-php/cli/send-client-engagement-digest.php >> /path/to/logs/engagement-digest.log 2>&1` |
+
+Set `BREVO_INBOUND_WEBHOOK_SECRET` in `.env` and point Brevo Inbound Parsing to `POST /api/integrations/brevo/inbound` with header `X-Brevo-Inbound-Token` (or `X-Webhook-Token`) matching the secret.

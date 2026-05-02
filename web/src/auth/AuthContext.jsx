@@ -8,6 +8,7 @@ import {
 import { getInitials } from '../utils/getInitials';
 import { hasPermission } from '../constants/roles';
 import { API_BASE_URL } from '../constants/config';
+import { fetchBillingProfilesFromApi } from '../constants/billingProfiles';
 
 const AuthContext = createContext(null);
 
@@ -34,6 +35,7 @@ export function AuthProvider({ children }) {
         if (user) {
           localStorage.setItem('auth_user', JSON.stringify(user));
           setSession({ token: storedToken, user });
+          fetchBillingProfilesFromApi().catch(() => {});
         } else {
           // Token is invalid — clear session
           serviceLogout();
@@ -50,6 +52,7 @@ export function AuthProvider({ children }) {
   /** Called after any successful login to push session into context. */
   const login = useCallback((token, user) => {
     setSession({ token, user });
+    fetchBillingProfilesFromApi().catch(() => {});
   }, []);
 
   /** Clear session from context AND from localStorage; notify the server. */

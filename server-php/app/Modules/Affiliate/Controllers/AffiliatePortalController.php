@@ -6,6 +6,8 @@ namespace App\Controllers\Affiliate;
 use App\Controllers\BaseController;
 use App\Models\AffiliateBankDetailModel;
 use App\Models\AffiliateProfileModel;
+use App\Models\AffiliateRedemptionRequestModel;
+use App\Models\AffiliateRewardLedgerModel;
 use App\Models\CommissionAccrualModel;
 use App\Models\PayoutRequestModel;
 use App\Models\RoleModel;
@@ -246,5 +248,56 @@ final class AffiliatePortalController extends BaseController
         ]);
         (new AffiliateProfileModel())->insertPendingWithParent($newId, (int)$u['id']);
         $this->success(['id' => $newId], 'Sub-affiliate registered pending approval', 201);
+    }
+
+    /** GET /api/affiliate/rewards */
+    public function rewardsIndex(): never
+    {
+        $u      = $this->assertAffiliate();
+        $uid    = (int)$u['id'];
+        $ledger = new AffiliateRewardLedgerModel();
+        $rows   = $ledger->listForAffiliate($uid, 40);
+        $masked = [];
+        foreach ($rows as $r) {
+            $masked[] = [
+                'id'           => (int)$r['id'],
+                'delta_points' => (int)$r['delta_points'],
+                'kind'         => (string)$r['kind'],
+                'label'        => (string)($r['label'] ?? ''),
+                'created_at'   => (string)$r['created_at'],
+            ];
+        }
+        $this->success([
+            'balance_points' => $ledger->balancePoints($uid),
+            'value_inr_per_point' => 1,
+            'catalog' => [
+                ['catalog_key' => 'amazon_voucher', 'label' => 'Amazon (placeholder)', 'min_points' => 500],
+                ['catalog_key' => 'petrol_voucher', 'label' => 'Petrol / fuel (placeholder)', 'min_points' => 300],
+            ],
+            'ledger' => $masked,
+            'redemptions' => (new AffiliateRedemptionRequestModel())->listForAffiliate($uid),
+        ]);
+    }
+
+    /** POST /api/affiliate/rewards/redeem */
+    public function rewardsRedeem(): never
+    {
+        $u    = $this->assertAffiliate();
+        $body = $this->getJsonBody();
+        $key  = trim((string)($body['catalog_key'] ?? ''));
+        $pts  = (int)($body['points'] ?? 0);
+        if ($key === '' || $pts < 1) {
+            $this->error('catalog_key and positive points required.', 422);
+        }
+        $ledger = new AffiliateRewardLedgerModel();
+        if ($ledger->balancePoints((int)$u['id']) < $pts) {
+            $this->error('Insufficient points.', 422);
+        }
+        $allowed = ['amazon_voucher', 'petrol_voucher'];
+        if (!in_array($key, $allowed, true)) {
+            $this->error('Unknown catalog item.', 422);
+        }
+        $id = (new AffiliateRedemptionRequestModel())->createPending((int)$u['id'], $key, $pts);
+        $this->success(['id' => $id], 'Request submitted', 201);
     }
 }

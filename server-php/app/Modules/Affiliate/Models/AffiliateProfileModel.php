@@ -117,4 +117,14 @@ final class AffiliateProfileModel
 
         return $stmt->execute([':n' => $notes, ':uid' => $userId]);
     }
+
+    public function setPayoutModel(int $userId, string $model): bool
+    {
+        if (!in_array($model, ['active', 'passive'], true)) {
+            return false;
+        }
+        $stmt = $this->db->prepare('UPDATE affiliate_profiles SET payout_model = :m, updated_at = NOW() WHERE user_id = :uid');
+
+        return $stmt->execute([':m' => $model, ':uid' => $userId]);
+    }
 }

@@ -6,10 +6,15 @@ import { getInitials } from '../../../utils/getInitials';
 import { getOverdueFollowUpCount } from '../../../services/serviceLogService';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
-  Receipt, CalendarDays, KeyRound, BookOpen,
+  Receipt, CalendarDays, KeyRound, BookOpen, Landmark,
+  Target, Settings, ChevronRight, ChevronDown,
+  UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, CalendarOff, Bell, RefreshCw,
+  LayoutDashboard, Users, ClipboardList, FolderOpen,
+  Receipt, CalendarDays, KeyRound, BookOpen, Landmark,
   Target, Settings, ChevronRight, ChevronDown,
   UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, CalendarOff, Bell, RefreshCw,
   MessageSquare, Smartphone, Share2, Megaphone, UsersRound,
+  Mail,
 } from 'lucide-react';
 
 const navSections = [
@@ -28,6 +33,7 @@ const navSections = [
         ],
       },
       { to: '/reports', label: 'Reports', icon: BarChart3, permission: 'services.view' },
+      { to: '/reports/client-engagement', label: 'Engagement gaps', icon: BarChart3, permission: 'clients.view' },
       { to: '/services', label: 'Services & Tasks', icon: ClipboardList },
       { to: '/services/follow-ups', label: 'Pending Follow-ups', icon: Bell, permission: 'services.view', badge: 'overdue' },
       { to: '/documents', label: 'Documents', icon: FolderOpen },
@@ -37,6 +43,7 @@ const navSections = [
     label: 'FINANCE',
     items: [
       { to: '/invoices', label: 'Invoices & Ledger', icon: Receipt },
+      { to: '/finance/bank-reports', label: 'Bank & firm txns', icon: Landmark, permission: 'invoices.view' },
       { to: '/calendar', label: 'Calendar', icon: CalendarDays },
       { to: '/credentials', label: 'Credentials Vault', icon: KeyRound },
       { to: '/registers', label: 'Registers', icon: BookOpen },
@@ -65,7 +72,10 @@ const navSections = [
   },
   {
     label: 'SYSTEM',
-    items: [{ to: '/settings', label: 'Settings', icon: Settings }],
+    items: [
+      { to: '/inbox', label: 'Inbox & tickets', icon: Mail, permission: 'settings.view' },
+      { to: '/settings', label: 'Settings', icon: Settings },
+    ],
   },
 ];
 

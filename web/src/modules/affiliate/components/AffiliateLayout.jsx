@@ -7,6 +7,7 @@ const nav = [
   { to: '/affiliate/services', label: 'My services' },
   { to: '/affiliate/commissions', label: 'Commissions' },
   { to: '/affiliate/payouts', label: 'Payouts' },
+  { to: '/affiliate/rewards', label: 'Rewards' },
   { to: '/affiliate/bank', label: 'Bank / KYC' },
   { to: '/affiliate/sub-affiliates', label: 'Invite affiliate' },
   { to: '/affiliate/profile', label: 'Profile' },

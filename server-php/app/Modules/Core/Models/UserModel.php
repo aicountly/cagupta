@@ -280,4 +280,27 @@ class UserModel
 
         return $out;
     }
+
+    /**
+     * @return array<int, array{id:int, name:string, email:string}>
+     */
+    public function listActiveUsersByRoleName(string $roleName): array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT u.id, u.name, u.email
+             FROM users u
+             INNER JOIN roles r ON r.id = u.role_id
+             WHERE r.name = :rn AND u.is_active = TRUE'
+        );
+        $stmt->execute([':rn' => $roleName]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        return array_map(static function ($row): array {
+            return [
+                'id'    => (int)$row['id'],
+                'name'  => (string)($row['name'] ?? ''),
+                'email' => (string)($row['email'] ?? ''),
+            ];
+        }, $rows);
+    }
 }

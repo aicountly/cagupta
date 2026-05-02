@@ -1,0 +1,70 @@
+import { useEffect, useState } from 'react';
+import { fetchClientEngagementGaps, fetchMemorandumEngagementTypeIds, saveMemorandumEngagementTypeIds } from '../../../services/clientEngagementService';
+
+export default function ClientEngagementGaps() {
+  const [rows, setRows] = useState([]);
+  const [minBill, setMinBill] = useState('100000');
+  const [minGap, setMinGap] = useState('90');
+  const [period, setPeriod] = useState({});
+  const [memIds, setMemIds] = useState('');
+  const [err, setErr] = useState('');
+
+  const run = () => {
+    setErr('');
+    fetchClientEngagementGaps({
+      minBilling: parseFloat(minBill, 10) || 0,
+      minGapDays: parseInt(minGap, 10) || 0,
+    }).then((r) => { setRows(r.rows); setPeriod(r.period); }).catch((e) => setErr(e.message));
+  };
+
+  useEffect(() => {
+    fetchMemorandumEngagementTypeIds().then((ids) => setMemIds((ids || []).join(', '))).catch(() => {});
+    run();
+  }, []);
+
+  const saveMem = () => {
+    const ids = memIds.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => n > 0);
+    saveMemorandumEngagementTypeIds(ids).then((out) => setMemIds((out || []).join(', '))).catch((e) => setErr(e.message));
+  };
+
+  return (
+    <div style={{ maxWidth: 1100 }}>
+      <h1 style={{ fontSize: 22, marginBottom: 8 }}>Client engagement gaps</h1>
+      <p style={{ color: '#64748b', fontSize: 14, marginBottom: 20 }}>Groups with trailing-12-month professional-fee invoicing above a threshold and long gaps since the last calendar touchpoint.</p>
+      {err && <div style={{ color: '#dc2626', marginBottom: 12 }}>{err}</div>}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 16, alignItems: 'flex-end' }}>
+        <label style={{ fontSize: 13 }}>Min fee sum (₹)<br /><input value={minBill} onChange={(e) => setMinBill(e.target.value)} style={{ padding: 8, borderRadius: 8, border: '1px solid #e2e8f0', width: 120 }} /></label>
+        <label style={{ fontSize: 13 }}>Min gap (days)<br /><input value={minGap} onChange={(e) => setMinGap(e.target.value)} style={{ padding: 8, borderRadius: 8, border: '1px solid #e2e8f0', width: 100 }} /></label>
+        <button type="button" onClick={run} style={{ padding: '10px 18px', borderRadius: 8, background: '#0f172a', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600 }}>Apply</button>
+      </div>
+      <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16, marginBottom: 24 }}>
+        <div style={{ fontWeight: 700, marginBottom: 8 }}>Memorandum revenue — engagement type IDs</div>
+        <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>Comma-separated IDs (used server-side for extended rules; reporting above uses all professional-fee lines for group members).</div>
+        <input value={memIds} onChange={(e) => setMemIds(e.target.value)} style={{ width: '100%', padding: 8, borderRadius: 8, border: '1px solid #e2e8f0', marginBottom: 8 }} />
+        <button type="button" onClick={saveMem} style={{ padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', fontWeight: 600 }}>Save</button>
+      </div>
+      <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>Period: {period.from} → {period.to}</div>
+      <div style={{ overflowX: 'auto', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 12 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <thead>
+            <tr style={{ background: '#f8fafc', textAlign: 'left' }}>
+              {['Group', 'Last meeting', 'Gap days', 'Fee sum (period)'].map((h) => <th key={h} style={{ padding: '10px 12px', borderBottom: '1px solid #e2e8f0' }}>{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 ? (
+              <tr><td colSpan={4} style={{ padding: 20, color: '#94a3b8' }}>No groups match.</td></tr>
+            ) : rows.map((r) => (
+              <tr key={r.group_id}>
+                <td style={{ padding: '10px 12px', borderBottom: '1px solid #f1f5f9' }}>{r.group_name}</td>
+                <td style={{ padding: '10px 12px', borderBottom: '1px solid #f1f5f9' }}>{r.last_meeting_date || '—'}</td>
+                <td style={{ padding: '10px 12px', borderBottom: '1px solid #f1f5f9' }}>{r.gap_days}</td>
+                <td style={{ padding: '10px 12px', borderBottom: '1px solid #f1f5f9' }}>₹{Number(r.annual_fee_sum || 0).toLocaleString('en-IN')}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}

@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Config\Database;
+use App\Models\ServiceModel;
 use App\Models\TxnModel;
 use PDO;
 
@@ -64,6 +65,8 @@ class DashboardController extends BaseController
         );
         $appointmentsToday = (int)$stmt->fetchColumn();
 
+        $unbilledOpen = (new ServiceModel())->countUnbilledBillingOpen();
+
         $this->success([
             'activeClients'      => $activeClients,
             'activeServices'     => $activeServices,
@@ -71,6 +74,7 @@ class DashboardController extends BaseController
             'totalOutstanding'   => $totalOutstanding,
             'documentsThisMonth' => $documentsThisMonth,
             'appointmentsToday'  => $appointmentsToday,
+            'unbilledServices'   => $unbilledOpen,
         ], 'Dashboard stats retrieved');
     }
 }

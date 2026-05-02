@@ -81,3 +81,18 @@ export async function postSubAffiliate(body) {
   });
   await parseResponse(res);
 }
+
+export async function getAffiliateRewards() {
+  const res = await fetch(`${API_BASE}/affiliate/rewards`, { headers: authHeaders() });
+  const data = await parseResponse(res);
+  return data.data || {};
+}
+
+export async function postAffiliateRedeem(body) {
+  const res = await fetch(`${API_BASE}/affiliate/rewards/redeem`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
+  });
+  await parseResponse(res);
+}

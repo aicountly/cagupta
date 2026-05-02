@@ -42,10 +42,6 @@ function normalizeLineItems(raw) {
     };
     const lk = row?.line_kind ?? row?.lineKind;
     o.lineKind = lk === 'cost_recovery' ? 'cost_recovery' : 'professional_fee';
-    if (o.lineKind === 'professional_fee') {
-      o.manpowerIncluded = Boolean(row?.manpower_included ?? row?.manpowerIncluded);
-      o.manpowerCostAmount = parseFloat(row?.manpower_cost_amount ?? row?.manpowerCostAmount ?? 0) || 0;
-    }
     if (row?.engagement_type_id != null) o.engagementTypeId = parseInt(row.engagement_type_id, 10) || null;
     if (row?.service_line_key) o.serviceLineKey = String(row.service_line_key);
     return o;
@@ -103,6 +99,12 @@ function normalizeTxn(t) {
     createdAt:          t.created_at       || '',
     lineItems:          normalizeLineItems(t.line_items),
     gstBreakdown:       normalizeGstBreakdown(t.gst_breakdown),
+    firmBankAccountId:  t.firm_bank_account_id != null ? parseInt(t.firm_bank_account_id, 10) || null : null,
+    counterpartyFirmBankAccountId: t.counterparty_firm_bank_account_id != null
+      ? parseInt(t.counterparty_firm_bank_account_id, 10) || null : null,
+    firmExpenseCategory: t.firm_expense_category || '',
+    movement:           t.movement != null ? parseFloat(t.movement) : null,
+    rowType:            t.row_type || '',
   };
 }
 
@@ -290,13 +292,60 @@ export async function getOpeningBalance(clientId) {
   }));
 }
 
-/** POST /api/admin/txn/opening-balance */
-export async function setOpeningBalance(payload) {
-  const res  = await fetch(`${API_BASE}/admin/txn/opening-balance`, {
-    method:  'POST',
+/** GET /api/admin/txn/bank-ledger */
+export async function getBankLedger({ firmBankAccountId, dateFrom = '', dateTo = '' }) {
+  const q = new URLSearchParams({ firm_bank_account_id: String(firmBankAccountId) });
+  if (dateFrom) q.set('date_from', dateFrom);
+  if (dateTo) q.set('date_to', dateTo);
+  const res = await fetch(`${API_BASE}/admin/txn/bank-ledger?${q}`, { headers: authHeaders() });
+  const data = await parseResponse(res);
+  return data.data || [];
+}
+
+/** GET /api/admin/txn/firm-internal */
+export async function getFirmInternalTxns({ kind = 'all', page = 1, perPage = 50, dateFrom = '', dateTo = '' } = {}) {
+  const q = new URLSearchParams({ kind, page: String(page), per_page: String(perPage) });
+  if (dateFrom) q.set('date_from', dateFrom);
+  if (dateTo) q.set('date_to', dateTo);
+  const res = await fetch(`${API_BASE}/admin/txn/firm-internal?${q}`, { headers: authHeaders() });
+  const data = await parseResponse(res);
+  return {
+    rows: (data.data || []).map(normalizeTxn),
+    pagination: data.meta?.pagination || {},
+  };
+}
+
+export async function createFirmBankTransfer(payload) {
+  const res = await fetch(`${API_BASE}/admin/txn`, {
+    method: 'POST',
     headers: authHeaders(),
-    body:    JSON.stringify(payload),
+    body: JSON.stringify({
+      txn_type: 'firm_bank_transfer',
+      from_firm_bank_account_id: payload.fromFirmBankAccountId,
+      to_firm_bank_account_id: payload.toFirmBankAccountId,
+      amount: payload.amount,
+      txn_date: payload.txnDate,
+      narration: payload.narration || '',
+    }),
   });
   const data = await parseResponse(res);
   return data.data;
+}
+
+export async function createFirmExpenseTxn(payload) {
+  const res = await fetch(`${API_BASE}/admin/txn`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      txn_type: 'firm_expense',
+      firm_bank_account_id: payload.firmBankAccountId,
+      firm_expense_category: payload.category,
+      amount: payload.amount,
+      txn_date: payload.txnDate,
+      narration: payload.narration || '',
+      notes: payload.notes || null,
+    }),
+  });
+  const data = await parseResponse(res);
+  return normalizeTxn(data.data);
 }

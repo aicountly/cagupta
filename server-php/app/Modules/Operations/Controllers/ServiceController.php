@@ -230,6 +230,7 @@ class ServiceController extends BaseController
             'referral_start_date'  => null,
             'commission_mode'      => $commissionMode,
             'client_facing_restricted' => $clientFacing,
+            'source_support_ticket_id' => isset($body['source_support_ticket_id']) ? (int)$body['source_support_ticket_id'] : null,
         ]);
 
         $this->services->promoteBillingOpenIfEligible($newId);

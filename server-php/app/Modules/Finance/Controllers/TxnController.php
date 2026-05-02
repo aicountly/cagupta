@@ -11,6 +11,7 @@ use App\Libraries\GstInvoiceTax;
 use App\Libraries\OtpService;
 use App\Libraries\RazorpayClient;
 use App\Models\ClientModel;
+use App\Models\FirmBankAccountModel;
 use App\Models\OrganizationModel;
 use App\Models\TxnModel;
 use App\Models\UserModel;
@@ -84,6 +85,7 @@ class TxnController extends BaseController
         $valid = [
             'opening_balance', 'invoice', 'payment_expense',
             'receipt', 'tds_provisional', 'tds_final', 'rebate', 'credit_note',
+            'firm_expense', 'firm_bank_transfer',
         ];
         if (!in_array($txnType, $valid, true)) {
             $this->error('Invalid or missing txn_type.', 422);
@@ -121,6 +123,7 @@ class TxnController extends BaseController
                 if ($rcid > 0 && $roid > 0) {
                     $this->error('Provide only one of client_id or organization_id for a receipt.', 422);
                 }
+                $this->attachValidatedBankAccount($body);
                 $id = $this->txn->createReceipt($body);
                 break;
             case 'payment_expense':
@@ -136,6 +139,7 @@ class TxnController extends BaseController
                 if ($pcid > 0 && $poid > 0) {
                     $this->error('Provide only one of client_id or organization_id for a payment expense.', 422);
                 }
+                $this->attachValidatedBankAccount($body);
                 $id = $this->txn->createPaymentExpense($body);
                 break;
             case 'tds_provisional':
@@ -149,6 +153,24 @@ class TxnController extends BaseController
                 break;
             case 'opening_balance':
                 $id = $this->txn->setOpeningBalance($body);
+                break;
+            case 'firm_expense':
+                try {
+                    $id = $this->txn->createFirmExpense($body);
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
+                }
+                break;
+            case 'firm_bank_transfer':
+                try {
+                    $ids = $this->txn->createFirmBankTransferPair($body);
+                    $this->success([
+                        'out' => $this->txn->find($ids['out_id']),
+                        'in'  => $this->txn->find($ids['in_id']),
+                    ], 'Transfer recorded', 201);
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
+                }
                 break;
             default:
                 $id = $this->txn->create($body);
@@ -351,6 +373,8 @@ class TxnController extends BaseController
 
         $actingUser    = $this->authUser();
         $body['created_by'] = $actingUser ? (int)$actingUser['id'] : null;
+
+        $this->attachValidatedBankAccount($body);
 
         $id  = $this->txn->createReceipt($body);
         $row = $this->txn->find($id);
@@ -650,6 +674,65 @@ class TxnController extends BaseController
         }
 
         return $parts !== [] ? implode('; ', $parts) : 'Fields updated (no scalar diff detected).';
+    }
+
+    /**
+     * Validate firm_bank_account_id matches billing_profile_code and normalize key on body.
+     *
+     * @param array<string, mixed> $body
+     */
+    private function attachValidatedBankAccount(array &$body): void
+    {
+        $bid = (int)($body['firm_bank_account_id'] ?? $body['firmBankAccountId'] ?? 0);
+        if ($bid <= 0) {
+            $this->error('firm_bank_account_id is required.', 422);
+        }
+        $profile = trim((string)($body['billing_profile_code'] ?? ''));
+        if ($profile === '') {
+            $this->error('billing_profile_code is required to select the billing firm bank account.', 422);
+        }
+        try {
+            (new FirmBankAccountModel())->assertMatchesBillingProfile($bid, $profile);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+        $body['firm_bank_account_id'] = $bid;
+    }
+
+    // ── GET /api/admin/txn/bank-ledger ─────────────────────────────────────────
+
+    /** Query: firm_bank_account_id, date_from?, date_to? */
+    public function bankLedger(): never
+    {
+        $aid = (int)$this->query('firm_bank_account_id', 0);
+        if ($aid <= 0) {
+            $this->error('firm_bank_account_id is required.', 422);
+        }
+        $df = trim((string)$this->query('date_from', ''));
+        $dt = trim((string)$this->query('date_to', ''));
+        $rows = $this->txn->getBankLedger($aid, $df, $dt);
+        $this->success($rows, 'Bank ledger');
+    }
+
+    // ── GET /api/admin/txn/firm-internal ──────────────────────────────────────
+
+    /** Query: kind all|contra|expense, page, per_page, date_from, date_to */
+    public function firmInternal(): never
+    {
+        $page    = max(1, (int)$this->query('page', 1));
+        $perPage = min(100, max(1, (int)$this->query('per_page', 50)));
+        $kind    = trim((string)$this->query('kind', 'all'));
+        $df      = trim((string)$this->query('date_from', ''));
+        $dt      = trim((string)$this->query('date_to', ''));
+        $res     = $this->txn->paginateFirmInternal($page, $perPage, $kind, $df, $dt);
+        $this->success($res['rows'], 'Firm internal transactions', 200, [
+            'pagination' => [
+                'page'      => $page,
+                'per_page'  => $perPage,
+                'total'     => $res['total'],
+                'last_page' => (int)ceil(max(1, $res['total']) / $perPage),
+            ],
+        ]);
     }
 
     /** POST /api/admin/txn/:id/razorpay-order */
