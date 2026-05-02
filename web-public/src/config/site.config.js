@@ -1,8 +1,9 @@
 // Central site configuration. Edit this file to update firm-wide details.
 // Anything marked TODO should be replaced with real copy before launch.
 
-export const PORTAL_URL =
-  import.meta.env.VITE_PORTAL_URL || 'https://app.carahulgupta.in';
+export const PORTAL_URL = (
+  import.meta.env.VITE_PORTAL_URL || 'https://app.carahulgupta.in'
+).replace(/\/$/, '');
 
 export const PORTAL_LINKS = {
   staff: `${PORTAL_URL}/login?portal=staff`,

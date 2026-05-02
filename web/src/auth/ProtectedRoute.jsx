@@ -30,7 +30,9 @@ export default function ProtectedRoute({
   }
 
   if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
+    const savedPortal = sessionStorage.getItem('login_portal');
+    const loginTo = savedPortal ? `/login?portal=${savedPortal}` : '/login';
+    return <Navigate to={loginTo} replace />;
   }
 
   const role = user?.role || '';
