@@ -359,6 +359,32 @@ class ClientModel
         return $stmt->execute($params);
     }
 
+    /** Accounts work-hold: activate or clear (clears timestamps when releasing). */
+    public function setWorkHold(int $id, bool $active, ?string $notes, ?int $setByUserId): bool
+    {
+        if ($active) {
+            $stmt = $this->db->prepare(
+                'UPDATE clients SET work_hold_active = TRUE, work_hold_notes = :notes,
+                    work_hold_set_at = NOW(), work_hold_set_by = :uid, updated_at = NOW()
+                 WHERE id = :id'
+            );
+
+            return $stmt->execute([
+                ':notes' => $notes,
+                ':uid'   => ($setByUserId !== null && $setByUserId > 0) ? $setByUserId : null,
+                ':id'    => $id,
+            ]);
+        }
+
+        $stmt = $this->db->prepare(
+            'UPDATE clients SET work_hold_active = FALSE, work_hold_notes = NULL,
+                work_hold_set_at = NULL, work_hold_set_by = NULL, updated_at = NOW()
+             WHERE id = :id'
+        );
+
+        return $stmt->execute([':id' => $id]);
+    }
+
     /**
      * Update only the is_active status of a client.
      */

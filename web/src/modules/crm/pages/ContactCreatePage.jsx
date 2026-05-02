@@ -16,6 +16,7 @@ import { useStaffUsers } from '../../../hooks/useStaffUsers';
 import { useAuth } from '../../../auth/AuthContext';
 import DateInput from '../../../components/common/DateInput';
 import NameCollisionModal from '../../../components/common/NameCollisionModal';
+import WorkHoldSection from '../components/WorkHoldSection';
 
 // ── Country / State data ──────────────────────────────────────────────────────
 const COUNTRIES = [
@@ -189,7 +190,8 @@ export default function ContactCreatePage() {
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
+  const canWorkHoldAdmin = user?.role === 'super_admin' || user?.role === 'accounts';
   const canListAffiliates = hasPermission('affiliates.manage');
   const [approvedAffiliates, setApprovedAffiliates] = useState([]);
 
@@ -739,6 +741,14 @@ export default function ContactCreatePage() {
           >
             KYC Documents
           </button>
+          {hasPermission('clients.view') && (
+            <button
+              style={activeTab === 'work_hold' ? tabActive : tabInactive}
+              onClick={() => setActiveTab('work_hold')}
+            >
+              Work hold
+            </button>
+          )}
         </div>
       )}
 
@@ -747,8 +757,12 @@ export default function ContactCreatePage() {
         <KycDocumentTab entityType="contact" entityId={parseInt(id, 10)} />
       )}
 
+      {isEdit && activeTab === 'work_hold' && hasPermission('clients.view') && (
+        <WorkHoldSection variant="contact" entityId={parseInt(id, 10)} canMutate={canWorkHoldAdmin} />
+      )}
+
       {/* Form card — hidden (not unmounted) when on the documents tab so form state is preserved */}
-      <div style={activeTab === 'documents' && isEdit ? { display: 'none' } : cardStyle}>
+      <div style={(activeTab === 'documents' || activeTab === 'work_hold') && isEdit ? { display: 'none' } : cardStyle}>
         {/* ── Section: Basic Info ── */}
         <SectionHeader title="Basic Information" />
         <div style={gridStyle}>

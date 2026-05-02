@@ -303,4 +303,26 @@ class UserModel
             ];
         }, $rows);
     }
+
+    /**
+     * User IDs whose role name is in the given list (active users only).
+     *
+     * @param array<int, string> $roleNames
+     * @return array<int, int>
+     */
+    public function idsHavingRoleNames(array $roleNames): array
+    {
+        $roleNames = array_values(array_filter(array_map('trim', $roleNames)));
+        if ($roleNames === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($roleNames), '?'));
+        $sql = "SELECT DISTINCT u.id FROM users u
+                INNER JOIN roles r ON r.id = u.role_id
+                WHERE u.is_active = TRUE AND r.name IN ($placeholders)";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($roleNames);
+        $rows = $stmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+        return array_map(static fn ($id) => (int)$id, $rows);
+    }
 }

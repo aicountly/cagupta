@@ -217,6 +217,24 @@ class Routes
                 'handler'    => 'Admin\ContactController@destroy',
                 'middleware' => ['auth', 'permission:clients.edit'],
             ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/contacts/:id/work-hold',
+                'handler'    => 'Admin\WorkHoldController@showForContact',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/contacts/:id/work-hold',
+                'handler'    => 'Admin\WorkHoldController@updateForContact',
+                'middleware' => ['auth', 'role:super_admin,accounts'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/contacts/:id/work-hold/exceptions',
+                'handler'    => 'Admin\WorkHoldController@storeExceptionForContact',
+                'middleware' => ['auth', 'role:super_admin,accounts'],
+            ],
 
             // ── Admin — Organizations ─────────────────────────────────────────
             [
@@ -266,6 +284,30 @@ class Routes
                 'pattern'    => '/api/admin/organizations/:id',
                 'handler'    => 'Admin\OrganizationController@destroy',
                 'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/organizations/:id/work-hold',
+                'handler'    => 'Admin\WorkHoldController@showForOrganization',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/organizations/:id/work-hold',
+                'handler'    => 'Admin\WorkHoldController@updateForOrganization',
+                'middleware' => ['auth', 'role:super_admin,accounts'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/organizations/:id/work-hold/exceptions',
+                'handler'    => 'Admin\WorkHoldController@storeExceptionForOrganization',
+                'middleware' => ['auth', 'role:super_admin,accounts'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/work-hold/exceptions/:id',
+                'handler'    => 'Admin\WorkHoldController@destroyException',
+                'middleware' => ['auth', 'role:super_admin,accounts'],
             ],
 
             // ── Admin — Data exception reports ─────────────────────────────────

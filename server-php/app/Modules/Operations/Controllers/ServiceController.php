@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
+use App\Libraries\WorkHoldGate;
 use App\Libraries\BrevoMailer;
 use App\Libraries\OtpService;
 use App\Models\AdminAuditLogModel;
@@ -205,6 +206,15 @@ class ServiceController extends BaseController
             $finalAssigneesForCheck,
             null
         );
+
+        $holdMsg = WorkHoldGate::reasonBlockedNewEngagement(
+            $clientType,
+            $clientId > 0 ? $clientId : null,
+            $orgId > 0 ? $orgId : null
+        );
+        if ($holdMsg !== null) {
+            $this->error($holdMsg, 422);
+        }
 
         $newId = $this->services->create([
             'client_type'          => $body['client_type']          ?? 'contact',

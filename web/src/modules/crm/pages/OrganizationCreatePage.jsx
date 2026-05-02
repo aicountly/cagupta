@@ -18,6 +18,7 @@ import DateInput from '../../../components/common/DateInput';
 import ClientSearchDropdown from '../../../components/common/ClientSearchDropdown';
 import ContactMultiSelect from '../../../components/common/ContactMultiSelect';
 import NameCollisionModal from '../../../components/common/NameCollisionModal';
+import WorkHoldSection from '../components/WorkHoldSection';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ORG_TYPES = ['Company', 'LLP', 'Partnership', 'Proprietorship', 'Trust', 'Society', 'Other'];
@@ -242,7 +243,8 @@ export default function OrganizationCreatePage() {
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
+  const canWorkHoldAdmin = user?.role === 'super_admin' || user?.role === 'accounts';
   const canListAffiliates = hasPermission('affiliates.manage');
   const [approvedAffiliates, setApprovedAffiliates] = useState([]);
 
@@ -691,6 +693,11 @@ export default function OrganizationCreatePage() {
           <button style={activeTab === 'documents' ? orgTabActive : orgTabInactive} onClick={() => setActiveTab('documents')}>
             KYC Documents
           </button>
+          {hasPermission('clients.view') && (
+            <button style={activeTab === 'work_hold' ? orgTabActive : orgTabInactive} onClick={() => setActiveTab('work_hold')}>
+              Work hold
+            </button>
+          )}
         </div>
       )}
 
@@ -699,8 +706,12 @@ export default function OrganizationCreatePage() {
         <KycDocumentTab entityType="organization" entityId={parseInt(id, 10)} />
       )}
 
+      {isEdit && activeTab === 'work_hold' && hasPermission('clients.view') && (
+        <WorkHoldSection variant="organization" entityId={parseInt(id, 10)} canMutate={canWorkHoldAdmin} />
+      )}
+
       {/* Form grid – hidden (not unmounted) when on the documents tab so form state is preserved */}
-      <div style={activeTab === 'documents' && isEdit ? { display: 'none' } : formGrid}>
+      <div style={(activeTab === 'documents' || activeTab === 'work_hold') && isEdit ? { display: 'none' } : formGrid}>
         {/* ── Section: Basic Information ──────────────────────────────── */}
         <FormSection title="Basic Information">
           {/* Read-only Org Code */}

@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
+use App\Libraries\WorkHoldGate;
 use App\Libraries\BrevoMailer;
 use App\Libraries\OtpService;
 use App\Models\ServiceModel;
@@ -102,6 +103,11 @@ class TimeEntryController extends BaseController
             if ($targetUserId <= 0) {
                 $this->error('Invalid user_id.', 422);
             }
+        }
+
+        $holdMsg = WorkHoldGate::reasonBlockedTimeEntry($service);
+        if ($holdMsg !== null) {
+            $this->error($holdMsg, 422);
         }
 
         $created = $this->entries->createWithValidation($service, array_merge($body, [
@@ -328,6 +334,11 @@ class TimeEntryController extends BaseController
                 $active['client_name'] = $activeService['client_name'] ?? '';
             }
             $this->error('A timer is already running for this user.', 409, [], ['active_timer' => $active]);
+        }
+
+        $holdMsg = WorkHoldGate::reasonBlockedTimeEntry($service);
+        if ($holdMsg !== null) {
+            $this->error($holdMsg, 422);
         }
 
         $created = $this->entries->startTimerWithValidation($service, array_merge($body, [
