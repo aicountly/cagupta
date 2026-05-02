@@ -25,6 +25,7 @@ import OrganizationExceptionsReport from './modules/crm/pages/OrganizationExcept
 import OrganizationKycExceptionsReport from './modules/crm/pages/OrganizationKycExceptionsReport';
 import ClientEngagementGaps from './modules/crm/pages/ClientEngagementGaps';
 import Clients from './modules/crm/pages/Clients';
+import ClientGroups from './modules/crm/pages/ClientGroups';
 import Leads from './modules/crm/pages/Leads';
 
 // ── Operations module ────────────────────────────────────────────────────────
