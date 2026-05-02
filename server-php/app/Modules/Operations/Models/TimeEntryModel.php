@@ -1157,4 +1157,36 @@ class TimeEntryModel
 
         return [];
     }
+
+    /**
+     * Σ (hours × user planned_billable_rate_per_hour) for a service, split billable vs non-billable.
+     * Excludes running timers.
+     *
+     * @return array{billed_hours_fees: float, unbilled_hours_fees: float, billable_hours: float, unbillable_hours: float}
+     */
+    public function sumPlannedRatesForService(int $serviceId): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT
+                COALESCE(SUM((CASE WHEN te.is_billable THEN te.duration_minutes ELSE 0 END) / 60.0
+                    * COALESCE(u.planned_billable_rate_per_hour, 0)), 0)::float AS billed_fees,
+                COALESCE(SUM((CASE WHEN NOT te.is_billable THEN te.duration_minutes ELSE 0 END) / 60.0
+                    * COALESCE(u.planned_billable_rate_per_hour, 0)), 0)::float AS unbilled_fees,
+                COALESCE(SUM(CASE WHEN te.is_billable THEN te.duration_minutes ELSE 0 END) / 60.0, 0)::float AS billable_h,
+                COALESCE(SUM(CASE WHEN NOT te.is_billable THEN te.duration_minutes ELSE 0 END) / 60.0, 0)::float AS unbillable_h
+             FROM time_entries te
+             JOIN users u ON u.id = te.user_id
+             WHERE te.service_id = :sid
+               AND te.timer_status <> 'running'"
+        );
+        $stmt->execute([':sid' => $serviceId]);
+        $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+        return [
+            'billed_hours_fees'   => round((float)($row['billed_fees'] ?? 0), 2),
+            'unbilled_hours_fees' => round((float)($row['unbilled_fees'] ?? 0), 2),
+            'billable_hours'      => round((float)($row['billable_h'] ?? 0), 4),
+            'unbillable_hours'    => round((float)($row['unbillable_h'] ?? 0), 4),
+        ];
+    }
 }

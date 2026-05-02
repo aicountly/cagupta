@@ -8,6 +8,7 @@ use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
 use App\Libraries\CommissionSyncService;
 use App\Libraries\GstInvoiceTax;
+use App\Libraries\InvoiceCostAnalysis;
 use App\Libraries\OtpService;
 use App\Libraries\RazorpayClient;
 use App\Models\ClientModel;
@@ -108,8 +109,48 @@ class TxnController extends BaseController
                 }
                 try {
                     $recipientGstin = $this->resolveRecipientGstin($cid, $oid);
-                    $prepared         = GstInvoiceTax::prepareInvoice($body, $recipientGstin);
-                    $id               = $this->txn->createInvoice(array_merge($body, $prepared));
+                    $originalLines    = isset($body['line_items']) && is_array($body['line_items'])
+                        ? $body['line_items']
+                        : [];
+                    $analysis      = InvoiceCostAnalysis::analyzeInvoiceBody($body);
+                    $violations    = InvoiceCostAnalysis::validationViolations($analysis);
+                    $confirm       = filter_var($body['invoice_cost_analysis_confirm'] ?? false, FILTER_VALIDATE_BOOLEAN);
+                    $canAck        = InvoiceCostAnalysis::actorMayAcknowledgeCostShortfall($actingUser);
+                    if ($violations !== [] && (!$confirm || !$canAck)) {
+                        $this->error(
+                            'Accounts confirmation is required when invoice fees are below Standard Fees or below calculated hours-based fees.',
+                            422,
+                            [],
+                            [
+                                'code'       => 'invoice_cost_analysis_confirm_required',
+                                'violations' => $violations,
+                                'analysis'   => $analysis,
+                            ]
+                        );
+                    }
+
+                    $linesWithSnap = InvoiceCostAnalysis::attachLineSnapshots($originalLines, $analysis);
+                    $bodyForTax    = $body;
+                    $bodyForTax['line_items'] = $linesWithSnap;
+
+                    $prepared = GstInvoiceTax::prepareInvoice($bodyForTax, $recipientGstin);
+                    $prepared['line_items'] = InvoiceCostAnalysis::mergeLineMetadata(
+                        $linesWithSnap,
+                        $prepared['line_items'] ?? []
+                    );
+
+                    $merged = array_merge($body, $prepared);
+                    if (!empty($analysis['service_id']) && !empty($analysis['engagement_type_id'])) {
+                        $merged['invoice_cost_analysis'] = InvoiceCostAnalysis::aggregateSnapshotForStorage($analysis);
+                    } else {
+                        $merged['invoice_cost_analysis'] = [];
+                    }
+                    if ($violations !== [] && $confirm && $canAck && $actingUser) {
+                        $merged['invoice_cost_analysis_ack_user_id'] = (int)$actingUser['id'];
+                        $merged['invoice_cost_analysis_ack_at']      = gmdate('Y-m-d H:i:s');
+                    }
+
+                    $id = $this->txn->createInvoice($merged);
                 } catch (\InvalidArgumentException $e) {
                     $this->error($e->getMessage(), 422);
                 }

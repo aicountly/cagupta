@@ -990,6 +990,12 @@ class Routes
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
             [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/engagement-types/:id',
+                'handler'    => 'Admin\ServiceCategoryController@engagementTypeUpdate',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/engagement-types/:id',
                 'handler'    => 'Admin\ServiceCategoryController@engagementTypeDestroy',
@@ -1076,6 +1082,18 @@ class Routes
             // ── Admin — Unified Transactions (TXN) ───────────────────────────
             // NOTE: Specific sub-routes must come BEFORE the generic :id routes
             // so the router matches them first.
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/invoices/cost-analysis-preview',
+                'handler'    => 'Admin\InvoiceCostVarianceController@preview',
+                'middleware' => ['auth', 'permission:invoices.create'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/invoices/cost-variance-report',
+                'handler'    => 'Admin\InvoiceCostVarianceController@varianceReport',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
             [
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/ledger',

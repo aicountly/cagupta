@@ -15,7 +15,7 @@ import {
   getCategories,
   createCategory, deleteCategory,
   createSubcategory, deleteSubcategory,
-  createEngagementTypeForSubcategory, deleteEngagementType,
+  createEngagementTypeForSubcategory, deleteEngagementType, updateEngagementType,
 } from '../../../services/serviceCategoryService';
 import {
   getQuotationDefaults,
@@ -427,6 +427,9 @@ export default function Settings() {
   const [newSubName, setNewSubName] = useState({});
   // newEtName is keyed by subcategory id (since engagement types now live under subcategories)
   const [newEtName, setNewEtName] = useState({});
+  /** @type {[Record<number, { fee: string, hours: string }>, Function]} */
+  const [etStandardsDraft, setEtStandardsDraft] = useState({});
+  const [etStandardsSaving, setEtStandardsSaving] = useState({});
 
   const [quotationRows, setQuotationRows] = useState([]);
   const [quotationLoading, setQuotationLoading] = useState(false);
@@ -580,6 +583,25 @@ export default function Settings() {
     }
   }, [tab]);
 
+  useEffect(() => {
+    const next = {};
+    serviceCategories.forEach((cat) => {
+      (cat.subcategories || []).forEach((sub) => {
+        (sub.engagementTypes || []).forEach((et) => {
+          next[et.id] = {
+            fee: et.standard_fee_amount != null && et.standard_fee_amount !== ''
+              ? String(et.standard_fee_amount)
+              : '',
+            hours: et.standard_allowable_hours != null && et.standard_allowable_hours !== ''
+              ? String(et.standard_allowable_hours)
+              : '',
+          };
+        });
+      });
+    });
+    setEtStandardsDraft(next);
+  }, [serviceCategories]);
+
   function openQuoteSaveModal(row, draft) {
     setQuoteOtpMsg('');
     setQuoteOtpPass('');
@@ -706,6 +728,24 @@ export default function Settings() {
         };
       })))
       .catch((e) => setSvcCatError(e.message || 'Failed to delete engagement type.'));
+  }
+
+  async function handleSaveEngagementStandards(etId) {
+    const draft = etStandardsDraft[etId] || { fee: '', hours: '' };
+    setEtStandardsSaving((prev) => ({ ...prev, [etId]: true }));
+    setSvcCatError('');
+    try {
+      await updateEngagementType(etId, {
+        standard_fee_amount: draft.fee === '' ? null : draft.fee,
+        standard_allowable_hours: draft.hours === '' ? null : draft.hours,
+      });
+      const refreshed = await getCategories();
+      setServiceCategories(refreshed);
+    } catch (e) {
+      setSvcCatError(e.message || 'Failed to save engagement standards.');
+    } finally {
+      setEtStandardsSaving((prev) => ({ ...prev, [etId]: false }));
+    }
   }
 
   async function handleAddPortal() {
@@ -1390,6 +1430,7 @@ export default function Settings() {
           <h3 style={sectionTitle}>⚙️ Service Configuration</h3>
           <p style={{ fontSize:13, color:'#64748b', marginBottom:20 }}>
             Manage service categories, subcategories, and engagement types. These drive the dropdowns in New Service Engagement.
+            Set <strong>Standard fee (₹)</strong> and <strong>Standard hours</strong> per engagement type for invoice prefill and variance reporting; optional per-service overrides live on the engagement detail screen.
           </p>
 
           {/* Add new category */}
@@ -1457,12 +1498,58 @@ export default function Settings() {
                           {(sub.engagementTypes || []).length === 0 && (
                             <div style={{ fontSize:12, color:'#94a3b8', marginBottom:6 }}>No engagement types yet.</div>
                           )}
-                          {(sub.engagementTypes || []).map(et => (
-                            <div key={et.id} style={{ display:'flex', alignItems:'center', gap:8, padding:'4px 0', borderBottom:'1px solid #f8fafc' }}>
-                              <span style={{ fontSize:12, color:'#334155', flex:1 }}>↳ {et.name}</span>
-                              <button onClick={() => handleDeleteEngagementType(cat.id, sub.id, et.id)} style={{ ...iconBtn, color:'#dc2626', fontSize:12 }}>🗑️</button>
-                            </div>
-                          ))}
+                          {(sub.engagementTypes || []).map(et => {
+                            const d = etStandardsDraft[et.id] || { fee: '', hours: '' };
+                            const saving = etStandardsSaving[et.id];
+                            return (
+                              <div key={et.id} style={{ padding:'8px 0', borderBottom:'1px solid #f8fafc' }}>
+                                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                                  <span style={{ fontSize:12, color:'#334155', flex:1, fontWeight:600 }}>↳ {et.name}</span>
+                                  <button type="button" onClick={() => handleDeleteEngagementType(cat.id, sub.id, et.id)} style={{ ...iconBtn, color:'#dc2626', fontSize:12 }}>🗑️</button>
+                                </div>
+                                <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:6, alignItems:'center', fontSize:11 }}>
+                                  <label style={{ display:'flex', alignItems:'center', gap:4, color:'#64748b' }}>
+                                    Std fee ₹
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={d.fee}
+                                      onChange={(e) => setEtStandardsDraft((prev) => ({
+                                        ...prev,
+                                        [et.id]: { ...d, fee: e.target.value },
+                                      }))}
+                                      style={{ ...inputStyle, width:100, fontSize:11, padding:'4px 6px' }}
+                                      placeholder="—"
+                                    />
+                                  </label>
+                                  <label style={{ display:'flex', alignItems:'center', gap:4, color:'#64748b' }}>
+                                    Std hours
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={d.hours}
+                                      onChange={(e) => setEtStandardsDraft((prev) => ({
+                                        ...prev,
+                                        [et.id]: { ...d, hours: e.target.value },
+                                      }))}
+                                      style={{ ...inputStyle, width:88, fontSize:11, padding:'4px 6px' }}
+                                      placeholder="—"
+                                    />
+                                  </label>
+                                  <button
+                                    type="button"
+                                    disabled={saving}
+                                    onClick={() => handleSaveEngagementStandards(et.id)}
+                                    style={{ ...btnPrimary, fontSize:11, padding:'4px 10px', opacity: saving ? 0.6 : 1 }}
+                                  >
+                                    {saving ? '…' : 'Save'}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
                           <div style={{ display:'flex', gap:6, marginTop:6 }}>
                             <input
                               value={newEtName[sub.id] || ''}

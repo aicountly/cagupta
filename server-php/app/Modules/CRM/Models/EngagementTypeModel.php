@@ -96,4 +96,47 @@ class EngagementTypeModel
         $stmt = $this->db->prepare('DELETE FROM engagement_types WHERE id = :id');
         return $stmt->execute([':id' => $id]);
     }
+
+    /**
+     * Partial update (name, standard_fee_amount, standard_allowable_hours).
+     *
+     * @param array<string, mixed> $fields
+     */
+    public function update(int $id, array $fields): bool
+    {
+        $set    = [];
+        $params = [':id' => $id];
+
+        if (array_key_exists('name', $fields)) {
+            $set[]            = 'name = :name';
+            $params[':name'] = trim((string)$fields['name']);
+        }
+        if (array_key_exists('standard_fee_amount', $fields)) {
+            $v = $fields['standard_fee_amount'];
+            if ($v === null || $v === '') {
+                $set[]              = 'standard_fee_amount = NULL';
+            } else {
+                $set[]              = 'standard_fee_amount = :standard_fee_amount';
+                $params[':standard_fee_amount'] = round((float)$v, 2);
+            }
+        }
+        if (array_key_exists('standard_allowable_hours', $fields)) {
+            $v = $fields['standard_allowable_hours'];
+            if ($v === null || $v === '') {
+                $set[]                          = 'standard_allowable_hours = NULL';
+            } else {
+                $set[]                          = 'standard_allowable_hours = :standard_allowable_hours';
+                $params[':standard_allowable_hours'] = round((float)$v, 4);
+            }
+        }
+
+        if ($set === []) {
+            return false;
+        }
+
+        $set[] = 'updated_at = NOW()';
+        $sql   = 'UPDATE engagement_types SET ' . implode(', ', $set) . ' WHERE id = :id';
+
+        return $this->db->prepare($sql)->execute($params);
+    }
 }

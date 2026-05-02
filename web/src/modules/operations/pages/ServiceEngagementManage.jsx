@@ -98,6 +98,8 @@ export default function ServiceEngagementManage() {
   const [dueDate, setDueDate] = useState('');
   const [initialDueDate, setInitialDueDate] = useState('');
   const [fee, setFee] = useState('');
+  const [stdFeeOverride, setStdFeeOverride] = useState('');
+  const [stdHoursOverride, setStdHoursOverride] = useState('');
   const [notes, setNotes] = useState('');
   const [tasks, setTasks] = useState([]);
   const [billingClosure, setBillingClosure] = useState(null);
@@ -229,6 +231,12 @@ export default function ServiceEngagementManage() {
         setDueDate(d0);
         setInitialDueDate(d0);
         setFee(eng.feeAgreed != null && !Number.isNaN(Number(eng.feeAgreed)) ? String(eng.feeAgreed) : '');
+        setStdFeeOverride(eng.standardFeeOverride != null && !Number.isNaN(Number(eng.standardFeeOverride))
+          ? String(eng.standardFeeOverride)
+          : '');
+        setStdHoursOverride(eng.standardAllowableHoursOverride != null && !Number.isNaN(Number(eng.standardAllowableHoursOverride))
+          ? String(eng.standardAllowableHoursOverride)
+          : '');
         setNotes(eng.notes || '');
         const loadedTasks = Array.isArray(eng.tasks) ? eng.tasks.map(t => ({ ...t })) : [];
         setTasks(loadedTasks);
@@ -314,6 +322,8 @@ export default function ServiceEngagementManage() {
         assigneeUserIds: orderedAssigneeIds,
         dueDate,
         feeAgreed: fee.trim() === '' ? null : fee,
+        standardFeeOverride: stdFeeOverride.trim() === '' ? null : stdFeeOverride,
+        standardAllowableHoursOverride: stdHoursOverride.trim() === '' ? null : stdHoursOverride,
         notes,
         tasks,
         type: serviceType.trim(),
@@ -901,11 +911,45 @@ export default function ServiceEngagementManage() {
                   value={fee}
                   onChange={e => setFee(e.target.value)}
                   placeholder="0"
+                  disabled={!canEditService}
                   style={{ ...inputStyle, borderRadius: '0 8px 8px 0', borderLeft: 'none', paddingLeft: 8 }}
                 />
               </div>
             </label>
           </div>
+          {canEditService && (
+            <div style={{ ...twoCol, marginTop: 12 }}>
+              <label style={fieldLabel}>
+                Std fee override (₹)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={stdFeeOverride}
+                  onChange={(e) => setStdFeeOverride(e.target.value)}
+                  placeholder="Use engagement-type default"
+                  style={inputStyle}
+                />
+              </label>
+              <label style={fieldLabel}>
+                Std hours override
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={stdHoursOverride}
+                  onChange={(e) => setStdHoursOverride(e.target.value)}
+                  placeholder="Use engagement-type default"
+                  style={inputStyle}
+                />
+              </label>
+            </div>
+          )}
+          {canEditService && (
+            <p style={{ ...hint, marginTop: 8 }}>
+              Overrides apply only to this engagement for invoice standard fee / allowable hours (master values live under Settings → Service Configuration).
+            </p>
+          )}
           <label style={{ ...fieldLabel, marginTop: 14 }}>
             Notes
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Optional notes…" style={textareaStyle} />

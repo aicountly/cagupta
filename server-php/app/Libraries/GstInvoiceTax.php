@@ -138,6 +138,10 @@ final class GstInvoiceTax
                 'description' => $desc,
                 'amount'      => round($amt, 2),
             ];
+            $lk = $line['line_kind'] ?? null;
+            if ($lk !== null && $lk !== '') {
+                $row['line_kind'] = $lk;
+            }
             if (!empty($line['engagement_type_id'])) {
                 $row['engagement_type_id'] = (int)$line['engagement_type_id'];
             }

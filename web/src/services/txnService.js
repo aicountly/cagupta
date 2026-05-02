@@ -19,7 +19,9 @@ function authHeaders() {
 async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(json.message || `Request failed (${res.status})`);
+    const err = new Error(json.message || `Request failed (${res.status})`);
+    err.apiData = json.data;
+    throw err;
   }
   return json;
 }

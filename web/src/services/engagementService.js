@@ -112,6 +112,12 @@ function normalizeEngagement(s) {
     status:             s.status              || 'not_started',
     billingClosure:     s.billing_closure     ?? null,
     feeAgreed:          s.fees                != null ? Number(s.fees) : (s.fee_agreed != null ? Number(s.fee_agreed) : null),
+    standardFeeOverride: s.standard_fee_override != null && s.standard_fee_override !== ''
+      ? Number(s.standard_fee_override)
+      : null,
+    standardAllowableHoursOverride: s.standard_allowable_hours_override != null && s.standard_allowable_hours_override !== ''
+      ? Number(s.standard_allowable_hours_override)
+      : null,
     notes:              s.notes               || '',
     tasks:              parseTasks(s.tasks),
     createdAt:          s.created_at          || '',
@@ -286,6 +292,14 @@ export async function updateEngagement(id, payload, { superadminOtp } = {}) {
   if ('feeAgreed' in payload) {
     const v = payload.feeAgreed;
     body.fees = v === '' || v === null ? null : Number(v);
+  }
+  if ('standardFeeOverride' in payload) {
+    const v = payload.standardFeeOverride;
+    body.standard_fee_override = v === '' || v === null ? null : Number(v);
+  }
+  if ('standardAllowableHoursOverride' in payload) {
+    const v = payload.standardAllowableHoursOverride;
+    body.standard_allowable_hours_override = v === '' || v === null ? null : Number(v);
   }
   if ('notes' in payload) body.notes = payload.notes ?? null;
   if ('tasks' in payload) body.tasks = Array.isArray(payload.tasks) ? payload.tasks : [];

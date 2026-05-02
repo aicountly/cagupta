@@ -572,6 +572,35 @@ class ServiceController extends BaseController
                 $data[$field] = $body[$field];
             }
         }
+
+        $sfRaw = $body['standard_fee_override'] ?? $body['standardFeeOverride'] ?? null;
+        if (array_key_exists('standard_fee_override', $body) || array_key_exists('standardFeeOverride', $body)) {
+            if ($sfRaw === null || $sfRaw === '') {
+                $data['standard_fee_override'] = null;
+            } elseif (!is_numeric($sfRaw)) {
+                $this->error('standard_fee_override must be numeric or empty.', 422);
+            } else {
+                $fv = (float)$sfRaw;
+                if ($fv < 0) {
+                    $this->error('standard_fee_override cannot be negative.', 422);
+                }
+                $data['standard_fee_override'] = $fv;
+            }
+        }
+        $shRaw = $body['standard_allowable_hours_override'] ?? $body['standardAllowableHoursOverride'] ?? null;
+        if (array_key_exists('standard_allowable_hours_override', $body) || array_key_exists('standardAllowableHoursOverride', $body)) {
+            if ($shRaw === null || $shRaw === '') {
+                $data['standard_allowable_hours_override'] = null;
+            } elseif (!is_numeric($shRaw)) {
+                $this->error('standard_allowable_hours_override must be numeric or empty.', 422);
+            } else {
+                $hv = (float)$shRaw;
+                if ($hv < 0) {
+                    $this->error('standard_allowable_hours_override cannot be negative.', 422);
+                }
+                $data['standard_allowable_hours_override'] = $hv;
+            }
+        }
         if (array_key_exists('status', $body)) {
             $oldStatus = (string)($service['status'] ?? '');
             $newStatus = strtolower(trim((string)$body['status']));

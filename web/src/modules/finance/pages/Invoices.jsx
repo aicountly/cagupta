@@ -5,6 +5,7 @@ import {
   getTdsEntries, createRebate, createCreditNote, getLedger,
   getOpeningBalance, setOpeningBalance,
   updateTxn, deleteTxn, requestInvoiceModifyOtp,
+  postInvoiceCostAnalysisPreview,
 } from '../services/txnService';
 import { useAuth } from '../../../auth/AuthContext';
 import { getContact } from '../../../services/contactService';
@@ -31,6 +32,7 @@ import {
   indianFYLabel,
   indianFYBounds,
 } from '../../../utils/indianFinancialYear';
+import { ROLES } from '../../../constants/roles';
 import { exportLedgerExcel, exportLedgerPdf } from '../../../utils/ledgerExport';
 import ledgerLogoUrl from '../../../assets/cropped_logo.png';
 import {
@@ -125,6 +127,9 @@ const emptyInvoiceLine = () => ({
 });
 
 function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
+  const { session } = useAuth();
+  const [costPreview, setCostPreview] = useState(null);
+  const [invoiceCostAnalysisConfirm, setInvoiceCostAnalysisConfirm] = useState(false);
   const [form, setForm] = useState({
     entityId: '',
     entityName: '',
@@ -196,6 +201,34 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
   }, [open, form.entityId, form.entityType]);
 
   useEffect(() => {
+    if (!costPreview?.violations?.length) {
+      setInvoiceCostAnalysisConfirm(false);
+    }
+  }, [costPreview]);
+
+  useEffect(() => {
+    if (!open) {
+      setCostPreview(null);
+      return undefined;
+    }
+    const sid = parseInt(form.serviceEngagementId, 10);
+    const lineItems = form.lines.map(buildLineItemApiRow).filter(Boolean);
+    if (!Number.isFinite(sid) || sid <= 0 || lineItems.length === 0) {
+      setCostPreview(null);
+      return undefined;
+    }
+    const handle = setTimeout(() => {
+      postInvoiceCostAnalysisPreview({
+        service_id: sid,
+        line_items: lineItems,
+      })
+        .then(setCostPreview)
+        .catch(() => setCostPreview(null));
+    }, 450);
+    return () => clearTimeout(handle);
+  }, [open, form.serviceEngagementId, form.lines]);
+
+  useEffect(() => {
     if (!open || !form.entityId) {
       setEngagementOptions([]);
       return undefined;
@@ -256,6 +289,10 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
 
   const billingProfiles = useMemo(() => getBillingProfiles(), [open, form.billingProfileCode]);
   const selectedProfile = getBillingProfileByCode(form.billingProfileCode);
+  const roleName = String(session?.user?.role || '');
+  const userEmail = String(session?.user?.email || '').toLowerCase();
+  const canAckLowFees = roleName === ROLES.ACCOUNTS || roleName === ROLES.SUPER_ADMIN || userEmail === 'rahul@cagupta.in';
+
   const gstPreview = useMemo(() => {
     if (!selectedProfile?.gstRegistered) return null;
     const subtotal = lineTotal;
@@ -274,6 +311,15 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
 
   const handleSave = () => {
     if (!form.entityId || !form.invoiceDate) return;
+    const viol = costPreview?.violations || [];
+    if (viol.length > 0 && !canAckLowFees) {
+      window.alert('Taxable fees are below Standard Fees or calculated hours-based value (team planned ₹/hr × time). An Accounts user or Super Admin must raise this invoice or confirm.');
+      return;
+    }
+    if (viol.length > 0 && canAckLowFees && !invoiceCostAnalysisConfirm) {
+      window.alert('Tick the Accounts confirmation box to proceed with amounts below the benchmarks.');
+      return;
+    }
     const profile = getBillingProfileByCode(form.billingProfileCode);
     if (profile?.gstRegistered) {
       const sup = profile.stateCode || stateCodeFromGstin(profile.gstin);
@@ -293,6 +339,7 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
       ...form,
       lineItems: parsed,
       totalAmount: parsed.reduce((a, l) => a + l.amount, 0),
+      invoiceCostAnalysisConfirm,
     });
     onClose();
   };
@@ -417,6 +464,43 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
             <div style={{ marginTop:8, fontSize:13, fontWeight:700, color:'#0f172a' }}>
               Taxable subtotal (₹): {lineTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
+            {costPreview?.analysis && form.serviceEngagementId && (
+              <div style={{ marginTop:12, padding:12, background:'#f8fafc', borderRadius:8, border:'1px solid #e2e8f0', fontSize:12, color:'#334155', lineHeight:1.55 }}>
+                <div style={{ fontWeight:700, marginBottom:6, color:'#0f172a' }}>Cost benchmarks (linked service)</div>
+                <div>
+                  Standard fees (master):{' '}
+                  {costPreview.analysis.standard_fees != null
+                    ? `₹${Number(costPreview.analysis.standard_fees).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                    : '— not set'}
+                </div>
+                <div>Billed hours fees (planned ₹/hr × billable time): ₹{Number(costPreview.analysis.billed_hours_fees || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div>Unbilled hours fees (planned ₹/hr × unbillable time): ₹{Number(costPreview.analysis.unbilled_hours_fees || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div style={{ marginTop:6, fontWeight:600 }}>Suggested taxable prefill (max of above): ₹{(costPreview.analysis.threshold != null ? Number(costPreview.analysis.threshold) : lineTotal).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                <div style={{ marginTop:4, fontSize:11, color:'#64748b' }}>Matching professional lines subtotal: ₹{Number(costPreview.analysis.matching_professional_subtotal || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (same engagement type as service)</div>
+              </div>
+            )}
+            {(costPreview?.violations || []).length > 0 && (
+              <div style={{ marginTop:10, padding:10, background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, fontSize:12, color:'#92400e' }}>
+                <strong>Below benchmark:</strong>
+                <ul style={{ margin:'6px 0 0 18px', padding:0 }}>
+                  {(costPreview.violations || []).map((v) => (
+                    <li key={v.code}>{v.message}</li>
+                  ))}
+                </ul>
+                {!canAckLowFees ? (
+                  <p style={{ margin:'8px 0 0 0' }}>Only Accounts or Super Admin can confirm and submit.</p>
+                ) : (
+                  <label style={{ display:'flex', alignItems:'flex-start', gap:8, marginTop:10, cursor:'pointer', fontWeight:600 }}>
+                    <input
+                      type="checkbox"
+                      checked={invoiceCostAnalysisConfirm}
+                      onChange={(e) => setInvoiceCostAnalysisConfirm(e.target.checked)}
+                    />
+                    <span>Accounts confirms billing below Standard Fees and/or calculated hours-based fees.</span>
+                  </label>
+                )}
+              </div>
+            )}
             {gstPreview && (
               <div style={{ marginTop:8, padding:10, background:'#f8fafc', borderRadius:8, fontSize:12, color:'#334155', lineHeight:1.5 }}>
                 <div style={{ fontWeight:700, marginBottom:4 }}>GST @ {gstPreview.rate}% (preview)</div>
@@ -1965,6 +2049,7 @@ export default function Invoices() {
     } else {
       payload.client_id = idNum;
     }
+    payload.invoice_cost_analysis_confirm = Boolean(data.invoiceCostAnalysisConfirm);
     createTxn(payload)
       .then((newInv) => {
         setInvoices((prev) => [newInv, ...prev]);
@@ -1984,6 +2069,14 @@ export default function Invoices() {
         }
       })
       .catch((err) => {
+        const d = err?.apiData;
+        if (d?.code === 'invoice_cost_analysis_confirm_required') {
+          const lines = (d.violations || []).map((v) => `• ${v.message}`).join('\n');
+          window.alert(
+            `${err.message}\n\n${lines}\n\nIf you are Accounts or Super Admin, open Raise Invoice, tick the confirmation box, and submit again.`
+          );
+          return;
+        }
         window.alert(err?.message || 'Could not create invoice.');
       });
   }

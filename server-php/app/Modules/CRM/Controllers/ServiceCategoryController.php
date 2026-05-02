@@ -229,6 +229,67 @@ class ServiceCategoryController extends BaseController
         $this->success($et, 'Engagement type created', 201);
     }
 
+    // ── PATCH /api/admin/engagement-types/:id ─────────────────────────────────
+
+    /**
+     * Update billing standards (and optionally name) on an engagement type.
+     *
+     * Body: { name?, standard_fee_amount?, standard_allowable_hours? } — omit or null to clear amounts/hours.
+     */
+    public function engagementTypeUpdate(int $id): never
+    {
+        $et = $this->engagementTypes->find($id);
+        if ($et === null) {
+            $this->error('Engagement type not found.', 404);
+        }
+
+        $body = $this->getJsonBody();
+        $data = [];
+
+        if (array_key_exists('name', $body)) {
+            $n = trim((string)$body['name']);
+            if ($n === '') {
+                $this->error('name cannot be empty when provided.', 422);
+            }
+            $data['name'] = $n;
+        }
+        if (array_key_exists('standard_fee_amount', $body)) {
+            $raw = $body['standard_fee_amount'];
+            if ($raw === null || $raw === '') {
+                $data['standard_fee_amount'] = null;
+            } elseif (!is_numeric($raw)) {
+                $this->error('standard_fee_amount must be numeric or empty.', 422);
+            } else {
+                $fv = (float)$raw;
+                if ($fv < 0) {
+                    $this->error('standard_fee_amount cannot be negative.', 422);
+                }
+                $data['standard_fee_amount'] = $fv;
+            }
+        }
+        if (array_key_exists('standard_allowable_hours', $body)) {
+            $raw = $body['standard_allowable_hours'];
+            if ($raw === null || $raw === '') {
+                $data['standard_allowable_hours'] = null;
+            } elseif (!is_numeric($raw)) {
+                $this->error('standard_allowable_hours must be numeric or empty.', 422);
+            } else {
+                $hv = (float)$raw;
+                if ($hv < 0) {
+                    $this->error('standard_allowable_hours cannot be negative.', 422);
+                }
+                $data['standard_allowable_hours'] = $hv;
+            }
+        }
+
+        if ($data === []) {
+            $this->success($this->engagementTypes->find($id), 'No changes.');
+        }
+
+        $this->engagementTypes->update($id, $data);
+        $this->success($this->engagementTypes->find($id), 'Engagement type updated');
+    }
+
     // ── DELETE /api/admin/engagement-types/:id ────────────────────────────────
 
     /**

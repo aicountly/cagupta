@@ -51,6 +51,7 @@ import ShiftTargetTimesheetReport from './modules/operations/pages/ShiftTargetTi
 // ── Finance module ───────────────────────────────────────────────────────────
 import Invoices from './modules/finance/pages/Invoices';
 import BankFirmReports from './modules/finance/pages/BankFirmReports';
+import InvoiceCostVarianceReport from './modules/finance/pages/InvoiceCostVarianceReport';
 
 // ── Marketing module ─────────────────────────────────────────────────────────
 import WAWebMarketing from './modules/marketing/pages/WAWebMarketing';
@@ -113,6 +114,7 @@ const pageTitles = {
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
   '/finance/bank-reports':      '🏦 Bank & firm txns',
+  '/finance/invoice-cost-variance': '📉 Invoice cost variance',
   '/reports':                            '📊 Reports',
   '/reports/timesheets':                 '🕐 Timesheet report',
   '/reports/timesheets/shift-target':    '📊 Staff punch vs target',
@@ -199,6 +201,7 @@ export default function App() {
           <Route path="/documents" element={<ProtectedRoute staffOnly><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute staffOnly><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
           <Route path="/finance/bank-reports" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/finance/bank-reports"><BankFirmReports /></Layout></ProtectedRoute>} />
+          <Route path="/finance/invoice-cost-variance" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/finance/invoice-cost-variance"><InvoiceCostVarianceReport /></Layout></ProtectedRoute>} />
           <Route path="/reports" element={
             <ProtectedRoute staffOnly requiredPermission="services.view">
               <Layout routePath="/reports"><ReportsHub /></Layout>

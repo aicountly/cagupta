@@ -346,7 +346,8 @@ class TxnModel
                 tds_status, tds_section, tds_rate,
                 linked_txn_id, notes, status, created_by, line_items, gst_breakdown,
                 appointment_id,
-                firm_bank_account_id, counterparty_firm_bank_account_id, firm_expense_category
+                firm_bank_account_id, counterparty_firm_bank_account_id, firm_expense_category,
+                invoice_cost_analysis_ack_user_id, invoice_cost_analysis_ack_at, invoice_cost_analysis
              ) VALUES (
                 :client_id, :organization_id, :txn_type, :txn_date, :narration,
                 :debit, :credit, :amount, :billing_profile_code,
@@ -357,9 +358,14 @@ class TxnModel
                 :tds_status, :tds_section, :tds_rate,
                 :linked_txn_id, :notes, :status, :created_by, CAST(:line_items AS jsonb), CAST(:gst_breakdown AS jsonb),
                 :appointment_id,
-                :firm_bank_account_id, :counterparty_firm_bank_account_id, :firm_expense_category
+                :firm_bank_account_id, :counterparty_firm_bank_account_id, :firm_expense_category,
+                :invoice_cost_analysis_ack_user_id, :invoice_cost_analysis_ack_at, CAST(:invoice_cost_analysis AS jsonb)
              ) RETURNING id'
         );
+        $ica = $data['invoice_cost_analysis'] ?? [];
+        if (!is_array($ica)) {
+            $ica = [];
+        }
         $stmt->execute([
             ':client_id'           => $data['client_id']           ?? null,
             ':organization_id'     => $data['organization_id']     ?? null,
@@ -397,6 +403,10 @@ class TxnModel
             ':counterparty_firm_bank_account_id' => isset($data['counterparty_firm_bank_account_id'])
                 ? (int)$data['counterparty_firm_bank_account_id'] : null,
             ':firm_expense_category' => $data['firm_expense_category'] ?? null,
+            ':invoice_cost_analysis_ack_user_id' => isset($data['invoice_cost_analysis_ack_user_id'])
+                ? (int)$data['invoice_cost_analysis_ack_user_id'] : null,
+            ':invoice_cost_analysis_ack_at' => $data['invoice_cost_analysis_ack_at'] ?? null,
+            ':invoice_cost_analysis' => json_encode($ica, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -632,6 +642,78 @@ class TxnModel
     }
 
     /**
+     * Invoices in a date range with stored cost-analysis flags (below standard / below calculated).
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listInvoiceCostVarianceRows(string $dateFrom, string $dateTo): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT t.id, t.txn_date, t.invoice_number, t.client_id, t.organization_id,
+                    t.service_id, t.invoice_cost_analysis, t.invoice_cost_analysis_ack_at,
+                    COALESCE(
+                        NULLIF(TRIM(o.name), ''),
+                        NULLIF(TRIM(c.organization_name), ''),
+                        NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                        'Unknown'
+                    ) AS client_name
+             FROM txn t
+             LEFT JOIN clients c ON c.id = t.client_id
+             LEFT JOIN organizations o ON o.id = t.organization_id
+             WHERE t.txn_type = 'invoice'
+               AND t.status = 'active'
+               AND t.txn_date >= :df
+               AND t.txn_date <= :dt
+             ORDER BY t.txn_date DESC, t.id DESC"
+        );
+        $stmt->execute([':df' => $dateFrom, ':dt' => $dateTo]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $out = [];
+        foreach ($rows as $r) {
+            $ica = $r['invoice_cost_analysis'] ?? null;
+            if (is_string($ica)) {
+                $decoded = json_decode($ica, true);
+                $ica     = is_array($decoded) ? $decoded : [];
+            }
+            if (!is_array($ica) || $ica === []) {
+                continue;
+            }
+            $belowStd  = !empty($ica['below_standard_fees']);
+            $belowCalc = !empty($ica['below_calculated_hours_fees']);
+            if (!$belowStd && !$belowCalc) {
+                continue;
+            }
+            $matchSub = (float)($ica['matching_professional_subtotal'] ?? 0);
+            $std      = isset($ica['standard_fees']) && $ica['standard_fees'] !== null
+                ? (float)$ica['standard_fees']
+                : null;
+            $calc = (float)($ica['calculated_hours_fees'] ?? 0);
+
+            $out[] = [
+                'txn_id'                         => (int)$r['id'],
+                'txn_date'                       => (string)$r['txn_date'],
+                'invoice_number'                 => (string)($r['invoice_number'] ?? ''),
+                'client_name'                    => (string)($r['client_name'] ?? ''),
+                'service_id'                     => isset($r['service_id']) ? (int)$r['service_id'] : null,
+                'below_standard_fees'            => $belowStd,
+                'below_calculated_hours_fees'    => $belowCalc,
+                'below_both'                     => $belowStd && $belowCalc,
+                'matching_professional_subtotal' => round($matchSub, 2),
+                'standard_fees'                  => $std !== null ? round($std, 2) : null,
+                'calculated_hours_fees'          => round($calc, 2),
+                'billed_hours_fees'              => round((float)($ica['billed_hours_fees'] ?? 0), 2),
+                'unbilled_hours_fees'            => round((float)($ica['unbilled_hours_fees'] ?? 0), 2),
+                'diff_vs_standard'               => $std !== null ? round($std - $matchSub, 2) : null,
+                'diff_vs_calculated'             => $calc > 0 ? round($calc - $matchSub, 2) : null,
+                'accounts_ack_at'                => $r['invoice_cost_analysis_ack_at'] ?? null,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
      * Return TDS entries for a client, optionally filtered by status.
      *
      * @return array<int, array<string, mixed>>
@@ -693,6 +775,7 @@ class TxnModel
             'expense_purpose', 'paid_from',
             'tds_status', 'tds_section', 'tds_rate',
             'linked_txn_id', 'notes', 'status', 'line_items', 'gst_breakdown',
+            'invoice_cost_analysis_ack_user_id', 'invoice_cost_analysis_ack_at', 'invoice_cost_analysis',
         ];
         foreach ($allowed as $field) {
             if (!array_key_exists($field, $data)) {
@@ -725,6 +808,18 @@ class TxnModel
                     $params[':gst_breakdown'] = json_encode($gv, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
                 } else {
                     $params[':gst_breakdown'] = (string)$gv;
+                }
+                continue;
+            }
+            if ($field === 'invoice_cost_analysis') {
+                $setClauses[] = 'invoice_cost_analysis = CAST(:invoice_cost_analysis AS jsonb)';
+                $iv           = $data['invoice_cost_analysis'];
+                if ($iv === null) {
+                    $params[':invoice_cost_analysis'] = '{}';
+                } elseif (is_array($iv)) {
+                    $params[':invoice_cost_analysis'] = json_encode($iv, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+                } else {
+                    $params[':invoice_cost_analysis'] = (string)$iv;
                 }
                 continue;
             }
@@ -1006,6 +1101,10 @@ class TxnModel
         if (array_key_exists('gst_breakdown', $row) && $row['gst_breakdown'] !== null && is_string($row['gst_breakdown'])) {
             $decoded = json_decode($row['gst_breakdown'], true);
             $row['gst_breakdown'] = is_array($decoded) ? $decoded : null;
+        }
+        if (array_key_exists('invoice_cost_analysis', $row) && $row['invoice_cost_analysis'] !== null && is_string($row['invoice_cost_analysis'])) {
+            $decoded = json_decode($row['invoice_cost_analysis'], true);
+            $row['invoice_cost_analysis'] = is_array($decoded) ? $decoded : [];
         }
     }
 

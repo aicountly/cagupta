@@ -19,7 +19,9 @@ function authHeaders() {
 async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error(json.message || `Request failed (${res.status})`);
+    const err = new Error(json.message || `Request failed (${res.status})`);
+    err.apiData = json.data;
+    throw err;
   }
   return json;
 }
@@ -131,6 +133,29 @@ export async function getTxns(params = {}) {
     txns:       (data.data || []).map(normalizeTxn),
     pagination: data.meta?.pagination || {},
   };
+}
+
+/** GET /api/admin/invoices/cost-variance-report */
+export async function getInvoiceCostVarianceReport({ dateFrom, dateTo }) {
+  const q = new URLSearchParams();
+  q.set('date_from', dateFrom);
+  q.set('date_to', dateTo);
+  const res = await fetch(`${API_BASE}/admin/invoices/cost-variance-report?${q}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return Array.isArray(data.data) ? data.data : [];
+}
+
+/** POST /api/admin/invoices/cost-analysis-preview */
+export async function postInvoiceCostAnalysisPreview(payload) {
+  const res = await fetch(`${API_BASE}/admin/invoices/cost-analysis-preview`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify(payload),
+  });
+  const data = await parseResponse(res);
+  return data.data || {};
 }
 
 /** POST /api/admin/txn */

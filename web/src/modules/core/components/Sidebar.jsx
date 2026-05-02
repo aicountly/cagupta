@@ -12,6 +12,7 @@ import {
   MessageSquare, Smartphone, Share2, Megaphone, UsersRound,
   Mail,
 } from 'lucide-react';
+import { ROLES } from '../../../constants/roles';
 
 const navSections = [
   {
@@ -40,6 +41,12 @@ const navSections = [
     items: [
       { to: '/invoices', label: 'Invoices & Ledger', icon: Receipt },
       { to: '/finance/bank-reports', label: 'Bank & firm txns', icon: Landmark, permission: 'invoices.view' },
+      {
+        to: '/finance/invoice-cost-variance',
+        label: 'Invoice cost variance',
+        icon: BarChart3,
+        rolesAllowed: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
+      },
       { to: '/calendar', label: 'Calendar', icon: CalendarDays },
       { to: '/credentials', label: 'Credentials Vault', icon: KeyRound },
       { to: '/registers', label: 'Registers', icon: BookOpen },
@@ -124,6 +131,14 @@ export default function Sidebar() {
 
   const renderNavItem = (item) => {
     const Icon = item.icon;
+    if (item.rolesAllowed?.length) {
+      const r = String(roleName || '').toLowerCase();
+      const em = String(user?.email || '').toLowerCase();
+      const allowed = item.rolesAllowed.map((x) => String(x).toLowerCase());
+      if (!allowed.includes(r) && em !== 'rahul@cagupta.in') {
+        return null;
+      }
+    }
     if (item.permission && !hasPermission(item.permission)) return null;
     if (item.anyOf && !hasAnyPermission(item.anyOf)) return null;
 

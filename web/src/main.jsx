@@ -23,7 +23,7 @@ class RootErrorBoundary extends Component {
   }
 
   componentDidCatch(error, info) {
-    console.error('[CA Portal] Root render failed:', error, info?.componentStack)
+    console.error(error, info?.componentStack)
   }
 
   render() {
@@ -58,7 +58,7 @@ class RootErrorBoundary extends Component {
 function mountApp() {
   const rootEl = document.getElementById('root')
   if (!rootEl) {
-    console.error('[CA Portal] Missing #root — check index.html')
+    console.error('Missing #root element in index.html')
     return
   }
   createRoot(rootEl).render(
@@ -83,12 +83,7 @@ msalInstance.initialize()
     }
   })
   .catch((err) => {
-    console.error('[CA Portal] MSAL bootstrap failed:', err)
-    try {
-      sessionStorage.setItem('msal_bootstrap_error', String(err?.message || err))
-    } catch {
-      /* ignore quota / private mode */
-    }
+    console.error(err)
   })
   .finally(() => {
     mountApp()

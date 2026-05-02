@@ -173,3 +173,21 @@ export async function deleteEngagementType(id) {
   });
   await parseResponse(res);
 }
+
+/**
+ * @param {number|string} id
+ * @param {{ name?: string, standard_fee_amount?: number|string|null, standard_allowable_hours?: number|string|null }} payload
+ */
+export async function updateEngagementType(id, payload) {
+  const body = {};
+  if (payload.name != null) body.name = payload.name;
+  if ('standard_fee_amount' in payload) body.standard_fee_amount = payload.standard_fee_amount;
+  if ('standard_allowable_hours' in payload) body.standard_allowable_hours = payload.standard_allowable_hours;
+  const res = await fetch(`${API_BASE}/admin/engagement-types/${id}`, {
+    method:  'PATCH',
+    headers: authHeaders(),
+    body:    JSON.stringify(body),
+  });
+  const data = await parseResponse(res);
+  return data.data;
+}

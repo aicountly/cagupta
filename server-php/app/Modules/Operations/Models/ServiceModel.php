@@ -363,6 +363,7 @@ SQL;
 
         $allowed = [
             'status', 'assigned_to', 'due_date', 'fees', 'notes', 'priority', 'service_type', 'financial_year',
+            'standard_fee_override', 'standard_allowable_hours_override',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
