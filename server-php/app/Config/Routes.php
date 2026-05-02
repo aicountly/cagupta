@@ -510,6 +510,24 @@ class Routes
                 'middleware' => ['auth', 'role:super_admin'],
             ],
             [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/approvals/partner-payout-cycle-amendments',
+                'handler'    => 'Admin\PartnerPayoutCycleAmendmentApprovalController@index',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/partner-payout-cycle-amendments/:id/approve',
+                'handler'    => 'Admin\PartnerPayoutCycleAmendmentApprovalController@approve',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/partner-payout-cycle-amendments/:id/reject',
+                'handler'    => 'Admin\PartnerPayoutCycleAmendmentApprovalController@reject',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/services/:id/time-entries/start',
                 'handler'    => 'Admin\TimeEntryController@startForService',
@@ -1582,6 +1600,48 @@ class Routes
                 'middleware' => ['auth', 'permission:partners.manage'],
             ],
             [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/partner-payout-cycles',
+                'handler'    => 'Admin\PartnerPayoutCycleController@index',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/partner-payout-cycles/ensure',
+                'handler'    => 'Admin\PartnerPayoutCycleController@ensure',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/partner-payout-cycles/:id/preview',
+                'handler'    => 'Admin\PartnerPayoutCycleController@preview',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/partner-payout-cycles/:id',
+                'handler'    => 'Admin\PartnerPayoutCycleController@show',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/partner-payout-cycles/:id/finalise',
+                'handler'    => 'Admin\PartnerPayoutCycleController@finalise',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/partner-payout-cycles/:id/disburse',
+                'handler'    => 'Admin\PartnerPayoutCycleController@disburse',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/partner-payout-cycles/:id/amendments',
+                'handler'    => 'Admin\PartnerPayoutCycleController@submitAmendment',
+                'middleware' => ['auth', 'permission:partners.manage'],
+            ],
+            [
                 'method'     => 'PATCH',
                 'pattern'    => '/api/admin/partner-bank/:id/verify',
                 'handler'    => 'Admin\PartnerAdminController@bankVerify',
@@ -1618,6 +1678,12 @@ class Routes
                 'pattern'    => '/api/partner/payouts',
                 'handler'    => 'Partner\PartnerPortalController@payoutStore',
                 'middleware' => ['auth', 'permission:partner.payouts.request'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/partner/payout-cycles',
+                'handler'    => 'Partner\PartnerPortalController@payoutCycles',
+                'middleware' => ['auth', 'permission:partner.portal'],
             ],
             [
                 'method'     => 'GET',

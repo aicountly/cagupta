@@ -15,6 +15,7 @@ import GlobalSearchPage from './modules/core/pages/GlobalSearchPage';
 import InboxAndTickets from './modules/core/pages/InboxAndTickets';
 import TimesheetOverflowApprovals from './modules/core/pages/TimesheetOverflowApprovals';
 import AffiliatePayoutCycleAmendmentApprovals from './modules/core/pages/AffiliatePayoutCycleAmendmentApprovals';
+import PartnerPayoutCycleAmendmentApprovals from './modules/core/pages/PartnerPayoutCycleAmendmentApprovals';
 
 // ── CRM module ───────────────────────────────────────────────────────────────
 import Contacts from './modules/crm/pages/Contacts';
@@ -55,6 +56,7 @@ import Invoices from './modules/finance/pages/Invoices';
 import BankFirmReports from './modules/finance/pages/BankFirmReports';
 import InvoiceCostVarianceReport from './modules/finance/pages/InvoiceCostVarianceReport';
 import AffiliatePayoutCycles from './modules/finance/pages/AffiliatePayoutCycles';
+import PartnerPayoutCycles from './modules/finance/pages/PartnerPayoutCycles';
 
 // ── Marketing module ─────────────────────────────────────────────────────────
 import WAWebMarketing from './modules/marketing/pages/WAWebMarketing';
@@ -119,6 +121,7 @@ const pageTitles = {
   '/finance/bank-reports':      '🏦 Bank & firm txns',
   '/finance/invoice-cost-variance': '📉 Invoice cost variance',
   '/finance/affiliate-payout-cycles': '📎 Affiliate payout cycles',
+  '/finance/partner-payout-cycles': '📎 Partner payout cycles',
   '/reports':                            '📊 Reports',
   '/reports/timesheets':                 '🕐 Timesheet report',
   '/reports/timesheets/shift-target':    '📊 Staff punch vs target',
@@ -137,6 +140,7 @@ const pageTitles = {
   '/admin/leaves':              '📅 Leave Management',
   '/admin/timesheet-overflow-approvals': '📋 Timesheet overflow',
   '/admin/affiliate-payout-cycle-amendments': '📎 Affiliate payout amendments',
+  '/admin/partner-payout-cycle-amendments': '📎 Partner payout amendments',
   '/admin/affiliates':          '🤝 Affiliates',
   '/admin/partners':            '🤝 Partners',
   '/marketing/wa/web':          '📱 WA Web Marketing',
@@ -211,6 +215,11 @@ export default function App() {
           <Route path="/finance/affiliate-payout-cycles" element={
             <ProtectedRoute staffOnly requiredPermission="affiliates.manage">
               <Layout routePath="/finance/affiliate-payout-cycles"><AffiliatePayoutCycles /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/finance/partner-payout-cycles" element={
+            <ProtectedRoute staffOnly requiredPermission="partners.manage">
+              <Layout routePath="/finance/partner-payout-cycles"><PartnerPayoutCycles /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/reports" element={
@@ -311,6 +320,13 @@ export default function App() {
             <ProtectedRoute staffOnly>
               <Layout routePath="/admin/affiliate-payout-cycle-amendments">
                 <AffiliatePayoutCycleAmendmentApprovals />
+              </Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/partner-payout-cycle-amendments" element={
+            <ProtectedRoute staffOnly>
+              <Layout routePath="/admin/partner-payout-cycle-amendments">
+                <PartnerPayoutCycleAmendmentApprovals />
               </Layout>
             </ProtectedRoute>
           } />

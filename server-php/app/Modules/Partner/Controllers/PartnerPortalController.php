@@ -6,6 +6,7 @@ namespace App\Controllers\Partner;
 use App\Controllers\BaseController;
 use App\Models\PartnerAssignmentModel;
 use App\Models\PartnerBankDetailModel;
+use App\Models\PartnerPayoutCycleModel;
 use App\Models\PartnerPayoutModel;
 use App\Models\PartnerProfileModel;
 
@@ -160,6 +161,18 @@ final class PartnerPortalController extends BaseController
 
         $pid = $payoutModel->createWithLines((int)$u['id'], round($sum, 2), $lines);
         $this->success(['id' => $pid, 'allocated_amount' => round($sum, 2)], 'Payout request submitted', 201);
+    }
+
+    /** GET /api/partner/payout-cycles?year=2026 — calendar cycles + this partner’s totals per period */
+    public function payoutCycles(): never
+    {
+        $u = $this->assertPartner();
+        $year = (int)$this->query('year', (int)date('Y'));
+        if ($year < 2000 || $year > 2100) {
+            $this->error('Invalid year.', 422);
+        }
+        $rows = (new PartnerPayoutCycleModel())->listYearForPartner($year, (int)$u['id']);
+        $this->success($rows);
     }
 
     /** GET /api/partner/bank */

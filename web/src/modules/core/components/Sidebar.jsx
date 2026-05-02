@@ -48,6 +48,7 @@ const navSections = [
         rolesAllowed: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
       },
       { to: '/finance/affiliate-payout-cycles', label: 'Affiliate payout cycles', icon: Wallet, permission: 'affiliates.manage' },
+      { to: '/finance/partner-payout-cycles', label: 'Partner payout cycles', icon: Wallet, permission: 'partners.manage' },
       { to: '/calendar', label: 'Calendar', icon: CalendarDays },
       { to: '/credentials', label: 'Credentials Vault', icon: KeyRound },
       { to: '/registers', label: 'Registers', icon: BookOpen },
@@ -96,6 +97,12 @@ const adminNavItems = [
   {
     to: '/admin/affiliate-payout-cycle-amendments',
     label: 'Affiliate payout amendments',
+    icon: Wallet,
+    rolesAllowed: [ROLES.SUPER_ADMIN],
+  },
+  {
+    to: '/admin/partner-payout-cycle-amendments',
+    label: 'Partner payout amendments',
     icon: Wallet,
     rolesAllowed: [ROLES.SUPER_ADMIN],
   },

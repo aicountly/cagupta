@@ -81,6 +81,31 @@ final class PartnerPayoutModel
         return $stmt->fetchAll();
     }
 
+    /**
+     * Accruals available to sweep into a partner payout cycle for [period_start, period_end].
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function listEligibleForPartnerPayoutCycle(string $periodStart, string $periodEnd): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT ppa.* FROM partner_payout_accruals ppa
+             WHERE ppa.status = 'accrued'
+               AND ppa.accrual_date >= :ps AND ppa.accrual_date <= :pe
+               AND ppa.partner_payout_cycle_id IS NULL
+               AND NOT EXISTS (
+                   SELECT 1 FROM partner_payout_request_lines prl
+                   JOIN partner_payout_requests pr ON pr.id = prl.payout_request_id
+                   WHERE prl.accrual_id = ppa.id
+                     AND pr.status IN ('pending', 'approved')
+               )
+             ORDER BY ppa.accrual_date ASC, ppa.id ASC"
+        );
+        $stmt->execute([':ps' => $periodStart, ':pe' => $periodEnd]);
+
+        return $stmt->fetchAll();
+    }
+
     // ── Payout Requests ──────────────────────────────────────────────────────
 
     /**

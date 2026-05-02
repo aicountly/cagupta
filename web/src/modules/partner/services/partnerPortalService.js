@@ -80,3 +80,13 @@ export async function getPartnerAccruals(params = {}) {
   const data = await parseResponse(res);
   return data.data || [];
 }
+
+/** @param {number} [year] */
+export async function getPartnerPayoutCycles(year) {
+  const y = year ?? new Date().getFullYear();
+  const res = await fetch(`${API_BASE}/partner/payout-cycles?year=${encodeURIComponent(y)}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return data.data || [];
+}
