@@ -9,6 +9,7 @@ import TopBar from './modules/core/components/TopBar';
 import Dashboard from './modules/core/pages/Dashboard';
 import Profile from './modules/core/pages/Profile';
 import UserManagement from './modules/core/pages/UserManagement';
+import LeaveManagement from './modules/core/pages/LeaveManagement';
 import Settings from './modules/core/pages/Settings';
 import GlobalSearchPage from './modules/core/pages/GlobalSearchPage';
 import InboxAndTickets from './modules/core/pages/InboxAndTickets';
