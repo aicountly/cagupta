@@ -39,6 +39,35 @@ export default function TimeEntryModifyModal({ entry, serviceId, onSaved, onClos
 
   const set = (k, v) => setProposed((p) => ({ ...p, [k]: v }));
 
+  async function patchWithCapOverflowRetry(basePayload, updateOpts = {}) {
+    const dur = Number(proposed.duration_minutes);
+    const prevDur = Number(entry.durationMinutes) || 0;
+    const durationIncreases = dur > prevDur;
+
+    const attempt = (overflow) => {
+      const payload = overflow
+        ? { ...basePayload, request_overflow_approval: true }
+        : basePayload;
+      return updateTimeEntry(serviceId, entry.id, payload, updateOpts);
+    };
+
+    try {
+      return await attempt(false);
+    } catch (e2) {
+      if (
+        e2?.data?.code === 'timesheet_cap_exceeded'
+        && durationIncreases
+        && window.confirm(
+          'This change would exceed the engagement time allowance (3 × standard hours in Settings). '
+          + 'Submit for Super Admin approval instead?',
+        )
+      ) {
+        return await attempt(true);
+      }
+      throw e2;
+    }
+  }
+
   // ── Today's entry: direct save (no OTP) ──────────────────────────────────
 
   async function handleSaveDirect(e) {
@@ -59,7 +88,7 @@ export default function TimeEntryModifyModal({ entry, serviceId, onSaved, onClos
     }
     setBusy(true);
     try {
-      const updated = await updateTimeEntry(serviceId, entry.id, {
+      const updated = await patchWithCapOverflowRetry({
         work_date: proposed.work_date,
         duration_minutes: dur,
         activity_type: proposed.activity_type,
@@ -130,9 +159,7 @@ export default function TimeEntryModifyModal({ entry, serviceId, onSaved, onClos
     setBusy(true);
     try {
       const dur = Number(proposed.duration_minutes);
-      const updated = await updateTimeEntry(
-        serviceId,
-        entry.id,
+      const updated = await patchWithCapOverflowRetry(
         {
           work_date: proposed.work_date,
           duration_minutes: dur,
@@ -140,7 +167,7 @@ export default function TimeEntryModifyModal({ entry, serviceId, onSaved, onClos
           is_billable: proposed.is_billable,
           notes: proposed.notes,
         },
-        { superadminOtp: otp.trim() }
+        { superadminOtp: otp.trim() },
       );
       onSaved(updated);
     } catch (e2) {

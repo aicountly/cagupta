@@ -20,6 +20,7 @@ async function parseResponse(res) {
     const err = new Error(json.message || `Request failed (${res.status})`);
     err.status = res.status;
     err.data = json.data;
+    err.code = json.data?.code;
     throw err;
   }
   return json;
@@ -55,6 +56,8 @@ function mapTimeEntry(r) {
     timerStatus: r.timer_status || 'submitted',
     source: r.source || 'manual',
     createdAt: r.created_at || '',
+    overflowRequestStatus: r.overflow_request_status || null,
+    overflowDecisionNotes: r.overflow_decision_notes || null,
   };
 }
 
@@ -82,6 +85,9 @@ export async function createTimeEntry(serviceId, payload) {
     body: JSON.stringify(payload),
   });
   const json = await parseResponse(res);
+  if (res.status === 202) {
+    return { pendingApproval: true, ...json.data };
+  }
   return mapTimeEntry(json.data);
 }
 
@@ -166,6 +172,9 @@ export async function updateTimeEntry(serviceId, entryId, payload, { superadminO
     body: JSON.stringify(payload),
   });
   const json = await parseResponse(res);
+  if (res.status === 202) {
+    return { pendingApproval: true, ...json.data };
+  }
   return mapTimeEntry(json.data);
 }
 

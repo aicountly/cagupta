@@ -8,7 +8,7 @@ import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen, Landmark,
   Target, Settings, ChevronRight, ChevronDown,
-  UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, CalendarOff, Bell, RefreshCw,
+  UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, CalendarOff, Bell, RefreshCw, Timer,
   MessageSquare, Smartphone, Share2, Megaphone, UsersRound,
   Mail,
 } from 'lucide-react';
@@ -86,6 +86,12 @@ const navSections = [
 const adminNavItems = [
   { to: '/admin/users',   label: 'User Management',  icon: ShieldCheck,  anyOf: ['users.manage', 'users.delegate'] },
   { to: '/admin/leaves',  label: 'Leave Management', icon: CalendarOff,  permission: 'users.manage' },
+  {
+    to: '/admin/timesheet-overflow-approvals',
+    label: 'Timesheet overflow',
+    icon: Timer,
+    rolesAllowed: [ROLES.SUPER_ADMIN],
+  },
   { to: '/admin/affiliates', label: 'Affiliates',    icon: Handshake,    permission: 'affiliates.manage' },
   { to: '/admin/partners',   label: 'Partners',      icon: Briefcase,    permission: 'partners.manage' },
 ];
@@ -124,6 +130,12 @@ export default function Sidebar() {
   }, [loc.pathname]);
 
   const visibleAdminItems = adminNavItems.filter((item) => {
+    if (item.rolesAllowed?.length) {
+      const r = String(roleName || '').toLowerCase();
+      const em = String(user?.email || '').toLowerCase();
+      const allowed = item.rolesAllowed.map((x) => String(x).toLowerCase());
+      if (!allowed.includes(r) && em !== 'rahul@cagupta.in') return false;
+    }
     if (item.permission && !hasPermission(item.permission)) return false;
     if (item.anyOf && !hasAnyPermission(item.anyOf)) return false;
     return true;

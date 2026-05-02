@@ -474,6 +474,24 @@ class Routes
                 'middleware' => ['auth', 'permission:services.view'],
             ],
             [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/approvals/timesheet-overflow',
+                'handler'    => 'Admin\TimesheetOverflowApprovalController@index',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/timesheet-overflow/:id/approve',
+                'handler'    => 'Admin\TimesheetOverflowApprovalController@approve',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/timesheet-overflow/:id/reject',
+                'handler'    => 'Admin\TimesheetOverflowApprovalController@reject',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/services/:id/time-entries/start',
                 'handler'    => 'Admin\TimeEntryController@startForService',

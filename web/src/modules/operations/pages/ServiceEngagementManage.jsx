@@ -426,25 +426,44 @@ export default function ServiceEngagementManage() {
     setTimeSaving(true);
     setTimeError('');
     try {
-      const payload = {
+      const basePayload = {
         work_date: timeForm.workDate,
         duration_minutes: mins,
         activity_type: timeForm.activityType,
         is_billable: timeForm.isBillable,
         notes: timeForm.notes.trim() || undefined,
       };
-      if (timeForm.taskId) payload.task_id = timeForm.taskId;
+      if (timeForm.taskId) basePayload.task_id = timeForm.taskId;
       if (canManageTeamRates && timeForm.userId && String(timeForm.userId) !== String(session?.user?.id)) {
-        payload.user_id = parseInt(timeForm.userId, 10);
+        basePayload.user_id = parseInt(timeForm.userId, 10);
       }
-      if (stoppedEntryDraft && String(stoppedEntryDraft.serviceId) === String(id)) {
-        await saveStoppedEntry(id, stoppedEntryDraft.id, {
-          ...payload,
-          timer_status: 'submitted',
-        });
-      } else {
-        await createTimeEntry(id, payload);
+
+      const submit = async (overflow) => {
+        const payload = overflow ? { ...basePayload, request_overflow_approval: true } : { ...basePayload };
+        if (stoppedEntryDraft && String(stoppedEntryDraft.serviceId) === String(id)) {
+          return saveStoppedEntry(id, stoppedEntryDraft.id, {
+            ...payload,
+            timer_status: 'submitted',
+          });
+        }
+        return createTimeEntry(id, payload);
+      };
+
+      let result;
+      try {
+        result = await submit(false);
+      } catch (err) {
+        if (err?.data?.code === 'timesheet_cap_exceeded'
+          && window.confirm(
+            'This exceeds the engagement time allowance (3 × standard hours in Settings). '
+            + 'Submit for Super Admin approval instead?',
+          )) {
+          result = await submit(true);
+        } else {
+          throw err;
+        }
       }
+
       const list = await getTimeEntries(id);
       setTimeEntries(list);
       setStoppedEntryDraft(null);
@@ -454,8 +473,12 @@ export default function ServiceEngagementManage() {
         notes: '',
         taskId: '',
       }));
-      setToast('Time entry saved');
-      setTimeout(() => setToast(''), 1500);
+      if (result?.pendingApproval) {
+        setToast('Submitted for Super Admin approval (timesheet overflow).');
+      } else {
+        setToast('Time entry saved');
+      }
+      setTimeout(() => setToast(''), 2000);
     } catch (err) {
       setTimeError(err.message || 'Could not save time entry.');
     } finally {
@@ -507,12 +530,31 @@ export default function ServiceEngagementManage() {
     if (!id || !activeTimer || String(activeTimer.serviceId) !== String(id)) return;
     setTimeError('');
     try {
-      const stopped = await stopForService(id, activeTimer.id, {
+      const stopBody = {
         task_id: timeForm.taskId || null,
         activity_type: timeForm.activityType,
         is_billable: timeForm.isBillable,
         notes: timeForm.notes.trim() || undefined,
-      });
+      };
+      let stopped;
+      let stoppedWithOverflowApproval = false;
+      try {
+        stopped = await stopForService(id, activeTimer.id, stopBody);
+      } catch (e) {
+        if (e?.data?.code === 'timesheet_cap_exceeded'
+          && window.confirm(
+            'Stopping exceeds the engagement time allowance (3 × standard hours). '
+            + 'Stop the timer and request Super Admin approval for the extra time?',
+          )) {
+          stoppedWithOverflowApproval = true;
+          stopped = await stopForService(id, activeTimer.id, {
+            ...stopBody,
+            request_overflow_approval: true,
+          });
+        } else {
+          throw e;
+        }
+      }
       setStoppedEntryDraft(stopped);
       setTimeForm((f) => ({
         ...f,
@@ -523,8 +565,12 @@ export default function ServiceEngagementManage() {
         notes: stopped.notes || '',
         taskId: stopped.taskId || '',
       }));
-      setToast('Timer stopped. Review and submit the prefilled entry.');
-      setTimeout(() => setToast(''), 1500);
+      setToast(
+        stoppedWithOverflowApproval
+          ? 'Timer stopped; over-cap time is pending Super Admin approval. Review and submit the prefilled entry.'
+          : 'Timer stopped. Review and submit the prefilled entry.',
+      );
+      setTimeout(() => setToast(''), stoppedWithOverflowApproval ? 2500 : 1500);
       await refreshTimeList();
       await refreshActiveTimer();
     } catch (e) {
@@ -1223,7 +1269,7 @@ export default function ServiceEngagementManage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead>
                   <tr style={{ textAlign: 'left', color: '#64748b' }}>
-                    {['Date', 'User', 'Mins', 'Activity', 'Scope', 'Billable', ''].map((h) => (
+                    {['Date', 'User', 'Mins', 'Activity', 'Scope', 'Billable', 'Cap', ''].map((h) => (
                       <th key={h} style={{ padding: '6px 4px', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
                     ))}
                   </tr>
@@ -1237,6 +1283,15 @@ export default function ServiceEngagementManage() {
                       <td style={{ padding: '6px 4px' }}>{te.activityType.replace(/_/g, ' ')}</td>
                       <td style={{ padding: '6px 4px', color: '#64748b' }}>{te.taskId ? `Task` : 'Engagement'}</td>
                       <td style={{ padding: '6px 4px' }}>{te.isBillable ? 'Yes' : 'No'}</td>
+                      <td style={{ padding: '6px 4px', fontSize: 11, color: '#64748b' }}>
+                        {te.overflowRequestStatus === 'pending' && (
+                          <span style={{ color: '#b45309', fontWeight: 600 }}>Pending approval</span>
+                        )}
+                        {te.overflowRequestStatus && te.overflowRequestStatus !== 'pending' && (
+                          <span title={te.overflowDecisionNotes || ''}>{te.overflowRequestStatus.replace(/_/g, ' ')}</span>
+                        )}
+                        {!te.overflowRequestStatus && '—'}
+                      </td>
                       <td style={{ padding: '6px 4px' }}>
                         {canLogTimePermission && (
                           <button
@@ -1260,8 +1315,19 @@ export default function ServiceEngagementManage() {
             <TimeEntryModifyModal
               entry={modifyEntry}
               serviceId={id}
-              onSaved={(updated) => {
-                setTimeEntries((prev) => prev.map((te) => te.id === updated.id ? updated : te));
+              onSaved={async (updated) => {
+                if (updated?.pendingApproval) {
+                  try {
+                    const list = await getTimeEntries(id);
+                    setTimeEntries(list);
+                  } catch {
+                    /* list refresh best-effort */
+                  }
+                  setToast('Change submitted for Super Admin approval (timesheet overflow).');
+                  setTimeout(() => setToast(''), 2500);
+                } else {
+                  setTimeEntries((prev) => prev.map((te) => te.id === updated.id ? updated : te));
+                }
                 setModifyEntry(null);
               }}
               onClose={() => setModifyEntry(null)}

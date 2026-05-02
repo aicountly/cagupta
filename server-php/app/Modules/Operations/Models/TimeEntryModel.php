@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Config\Database;
+use App\Libraries\TimesheetEngagementCap;
 use PDO;
 
 /**
@@ -69,12 +70,15 @@ class TimeEntryModel
                              NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
                              o.name,
                              s.client_name,
-                             'Unknown') AS client_name
+                             'Unknown') AS client_name,
+                    tor.status AS overflow_request_status,
+                    tor.decision_notes AS overflow_decision_notes
              FROM time_entries te
              JOIN users u ON u.id = te.user_id
              JOIN services s ON s.id = te.service_id
              LEFT JOIN clients c ON c.id = s.client_id
              LEFT JOIN organizations o ON o.id = s.organization_id
+             LEFT JOIN timesheet_overflow_requests tor ON tor.id = te.cap_overflow_request_id
              WHERE te.service_id = :sid
              ORDER BY te.work_date DESC, te.id DESC"
         );
@@ -267,12 +271,16 @@ class TimeEntryModel
     }
 
     /**
-     * @param array<string, mixed> $service
-     * @param array<string, mixed> $data activity_type?, is_billable?, task_id?, notes?
+     * Snapshot for stopping a running timer (duration, dates, fields) — null if validation fails.
      *
-     * @return array<string, mixed>|null
+     * @param array<string, mixed> $service
+     * @param array<string, mixed> $data
+     * @return array{
+     *   mins:int,end_at:string,work_date:string,task_id:?string,activity:string,
+     *   is_billable:bool,notes:?string
+     * }|null
      */
-    public function stopTimerWithValidation(array $service, int $entryId, int $actorUserId, array $data = []): ?array
+    public function snapshotTimerStop(array $service, int $entryId, int $actorUserId, array $data): ?array
     {
         if ($this->isServiceClosedForTime($service)) {
             return null;
@@ -314,8 +322,6 @@ class TimeEntryModel
         }
         $endTs = time();
 
-        // Timers must not cross midnight (IST). Cap ended_at at the start of the next
-        // calendar day in Asia/Kolkata so duration_minutes never exceeds 1440.
         $midnightTs = mktime(
             0, 0, 0,
             (int)date('n', $startTs),
@@ -333,8 +339,69 @@ class TimeEntryModel
         $endAt = gmdate('Y-m-d H:i:sP', $endTs);
         $workDate = date('Y-m-d', $startTs);
 
+        return [
+            'mins'        => $mins,
+            'end_at'      => $endAt,
+            'work_date'   => $workDate,
+            'task_id'     => $taskId,
+            'activity'    => $activity,
+            'is_billable' => $isBillable,
+            'notes'       => $notes,
+        ];
+    }
+
+    /**
+     * @param array<string, mixed> $service
+     * @param array<string, mixed> $data activity_type?, is_billable?, task_id?, notes?
+     *
+     * @return array<string, mixed>|null
+     */
+    public function stopTimerWithValidation(
+        array $service,
+        int $entryId,
+        int $actorUserId,
+        array $data = [],
+        ?int $attachOverflowRequestId = null,
+        ?string &$failureReason = null
+    ): ?array {
+        $failureReason = null;
+        $snap = $this->snapshotTimerStop($service, $entryId, $actorUserId, $data);
+        if ($snap === null) {
+            return null;
+        }
+        $serviceId = (int)$service['id'];
+        $eval      = TimesheetEngagementCap::evaluateAppend(
+            $serviceId,
+            $service,
+            $snap['mins'],
+            $entryId,
+            null
+        );
+        if ($eval['has_cap'] && $eval['would_exceed'] && $attachOverflowRequestId === null) {
+            $failureReason = 'timesheet_cap_exceeded';
+
+            return null;
+        }
+
+        $capSql = '';
+        $exec   = [
+            ':ended_at'   => $snap['end_at'],
+            ':dur'        => $snap['mins'],
+            ':work_date'  => $snap['work_date'],
+            ':task_id'    => $snap['task_id'],
+            ':activity'   => $snap['activity'],
+            ':billable'   => $snap['is_billable'] ? 'true' : 'false',
+            ':notes'      => $snap['notes'],
+            ':status'     => 'stopped',
+            ':id'         => $entryId,
+        ];
+        if ($attachOverflowRequestId !== null && $attachOverflowRequestId > 0) {
+            $capSql                      = ', cap_overflow_request_id = :corid';
+            $exec[':corid']              = $attachOverflowRequestId;
+        }
+
         $stmt = $this->db->prepare(
-            'UPDATE time_entries
+            "UPDATE time_entries
              SET ended_at = :ended_at,
                  duration_minutes = :dur,
                  work_date = :work_date,
@@ -344,21 +411,108 @@ class TimeEntryModel
                  notes = :notes,
                  timer_status = :status,
                  updated_at = NOW()
+                 {$capSql}
+             WHERE id = :id"
+        );
+        $stmt->execute($exec);
+
+        return $this->find($entryId);
+    }
+
+    /**
+     * Apply fields after superadmin approved an entry_edit overflow request (no past-date OTP gate).
+     *
+     * @param array<string, mixed> $service
+     * @param array<string, mixed> $data duration_minutes, work_date, activity_type, is_billable, notes?, task_id?, timer_status?
+     *
+     * @return array<string, mixed>|null
+     */
+    public function applyOverflowApprovedEdit(array $service, int $entryId, array $data): ?array
+    {
+        if ($this->isServiceClosedForTime($service)) {
+            return null;
+        }
+        $row = $this->find($entryId);
+        if ($row === null || (int)$row['service_id'] !== (int)$service['id']) {
+            return null;
+        }
+        if ((string)($row['timer_status'] ?? '') === 'running') {
+            return null;
+        }
+
+        $duration = (int)($data['duration_minutes'] ?? 0);
+        if ($duration <= 0 || $duration > 1440) {
+            return null;
+        }
+        $workDate = trim((string)($data['work_date'] ?? ''));
+        if ($workDate === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $workDate)) {
+            return null;
+        }
+        $taskId = isset($data['task_id']) && $data['task_id'] !== '' && $data['task_id'] !== null
+            ? trim((string)$data['task_id'])
+            : null;
+        if ($taskId !== null && !$this->isTaskOpen($service, (string)$taskId)) {
+            return null;
+        }
+        $activity = strtolower(trim((string)($data['activity_type'] ?? '')));
+        if (!in_array($activity, self::ACTIVITY_TYPES, true)) {
+            return null;
+        }
+        $isBillable = array_key_exists('is_billable', $data)
+            ? (bool)$data['is_billable']
+            : (bool)$row['is_billable'];
+        $notes = isset($data['notes']) ? trim((string)$data['notes']) : null;
+        if ($notes === '') {
+            $notes = null;
+        }
+        $timerStatus = strtolower(trim((string)($data['timer_status'] ?? 'submitted')));
+        if (!in_array($timerStatus, ['stopped', 'submitted'], true)) {
+            return null;
+        }
+
+        $stmt = $this->db->prepare(
+            'UPDATE time_entries
+             SET work_date = :work_date,
+                 duration_minutes = :dur,
+                 task_id = :task_id,
+                 activity_type = :activity,
+                 is_billable = :billable,
+                 notes = :notes,
+                 timer_status = :timer_status,
+                 cap_overflow_request_id = NULL,
+                 updated_at = NOW()
              WHERE id = :id'
         );
         $stmt->execute([
-            ':ended_at' => $endAt,
-            ':dur' => $mins,
-            ':work_date' => $workDate,
-            ':task_id' => $taskId,
-            ':activity' => $activity,
-            ':billable' => $isBillable ? 'true' : 'false',
-            ':notes' => $notes,
-            ':status' => 'stopped',
-            ':id' => $entryId,
+            ':work_date'    => $workDate,
+            ':dur'          => $duration,
+            ':task_id'      => $taskId,
+            ':activity'     => $activity,
+            ':billable'     => $isBillable ? 'true' : 'false',
+            ':notes'        => $notes,
+            ':timer_status' => $timerStatus,
+            ':id'           => $entryId,
         ]);
 
         return $this->find($entryId);
+    }
+
+    public function deleteById(int $id): bool
+    {
+        $stmt = $this->db->prepare('DELETE FROM time_entries WHERE id = :id');
+
+        return $stmt->execute([':id' => $id]);
+    }
+
+    /** After superadmin approves a timer_stop overflow — optional duration tweak already on row. */
+    public function clearOverflowLinkSetDuration(int $entryId, int $durationMinutes): void
+    {
+        $stmt = $this->db->prepare(
+            'UPDATE time_entries
+             SET duration_minutes = :dur, cap_overflow_request_id = NULL, updated_at = NOW()
+             WHERE id = :id'
+        );
+        $stmt->execute([':dur' => $durationMinutes, ':id' => $entryId]);
     }
 
     /**

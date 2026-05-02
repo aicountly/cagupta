@@ -13,6 +13,7 @@ import LeaveManagement from './modules/core/pages/LeaveManagement';
 import Settings from './modules/core/pages/Settings';
 import GlobalSearchPage from './modules/core/pages/GlobalSearchPage';
 import InboxAndTickets from './modules/core/pages/InboxAndTickets';
+import TimesheetOverflowApprovals from './modules/core/pages/TimesheetOverflowApprovals';
 
 // ── CRM module ───────────────────────────────────────────────────────────────
 import Contacts from './modules/crm/pages/Contacts';
@@ -131,6 +132,7 @@ const pageTitles = {
   '/settings':                  '⚙️ Settings',
   '/admin/users':               '👥 User Management',
   '/admin/leaves':              '📅 Leave Management',
+  '/admin/timesheet-overflow-approvals': '📋 Timesheet overflow',
   '/admin/affiliates':          '🤝 Affiliates',
   '/admin/partners':            '🤝 Partners',
   '/marketing/wa/web':          '📱 WA Web Marketing',
@@ -286,6 +288,13 @@ export default function App() {
             <ProtectedRoute staffOnly requiredPermission="users.manage">
               <Layout routePath="/admin/leaves">
                 <LeaveManagement />
+              </Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/admin/timesheet-overflow-approvals" element={
+            <ProtectedRoute staffOnly>
+              <Layout routePath="/admin/timesheet-overflow-approvals">
+                <TimesheetOverflowApprovals />
               </Layout>
             </ProtectedRoute>
           } />

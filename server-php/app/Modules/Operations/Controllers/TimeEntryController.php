@@ -4,13 +4,17 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Config\Auth as AuthConfig;
+use App\Config\Database;
 use App\Controllers\BaseController;
+use App\Libraries\TimesheetEngagementCap;
 use App\Libraries\WorkHoldGate;
 use App\Libraries\BrevoMailer;
 use App\Libraries\OtpService;
 use App\Models\ServiceModel;
 use App\Models\TimeEntryModel;
+use App\Models\TimesheetOverflowRequestModel;
 use App\Models\UserModel;
+use App\Models\UserNotificationModel;
 
 /**
  * Time entries on engagements.
@@ -108,6 +112,72 @@ class TimeEntryController extends BaseController
         $holdMsg = WorkHoldGate::reasonBlockedTimeEntry($service);
         if ($holdMsg !== null) {
             $this->error($holdMsg, 422);
+        }
+
+        $duration = (int)($body['duration_minutes'] ?? 0);
+        if ($duration <= 0 || $duration > 1440) {
+            $this->error('duration_minutes must be between 1 and 1440.', 422);
+        }
+
+        $eval = TimesheetEngagementCap::evaluateAppend($id, $service, $duration, null, null);
+        $wantOverflow = !empty($body['request_overflow_approval']);
+
+        if ($eval['has_cap'] && $eval['would_exceed'] && !$wantOverflow) {
+            $this->error(
+                'Logged time would exceed the allowance (3 × standard hours for this engagement). ' .
+                'Reduce duration or submit with superadmin approval.',
+                422,
+                [],
+                array_merge($eval, ['code' => 'timesheet_cap_exceeded'])
+            );
+        }
+
+        if ($eval['has_cap'] && $eval['would_exceed'] && $wantOverflow) {
+            $workDate = trim((string)($body['work_date'] ?? ''));
+            if ($workDate === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $workDate)) {
+                $this->error('work_date (YYYY-MM-DD) is required for an overflow approval request.', 422);
+            }
+            $activity = strtolower(trim((string)($body['activity_type'] ?? '')));
+            if (!in_array($activity, TimeEntryModel::ACTIVITY_TYPES, true)) {
+                $this->error('Invalid activity_type for overflow request.', 422);
+            }
+            $taskId = isset($body['task_id']) && $body['task_id'] !== '' && $body['task_id'] !== null
+                ? trim((string)$body['task_id'])
+                : null;
+            if ($taskId !== null && !$this->entries->isTaskOpen($service, $taskId)) {
+                $this->error('Selected task is not open.', 422);
+            }
+            $isBillable = array_key_exists('is_billable', $body) ? (bool)$body['is_billable'] : true;
+            $notes      = isset($body['notes']) ? trim((string)$body['notes']) : null;
+            if ($notes === '') {
+                $notes = null;
+            }
+
+            $overflow = new TimesheetOverflowRequestModel();
+            $rid        = $overflow->create([
+                'service_id'                 => $id,
+                'user_id'                    => $targetUserId,
+                'time_entry_id'              => null,
+                'source_kind'                => 'manual_create',
+                'duration_minutes_requested' => $duration,
+                'work_date'                  => $workDate,
+                'activity_type'              => $activity,
+                'is_billable'                => $isBillable,
+                'notes'                      => $notes,
+                'task_id'                    => $taskId,
+            ]);
+            $overflow->insertAudit($rid, 'submitted', $actorId, ['service_id' => $id]);
+            $this->notifySuperadminsTimesheetOverflow($rid, $service, $duration);
+
+            $this->success(
+                [
+                    'overflow_request_id' => $rid,
+                    'status'              => 'pending_superadmin',
+                    'evaluation'          => $eval,
+                ],
+                'Timesheet overflow approval requested.',
+                202
+            );
         }
 
         $created = $this->entries->createWithValidation($service, array_merge($body, [
@@ -367,8 +437,77 @@ class TimeEntryController extends BaseController
         if ($actorId <= 0) {
             $this->error('Unauthorized.', 401);
         }
-        $stopped = $this->entries->stopTimerWithValidation($service, $entryId, $actorId, $body);
+
+        $snap = $this->entries->snapshotTimerStop($service, $entryId, $actorId, $body);
+        if ($snap === null) {
+            $this->error(
+                'Cannot stop timer. Ensure this timer is running for your user and the service/task is open.',
+                422
+            );
+        }
+
+        $eval        = TimesheetEngagementCap::evaluateAppend($id, $service, $snap['mins'], $entryId, null);
+        $wantOverflow = !empty($body['request_overflow_approval']);
+
+        if ($eval['has_cap'] && $eval['would_exceed'] && !$wantOverflow) {
+            $this->error(
+                'Stopping would exceed the allowance (3 × standard hours). Reduce time or stop with superadmin approval.',
+                422,
+                [],
+                array_merge($eval, ['code' => 'timesheet_cap_exceeded'])
+            );
+        }
+
+        if ($eval['has_cap'] && $eval['would_exceed'] && $wantOverflow) {
+            $db = Database::getConnection();
+            $db->beginTransaction();
+            try {
+                $overflow = new TimesheetOverflowRequestModel();
+                $rid      = $overflow->create([
+                    'service_id'                 => $id,
+                    'user_id'                    => $actorId,
+                    'time_entry_id'              => $entryId,
+                    'source_kind'                => 'timer_stop',
+                    'duration_minutes_requested' => $snap['mins'],
+                    'work_date'                  => $snap['work_date'],
+                    'activity_type'              => $snap['activity'],
+                    'is_billable'                => $snap['is_billable'],
+                    'notes'                      => $snap['notes'],
+                    'task_id'                    => $snap['task_id'],
+                ]);
+                $failReason = null;
+                $stopped    = $this->entries->stopTimerWithValidation($service, $entryId, $actorId, $body, $rid, $failReason);
+                if ($stopped === null) {
+                    $db->rollBack();
+                    if ($failReason === 'timesheet_cap_exceeded') {
+                        $this->error('Could not stop timer (cap).', 422, [], array_merge($eval, ['code' => 'timesheet_cap_exceeded']));
+                    }
+                    $this->error(
+                        'Cannot stop timer. Ensure this timer is running for your user and the service/task is open.',
+                        422
+                    );
+                }
+                $overflow->insertAudit($rid, 'submitted', $actorId, ['timer_stop' => true]);
+                $db->commit();
+                $this->notifySuperadminsTimesheetOverflow($rid, $service, $snap['mins']);
+                $this->success($stopped, 'Timer stopped; pending superadmin approval for over-cap time.');
+            } catch (\Throwable $e) {
+                $db->rollBack();
+                throw $e;
+            }
+        }
+
+        $failReason = null;
+        $stopped    = $this->entries->stopTimerWithValidation($service, $entryId, $actorId, $body, null, $failReason);
         if ($stopped === null) {
+            if ($failReason === 'timesheet_cap_exceeded') {
+                $this->error(
+                    'Stopping would exceed the allowance (3 × standard hours).',
+                    422,
+                    [],
+                    array_merge($eval, ['code' => 'timesheet_cap_exceeded'])
+                );
+            }
             $this->error(
                 'Cannot stop timer. Ensure this timer is running for your user and the service/task is open.',
                 422
@@ -469,6 +608,10 @@ class TimeEntryController extends BaseController
         }
 
         $existingEntry = $this->entries->find($entryId);
+        if ($existingEntry === null || (int)$existingEntry['service_id'] !== $id) {
+            $this->error('Time entry not found.', 404);
+        }
+
         $isToday = ($existingEntry['work_date'] ?? '') === date('Y-m-d');
 
         if (!$isToday) {
@@ -487,6 +630,78 @@ class TimeEntryController extends BaseController
         if ($actorId <= 0) {
             $this->error('Unauthorized.', 401);
         }
+
+        $oldDur = (int)($existingEntry['duration_minutes'] ?? 0);
+        $newDur = array_key_exists('duration_minutes', $body) ? (int)$body['duration_minutes'] : $oldDur;
+
+        if ($newDur > $oldDur) {
+            $eval = TimesheetEngagementCap::evaluateAppend($id, $service, $newDur, $entryId, $entryId);
+            $want = !empty($body['request_overflow_approval']);
+            if ($eval['has_cap'] && $eval['would_exceed'] && !$want) {
+                $this->error(
+                    'Updated duration would exceed the allowance (3 × standard hours). Reduce minutes or request superadmin approval.',
+                    422,
+                    [],
+                    array_merge($eval, ['code' => 'timesheet_cap_exceeded'])
+                );
+            }
+            if ($eval['has_cap'] && $eval['would_exceed'] && $want) {
+                $workDate = array_key_exists('work_date', $body)
+                    ? trim((string)$body['work_date'])
+                    : trim((string)($existingEntry['work_date'] ?? ''));
+                if ($workDate === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $workDate)) {
+                    $this->error('work_date must be YYYY-MM-DD.', 422);
+                }
+                $activity = array_key_exists('activity_type', $body)
+                    ? strtolower(trim((string)$body['activity_type']))
+                    : strtolower(trim((string)($existingEntry['activity_type'] ?? '')));
+                if (!in_array($activity, TimeEntryModel::ACTIVITY_TYPES, true)) {
+                    $this->error('Invalid activity_type.', 422);
+                }
+                $taskId = array_key_exists('task_id', $body)
+                    ? (($body['task_id'] !== '' && $body['task_id'] !== null) ? trim((string)$body['task_id']) : null)
+                    : ($existingEntry['task_id'] ?? null);
+                if ($taskId !== null && !$this->entries->isTaskOpen($service, (string)$taskId)) {
+                    $this->error('Selected task is not open.', 422);
+                }
+                $isBillable = array_key_exists('is_billable', $body)
+                    ? (bool)$body['is_billable']
+                    : (bool)($existingEntry['is_billable'] ?? true);
+                $notes = array_key_exists('notes', $body)
+                    ? trim((string)$body['notes'])
+                    : (($existingEntry['notes'] ?? null) !== null ? trim((string)$existingEntry['notes']) : null);
+                if ($notes === '') {
+                    $notes = null;
+                }
+
+                $overflow = new TimesheetOverflowRequestModel();
+                $rid        = $overflow->create([
+                    'service_id'                 => $id,
+                    'user_id'                    => (int)$existingEntry['user_id'],
+                    'time_entry_id'              => $entryId,
+                    'source_kind'                => 'entry_edit',
+                    'duration_minutes_requested' => $newDur,
+                    'work_date'                  => $workDate,
+                    'activity_type'              => $activity,
+                    'is_billable'                => $isBillable,
+                    'notes'                      => $notes,
+                    'task_id'                    => $taskId,
+                ]);
+                $overflow->insertAudit($rid, 'submitted', $actorId, ['entry_edit' => $entryId]);
+                $this->notifySuperadminsTimesheetOverflow($rid, $service, $newDur);
+
+                $this->success(
+                    [
+                        'overflow_request_id' => $rid,
+                        'status'              => 'pending_superadmin',
+                        'evaluation'          => $eval,
+                    ],
+                    'Timesheet change pending superadmin approval.',
+                    202
+                );
+            }
+        }
+
         $updated = $this->entries->updateWithValidation(
             $service,
             $entryId,
@@ -501,6 +716,30 @@ class TimeEntryController extends BaseController
             );
         }
         $this->success($updated, 'Time entry updated');
+    }
+
+    /**
+     * @param array<string, mixed> $service
+     */
+    private function notifySuperadminsTimesheetOverflow(int $requestId, array $service, int $minutes): void
+    {
+        $uids = (new UserModel())->idsHavingRoleNames(['super_admin']);
+        $label = (string)($service['service_type'] ?? 'Service') . ' · ' . (string)($service['client_name'] ?? '');
+        $body  = "Request #{$requestId}: {$minutes} min over engagement cap — {$label}";
+        if ($uids !== []) {
+            try {
+                (new UserNotificationModel())->createForUsers(
+                    $uids,
+                    'timesheet_overflow',
+                    'Timesheet overflow approval',
+                    $body,
+                    'timesheet_overflow_request',
+                    $requestId
+                );
+            } catch (\Throwable $e) {
+                error_log('[TimeEntryController] overflow notify: ' . $e->getMessage());
+            }
+        }
     }
 
     /**
