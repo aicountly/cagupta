@@ -88,11 +88,7 @@ export async function submitAffiliatePayoutCycleAmendment(cycleId, adjustments) 
     headers: authHeaders(),
     body: JSON.stringify({ adjustments }),
   });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    throw new Error(json.message || `Request failed (${res.status})`);
-  }
-  return json;
+  return parseResponse(res);
 }
 
 export async function listPendingAffiliatePayoutCycleAmendments() {

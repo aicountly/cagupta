@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getAllEngagements, getServiceKpiSnapshot } from '../../../services/engagementService';
 import { getMyTemporaryCharges } from '../../../services/leaveService';
@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { KPI_SLUGS, filterEngagementsBySlug } from '../../../utils/serviceKpiFilters';
 import ServicesEngagementTableBlock from '../../../components/services/ServicesEngagementTableBlock';
+const RecurringServices = lazy(() => import('./RecurringServices'));
 
 const PENDING_ON_ME_FILTER = 'pending_on_me';
 const PENDING_ON_ME_STATUSES = ['not_started', 'in_progress', 'pending_info', 'review'];
@@ -230,6 +231,13 @@ export default function Services() {
               <span style={tempBadge}>{tempCharges.length}</span>
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setActiveTab('recurring')}
+            style={{ ...tabBtn, ...(activeTab === 'recurring' ? tabBtnActive : {}) }}
+          >
+            Recurring Services
+          </button>
         </div>
 
         {/* Toolbar (only for main tab) */}
@@ -292,6 +300,13 @@ export default function Services() {
       {/* Temporary Charge tab content */}
       {activeTab === TAB_TEMP && (
         <TempChargeView charges={tempCharges} />
+      )}
+
+      {/* Recurring Services tab content */}
+      {activeTab === 'recurring' && (
+        <Suspense fallback={<div style={{ padding: 20, color: '#94a3b8', fontSize: 13 }}>Loading recurring services...</div>}>
+          <RecurringServices />
+        </Suspense>
       )}
     </div>
   );

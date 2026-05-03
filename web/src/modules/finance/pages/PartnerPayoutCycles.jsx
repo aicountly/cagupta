@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { useAuth } from '../../../auth/AuthContext';
+import { useState, useEffect, useCallback } from 'react';
+import { Wallet, RefreshCw, CheckCircle2, Clock, AlertTriangle, XCircle, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import {
   listPartnerPayoutCycles,
   ensurePartnerPayoutCycle,
@@ -10,371 +10,343 @@ import {
   submitPartnerPayoutCycleAmendment,
 } from '../../../services/partnerPayoutCycleService';
 
-const card = { background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' };
-const btnPrimary = { padding: '8px 14px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 };
-const btnGhost = { padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 };
+const STATUS_CONFIG = {
+  open: { label: 'Open', color: '#2563EB', bg: '#DBEAFE', icon: Clock },
+  finalised: { label: 'Finalised', color: '#D97706', bg: '#FEF3C7', icon: AlertTriangle },
+  disbursed: { label: 'Disbursed', color: '#16A34A', bg: '#DCFCE7', icon: CheckCircle2 },
+  closed: { label: 'Closed', color: '#64748b', bg: '#F1F5F9', icon: XCircle },
+};
 
-function anchorLabel(a) {
-  if (a === 'd08') return '→ 8th';
-  if (a === 'd15') return '→ 15th';
-  if (a === 'd23') return '→ 23rd';
-  if (a === 'eom') return 'Month-end';
-  return a;
+function StatusBadge({ status }) {
+  const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.open;
+  const Icon = cfg.icon;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 8, fontSize: 11, fontWeight: 600, background: cfg.bg, color: cfg.color }}>
+      <Icon size={12} /> {cfg.label}
+    </span>
+  );
 }
 
-export default function PartnerPayoutCycles() {
-  const { hasPermission } = useAuth();
-  const allowed = hasPermission('partners.manage');
-
-  const [year, setYear] = useState(() => new Date().getFullYear());
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-
-  const [panelOpen, setPanelOpen] = useState(false);
-  const [panelErr, setPanelErr] = useState('');
-  const [panelLoading, setPanelLoading] = useState(false);
-  const [detail, setDetail] = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [busy, setBusy] = useState('');
-  const [adjJson, setAdjJson] = useState('[\n  { "partner_payout_accrual_id": 0, "amount_final": 0, "note": "" }\n]');
-
-  const loadYear = useCallback(async () => {
-    if (!allowed) return;
-    setLoading(true);
-    setErr('');
-    try {
-      const data = await listPartnerPayoutCycles(year);
-      setRows(Array.isArray(data) ? data : []);
-    } catch (e) {
-      setErr(e.message || 'Failed to load');
-      setRows([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [allowed, year]);
-
-  useEffect(() => {
-    loadYear();
-  }, [loadYear]);
-
-  async function openSegment(row) {
-    if (!allowed) return;
-    setPanelOpen(true);
-    setPanelLoading(true);
-    setPanelErr('');
-    setDetail(null);
-    setPreview(null);
-    try {
-      let cycleId = row.cycle?.id;
-      if (!cycleId) {
-        const ensured = await ensurePartnerPayoutCycle(row.period_end);
-        cycleId = ensured?.id;
-      }
-      if (!cycleId) {
-        throw new Error('Could not open cycle.');
-      }
-      const [djson, pjson] = await Promise.all([
-        getPartnerPayoutCycle(cycleId),
-        previewPartnerPayoutCycle(cycleId),
-      ]);
-      setDetail(djson);
-      setPreview(pjson);
-    } catch (e) {
-      setPanelErr(e.message || 'Failed to load cycle');
-    } finally {
-      setPanelLoading(false);
-    }
-  }
-
-  async function refreshPanel() {
-    const id = detail?.cycle?.id;
-    if (!id) return;
-    setPanelLoading(true);
-    setPanelErr('');
-    try {
-      const [djson, pjson] = await Promise.all([
-        getPartnerPayoutCycle(id),
-        previewPartnerPayoutCycle(id),
-      ]);
-      setDetail(djson);
-      setPreview(pjson);
-      await loadYear();
-    } catch (e) {
-      setPanelErr(e.message || 'Refresh failed');
-    } finally {
-      setPanelLoading(false);
-    }
-  }
-
-  const cycle = detail?.cycle;
-  const st = cycle?.status;
-
-  async function onFinalise() {
-    if (!cycle?.id) return;
-    if (!window.confirm('Finalise this cycle at system-calculated amounts and reserve all eligible partner accruals?')) return;
-    setBusy('fin');
-    setPanelErr('');
-    try {
-      await finalisePartnerPayoutCycle(cycle.id);
-      await refreshPanel();
-    } catch (e) {
-      setPanelErr(e.message || 'Finalise failed');
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function onDisburse() {
-    if (!cycle?.id) return;
-    if (!window.confirm('Mark all accruals in this cycle as paid (disbursed)?')) return;
-    setBusy('dis');
-    setPanelErr('');
-    try {
-      await disbursePartnerPayoutCycle(cycle.id);
-      await refreshPanel();
-    } catch (e) {
-      setPanelErr(e.message || 'Disburse failed');
-    } finally {
-      setBusy('');
-    }
-  }
-
-  async function onSubmitAmendment() {
-    if (!cycle?.id) return;
-    let adjustments;
-    try {
-      adjustments = JSON.parse(adjJson);
-    } catch {
-      setPanelErr('Invalid JSON for adjustments.');
-      return;
-    }
-    if (!Array.isArray(adjustments)) {
-      setPanelErr('adjustments must be a JSON array.');
-      return;
-    }
-    setBusy('amend');
-    setPanelErr('');
-    try {
-      await submitPartnerPayoutCycleAmendment(cycle.id, adjustments);
-      await refreshPanel();
-    } catch (e) {
-      setPanelErr(e.message || 'Submit failed');
-    } finally {
-      setBusy('');
-    }
-  }
-
-  if (!allowed) {
-    return (
-      <div style={{ padding: 24 }}>
-        <h1 style={{ fontSize: 18 }}>Partner payout cycles</h1>
-        <p style={{ color: '#64748b' }}>Requires partners.manage.</p>
-      </div>
-    );
-  }
-
+function SummaryCard({ label, value, icon: Icon, color }) {
   return (
-    <div style={{ padding: 24, maxWidth: 1200 }}>
-      <h1 style={{ fontSize: 20, marginBottom: 8 }}>Partner payout cycles</h1>
-      <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16, maxWidth: 720 }}>
-        Same schedule as affiliate payouts: <strong>8th</strong>, <strong>15th</strong>, <strong>23rd</strong>, <strong>month-end</strong>.
-        Finalise partner accruals into a cycle, then mark disbursement. Adjustments need Super Admin approval (PR5).
-      </p>
-
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-        <label style={{ fontSize: 13, fontWeight: 600, color: '#475569' }}>
-          Year
-          <input
-            type="number"
-            min={2000}
-            max={2100}
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            style={{ marginLeft: 8, padding: '6px 10px', borderRadius: 8, border: '1px solid #e2e8f0', width: 100 }}
-          />
-        </label>
-        <button type="button" style={btnGhost} onClick={loadYear} disabled={loading}>Refresh</button>
+    <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #E6E8F0', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, boxShadow: '0 1px 3px rgba(0,0,0,0.04)' }}>
+      <div style={{ width: 40, height: 40, borderRadius: 10, background: `${color}15`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Icon size={18} color={color} />
       </div>
-
-      {err && (
-        <div style={{ padding: 12, background: '#fef2f2', color: '#b91c1c', borderRadius: 8, marginBottom: 16 }}>{err}</div>
-      )}
-
-      {loading && <p style={{ color: '#64748b' }}>Loading…</p>}
-
-      {!loading && (
-        <div style={{ overflowX: 'auto', background: '#fff', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ textAlign: 'left', color: '#64748b', background: '#f8fafc' }}>
-                {['Period', 'Anchor', 'Disburse by', 'Status', ''].map((h) => (
-                  <th key={h} style={{ padding: '10px 12px', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => {
-                const c = r.cycle;
-                const status = c?.status || '—';
-                return (
-                  <tr key={`${r.period_start}-${r.period_end}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                    <td style={{ padding: '10px 12px' }}>{r.period_start} → {r.period_end}</td>
-                    <td style={{ padding: '10px 12px' }}>{anchorLabel(r.cycle_anchor)}</td>
-                    <td style={{ padding: '10px 12px' }}>{r.disbursal_due_on}</td>
-                    <td style={{ padding: '10px 12px', fontWeight: 600 }}>{status}</td>
-                    <td style={{ padding: '10px 12px' }}>
-                      <button type="button" style={btnGhost} onClick={() => openSegment(r)}>Open</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {panelOpen && (
-        <div style={{ marginTop: 24, ...card }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h2 style={{ fontSize: 16, margin: 0 }}>Cycle detail</h2>
-            <button type="button" style={btnGhost} onClick={() => setPanelOpen(false)}>Close</button>
-          </div>
-
-          {panelLoading && <p style={{ color: '#64748b' }}>Loading…</p>}
-          {panelErr && (
-            <div style={{ padding: 12, background: '#fef2f2', color: '#b91c1c', borderRadius: 8, marginBottom: 12 }}>{panelErr}</div>
-          )}
-
-          {detail?.cycle && !panelLoading && (
-            <>
-              <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6, marginBottom: 12 }}>
-                <div><strong>Period:</strong> {detail.cycle.period_start} → {detail.cycle.period_end}</div>
-                <div><strong>Status:</strong> {detail.cycle.status}</div>
-                <div><strong>Disburse by:</strong> {detail.cycle.disbursal_due_on}</div>
-                {detail.cycle.status !== 'open' && (
-                  <>
-                    <div><strong>System total:</strong> ₹{Number(detail.cycle.total_system_amount || 0).toFixed(2)}</div>
-                    <div><strong>Final total:</strong> ₹{Number(detail.cycle.total_final_amount || 0).toFixed(2)}</div>
-                  </>
-                )}
-                {detail.pending_amendment && (
-                  <div style={{ marginTop: 8, color: '#b45309', fontWeight: 600 }}>
-                    Amendment #{detail.pending_amendment.id} pending Super Admin approval.
-                  </div>
-                )}
-              </div>
-
-              {st === 'open' && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
-                  <button type="button" style={btnPrimary} disabled={busy !== '' || !!detail.pending_amendment} onClick={onFinalise}>
-                    {busy === 'fin' ? '…' : 'Finalise at system amounts'}
-                  </button>
-                </div>
-              )}
-
-              {st === 'finalised' && (
-                <div style={{ marginBottom: 16 }}>
-                  <button type="button" style={btnPrimary} disabled={busy !== ''} onClick={onDisburse}>
-                    {busy === 'dis' ? '…' : 'Mark disbursed (paid)'}
-                  </button>
-                </div>
-              )}
-
-              {st === 'open' && !detail.pending_amendment && preview?.accruals?.length > 0 && (
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Request amendment (JSON)</div>
-                  <p style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>
-                    Use <code>partner_payout_accrual_id</code> from the preview table. Only include rows where <code>amount_final</code> differs from the system amount.
-                  </p>
-                  <textarea
-                    value={adjJson}
-                    onChange={(e) => setAdjJson(e.target.value)}
-                    rows={6}
-                    style={{ width: '100%', fontFamily: 'monospace', fontSize: 12, padding: 10, borderRadius: 8, border: '1px solid #e2e8f0', boxSizing: 'border-box' }}
-                  />
-                  <button type="button" style={{ ...btnPrimary, marginTop: 8 }} disabled={busy !== ''} onClick={onSubmitAmendment}>
-                    {busy === 'amend' ? '…' : 'Submit amendment'}
-                  </button>
-                </div>
-              )}
-
-              {preview?.by_partner?.length > 0 && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Totals by partner (eligible accrued)</div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ color: '#64748b', textAlign: 'left' }}>
-                        <th style={{ padding: 6, borderBottom: '1px solid #e2e8f0' }}>Partner</th>
-                        <th style={{ padding: 6, borderBottom: '1px solid #e2e8f0' }}>Accrued total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preview.by_partner.map((x) => (
-                        <tr key={x.user_id}>
-                          <td style={{ padding: 6, borderBottom: '1px solid #f1f5f9' }}>{x.name || `User #${x.user_id}`}</td>
-                          <td style={{ padding: 6, borderBottom: '1px solid #f1f5f9' }}>₹{Number(x.total).toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {preview?.accruals?.length > 0 && (
-                <div style={{ maxHeight: 280, overflow: 'auto' }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Eligible accruals ({preview.accruals.length})</div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                    <thead>
-                      <tr style={{ color: '#64748b', textAlign: 'left' }}>
-                        {['ID', 'Partner', 'Date', 'Amount', 'Service'].map((h) => (
-                          <th key={h} style={{ padding: 4, borderBottom: '1px solid #e2e8f0' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {preview.accruals.map((a) => (
-                        <tr key={a.id}>
-                          <td style={{ padding: 4, borderBottom: '1px solid #f8fafc' }}>{a.id}</td>
-                          <td style={{ padding: 4, borderBottom: '1px solid #f8fafc' }}>{a.partner_user_id}</td>
-                          <td style={{ padding: 4, borderBottom: '1px solid #f8fafc' }}>{a.accrual_date}</td>
-                          <td style={{ padding: 4, borderBottom: '1px solid #f8fafc' }}>₹{Number(a.amount).toFixed(2)}</td>
-                          <td style={{ padding: 4, borderBottom: '1px solid #f8fafc' }}>{a.service_id ?? '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              {detail.lines?.length > 0 && (
-                <div style={{ marginTop: 16, maxHeight: 240, overflow: 'auto' }}>
-                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>Cycle lines (finalised)</div>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
-                    <thead>
-                      <tr style={{ color: '#64748b' }}>
-                        {['Accrual', 'Partner', 'System', 'Final'].map((h) => (
-                          <th key={h} style={{ padding: 4, textAlign: 'left', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {detail.lines.map((ln) => (
-                        <tr key={ln.id}>
-                          <td style={{ padding: 4 }}>{ln.partner_payout_accrual_id}</td>
-                          <td style={{ padding: 4 }}>{ln.partner_name || ln.partner_user_id}</td>
-                          <td style={{ padding: 4 }}>₹{Number(ln.amount_system).toFixed(2)}</td>
-                          <td style={{ padding: 4 }}>₹{Number(ln.amount_final).toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      <div>
+        <div style={{ fontSize: 12, color: '#64748b', fontWeight: 500 }}>{label}</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>{value}</div>
+      </div>
     </div>
   );
 }
+
+function AmendmentForm({ cycleId, onSuccess }) {
+  const [rows, setRows] = useState([{ accrual_id: '', amount: '', note: '' }]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  function updateRow(idx, field, value) {
+    setRows((prev) => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  }
+  function addRow() { setRows((prev) => [...prev, { accrual_id: '', amount: '', note: '' }]); }
+  function removeRow(idx) { setRows((prev) => prev.filter((_, i) => i !== idx)); }
+
+  async function submit(e) {
+    e.preventDefault();
+    const adjustments = rows
+      .filter((r) => r.accrual_id && r.amount)
+      .map((r) => ({ partner_payout_accrual_id: parseInt(r.accrual_id, 10), amount_final: parseFloat(r.amount), note: r.note || undefined }));
+    if (adjustments.length === 0) { setErr('Add at least one valid adjustment'); return; }
+    setBusy(true); setErr('');
+    try {
+      await submitPartnerPayoutCycleAmendment(cycleId, adjustments);
+      setRows([{ accrual_id: '', amount: '', note: '' }]);
+      onSuccess?.();
+    } catch (ex) { setErr(ex.message || 'Submit failed'); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <form onSubmit={submit} style={{ marginTop: 16, padding: 16, background: '#FAFBFD', borderRadius: 10, border: '1px solid #E6E8F0' }}>
+      <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, color: '#0B1F3B' }}>Submit Amendment</div>
+      {err && <div style={{ background: '#FEE2E2', color: '#991B1B', padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 10 }}>{err}</div>}
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+          <thead><tr><th style={thSm}>Accrual ID</th><th style={thSm}>Proposed Amount (₹)</th><th style={thSm}>Note</th><th style={thSm}></th></tr></thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={tdSm}><input style={inputSm} type="number" placeholder="ID" value={r.accrual_id} onChange={(e) => updateRow(i, 'accrual_id', e.target.value)} /></td>
+                <td style={tdSm}><input style={inputSm} type="number" step="0.01" placeholder="Amount" value={r.amount} onChange={(e) => updateRow(i, 'amount', e.target.value)} /></td>
+                <td style={tdSm}><input style={inputSm} placeholder="Note" value={r.note} onChange={(e) => updateRow(i, 'note', e.target.value)} /></td>
+                <td style={tdSm}>{rows.length > 1 && <button type="button" onClick={() => removeRow(i)} style={{ ...btnSmGhost, color: '#DC2626' }}>×</button>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <button type="button" onClick={addRow} style={btnSmGhost}><Plus size={12} /> Add Row</button>
+        <button type="submit" disabled={busy} style={btnSmPrimary}>{busy ? 'Submitting...' : 'Submit for Approval'}</button>
+      </div>
+    </form>
+  );
+}
+
+function CycleDetailPanel({ cycle, onAction }) {
+  const [tab, setTab] = useState('accruals');
+  const [preview, setPreview] = useState(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+
+  async function loadPreview() {
+    setLoadingPreview(true);
+    try {
+      const data = await previewPartnerPayoutCycle(cycle.id);
+      setPreview(data);
+    } catch (e) { setErr(e.message); }
+    finally { setLoadingPreview(false); }
+  }
+
+  useEffect(() => { loadPreview(); }, [cycle.id]);
+
+  async function handleFinalise() {
+    if (!window.confirm('Finalise this cycle? Accruals will be locked.')) return;
+    setBusy('finalise'); setErr('');
+    try { await finalisePartnerPayoutCycle(cycle.id); onAction?.(); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(''); }
+  }
+
+  async function handleDisburse() {
+    if (!window.confirm('Mark as disbursed? Payments will be recorded.')) return;
+    setBusy('disburse'); setErr('');
+    try { await disbursePartnerPayoutCycle(cycle.id); onAction?.(); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(''); }
+  }
+
+  const TABS = [
+    { key: 'accruals', label: 'Eligible Accruals' },
+    { key: 'hold_kyc', label: 'On Hold (KYC)' },
+    { key: 'hold_unrealised', label: 'On Hold (Unrealised)' },
+    { key: 'amendments', label: 'Amendments' },
+    { key: 'payments', label: 'Payment History' },
+  ];
+
+  const accruals = preview?.accruals || preview?.line_items || [];
+  const kycHeld = accruals.filter((a) => a.hold_reason === 'kyc_pending');
+  const unrealisedHeld = accruals.filter((a) => a.hold_reason === 'unrealised');
+  const eligible = accruals.filter((a) => !a.hold_reason);
+
+  return (
+    <div style={{ marginTop: 16, border: '1px solid #E6E8F0', borderRadius: 12, background: '#fff', overflow: 'hidden' }}>
+      <div style={{ padding: '16px 20px', borderBottom: '1px solid #F1F5F9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#0B1F3B' }}>
+            Cycle #{cycle.id} — {cycle.period_start} to {cycle.period_end}
+          </div>
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>Anchor: {cycle.cycle_anchor}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <StatusBadge status={cycle.status} />
+          {cycle.status === 'open' && (
+            <button type="button" onClick={handleFinalise} disabled={!!busy} style={btnAction}>
+              {busy === 'finalise' ? '...' : 'Finalise'}
+            </button>
+          )}
+          {cycle.status === 'finalised' && (
+            <button type="button" onClick={handleDisburse} disabled={!!busy} style={{ ...btnAction, background: '#16A34A' }}>
+              {busy === 'disburse' ? '...' : 'Disburse'}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {err && <div style={{ margin: '12px 20px 0', padding: '8px 12px', background: '#FEE2E2', color: '#991B1B', borderRadius: 8, fontSize: 12 }}>{err}</div>}
+
+      <div style={{ display: 'flex', borderBottom: '1px solid #F1F5F9', padding: '0 20px', overflowX: 'auto' }}>
+        {TABS.map((t) => (
+          <button key={t.key} type="button" onClick={() => setTab(t.key)} style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: tab === t.key ? '2px solid #F37920' : '2px solid transparent', color: tab === t.key ? '#F37920' : '#64748b', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+            {t.label}
+            {t.key === 'hold_kyc' && kycHeld.length > 0 && <span style={{ marginLeft: 4, background: '#FEE2E2', color: '#DC2626', borderRadius: 8, padding: '1px 6px', fontSize: 10 }}>{kycHeld.length}</span>}
+            {t.key === 'hold_unrealised' && unrealisedHeld.length > 0 && <span style={{ marginLeft: 4, background: '#FEF3C7', color: '#92400E', borderRadius: 8, padding: '1px 6px', fontSize: 10 }}>{unrealisedHeld.length}</span>}
+          </button>
+        ))}
+      </div>
+
+      <div style={{ padding: 20 }}>
+        {loadingPreview && <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading cycle data...</div>}
+        {!loadingPreview && tab === 'accruals' && (
+          <AccrualTable rows={eligible} emptyMsg="No eligible accruals in this cycle." idKey="partner_payout_accrual_id" nameKey="partner_name" />
+        )}
+        {!loadingPreview && tab === 'hold_kyc' && (
+          <AccrualTable rows={kycHeld} emptyMsg="No accruals on hold for KYC." holdType="kyc" idKey="partner_payout_accrual_id" nameKey="partner_name" />
+        )}
+        {!loadingPreview && tab === 'hold_unrealised' && (
+          <AccrualTable rows={unrealisedHeld} emptyMsg="No accruals on hold for unrealised payments." holdType="unrealised" idKey="partner_payout_accrual_id" nameKey="partner_name" />
+        )}
+        {!loadingPreview && tab === 'amendments' && (
+          <div>
+            {cycle.status === 'open' && <AmendmentForm cycleId={cycle.id} onSuccess={loadPreview} />}
+            {cycle.status !== 'open' && <div style={{ color: '#94a3b8', fontSize: 13 }}>Amendments only available for open cycles.</div>}
+          </div>
+        )}
+        {!loadingPreview && tab === 'payments' && (
+          <div style={{ color: '#94a3b8', fontSize: 13 }}>
+            {cycle.status === 'disbursed' ? 'Payment records will appear here after disbursement processing.' : 'Payments recorded after disbursement.'}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AccrualTable({ rows, emptyMsg, holdType, idKey = 'id', nameKey = 'partner_name' }) {
+  if (rows.length === 0) return <div style={{ color: '#94a3b8', fontSize: 13 }}>{emptyMsg}</div>;
+  return (
+    <div style={{ overflowX: 'auto' }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <thead>
+          <tr>
+            <th style={thSm}>ID</th>
+            <th style={thSm}>Partner</th>
+            <th style={thSm}>Assignment</th>
+            <th style={thSm}>Amount</th>
+            {holdType && <th style={thSm}>Reason</th>}
+            {holdType && <th style={thSm}>Action</th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((a) => (
+            <tr key={a[idKey] || a.id}>
+              <td style={tdSm}>{a[idKey] || a.id}</td>
+              <td style={tdSm}>{a[nameKey] || a.partner_id || '—'}</td>
+              <td style={tdSm}>{a.assignment_name || a.service_type || '—'}</td>
+              <td style={{ ...tdSm, fontWeight: 600 }}>₹{Number(a.amount || a.payout_amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+              {holdType && <td style={tdSm}><span style={{ background: holdType === 'kyc' ? '#FEE2E2' : '#FEF3C7', color: holdType === 'kyc' ? '#991B1B' : '#92400E', padding: '2px 8px', borderRadius: 6, fontSize: 10, fontWeight: 600 }}>{holdType === 'kyc' ? 'KYC Pending' : 'Unrealised'}</span></td>}
+              {holdType && <td style={tdSm}><button type="button" style={btnSmGhost}>Unhold</button></td>}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export default function PartnerPayoutCycles() {
+  const [year, setYear] = useState(() => new Date().getFullYear());
+  const [cycles, setCycles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [expanded, setExpanded] = useState(null);
+  const [creating, setCreating] = useState(false);
+  const [newPeriodEnd, setNewPeriodEnd] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true); setErr('');
+    try {
+      const data = await listPartnerPayoutCycles(year);
+      setCycles(data);
+    } catch (e) { setErr(e.message || 'Failed to load cycles'); setCycles([]); }
+    finally { setLoading(false); }
+  }, [year]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function createCycle(e) {
+    e.preventDefault();
+    if (!newPeriodEnd) return;
+    setCreating(true); setErr('');
+    try {
+      await ensurePartnerPayoutCycle(newPeriodEnd);
+      setNewPeriodEnd('');
+      await load();
+    } catch (ex) { setErr(ex.message || 'Create failed'); }
+    finally { setCreating(false); }
+  }
+
+  const openCount = cycles.filter((c) => c.status === 'open').length;
+  const finalisedCount = cycles.filter((c) => c.status === 'finalised').length;
+  const disbursedCount = cycles.filter((c) => c.status === 'disbursed').length;
+
+  return (
+    <div style={pageWrap}>
+      <div style={headerCard}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={iconWrap}><Wallet size={20} color="#F37920" /></div>
+          <div>
+            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Partner Payout Cycles</h1>
+            <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
+              Manage partner payout cycles — finalise, disburse, and track partner payments
+            </p>
+          </div>
+        </div>
+        <button type="button" onClick={load} style={btnRefresh}><RefreshCw size={14} /> Refresh</button>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 14 }}>
+        <SummaryCard label="Total Cycles" value={cycles.length} icon={Wallet} color="#F37920" />
+        <SummaryCard label="Open" value={openCount} icon={Clock} color="#2563EB" />
+        <SummaryCard label="Finalised" value={finalisedCount} icon={AlertTriangle} color="#D97706" />
+        <SummaryCard label="Disbursed" value={disbursedCount} icon={CheckCircle2} color="#16A34A" />
+      </div>
+
+      <div style={toolbarCard}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <label style={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>Year</label>
+          <select style={inputSm} value={year} onChange={(e) => setYear(Number(e.target.value))}>
+            {[2024, 2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+        </div>
+        <form onSubmit={createCycle} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input type="date" style={inputSm} value={newPeriodEnd} onChange={(e) => setNewPeriodEnd(e.target.value)} />
+          <button type="submit" disabled={creating || !newPeriodEnd} style={btnSmPrimary}>
+            <Plus size={12} /> {creating ? 'Creating...' : 'New Cycle'}
+          </button>
+        </form>
+      </div>
+
+      {err && <div style={errorBanner}>{err}</div>}
+
+      <div style={listCard}>
+        {loading && <div style={{ padding: 20, color: '#94a3b8', fontSize: 13 }}>Loading cycles...</div>}
+        {!loading && cycles.length === 0 && <div style={{ padding: 20, color: '#94a3b8', fontSize: 13 }}>No payout cycles found for {year}.</div>}
+        {!loading && cycles.map((c) => (
+          <div key={c.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+            <button type="button" onClick={() => setExpanded(expanded === c.id ? null : c.id)} style={cycleRow}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1 }}>
+                <StatusBadge status={c.status} />
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#0B1F3B' }}>
+                    {c.period_start} — {c.period_end}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>Cycle #{c.id} · {c.cycle_anchor}</div>
+                </div>
+              </div>
+              {expanded === c.id ? <ChevronUp size={16} color="#94a3b8" /> : <ChevronDown size={16} color="#94a3b8" />}
+            </button>
+            {expanded === c.id && <CycleDetailPanel cycle={c} onAction={load} />}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const pageWrap = { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, background: '#F6F7FB', minHeight: '100%' };
+const headerCard = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '20px 24px', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', flexWrap: 'wrap', gap: 12 };
+const iconWrap = { width: 44, height: 44, borderRadius: 12, background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
+const toolbarCard = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '12px 20px', borderRadius: 12, border: '1px solid #E6E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', flexWrap: 'wrap', gap: 10 };
+const listCard = { background: '#fff', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden' };
+const cycleRow = { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' };
+const errorBanner = { background: '#FEE2E2', color: '#991B1B', borderRadius: 10, padding: '10px 16px', fontSize: 13 };
+const btnRefresh = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E6E8F0', background: '#fff', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
+const btnAction = { padding: '7px 14px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', fontWeight: 600, fontSize: 12, cursor: 'pointer', boxShadow: '0 2px 6px rgba(243,121,32,0.2)' };
+const btnSmPrimary = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '7px 14px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
+const btnSmGhost = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, border: '1px solid #E6E8F0', background: '#fff', color: '#475569', fontWeight: 500, fontSize: 11, cursor: 'pointer' };
+const inputSm = { padding: '7px 10px', borderRadius: 8, border: '1px solid #E6E8F0', fontSize: 12, boxSizing: 'border-box' };
+const thSm = { textAlign: 'left', padding: '8px 10px', color: '#64748b', fontWeight: 600, fontSize: 10, borderBottom: '1px solid #E6E8F0', textTransform: 'uppercase', letterSpacing: '0.05em' };
+const tdSm = { padding: '8px 10px', color: '#334155', borderBottom: '1px solid #F8FAFC' };

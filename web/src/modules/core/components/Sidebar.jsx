@@ -8,9 +8,9 @@ import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen, Landmark, Wallet,
   Target, Settings, ChevronRight, ChevronDown,
-  UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, CalendarOff, Bell, RefreshCw, Timer,
-  MessageSquare, Smartphone, Share2, Megaphone, UsersRound,
-  Mail,
+  UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, Bell,
+  MessageSquare, Smartphone, Share2, Megaphone,
+  Mail, CheckSquare, Inbox,
 } from 'lucide-react';
 import { ROLES } from '../../../constants/roles';
 
@@ -29,8 +29,6 @@ const navSections = [
           { to: '/clients/groups', label: 'Groups', icon: Layers },
         ],
       },
-      { to: '/reports', label: 'Reports', icon: BarChart3, permission: 'services.view' },
-      { to: '/reports/client-engagement', label: 'Engagement gaps', icon: BarChart3, permission: 'clients.view' },
       { to: '/services', label: 'Services & Tasks', icon: ClipboardList },
       { to: '/services/follow-ups', label: 'Pending Follow-ups', icon: Bell, permission: 'services.view', badge: 'overdue' },
       { to: '/documents', label: 'Documents', icon: FolderOpen },
@@ -40,19 +38,9 @@ const navSections = [
     label: 'FINANCE',
     items: [
       { to: '/invoices', label: 'Invoices & Ledger', icon: Receipt },
-      { to: '/finance/bank-reports', label: 'Bank & firm txns', icon: Landmark, permission: 'invoices.view' },
-      {
-        to: '/finance/invoice-cost-variance',
-        label: 'Invoice cost variance',
-        icon: BarChart3,
-        rolesAllowed: [ROLES.SUPER_ADMIN, ROLES.ACCOUNTS],
-      },
-      { to: '/finance/affiliate-payout-cycles', label: 'Affiliate payout cycles', icon: Wallet, permission: 'affiliates.manage' },
-      { to: '/finance/partner-payout-cycles', label: 'Partner payout cycles', icon: Wallet, permission: 'partners.manage' },
-      { to: '/calendar', label: 'Calendar', icon: CalendarDays },
-      { to: '/credentials', label: 'Credentials Vault', icon: KeyRound },
-      { to: '/registers', label: 'Registers', icon: BookOpen },
-      { to: '/recurring-services', label: 'Recurring Services', icon: RefreshCw },
+      { to: '/finance/bank-reports', label: 'Bank & Firm Txns', icon: Landmark, permission: 'invoices.view' },
+      { to: '/finance/affiliate-payout-cycles', label: 'Affiliate Payout Cycles', icon: Wallet, permission: 'affiliates.manage' },
+      { to: '/finance/partner-payout-cycles', label: 'Partner Payout Cycles', icon: Wallet, permission: 'partners.manage' },
       { to: '/leads', label: 'Leads & Quotations', icon: Target },
     ],
   },
@@ -70,44 +58,37 @@ const navSections = [
       },
       { to: '/marketing/sms', label: 'SMS Marketing', icon: Smartphone },
       { to: '/marketing/social', label: 'Social Posting', icon: Share2 },
-      { to: '/marketing/affiliate', label: 'Affiliate Outreach', icon: UsersRound },
       { to: '/marketing/campaigns', label: 'Campaigns', icon: Megaphone },
-      { to: '/marketing/triggers', label: 'Trigger Settings', icon: Bell },
     ],
   },
   {
-    label: 'SYSTEM',
+    label: 'REPORTS',
     items: [
-      { to: '/inbox', label: 'Inbox & tickets', icon: Mail, permission: 'settings.view' },
-      { to: '/settings', label: 'Settings', icon: Settings },
+      { to: '/reports', label: 'Reports Hub', icon: BarChart3, permission: 'services.view' },
+      { to: '/registers', label: 'Registers', icon: BookOpen },
+      { to: '/credentials', label: 'Credentials Vault', icon: KeyRound },
+      { to: '/calendar', label: 'Calendar & Appointments', icon: CalendarDays },
+    ],
+  },
+  {
+    label: 'DESK',
+    items: [
+      { to: '/desk/inbox', label: 'Inbox & Tickets', icon: Inbox, permission: 'settings.view' },
     ],
   },
 ];
 
-/** Team admin: full manage or delegated (staff/viewer) invites */
 const adminNavItems = [
-  { to: '/admin/users',   label: 'User Management',  icon: ShieldCheck,  anyOf: ['users.manage', 'users.delegate'] },
-  { to: '/admin/leaves',  label: 'Leave Management', icon: CalendarOff,  permission: 'users.manage' },
+  { to: '/admin/users', label: 'User Management', icon: ShieldCheck, anyOf: ['users.manage', 'users.delegate'] },
   {
-    to: '/admin/timesheet-overflow-approvals',
-    label: 'Timesheet overflow',
-    icon: Timer,
+    to: '/admin/approvals',
+    label: 'Approvals',
+    icon: CheckSquare,
     rolesAllowed: [ROLES.SUPER_ADMIN],
   },
-  {
-    to: '/admin/affiliate-payout-cycle-amendments',
-    label: 'Affiliate payout amendments',
-    icon: Wallet,
-    rolesAllowed: [ROLES.SUPER_ADMIN],
-  },
-  {
-    to: '/admin/partner-payout-cycle-amendments',
-    label: 'Partner payout amendments',
-    icon: Wallet,
-    rolesAllowed: [ROLES.SUPER_ADMIN],
-  },
-  { to: '/admin/affiliates', label: 'Affiliates',    icon: Handshake,    permission: 'affiliates.manage' },
-  { to: '/admin/partners',   label: 'Partners',      icon: Briefcase,    permission: 'partners.manage' },
+  { to: '/admin/affiliates', label: 'Affiliates', icon: Handshake, permission: 'affiliates.manage' },
+  { to: '/admin/partners', label: 'Partners', icon: Briefcase, permission: 'partners.manage' },
+  { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function Sidebar() {

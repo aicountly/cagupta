@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Clock, Target, UserRound, Building2, ShieldCheck,
-  Search, ArrowRight, BarChart3,
+  Search, ArrowRight, BarChart3, Users, TrendingDown,
 } from 'lucide-react';
 import { useAuth } from '../../../auth/AuthContext';
 
@@ -74,6 +74,36 @@ const REPORT_CATEGORIES = [
         icon: ShieldCheck,
         to: '/reports/exceptions/verification',
         permission: 'clients.view',
+      },
+    ],
+  },
+  {
+    id: 'engagement',
+    label: 'Client Engagement',
+    description: 'Track client engagement health and identify gaps',
+    reports: [
+      {
+        id: 'client-engagement-gaps',
+        label: 'Client Engagement Gaps',
+        description: 'Identify client groups with high billing but long gaps since last contact or service activity.',
+        icon: Users,
+        to: '/reports/client-engagement',
+        permission: 'clients.view',
+      },
+    ],
+  },
+  {
+    id: 'finance',
+    label: 'Finance',
+    description: 'Financial analysis and variance reports',
+    reports: [
+      {
+        id: 'invoice-cost-variance',
+        label: 'Invoice Cost Variance',
+        description: 'Compare invoice amounts against estimated service costs to identify billing discrepancies.',
+        icon: TrendingDown,
+        to: '/reports/invoice-cost-variance',
+        permission: 'invoices.view',
       },
     ],
   },

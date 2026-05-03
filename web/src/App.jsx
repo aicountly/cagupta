@@ -13,9 +13,7 @@ import LeaveManagement from './modules/core/pages/LeaveManagement';
 import Settings from './modules/core/pages/Settings';
 import GlobalSearchPage from './modules/core/pages/GlobalSearchPage';
 import InboxAndTickets from './modules/core/pages/InboxAndTickets';
-import TimesheetOverflowApprovals from './modules/core/pages/TimesheetOverflowApprovals';
-import AffiliatePayoutCycleAmendmentApprovals from './modules/core/pages/AffiliatePayoutCycleAmendmentApprovals';
-import PartnerPayoutCycleAmendmentApprovals from './modules/core/pages/PartnerPayoutCycleAmendmentApprovals';
+import Approvals from './modules/core/pages/Approvals';
 
 // ── CRM module ───────────────────────────────────────────────────────────────
 import Contacts from './modules/crm/pages/Contacts';
@@ -63,9 +61,7 @@ import WAWebMarketing from './modules/marketing/pages/WAWebMarketing';
 import WANativeMarketing from './modules/marketing/pages/WANativeMarketing';
 import SMSMarketing from './modules/marketing/pages/SMSMarketing';
 import SocialPosting from './modules/marketing/pages/SocialPosting';
-import AffiliateOutreach from './modules/marketing/pages/AffiliateOutreach';
 import MarketingCampaigns from './modules/marketing/pages/MarketingCampaigns';
-import TriggerSettings from './modules/marketing/pages/TriggerSettings';
 
 // ── Affiliate module ─────────────────────────────────────────────────────────
 import AdminAffiliates from './modules/affiliate/pages/AdminAffiliates';
@@ -118,42 +114,36 @@ const pageTitles = {
   '/services/files':            '📂 Engagement Files',
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
-  '/finance/bank-reports':      '🏦 Bank & firm txns',
-  '/finance/invoice-cost-variance': '📉 Invoice cost variance',
-  '/finance/affiliate-payout-cycles': '📎 Affiliate payout cycles',
-  '/finance/partner-payout-cycles': '📎 Partner payout cycles',
-  '/reports':                            '📊 Reports',
-  '/reports/timesheets':                 '🕐 Timesheet report',
-  '/reports/timesheets/shift-target':    '📊 Staff punch vs target',
-  '/reports/exceptions/contacts':          '📋 Contact data exceptions',
-  '/reports/exceptions/organizations':     '📋 Organization data exceptions',
-  '/reports/exceptions/contact-kyc':       '📋 Contact KYC exceptions',
-  '/reports/exceptions/organization-kyc':  '📋 Organization KYC exceptions',
+  '/finance/bank-reports':      '🏦 Bank & Firm Txns',
+  '/finance/affiliate-payout-cycles': '💳 Affiliate Payout Cycles',
+  '/finance/partner-payout-cycles': '💳 Partner Payout Cycles',
+  '/reports':                            '📊 Reports Hub',
+  '/reports/timesheets':                 '🕐 Timesheet Report',
+  '/reports/timesheets/shift-target':    '📊 Staff Punch vs Target',
+  '/reports/exceptions/contacts':          '📋 Contact Data Exceptions',
+  '/reports/exceptions/organizations':     '📋 Organization Data Exceptions',
+  '/reports/exceptions/contact-kyc':       '📋 Contact KYC Exceptions',
+  '/reports/exceptions/organization-kyc':  '📋 Organization KYC Exceptions',
+  '/reports/exceptions/verification':      '🔒 Verification Exceptions',
+  '/reports/client-engagement':            '📊 Client Engagement Gaps',
+  '/reports/invoice-cost-variance':        '📉 Invoice Cost Variance',
   '/calendar':                  '📅 Calendar & Appointments',
-  '/settings/appointment-fees': '💳 Appointment fee rules',
+  '/settings/appointment-fees': '💳 Appointment Fee Rules',
   '/credentials':               '🔑 Credentials Vault',
   '/registers':                 '📊 Compliance Registers',
-  '/recurring-services':        '🔁 Recurring Services',
   '/leads':                     '🎯 Leads & Quotations',
   '/settings':                  '⚙️ Settings',
   '/admin/users':               '👥 User Management',
-  '/admin/leaves':              '📅 Leave Management',
-  '/admin/timesheet-overflow-approvals': '📋 Timesheet overflow',
-  '/admin/affiliate-payout-cycle-amendments': '📎 Affiliate payout amendments',
-  '/admin/partner-payout-cycle-amendments': '📎 Partner payout amendments',
+  '/admin/approvals':           '✅ Approvals',
   '/admin/affiliates':          '🤝 Affiliates',
   '/admin/partners':            '🤝 Partners',
   '/marketing/wa/web':          '📱 WA Web Marketing',
   '/marketing/wa/api':          '📱 WA Native (API)',
   '/marketing/sms':             '📲 SMS Marketing',
   '/marketing/social':          '🌐 Social Posting',
-  '/marketing/affiliate':       '🤝 Affiliate Outreach',
   '/marketing/campaigns':       '📣 Marketing Campaigns',
-  '/marketing/triggers':        '🔔 Trigger Settings',
-  '/reports/exceptions/verification': '🔒 Verification Exceptions',
-  '/reports/client-engagement': '📊 Client engagement gaps',
   '/search':                    '🔍 Search',
-  '/inbox':                     '📥 Inbox & tickets',
+  '/desk/inbox':                '📥 Inbox & Tickets',
   '/profile':                   '👤 My Profile',
 };
 
@@ -211,7 +201,8 @@ export default function App() {
           <Route path="/documents" element={<ProtectedRoute staffOnly><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute staffOnly><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
           <Route path="/finance/bank-reports" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/finance/bank-reports"><BankFirmReports /></Layout></ProtectedRoute>} />
-          <Route path="/finance/invoice-cost-variance" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/finance/invoice-cost-variance"><InvoiceCostVarianceReport /></Layout></ProtectedRoute>} />
+          <Route path="/reports/invoice-cost-variance" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/reports/invoice-cost-variance"><InvoiceCostVarianceReport /></Layout></ProtectedRoute>} />
+          <Route path="/finance/invoice-cost-variance" element={<Navigate to="/reports/invoice-cost-variance" replace />} />
           <Route path="/finance/affiliate-payout-cycles" element={
             <ProtectedRoute staffOnly requiredPermission="affiliates.manage">
               <Layout routePath="/finance/affiliate-payout-cycles"><AffiliatePayoutCycles /></Layout>
@@ -270,14 +261,15 @@ export default function App() {
           <Route path="/calendar" element={<ProtectedRoute staffOnly><Layout routePath="/calendar"><Calendar /></Layout></ProtectedRoute>} />
           <Route path="/credentials" element={<ProtectedRoute staffOnly><Layout routePath="/credentials"><Credentials /></Layout></ProtectedRoute>} />
           <Route path="/registers" element={<ProtectedRoute staffOnly><Layout routePath="/registers"><Registers /></Layout></ProtectedRoute>} />
-          <Route path="/recurring-services" element={<ProtectedRoute staffOnly><Layout routePath="/recurring-services"><RecurringServices /></Layout></ProtectedRoute>} />
+          <Route path="/recurring-services" element={<Navigate to="/services" replace />} />
           <Route path="/leads" element={<ProtectedRoute staffOnly><Layout routePath="/leads"><Leads /></Layout></ProtectedRoute>} />
           <Route path="/search" element={<ProtectedRoute staffOnly><Layout routePath="/search"><GlobalSearchPage /></Layout></ProtectedRoute>} />
-          <Route path="/inbox" element={
+          <Route path="/desk/inbox" element={
             <ProtectedRoute staffOnly requiredPermission="settings.view">
-              <Layout routePath="/inbox"><InboxAndTickets /></Layout>
+              <Layout routePath="/desk/inbox"><InboxAndTickets /></Layout>
             </ProtectedRoute>
           } />
+          <Route path="/inbox" element={<Navigate to="/desk/inbox" replace />} />
           <Route path="/settings" element={<ProtectedRoute staffOnly><Layout routePath="/settings"><Settings /></Layout></ProtectedRoute>} />
           <Route path="/settings/appointment-fees" element={<ProtectedRoute staffOnly><Layout routePath="/settings/appointment-fees"><AppointmentFeeRules /></Layout></ProtectedRoute>} />
           <Route path="/profile" element={<ProtectedRoute staffOnly><Layout routePath="/profile"><Profile /></Layout></ProtectedRoute>} />
@@ -304,42 +296,33 @@ export default function App() {
           } />
           <Route path="/admin/leaves" element={
             <ProtectedRoute staffOnly requiredPermission="users.manage">
-              <Layout routePath="/admin/leaves">
+              <Layout routePath="/admin/users">
                 <LeaveManagement />
               </Layout>
             </ProtectedRoute>
           } />
-          <Route path="/admin/timesheet-overflow-approvals" element={
+          <Route path="/admin/approvals" element={
             <ProtectedRoute staffOnly>
-              <Layout routePath="/admin/timesheet-overflow-approvals">
-                <TimesheetOverflowApprovals />
+              <Layout routePath="/admin/approvals">
+                <Approvals />
               </Layout>
             </ProtectedRoute>
           } />
-          <Route path="/admin/affiliate-payout-cycle-amendments" element={
-            <ProtectedRoute staffOnly>
-              <Layout routePath="/admin/affiliate-payout-cycle-amendments">
-                <AffiliatePayoutCycleAmendmentApprovals />
-              </Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/admin/partner-payout-cycle-amendments" element={
-            <ProtectedRoute staffOnly>
-              <Layout routePath="/admin/partner-payout-cycle-amendments">
-                <PartnerPayoutCycleAmendmentApprovals />
-              </Layout>
-            </ProtectedRoute>
-          } />
+          {/* Legacy approval redirects */}
+          <Route path="/admin/timesheet-overflow-approvals" element={<Navigate to="/admin/approvals" replace />} />
+          <Route path="/admin/affiliate-payout-cycle-amendments" element={<Navigate to="/admin/approvals" replace />} />
+          <Route path="/admin/partner-payout-cycle-amendments" element={<Navigate to="/admin/approvals" replace />} />
 
           {/* ── Marketing routes ───────────────────────────────────────────── */}
           <Route path="/marketing/wa/web" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/wa/web"><WAWebMarketing /></Layout></ProtectedRoute>} />
           <Route path="/marketing/wa/api" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/wa/api"><WANativeMarketing /></Layout></ProtectedRoute>} />
           <Route path="/marketing/sms" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/sms"><SMSMarketing /></Layout></ProtectedRoute>} />
           <Route path="/marketing/social" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/social"><SocialPosting /></Layout></ProtectedRoute>} />
-          <Route path="/marketing/affiliate" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/affiliate"><AffiliateOutreach /></Layout></ProtectedRoute>} />
           <Route path="/marketing/campaigns" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/campaigns"><MarketingCampaigns /></Layout></ProtectedRoute>} />
-          <Route path="/marketing/triggers" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/triggers"><TriggerSettings /></Layout></ProtectedRoute>} />
           <Route path="/marketing" element={<ProtectedRoute staffOnly><Navigate to="/marketing/campaigns" replace /></ProtectedRoute>} />
+          {/* Legacy redirects for removed marketing pages */}
+          <Route path="/marketing/affiliate" element={<Navigate to="/admin/affiliates" replace />} />
+          <Route path="/marketing/triggers" element={<Navigate to="/settings" replace />} />
 
           <Route path="/affiliate" element={<ProtectedRoute affiliateOnly><AffiliateDashboard /></ProtectedRoute>} />
           <Route path="/affiliate/services" element={<ProtectedRoute affiliateOnly><AffiliateServices /></ProtectedRoute>} />

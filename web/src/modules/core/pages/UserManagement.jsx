@@ -297,9 +297,14 @@ export default function UserManagement() {
           <h1 style={styles.pageTitle}>👥 User Management</h1>
           <p style={styles.pageSubtitle}>{total} user{total !== 1 ? 's' : ''} total</p>
         </div>
-        <button style={styles.addBtn} onClick={() => setModal({ mode: 'add' })}>
-          + Add User
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <a href="/admin/leaves" style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E6E8F0', background: '#fff', color: '#475569', fontWeight: 600, fontSize: 13, cursor: 'pointer', textDecoration: 'none' }}>
+            📅 Leaves
+          </a>
+          <button style={styles.addBtn} onClick={() => setModal({ mode: 'add' })}>
+            + Add User
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
