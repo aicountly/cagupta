@@ -344,6 +344,30 @@ class TxnModel
         if ($lmkRaw !== null && $lmkRaw !== '') {
             $ledgerMovementKind = LedgerDimensions::assertLedgerMovementKindRequired($lmkRaw);
         }
+        $billingProfile = $this->clipDbText(
+            isset($data['billing_profile_code']) ? (string)$data['billing_profile_code'] : null,
+            50
+        );
+        $invoiceNumber = $this->clipDbText(
+            isset($data['invoice_number']) ? (string)$data['invoice_number'] : null,
+            50
+        );
+        $paymentMethod = $this->clipDbText(
+            isset($data['payment_method']) ? (string)$data['payment_method'] : null,
+            50
+        );
+        $referenceNumber = $this->clipDbText(
+            isset($data['reference_number']) ? (string)$data['reference_number'] : null,
+            100
+        );
+        $expensePurpose = $this->clipDbText(
+            isset($data['expense_purpose']) ? (string)$data['expense_purpose'] : null,
+            80
+        );
+        $paidFrom = $this->clipDbText(
+            isset($data['paid_from']) ? (string)$data['paid_from'] : null,
+            200
+        );
         $stmt->execute([
             ':client_id'           => $data['client_id']           ?? null,
             ':organization_id'     => $data['organization_id']     ?? null,
@@ -353,8 +377,8 @@ class TxnModel
             ':debit'               => (float)($data['debit']       ?? 0),
             ':credit'              => (float)($data['credit']      ?? 0),
             ':amount'              => (float)($data['amount']      ?? 0),
-            ':billing_profile_code'=> $data['billing_profile_code']?? null,
-            ':invoice_number'      => $data['invoice_number']      ?? null,
+            ':billing_profile_code'=> $billingProfile,
+            ':invoice_number'      => $invoiceNumber,
             ':service_id'          => $data['service_id']          ?? null,
             ':due_date'            => $data['due_date']            ?? null,
             ':subtotal'            => isset($data['subtotal'])     ? (float)$data['subtotal'] : null,
@@ -363,12 +387,18 @@ class TxnModel
             ':tax_amount'          => array_key_exists('tax_amount', $data) && $data['tax_amount'] !== null
                 ? (float)$data['tax_amount'] : null,
             ':invoice_status'      => $data['invoice_status']      ?? null,
-            ':payment_method'      => $data['payment_method']      ?? null,
-            ':reference_number'    => $data['reference_number']    ?? null,
-            ':expense_purpose'     => $data['expense_purpose']     ?? null,
-            ':paid_from'           => $data['paid_from']           ?? null,
-            ':tds_status'          => $data['tds_status']          ?? null,
-            ':tds_section'         => $data['tds_section']         ?? null,
+            ':payment_method'      => $paymentMethod,
+            ':reference_number'    => $referenceNumber,
+            ':expense_purpose'     => $expensePurpose,
+            ':paid_from'           => $paidFrom,
+            ':tds_status'          => $this->clipDbText(
+                isset($data['tds_status']) ? (string)$data['tds_status'] : null,
+                20
+            ),
+            ':tds_section'         => $this->clipDbText(
+                isset($data['tds_section']) ? (string)$data['tds_section'] : null,
+                20
+            ),
             ':tds_rate'            => isset($data['tds_rate'])     ? (float)$data['tds_rate'] : null,
             ':linked_txn_id'       => $data['linked_txn_id']       ?? null,
             ':notes'               => $data['notes']               ?? null,
@@ -380,7 +410,10 @@ class TxnModel
             ':firm_bank_account_id' => isset($data['firm_bank_account_id']) ? (int)$data['firm_bank_account_id'] : null,
             ':counterparty_firm_bank_account_id' => isset($data['counterparty_firm_bank_account_id'])
                 ? (int)$data['counterparty_firm_bank_account_id'] : null,
-            ':firm_expense_category' => $data['firm_expense_category'] ?? null,
+            ':firm_expense_category' => $this->clipDbText(
+                isset($data['firm_expense_category']) ? (string)$data['firm_expense_category'] : null,
+                64
+            ),
             ':invoice_cost_analysis_ack_user_id' => isset($data['invoice_cost_analysis_ack_user_id'])
                 ? (int)$data['invoice_cost_analysis_ack_user_id'] : null,
             ':invoice_cost_analysis_ack_at' => $data['invoice_cost_analysis_ack_at'] ?? null,
@@ -1145,6 +1178,35 @@ class TxnModel
     }
 
     // ── Private helpers ───────────────────────────────────────────────────────
+
+    /**
+     * Clip strings to PostgreSQL VARCHAR(n) limits so inserts never fail with
+     * "value too long" (e.g. paid_from = bank name (200) + " (bank)" > 200).
+     *
+     * @return string|null  null when input is null or empty after trim
+     */
+    private function clipDbText(?string $value, int $maxChars): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+        $s = trim($value);
+        if ($s === '') {
+            return null;
+        }
+        if ($maxChars <= 0) {
+            return '';
+        }
+        if (function_exists('mb_strlen')) {
+            if (mb_strlen($s, 'UTF-8') <= $maxChars) {
+                return $s;
+            }
+
+            return mb_substr($s, 0, $maxChars, 'UTF-8');
+        }
+
+        return strlen($s) <= $maxChars ? $s : substr($s, 0, $maxChars);
+    }
 
     /**
      * Decode JSONB invoice fields for API responses (PDO may return a string).

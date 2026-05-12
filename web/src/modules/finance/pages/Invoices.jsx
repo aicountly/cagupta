@@ -1270,7 +1270,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
     referenceNumber: '',
     billingProfileCode: '',
     firmBankAccountId: '',
-    description: expensePurposeLabel('challan'),
+    description: '',
     notes: '',
     ledgerClass: 'regular',
     ledgerMovementKind: 'fees',
@@ -1359,62 +1359,61 @@ function PaymentExpenseModal({ onClose, onSave }) {
               <DateInput style={inputStyle} value={form.txnDate} onChange={(e) => set('txnDate', e.target.value)} />
             </label>
           </div>
-          <label style={labelStyle}>
-            Purpose
-            <select
-              style={inputStyle}
-              value={form.expensePurpose}
-              onChange={(e) => {
-                const v = e.target.value;
-                setForm((f) => ({
-                  ...f,
-                  expensePurpose: v,
-                  description: expensePurposeLabel(v),
-                }));
-              }}
-            >
-              {EXPENSE_PURPOSE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
-          </label>
-          <label style={labelStyle}>
-            Description (shown on ledger)
-            <input type="text" style={inputStyle} placeholder="What was paid and why" value={form.description} onChange={(e) => set('description', e.target.value)} />
-          </label>
-          <label style={labelStyle}>
-            Paid via
-            <select style={inputStyle} value={form.method} onChange={(e) => set('method', e.target.value)}>
-              {PAYMENT_METHOD_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
-            </select>
-          </label>
-          <label style={labelStyle}>
-            Reference no. (UTR / challan / cheque)
-            <input type="text" style={inputStyle} placeholder="Optional" value={form.referenceNumber} onChange={(e) => set('referenceNumber', e.target.value)} />
-          </label>
-          <label style={labelStyle}>
-            Billing profile
-            <select style={inputStyle} value={form.billingProfileCode} onChange={(e) => set('billingProfileCode', e.target.value)}>
-              <option value="">— Select billing profile —</option>
-              {getBillingProfiles().map((p) => (
-                <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
-              ))}
-            </select>
-          </label>
-          <label style={labelStyle}>
-            Bank / cash account
-            <select
-              style={inputStyle}
-              value={form.firmBankAccountId}
-              onChange={(e) => set('firmBankAccountId', e.target.value)}
-              disabled={!form.billingProfileCode || banksLoading}
-            >
-              <option value="">{banksLoading ? 'Loading…' : '— Select account —'}</option>
-              {banks.map((b) => (
-                <option key={b.id} value={String(b.id)}>{b.name} ({b.accountType})</option>
-              ))}
-            </select>
-          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Purpose
+              <select
+                style={inputStyle}
+                value={form.expensePurpose}
+                onChange={(e) => set('expensePurpose', e.target.value)}
+              >
+                {EXPENSE_PURPOSE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Description (shown on ledger) *
+              <input type="text" style={inputStyle} placeholder="What was paid and why" value={form.description} onChange={(e) => set('description', e.target.value)} aria-required />
+            </label>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Paid via
+              <select style={inputStyle} value={form.method} onChange={(e) => set('method', e.target.value)}>
+                {PAYMENT_METHOD_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Reference no. (UTR / challan / cheque)
+              <input type="text" style={inputStyle} placeholder="Optional" value={form.referenceNumber} onChange={(e) => set('referenceNumber', e.target.value)} />
+            </label>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Billing profile
+              <select style={inputStyle} value={form.billingProfileCode} onChange={(e) => set('billingProfileCode', e.target.value)}>
+                <option value="">— Select billing profile —</option>
+                {getBillingProfiles().map((p) => (
+                  <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
+                ))}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Bank / cash account
+              <select
+                style={inputStyle}
+                value={form.firmBankAccountId}
+                onChange={(e) => set('firmBankAccountId', e.target.value)}
+                disabled={!form.billingProfileCode || banksLoading}
+              >
+                <option value="">{banksLoading ? 'Loading…' : '— Select account —'}</option>
+                {banks.map((b) => (
+                  <option key={b.id} value={String(b.id)}>{b.name} ({b.accountType})</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <label style={labelStyle}>
             Internal notes
             <input type="text" style={inputStyle} placeholder="Optional" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
