@@ -187,6 +187,18 @@ class LeadModel
     }
 
     /**
+     * After renaming an engagement type: refresh cached label on leads (join is by engagement_type_id).
+     */
+    public function syncEngagementTypeName(int $engagementTypeId, string $name): void
+    {
+        $stmt = $this->db->prepare(
+            'UPDATE leads SET engagement_type_name = :n, updated_at = NOW()
+             WHERE engagement_type_id = :eid'
+        );
+        $stmt->execute([':n' => $name, ':eid' => $engagementTypeId]);
+    }
+
+    /**
      * Delete a lead record.
      */
     public function delete(int $id): bool

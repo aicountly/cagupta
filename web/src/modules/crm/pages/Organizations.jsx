@@ -15,10 +15,18 @@ const NO_DELETE_ORG_HINT =
   'You do not have permission to delete organizations. Please contact an Admin or Super Admin.';
 
 function DeleteOrganizationModal({ org, onClose, onDeleted }) {
+  const [step, setStep] = useState('warn');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setStep('warn');
+    setOtpSent(false);
+    setOtp('');
+    setErr('');
+  }, [org?.id]);
 
   async function sendOtp() {
     setErr('');
@@ -51,47 +59,90 @@ function DeleteOrganizationModal({ org, onClose, onDeleted }) {
     }
   }
 
+  function handleClose() {
+    setStep('warn');
+    setOtp('');
+    setOtpSent(false);
+    setErr('');
+    onClose();
+  }
+
   return (
     <div style={deleteOverlayStyle}>
       <div style={deleteModalStyle}>
         <div style={deleteModalHeaderStyle}>
           <span style={{ fontSize: 15, fontWeight: 700, color: '#b91c1c' }}>Delete organization</span>
-          <button type="button" onClick={onClose} style={deleteCloseBtnStyle}>✕</button>
+          <button type="button" onClick={() => !busy && handleClose()} style={deleteCloseBtnStyle}>✕</button>
         </div>
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
-            Permanently delete <strong>{org.displayName}</strong> ({org.clientCode})? This cannot be undone.
-          </p>
-          <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
-            Request a superadmin OTP, then enter it to confirm.
-          </p>
-          {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
-          <button type="button" style={deleteBtnSecondary} disabled={busy} onClick={sendOtp}>
-            {busy && !otpSent ? 'Sending…' : 'Request superadmin OTP'}
-          </button>
-          {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent</span>}
-          <label style={deleteLabelStyle}>
-            Superadmin OTP *
-            <input
-              type="text"
-              style={deleteInputStyle}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\s/g, ''))}
-            />
-          </label>
+          {step === 'warn' ? (
+            <>
+              <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+                You are about to <strong>permanently delete</strong> organization{' '}
+                <strong>{org.displayName}</strong> ({org.clientCode}).
+              </p>
+              <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+                This removes the organization record and linked data policies allow. Continue only if you are sure —
+                the next step requires a superadmin OTP.
+              </p>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  setStep('warn');
+                  setOtp('');
+                  setOtpSent(false);
+                  setErr('');
+                }}
+                style={{ ...deleteBtnSecondary, alignSelf: 'flex-start' }}
+              >
+                ← Back
+              </button>
+              <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+                Request a superadmin OTP, then enter it to authorize deletion of <strong>{org.displayName}</strong>.
+              </p>
+              {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
+              <button type="button" style={deleteBtnSecondary} disabled={busy} onClick={sendOtp}>
+                {busy && !otpSent ? 'Sending…' : 'Request superadmin OTP'}
+              </button>
+              {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent</span>}
+              <label style={deleteLabelStyle}>
+                Superadmin OTP *
+                <input
+                  type="text"
+                  style={deleteInputStyle}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\s/g, ''))}
+                />
+              </label>
+            </>
+          )}
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" onClick={onClose} style={deleteBtnSecondary}>Cancel</button>
-          <button
-            type="button"
-            disabled={busy}
-            onClick={confirmDelete}
-            style={{ ...deleteBtnPrimary, background: '#b91c1c' }}
-          >
-            Delete organization
-          </button>
+          {step === 'warn' ? (
+            <>
+              <button type="button" onClick={handleClose} style={deleteBtnSecondary}>Cancel</button>
+              <button type="button" style={{ ...deleteBtnPrimary, background: '#b91c1c' }} onClick={() => setStep('otp')}>
+                Continue to OTP
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" onClick={handleClose} style={deleteBtnSecondary} disabled={busy}>Cancel</button>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={confirmDelete}
+                style={{ ...deleteBtnPrimary, background: '#b91c1c' }}
+              >
+                Delete organization
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>

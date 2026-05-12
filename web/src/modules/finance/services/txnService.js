@@ -191,7 +191,7 @@ export async function updateTxn(id, payload, { superadminOtp } = {}) {
   return normalizeTxn(data.data);
 }
 
-/** DELETE /api/admin/txn/:id — invoice rows require superadminOtp header */
+/** DELETE /api/admin/txn/:id — protected ledger rows require superadminOtp header */
 export async function deleteTxn(id, { superadminOtp } = {}) {
   const headers = { ...authHeaders() };
   if (superadminOtp) {
@@ -202,6 +202,34 @@ export async function deleteTxn(id, { superadminOtp } = {}) {
     headers,
   });
   await parseResponse(res);
+}
+
+/** POST /api/admin/txn/request-ledger-delete-otp — one OTP for a batch (single or bulk) */
+export async function requestLedgerDeleteOtp(ids) {
+  const idArr = Array.isArray(ids) ? ids.map((x) => parseInt(x, 10)).filter((n) => n > 0) : [];
+  const res = await fetch(`${API_BASE}/admin/txn/request-ledger-delete-otp`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify({ ids: idArr }),
+  });
+  const data = await parseResponse(res);
+  return data.data || {};
+}
+
+/** POST /api/admin/txn/bulk-delete — header X-Superadmin-Otp; same OTP covers all ids */
+export async function bulkDeleteTxns(ids, { superadminOtp } = {}) {
+  const idArr = Array.isArray(ids) ? ids.map((x) => parseInt(x, 10)).filter((n) => n > 0) : [];
+  const headers = { ...authHeaders() };
+  if (superadminOtp) {
+    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
+  }
+  const res = await fetch(`${API_BASE}/admin/txn/bulk-delete`, {
+    method:  'POST',
+    headers,
+    body:    JSON.stringify({ ids: idArr }),
+  });
+  const data = await parseResponse(res);
+  return data.data || {};
 }
 
 /** POST — superadmin receives OTP email; intent is update | delete */

@@ -13,6 +13,7 @@ import {
   createFirmBankTransfer,
   createFirmExpenseTxn,
 } from '../services/txnService';
+import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
 
 const EXPENSE_CATS = [
   { value: 'salary', label: 'Salary' },
@@ -55,6 +56,8 @@ export default function BankFirmReports() {
   const [newType, setNewType] = useState('bank');
   const [newOpen, setNewOpen] = useState('0');
   const [newOpenDate, setNewOpenDate] = useState('');
+  const [deleteAccountId, setDeleteAccountId] = useState(null);
+  const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
 
   function flash(text, type = 'info') {
     setMsg({ text, type });
@@ -142,18 +145,47 @@ export default function BankFirmReports() {
     } catch (err) { flash(err.message || 'Create failed', 'error'); }
   }
 
-  async function removeAccount(id) {
-    if (!canSettings || !window.confirm('Delete this bank account?')) return;
+  function promptRemoveAccount(id) {
+    if (!canSettings) return;
+    setDeleteAccountId(id);
+  }
+
+  async function confirmRemoveBankAccount() {
+    if (!canSettings || deleteAccountId == null) return;
+    setDeleteAccountBusy(true);
     try {
-      await deleteFirmBankAccount(id);
+      await deleteFirmBankAccount(deleteAccountId);
+      flash('Account deleted', 'success');
+      setDeleteAccountId(null);
       refreshAccounts();
-    } catch (err) { flash(err.message || 'Delete failed', 'error'); }
+    } catch (err) {
+      flash(err.message || 'Delete failed', 'error');
+    } finally {
+      setDeleteAccountBusy(false);
+    }
   }
 
   const profiles = getBillingProfiles();
 
   return (
     <div style={pageWrap}>
+      {deleteAccountId != null && (
+        <DestructiveConfirmModal
+          open
+          title="Delete bank / cash account?"
+          busy={deleteAccountBusy}
+          confirmLabel="Delete account"
+          onClose={() => !deleteAccountBusy && setDeleteAccountId(null)}
+          onConfirm={confirmRemoveBankAccount}
+        >
+          <p style={{ margin: '0 0 8px' }}>
+            Remove <strong>{accounts.find((a) => a.id === deleteAccountId)?.name ?? 'this account'}</strong> under firm <strong>{firmCode}</strong>?
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
+            The server may block deletion while transactions reference this ledger. Any error will appear after you confirm.
+          </p>
+        </DestructiveConfirmModal>
+      )}
       {/* Page Header */}
       <div style={headerCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -212,7 +244,7 @@ export default function BankFirmReports() {
                       <td style={tdStyle}>₹{Number(a.openingBalance || 0).toLocaleString('en-IN')}</td>
                       {canSettings && (
                         <td style={tdStyle}>
-                          <button type="button" onClick={() => removeAccount(a.id)} style={btnDanger} title="Delete">
+                          <button type="button" onClick={() => promptRemoveAccount(a.id)} style={btnDanger} title="Delete">
                             <Trash2 size={13} />
                           </button>
                         </td>

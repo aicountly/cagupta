@@ -174,8 +174,8 @@ class UserController extends BaseController
     /**
      * Update a user's profile.
      *
-     * Body: { name?, email?, role_id?, is_active? }
-     * Cannot modify the super-admin account.
+     * Body: { name?, email?, role_id?, is_active?, shift_target_minutes?, shift_target_disabled?, ... }
+     * The primary super-admin account (hardcoded email) accepts only shift_target_* fields.
      */
     public function update(int $id): never
     {
@@ -185,12 +185,18 @@ class UserController extends BaseController
         }
         $this->assertUserRowVisible($user);
 
-        // Protect the hardcoded super admin
-        if ($this->isSuperAdminEmail($user['email'])) {
-            $this->error('The super-admin account cannot be modified.', 403);
-        }
-
         $body = $this->getJsonBody();
+
+        // Primary super-admin account: only daily shift target fields may be changed.
+        if ($this->isSuperAdminEmail((string)$user['email'])) {
+            $body = array_intersect_key($body, array_flip(['shift_target_minutes', 'shift_target_disabled']));
+            if ($body === []) {
+                $this->error(
+                    'This account can only be updated with shift_target_minutes and/or shift_target_disabled.',
+                    422
+                );
+            }
+        }
 
         if (!$this->userHasManageAll() && $this->userHasDelegate() && array_key_exists('role_id', $body)) {
             $this->assertDelegateAssignableRole((int)$body['role_id']);

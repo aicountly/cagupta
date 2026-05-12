@@ -21,6 +21,7 @@ import { buildLedgerDetailLine } from '../utils/ledgerTxnDetails';
 import StatusBadge from '../components/common/StatusBadge';
 import ClientSearchDropdown from '../components/common/ClientSearchDropdown';
 import EntitySearchDropdown from '../components/common/EntitySearchDropdown';
+import LineItemPresetCombobox from '../components/common/LineItemPresetCombobox';
 import DateInput from '../components/common/DateInput';
 import { getBillingProfiles, getBillingProfileByCode } from '../constants/billingProfiles';
 import { stateCodeFromGstin } from '../utils/gstUtils';
@@ -357,16 +358,13 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
             <div style={{ display:'flex', flexDirection:'column', gap:10, marginTop:4 }}>
               {form.lines.map((row, idx) => (
                 <div key={idx} style={{ display:'flex', flexDirection:'column', gap:6, paddingBottom:8, borderBottom:'1px solid #f1f5f9' }}>
-                  <select
-                    style={{ ...inputStyle, fontSize:12 }}
+                  <LineItemPresetCombobox
                     value={row.presetKey}
-                    onChange={(e) => applyPreset(idx, e.target.value)}
-                  >
-                    <option value="">Custom description…</option>
-                    {lineOptions.map((o) => (
-                      <option key={o.key} value={o.key}>{o.description}</option>
-                    ))}
-                  </select>
+                    options={lineOptions}
+                    onChange={(key) => applyPreset(idx, key)}
+                    placeholder="Custom — type to search services…"
+                    style={{ ...inputStyle, fontSize: 12 }}
+                  />
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 120px 36px', gap:8, alignItems:'center' }}>
                     <input
                       type="text"
@@ -402,8 +400,8 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
                         value={row.lineKind}
                         onChange={(e) => setLine(idx, 'lineKind', e.target.value)}
                       >
-                        <option value="professional_fee">Professional fee</option>
-                        <option value="cost_recovery">Cost recovery</option>
+                        <option value="professional_fee">Professional Fee</option>
+                        <option value="cost_recovery">Tax Challans n Reimbursements</option>
                       </select>
                     </label>
                   </div>
@@ -579,7 +577,7 @@ function InvoiceViewModal({ txn, onClose, onEdit, onDelete, canEditInvoice, canD
                           <td style={{ padding:'8px 0', verticalAlign:'top' }}>
                             <div>{row.description}</div>
                             {row.lineKind === 'cost_recovery' ? (
-                              <div style={{ fontSize:10, fontWeight:700, color:'#b45309', marginTop:4 }}>Cost recovery</div>
+                              <div style={{ fontSize:10, fontWeight:700, color:'#b45309', marginTop:4 }}>Tax Challans n Reimbursements</div>
                             ) : null}
                           </td>
                           <td style={{ padding:'8px 0', textAlign:'right', fontWeight:600 }}>{Number(row.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -841,8 +839,8 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       Line type
                       <select style={{ ...inputStyle, fontSize: 12, width: 160 }} value={line.lineKind} onChange={(e) => setLine(idx, 'lineKind', e.target.value)}>
-                        <option value="professional_fee">Professional fee</option>
-                        <option value="cost_recovery">Cost recovery</option>
+                        <option value="professional_fee">Professional Fee</option>
+                        <option value="cost_recovery">Tax Challans n Reimbursements</option>
                       </select>
                     </label>
                   </div>

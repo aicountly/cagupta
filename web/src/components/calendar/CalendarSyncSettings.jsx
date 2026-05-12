@@ -12,6 +12,7 @@ import {
   openOAuthPopup,
 } from '../../services/calendarSyncService';
 import { useNotification } from '../../context/NotificationContext';
+import DestructiveConfirmModal from '../common/DestructiveConfirmModal';
 
 // ── Provider metadata ─────────────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ export default function CalendarSyncSettings() {
   const [savingSettings, setSavingSettings] = useState(false);
 
   const [appleForm, setAppleForm] = useState({ visible: false, apple_id: '', app_password: '', submitting: false });
+  const [disconnectAsk, setDisconnectAsk] = useState(null);
 
   const reload = useCallback(() => {
     setLoading(true);
@@ -122,18 +124,19 @@ export default function CalendarSyncSettings() {
 
   // ── Disconnect ────────────────────────────────────────────────────────────
 
-  async function handleDisconnect(tokenId, providerLabel) {
-    if (!window.confirm(`Disconnect ${providerLabel}? All synced data will stop updating.`)) return;
+  async function executeDisconnect() {
+    if (!disconnectAsk) return;
     try {
-      await disconnectAccount(tokenId);
-      addNotification(`${providerLabel} disconnected`, 'info');
+      await disconnectAccount(disconnectAsk.tokenId);
+      addNotification(`${disconnectAsk.label} disconnected`, 'info');
+      setDisconnectAsk(null);
       reload();
     } catch (err) {
       addNotification(err.message || 'Disconnect failed', 'info');
     }
   }
 
-  // ── Calendar toggle / direction ───────────────────────────────────────────
+  // ── Toggle / direction ────────────────────────────────────────────────
 
   async function handleToggleCalendar(calId, field, value) {
     try {
@@ -196,6 +199,22 @@ export default function CalendarSyncSettings() {
 
   return (
     <div style={{ maxWidth: 720 }}>
+      {disconnectAsk && (
+        <DestructiveConfirmModal
+          open
+          title="Disconnect calendar?"
+          tone="warning"
+          titleAccent="#d97706"
+          confirmLabel={`Disconnect`}
+          cancelLabel="Keep connected"
+          onClose={() => setDisconnectAsk(null)}
+          onConfirm={executeDisconnect}
+        >
+          <p style={{ margin: 0 }}>
+            Disconnect <strong>{disconnectAsk.label}</strong>? Incoming and outgoing calendar updates will stop until you reconnect.
+          </p>
+        </DestructiveConfirmModal>
+      )}
       {/* ── Connected Accounts ── */}
       <section style={{ marginBottom: 32 }}>
         <h3 style={sectionTitle}>Connected Accounts</h3>
@@ -235,7 +254,7 @@ export default function CalendarSyncSettings() {
                       <button
                         type="button"
                         style={btnDangerSmall}
-                        onClick={() => handleDisconnect(group.token_id || 0, prov.label)}
+                        onClick={() => setDisconnectAsk({ tokenId: group.token_id || 0, label: prov.label })}
                       >
                         Disconnect
                       </button>

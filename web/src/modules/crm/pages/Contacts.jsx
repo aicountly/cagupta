@@ -23,6 +23,7 @@ export default function Contacts() {
   const [selected, setSelected] = useState(null);
   const [orgModalContact, setOrgModalContact] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [contactDeleteStep, setContactDeleteStep] = useState('warn');
   const [deleteSubmitting, setDeleteSubmitting] = useState(false);
   const [deleteOtpSending, setDeleteOtpSending] = useState(false);
   const [deleteOtpSent, setDeleteOtpSent] = useState(false);
@@ -71,6 +72,7 @@ export default function Contacts() {
 
   useEffect(() => {
     if (!deleteTarget) return;
+    setContactDeleteStep('warn');
     setDeleteOtpSent(false);
     setDeleteOtp('');
     setDeleteModalErr('');
@@ -79,7 +81,7 @@ export default function Contacts() {
   useEffect(() => {
     if (!deleteTarget) return undefined;
     const onKey = (e) => {
-      if (e.key === 'Escape' && !deleteSubmitting && !deleteOtpSending) setDeleteTarget(null);
+      if (e.key === 'Escape' && !deleteSubmitting && !deleteOtpSending) closeContactDelete();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -114,12 +116,17 @@ export default function Contacts() {
       setContacts(prev => prev.filter(x => x.id !== c.id));
       if (selected?.id === c.id) setSelected(null);
       if (orgModalContact?.id === c.id) setOrgModalContact(null);
-      setDeleteTarget(null);
+      closeContactDelete();
     } catch (err) {
-      alert(err.message || 'Failed to delete contact.');
+      setDeleteModalErr(err.message || 'Failed to delete contact.');
     } finally {
       setDeleteSubmitting(false);
     }
+  }
+
+  function closeContactDelete() {
+    setContactDeleteStep('warn');
+    setDeleteTarget(null);
   }
 
 
@@ -326,7 +333,7 @@ export default function Contacts() {
         </div>
       )}
       {deleteTarget && (
-        <div style={deleteOverlayStyle} role="presentation" onClick={() => !deleteSubmitting && !deleteOtpSending && setDeleteTarget(null)}>
+        <div style={deleteOverlayStyle} role="presentation" onClick={() => !deleteSubmitting && !deleteOtpSending && closeContactDelete()}>
           <div
             style={deleteModalWideStyle}
             role="dialog"
@@ -336,47 +343,86 @@ export default function Contacts() {
           >
             <div style={deleteModalHeaderStyle}>
               <span id="delete-contact-title" style={{ fontSize: 15, fontWeight: 700, color: '#b91c1c' }}>Delete contact</span>
-              <button type="button" onClick={() => !deleteSubmitting && !deleteOtpSending && setDeleteTarget(null)} style={deleteCloseBtnStyle}>✕</button>
+              <button type="button" onClick={() => !deleteSubmitting && !deleteOtpSending && closeContactDelete()} style={deleteCloseBtnStyle}>✕</button>
             </div>
             <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
-                Permanently delete <strong>{deleteTarget.displayName}</strong> ({deleteTarget.clientCode})? This cannot be undone.
-              </p>
-              <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
-                Request a superadmin OTP, then enter it to confirm.
-              </p>
-              {deleteModalErr && <div style={{ color: '#dc2626', fontSize: 13 }}>{deleteModalErr}</div>}
-              <button
-                type="button"
-                style={deleteBtnSecondary}
-                disabled={deleteOtpSending || deleteSubmitting}
-                onClick={sendDeleteOtp}
-              >
-                {deleteOtpSending && !deleteOtpSent ? 'Sending…' : 'Request superadmin OTP'}
-              </button>
-              {deleteOtpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent</span>}
-              <label style={deleteLabelStyle}>
-                Superadmin OTP *
-                <input
-                  type="text"
-                  style={deleteInputStyle}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={deleteOtp}
-                  onChange={(e) => setDeleteOtp(e.target.value.replace(/\s/g, ''))}
-                />
-              </label>
+              {contactDeleteStep === 'warn' ? (
+                <>
+                  <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+                    You are about to <strong>permanently delete</strong>{' '}
+                    <strong>{deleteTarget.displayName}</strong> ({deleteTarget.clientCode}).
+                  </p>
+                  <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+                    Related links and audit history policies apply. Continue only if you are sure —
+                    the next step requires a superadmin OTP.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContactDeleteStep('warn');
+                      setDeleteOtp('');
+                      setDeleteOtpSent(false);
+                      setDeleteModalErr('');
+                    }}
+                    style={{ ...deleteBtnSecondary, alignSelf: 'flex-start' }}
+                  >
+                    ← Back
+                  </button>
+                  <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+                    Request a superadmin OTP and enter it to authorize deletion of <strong>{deleteTarget.displayName}</strong>.
+                  </p>
+                  {deleteModalErr && <div style={{ color: '#dc2626', fontSize: 13 }}>{deleteModalErr}</div>}
+                  <button
+                    type="button"
+                    style={deleteBtnSecondary}
+                    disabled={deleteOtpSending || deleteSubmitting}
+                    onClick={sendDeleteOtp}
+                  >
+                    {deleteOtpSending && !deleteOtpSent ? 'Sending…' : 'Request superadmin OTP'}
+                  </button>
+                  {deleteOtpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent</span>}
+                  <label style={deleteLabelStyle}>
+                    Superadmin OTP *
+                    <input
+                      type="text"
+                      style={deleteInputStyle}
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={deleteOtp}
+                      onChange={(e) => setDeleteOtp(e.target.value.replace(/\s/g, ''))}
+                    />
+                  </label>
+                </>
+              )}
             </div>
             <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" onClick={() => !deleteSubmitting && !deleteOtpSending && setDeleteTarget(null)} style={deleteBtnSecondary}>Cancel</button>
-              <button
-                type="button"
-                disabled={deleteSubmitting || deleteOtpSending}
-                onClick={confirmDeleteContact}
-                style={{ ...deleteBtnPrimary, background: '#b91c1c' }}
-              >
-                {deleteSubmitting ? 'Deleting…' : 'Delete contact'}
-              </button>
+              {contactDeleteStep === 'warn' ? (
+                <>
+                  <button type="button" onClick={() => !deleteSubmitting && closeContactDelete()} style={deleteBtnSecondary}>Cancel</button>
+                  <button
+                    type="button"
+                    onClick={() => setContactDeleteStep('otp')}
+                    style={{ ...deleteBtnPrimary, background: '#b91c1c' }}
+                  >
+                    Continue to OTP
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => !deleteSubmitting && closeContactDelete()} style={deleteBtnSecondary}>Cancel</button>
+                  <button
+                    type="button"
+                    disabled={deleteSubmitting || deleteOtpSending}
+                    onClick={confirmDeleteContact}
+                    style={{ ...deleteBtnPrimary, background: '#b91c1c' }}
+                  >
+                    {deleteSubmitting ? 'Deleting…' : 'Delete contact'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

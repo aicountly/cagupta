@@ -250,6 +250,31 @@ class RegisterModel
     }
 
     /**
+     * When an engagement type is renamed: refresh return_type where it matched the old label
+     * or was empty (consistent with recurring definitions).
+     */
+    public function syncReturnTypeAfterEngagementTypeRename(
+        int $engagementTypeId,
+        string $oldName,
+        string $newName
+    ): void {
+        $stmt = $this->db->prepare(
+            'UPDATE registers
+             SET return_type = :new, updated_at = NOW()
+             WHERE engagement_type_id = :eid
+               AND (
+                   return_type = :old
+                   OR TRIM(COALESCE(return_type, \'\')) = \'\'
+               )'
+        );
+        $stmt->execute([
+            ':new' => $newName,
+            ':eid' => $engagementTypeId,
+            ':old' => $oldName,
+        ]);
+    }
+
+    /**
      * Delete a register row.
      */
     public function delete(int $id): bool

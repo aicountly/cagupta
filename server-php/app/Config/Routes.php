@@ -1050,6 +1050,12 @@ class Routes
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
             [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/service-categories/:id',
+                'handler'    => 'Admin\ServiceCategoryController@update',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/service-categories/:id',
                 'handler'    => 'Admin\ServiceCategoryController@destroy',
@@ -1065,6 +1071,12 @@ class Routes
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/service-categories/:id/subcategories',
                 'handler'    => 'Admin\ServiceCategoryController@subcategoryStore',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/service-subcategories/:id',
+                'handler'    => 'Admin\ServiceCategoryController@subcategoryUpdate',
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
             [
@@ -1273,6 +1285,18 @@ class Routes
                 'pattern'    => '/api/admin/txn',
                 'handler'    => 'Admin\TxnController@store',
                 'middleware' => ['auth', 'permission:invoices.create'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/request-ledger-delete-otp',
+                'handler'    => 'Admin\TxnController@requestLedgerDeleteOtp',
+                'middleware' => ['auth', 'permission:invoices.delete'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/bulk-delete',
+                'handler'    => 'Admin\TxnController@bulkDestroy',
+                'middleware' => ['auth', 'permission:invoices.delete'],
             ],
             [
                 'method'     => 'POST',

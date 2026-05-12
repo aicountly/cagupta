@@ -3,11 +3,15 @@ declare(strict_types=1);
 
 namespace App\Controllers\Admin;
 
+use App\Config\Database;
 use App\Controllers\BaseController;
 use App\Models\ServiceCategoryModel;
 use App\Models\ServiceSubcategoryModel;
 use App\Models\EngagementTypeModel;
 use App\Models\ServiceModel;
+use App\Models\LeadModel;
+use App\Models\RecurringServiceDefinitionModel;
+use App\Models\RegisterModel;
 
 /**
  * ServiceCategoryController — CRUD for service categories, subcategories,
@@ -21,6 +25,9 @@ class ServiceCategoryController extends BaseController
     private ServiceSubcategoryModel $subcategories;
     private EngagementTypeModel     $engagementTypes;
     private ServiceModel            $services;
+    private LeadModel               $leads;
+    private RecurringServiceDefinitionModel $recurringDefs;
+    private RegisterModel           $registers;
 
     public function __construct()
     {
@@ -28,6 +35,9 @@ class ServiceCategoryController extends BaseController
         $this->subcategories   = new ServiceSubcategoryModel();
         $this->engagementTypes = new EngagementTypeModel();
         $this->services        = new ServiceModel();
+        $this->leads           = new LeadModel();
+        $this->recurringDefs   = new RecurringServiceDefinitionModel();
+        $this->registers       = new RegisterModel();
     }
 
     // ── GET /api/admin/service-categories ────────────────────────────────────
@@ -60,6 +70,40 @@ class ServiceCategoryController extends BaseController
         $newId = $this->categories->create($name);
         $cat   = $this->categories->find($newId);
         $this->success($cat, 'Category created', 201);
+    }
+
+    // ── PATCH /api/admin/service-categories/:id ─────────────────────────────
+
+    /**
+     * Rename a category. IDs on engagements stay the same; denormalized names are refreshed.
+     *
+     * Body: { name }
+     */
+    public function update(int $id): never
+    {
+        $cat = $this->categories->find($id);
+        if ($cat === null) {
+            $this->error('Category not found.', 404);
+        }
+
+        $body = $this->getJsonBody();
+        $name = trim((string)($body['name'] ?? ''));
+        if ($name === '') {
+            $this->error('Category name is required.', 422);
+        }
+
+        $db = Database::getConnection();
+        $db->beginTransaction();
+        try {
+            $this->categories->updateName($id, $name);
+            $this->services->syncDenormalizedCategoryName($id, $name);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+
+        $this->success($this->categories->find($id), 'Category updated');
     }
 
     // ── DELETE /api/admin/service-categories/:id ─────────────────────────────
@@ -120,6 +164,40 @@ class ServiceCategoryController extends BaseController
         $newId = $this->subcategories->create($categoryId, $name);
         $sub   = $this->subcategories->find($newId);
         $this->success($sub, 'Subcategory created', 201);
+    }
+
+    // ── PATCH /api/admin/service-subcategories/:id ────────────────────────────
+
+    /**
+     * Rename a subcategory. Updates denormalized subcategory_name on linked services.
+     *
+     * Body: { name }
+     */
+    public function subcategoryUpdate(int $id): never
+    {
+        $sub = $this->subcategories->find($id);
+        if ($sub === null) {
+            $this->error('Subcategory not found.', 404);
+        }
+
+        $body = $this->getJsonBody();
+        $name = trim((string)($body['name'] ?? ''));
+        if ($name === '') {
+            $this->error('Subcategory name is required.', 422);
+        }
+
+        $db = Database::getConnection();
+        $db->beginTransaction();
+        try {
+            $this->subcategories->updateName($id, $name);
+            $this->services->syncDenormalizedSubcategoryName($id, $name);
+            $db->commit();
+        } catch (\Throwable $e) {
+            $db->rollBack();
+            throw $e;
+        }
+
+        $this->success($this->subcategories->find($id), 'Subcategory updated');
     }
 
     // ── DELETE /api/admin/service-subcategories/:id ───────────────────────────
@@ -246,6 +324,8 @@ class ServiceCategoryController extends BaseController
         $body = $this->getJsonBody();
         $data = [];
 
+        $oldName = trim((string)($et['name'] ?? ''));
+
         if (array_key_exists('name', $body)) {
             $n = trim((string)$body['name']);
             if ($n === '') {
@@ -287,7 +367,19 @@ class ServiceCategoryController extends BaseController
         }
 
         $this->engagementTypes->update($id, $data);
-        $this->success($this->engagementTypes->find($id), 'Engagement type updated');
+        $updated = $this->engagementTypes->find($id);
+
+        if (isset($data['name'])) {
+            $newName = trim((string)$data['name']);
+            if ($newName !== $oldName) {
+                $this->services->syncDenormalizedEngagementTypeName($id, $newName);
+                $this->leads->syncEngagementTypeName($id, $newName);
+                $this->recurringDefs->syncReturnTypeAfterEngagementTypeRename($id, $oldName, $newName);
+                $this->registers->syncReturnTypeAfterEngagementTypeRename($id, $oldName, $newName);
+            }
+        }
+
+        $this->success($updated, 'Engagement type updated');
     }
 
     // ── DELETE /api/admin/engagement-types/:id ────────────────────────────────

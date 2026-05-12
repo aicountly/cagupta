@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { getCredentials, createCredential, updateCredential, deleteCredential } from '../services/credentialService';
 import { fetchPortalTypes } from '../services/portalTypeService';
 import EntitySearchDropdown from '../../../components/common/EntitySearchDropdown';
+import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
 
 function CredentialModal({ onClose, onSave, initial }) {
   const isEdit = !!initial;
@@ -110,6 +111,9 @@ export default function Credentials() {
   const [loading, setLoading]                   = useState(true);
   const [showAddModal, setShowAddModal]         = useState(false);
   const [editCredential, setEditCredential]     = useState(null);
+  const [deleteCredentialMeta, setDeleteCredentialMeta] = useState(null);
+  const [deleteCredentialBusy, setDeleteCredentialBusy] = useState(false);
+  const [deleteCredentialErr, setDeleteCredentialErr] = useState('');
 
   useEffect(() => {
     setLoading(true);
@@ -137,11 +141,19 @@ export default function Credentials() {
       .catch(() => {});
   }
 
-  function handleDelete(id) {
-    if (window.confirm('Delete this credential?')) {
-      deleteCredential(id)
-        .then(() => setCredentials(prev => prev.filter(c => c.id !== id)))
-        .catch(() => {});
+  async function executeDeleteCredential() {
+    const id = deleteCredentialMeta?.id;
+    if (!id) return;
+    setDeleteCredentialBusy(true);
+    setDeleteCredentialErr('');
+    try {
+      await deleteCredential(id);
+      setCredentials((prev) => prev.filter((c) => c.id !== id));
+      setDeleteCredentialMeta(null);
+    } catch (e) {
+      setDeleteCredentialErr(e.message || 'Failed to delete.');
+    } finally {
+      setDeleteCredentialBusy(false);
     }
   }
 
@@ -159,6 +171,29 @@ export default function Credentials() {
           onClose={() => setEditCredential(null)}
           onSave={handleEdit}
         />
+      )}
+
+      {deleteCredentialMeta && (
+        <DestructiveConfirmModal
+          open
+          title="Delete stored credential?"
+          error={deleteCredentialErr}
+          busy={deleteCredentialBusy}
+          confirmLabel="Delete credential"
+          onClose={() => {
+            if (deleteCredentialBusy) return;
+            setDeleteCredentialErr('');
+            setDeleteCredentialMeta(null);
+          }}
+          onConfirm={executeDeleteCredential}
+        >
+          <p style={{ margin: '0 0 8px' }}>
+            Remove login for <strong>{deleteCredentialMeta.portalName}</strong> ({deleteCredentialMeta.clientName})?
+          </p>
+          <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
+            The encrypted password bundle will be removed from the vault. This cannot be undone.
+          </p>
+        </DestructiveConfirmModal>
       )}
 
       <div style={{ background:'#fef3c7', border:'1px solid #fde68a', borderRadius:8, padding:'12px 16px', marginBottom:20, fontSize:13, color:'#78350f' }}>
@@ -215,7 +250,7 @@ export default function Credentials() {
                 <td style={tdStyle}>
                   <button style={iconBtn} title="Edit" onClick={() => setEditCredential(cr)}>✏️</button>
                   <button style={iconBtn} title="Copy Username" onClick={() => navigator.clipboard?.writeText(cr.username || '')}>📋</button>
-                  <button style={iconBtn} title="Delete" onClick={() => handleDelete(cr.id)}>🗑️</button>
+                  <button style={iconBtn} title="Delete" onClick={() => setDeleteCredentialMeta(cr)}>🗑️</button>
                 </td>
               </tr>
             ))}

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ledger delete OTP – CA Rahul Gupta</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .logo-strip { background: #ffffff; padding: 20px 40px; text-align: center; border-bottom: 3px solid #dc2626; }
+    .logo-strip img { height: 52px; width: auto; display: block; margin: 0 auto; }
+    .header { background: #7f1d1d; padding: 32px 40px; text-align: center; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 24px; }
+    .header p { color: #fecaca; margin: 8px 0 0; font-size: 14px; }
+    .body { padding: 32px 40px; color: #333333; line-height: 1.6; }
+    .otp-box { text-align: center; margin: 28px 0; }
+    .otp-code { display: inline-block; font-size: 42px; font-weight: bold; letter-spacing: 12px; color: #b91c1c; background: #fef2f2; border: 2px dashed #b91c1c; border-radius: 8px; padding: 16px 28px; font-family: 'Courier New', monospace; }
+    .expiry { text-align: center; margin: 0 0 24px; font-size: 13px; color: #888888; }
+    .warning { background: #FFF8E1; border-left: 4px solid #F59E0B; padding: 12px 16px; border-radius: 4px; font-size: 13px; color: #92400E; margin-top: 24px; }
+    .footer { background: #f4f6f8; padding: 20px 40px; text-align: center; font-size: 12px; color: #888888; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo-strip">
+      <img src="https://carahulgupta.in/cropped_logo.png" alt="CA Rahul Gupta" height="52" style="display:block;margin:0 auto;" />
+    </div>
+    <div class="header">
+      <h1>CA Rahul Gupta</h1>
+      <p>Office Portal – Ledger delete authorization</p>
+    </div>
+    <div class="body">
+      <p>Dear <strong>{{userName}}</strong>,</p>
+      <p>A team member requested authorization to <strong>permanently delete</strong> <strong>{{count}}</strong> ledger transaction(s): {{summaryText}}</p>
+      <p style="font-size:12px;color:#64748b;">Transaction id(s): {{idList}}</p>
+      <div class="otp-box">
+        <div class="otp-code">{{otpCode}}</div>
+      </div>
+      <p class="expiry">This OTP is valid for <strong>{{expiryMinutes}} minutes</strong> only.</p>
+      <p>Do not share this code. If you did not expect this request, review activity in the portal.</p>
+      <div class="warning">
+        <strong>Security note:</strong> This OTP can authorize one bulk delete. Request a new code for another batch. This OTP is separate from login OTP.
+      </div>
+    </div>
+    <div class="footer">
+      <p>© CA Rahul Gupta Office Portal &nbsp;|&nbsp; office@carahulgupta.in</p>
+      <p>This is an automated message. Please do not reply directly to this email.</p>
+    </div>
+  </div>
+</body>
+</html>

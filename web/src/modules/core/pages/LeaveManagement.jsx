@@ -9,11 +9,11 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../../../auth/AuthContext';
 import { useStaffUsers } from '../../../hooks/useStaffUsers';
 import { getLeaves, createLeave, updateLeave } from '../services/leaveService';
 import HandoverAssignmentModal from '../../../components/leaves/HandoverAssignmentModal';
 import { Plus, Users, Calendar, AlertCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
 
 // ── Status badge ──────────────────────────────────────────────────────────────
 
@@ -140,18 +140,21 @@ function LeaveRow({ leave, staffUsers, onRefresh }) {
   const [expanded, setExpanded]     = useState(false);
   const [showHandover, setShowHandover] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [cancelPromptOpen, setCancelPromptOpen] = useState(false);
+  const [cancelErr, setCancelErr] = useState('');
 
   const assignmentCount       = leave.assignment_count ?? 0;
   const activeAssignmentCount = leave.active_assignment_count ?? 0;
 
-  async function handleCancel() {
-    if (!window.confirm(`Cancel this leave for ${leave.user_name}? All handovers will be revoked.`)) return;
+  async function executeCancelLeave() {
+    setCancelErr('');
     setCancelling(true);
     try {
       await updateLeave(leave.id, { status: 'cancelled' });
+      setCancelPromptOpen(false);
       onRefresh();
     } catch (err) {
-      alert(err.message || 'Failed to cancel leave.');
+      setCancelErr(err.message || 'Failed to cancel leave.');
     } finally {
       setCancelling(false);
     }
@@ -161,7 +164,7 @@ function LeaveRow({ leave, staffUsers, onRefresh }) {
 
   return (
     <>
-      <tr style={tableRow}>
+    <tr style={tableRow}>
         <td style={td}>
           <div style={{ fontWeight: 600, fontSize: 14, color: '#0B1F3B' }}>{leave.user_name}</div>
           <div style={{ fontSize: 11, color: '#94a3b8' }}>{leave.user_email}</div>
@@ -192,7 +195,10 @@ function LeaveRow({ leave, staffUsers, onRefresh }) {
                 </button>
                 <button
                   type="button"
-                  onClick={handleCancel}
+                  onClick={() => {
+                    setCancelErr('');
+                    setCancelPromptOpen(true);
+                  }}
                   disabled={cancelling}
                   style={dangerBtnStyle}
                 >
@@ -266,6 +272,21 @@ function LeaveRow({ leave, staffUsers, onRefresh }) {
           onSaved={() => { onRefresh(); setShowHandover(false); }}
         />
       )}
+
+      <DestructiveConfirmModal
+        open={cancelPromptOpen}
+        title="Cancel this leave?"
+        tone="danger"
+        confirmLabel="Cancel leave"
+        busy={cancelling}
+        error={cancelErr}
+        onClose={() => !cancelling && setCancelPromptOpen(false)}
+        onConfirm={executeCancelLeave}
+      >
+        <p style={{ margin: 0 }}>
+          Cancel leave for <strong>{leave.user_name}</strong>? All active handovers for this leave will be revoked.
+        </p>
+      </DestructiveConfirmModal>
     </>
   );
 }
@@ -273,7 +294,6 @@ function LeaveRow({ leave, staffUsers, onRefresh }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function LeaveManagement() {
-  const { user } = useAuth();
   const { staffUsers } = useStaffUsers();
   const [leaves, setLeaves]           = useState([]);
   const [loading, setLoading]         = useState(true);

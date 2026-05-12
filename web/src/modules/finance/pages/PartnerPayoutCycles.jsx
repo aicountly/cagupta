@@ -9,6 +9,7 @@ import {
   disbursePartnerPayoutCycle,
   submitPartnerPayoutCycleAmendment,
 } from '../../../services/partnerPayoutCycleService';
+import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
 
 const STATUS_CONFIG = {
   open: { label: 'Open', color: '#2563EB', bg: '#DBEAFE', icon: Clock },
@@ -100,6 +101,8 @@ function CycleDetailPanel({ cycle, onAction }) {
   const [loadingPreview, setLoadingPreview] = useState(false);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
+  const [destructivePrompt, setDestructivePrompt] = useState(null);
+  const [destructiveErr, setDestructiveErr] = useState('');
 
   async function loadPreview() {
     setLoadingPreview(true);
@@ -112,20 +115,30 @@ function CycleDetailPanel({ cycle, onAction }) {
 
   useEffect(() => { loadPreview(); }, [cycle.id]);
 
-  async function handleFinalise() {
-    if (!window.confirm('Finalise this cycle? Accruals will be locked.')) return;
-    setBusy('finalise'); setErr('');
-    try { await finalisePartnerPayoutCycle(cycle.id); onAction?.(); }
-    catch (e) { setErr(e.message); }
-    finally { setBusy(''); }
+  function openFinalise() {
+    setDestructiveErr('');
+    setDestructivePrompt('finalise');
   }
 
-  async function handleDisburse() {
-    if (!window.confirm('Mark as disbursed? Payments will be recorded.')) return;
-    setBusy('disburse'); setErr('');
-    try { await disbursePartnerPayoutCycle(cycle.id); onAction?.(); }
-    catch (e) { setErr(e.message); }
-    finally { setBusy(''); }
+  function openDisburse() {
+    setDestructiveErr('');
+    setDestructivePrompt('disburse');
+  }
+
+  async function executeDestructivePrompt() {
+    if (!destructivePrompt) return;
+    setBusy(destructivePrompt);
+    setDestructiveErr('');
+    try {
+      if (destructivePrompt === 'finalise') await finalisePartnerPayoutCycle(cycle.id);
+      else await disbursePartnerPayoutCycle(cycle.id);
+      setDestructivePrompt(null);
+      onAction?.();
+    } catch (e) {
+      setDestructiveErr(e.message || 'Request failed.');
+    } finally {
+      setBusy('');
+    }
   }
 
   const TABS = [
@@ -153,12 +166,12 @@ function CycleDetailPanel({ cycle, onAction }) {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <StatusBadge status={cycle.status} />
           {cycle.status === 'open' && (
-            <button type="button" onClick={handleFinalise} disabled={!!busy} style={btnAction}>
+            <button type="button" onClick={openFinalise} disabled={!!busy} style={btnAction}>
               {busy === 'finalise' ? '...' : 'Finalise'}
             </button>
           )}
           {cycle.status === 'finalised' && (
-            <button type="button" onClick={handleDisburse} disabled={!!busy} style={{ ...btnAction, background: '#16A34A' }}>
+            <button type="button" onClick={openDisburse} disabled={!!busy} style={{ ...btnAction, background: '#16A34A' }}>
               {busy === 'disburse' ? '...' : 'Disburse'}
             </button>
           )}
@@ -200,6 +213,38 @@ function CycleDetailPanel({ cycle, onAction }) {
           </div>
         )}
       </div>
+
+      <DestructiveConfirmModal
+        open={!!destructivePrompt}
+        title={
+          destructivePrompt === 'finalise'
+            ? 'Finalise this cycle?'
+            : destructivePrompt === 'disburse'
+              ? 'Mark cycle as disbursed?'
+              : 'Continue?'
+        }
+        tone="warning"
+        confirmLabel={destructivePrompt === 'finalise' ? 'Finalise' : 'Mark disbursed'}
+        cancelLabel="Cancel"
+        busy={destructivePrompt ? busy === destructivePrompt : false}
+        error={destructiveErr}
+        onClose={() => {
+          if (busy === destructivePrompt) return;
+          setDestructivePrompt(null);
+        }}
+        onConfirm={executeDestructivePrompt}
+      >
+        {destructivePrompt === 'finalise' && (
+          <p style={{ margin: 0 }}>
+            Accruals in this cycle will be locked. This step is irreversible until amendments or support processes allow changes.
+          </p>
+        )}
+        {destructivePrompt === 'disburse' && (
+          <p style={{ margin: 0 }}>
+            Payments for this cycle will be recorded as disbursed. Confirm payouts have been executed as intended.
+          </p>
+        )}
+      </DestructiveConfirmModal>
     </div>
   );
 }

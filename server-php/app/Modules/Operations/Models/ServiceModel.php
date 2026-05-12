@@ -541,6 +541,49 @@ SQL;
     }
 
     /**
+     * Refresh denormalized category_name on engagements tied to this category
+     * (by category_id, subcategory_id, or engagement_type_id). IDs are unchanged.
+     */
+    public function syncDenormalizedCategoryName(int $categoryId, string $name): void
+    {
+        $stmt = $this->db->prepare(
+            'UPDATE services SET category_name = :name, updated_at = NOW()
+             WHERE (category_id IS NOT NULL AND category_id = :cid)
+                OR (subcategory_id IS NOT NULL AND subcategory_id IN (
+                        SELECT id FROM service_subcategories WHERE category_id = :cid
+                    ))
+                OR (engagement_type_id IS NOT NULL AND engagement_type_id IN (
+                        SELECT id FROM engagement_types WHERE category_id = :cid
+                    ))'
+        );
+        $stmt->execute([':name' => $name, ':cid' => $categoryId]);
+    }
+
+    /**
+     * Refresh denormalized subcategory_name where services reference this subcategory.
+     */
+    public function syncDenormalizedSubcategoryName(int $subcategoryId, string $name): void
+    {
+        $stmt = $this->db->prepare(
+            'UPDATE services SET subcategory_name = :name, updated_at = NOW()
+             WHERE subcategory_id = :sid'
+        );
+        $stmt->execute([':name' => $name, ':sid' => $subcategoryId]);
+    }
+
+    /**
+     * Refresh denormalized engagement_type_name on services for this type.
+     */
+    public function syncDenormalizedEngagementTypeName(int $engagementTypeId, string $name): void
+    {
+        $stmt = $this->db->prepare(
+            'UPDATE services SET engagement_type_name = :name, updated_at = NOW()
+             WHERE engagement_type_id = :eid'
+        );
+        $stmt->execute([':name' => $name, ':eid' => $engagementTypeId]);
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     private function decodeTasksJson(mixed $tasksRaw): array

@@ -4,6 +4,7 @@ import {
   Eye, Users, Lock, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { updateServiceLog, deleteServiceLog, sendLogReminder } from '../../services/serviceLogService';
+import DestructiveConfirmModal from '../common/DestructiveConfirmModal';
 
 // ── Type config ───────────────────────────────────────────────────────────────
 const TYPE_CONFIG = {
@@ -33,6 +34,7 @@ export default function ServiceLogEntry({
   const [expanded, setExpanded]   = useState(false);
   const [busy, setBusy]           = useState(false);
   const [actionErr, setActionErr] = useState('');
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const type       = entry.log_type    || 'note';
   const vis        = entry.visibility  || 'internal';
@@ -77,15 +79,22 @@ export default function ServiceLogEntry({
     });
   }
 
-  async function handleDelete() {
-    if (!window.confirm('Permanently delete this log entry?')) return;
-    handle(async () => {
+  async function handleDeleteConfirmed() {
+    setBusy(true);
+    setActionErr('');
+    try {
       await deleteServiceLog(serviceId, entry.id);
+      setConfirmDeleteOpen(false);
       onDeleted(entry.id);
-    });
+    } catch (e) {
+      setActionErr(e.message || 'Delete failed.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
+    <>
     <div
       style={{
         ...entryWrap,
@@ -237,7 +246,7 @@ export default function ServiceLogEntry({
             <button
               type="button"
               disabled={busy}
-              onClick={handleDelete}
+              onClick={() => setConfirmDeleteOpen(true)}
               style={{ ...actionBtn, color: '#ef4444' }}
               title="Delete log entry"
             >
@@ -248,6 +257,20 @@ export default function ServiceLogEntry({
         </div>
       )}
     </div>
+    <DestructiveConfirmModal
+      open={confirmDeleteOpen}
+      title="Delete log entry?"
+      error={confirmDeleteOpen ? actionErr : ''}
+      busy={busy}
+      confirmLabel="Delete entry"
+      onClose={() => !busy && setConfirmDeleteOpen(false)}
+      onConfirm={handleDeleteConfirmed}
+    >
+      <p style={{ margin: 0, color: '#64748b', fontSize: 13 }}>
+        Permanently remove this log line from the engagement activity. Audit policies may retain traces on the server.
+      </p>
+    </DestructiveConfirmModal>
+    </>
   );
 }
 

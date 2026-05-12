@@ -195,6 +195,31 @@ class RecurringServiceDefinitionModel
     }
 
     /**
+     * When an engagement type is renamed: update return_type where it still matched the old label
+     * or was left empty (falls back to ET name at runtime).
+     */
+    public function syncReturnTypeAfterEngagementTypeRename(
+        int $engagementTypeId,
+        string $oldName,
+        string $newName
+    ): void {
+        $stmt = $this->db->prepare(
+            'UPDATE recurring_service_definitions
+             SET return_type = :new, updated_at = NOW()
+             WHERE engagement_type_id = :eid
+               AND (
+                   return_type = :old
+                   OR TRIM(COALESCE(return_type, \'\')) = \'\'
+               )'
+        );
+        $stmt->execute([
+            ':new' => $newName,
+            ':eid' => $engagementTypeId,
+            ':old' => $oldName,
+        ]);
+    }
+
+    /**
      * Delete a recurring service definition.
      */
     public function delete(int $id): bool

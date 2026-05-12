@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../../auth/AuthContext';
+import { ROLES } from '../../../constants/roles';
 import { getPortalTypes } from '../../../constants/portalTypes';
 import { fetchPortalTypes, createPortalType, updatePortalType, deletePortalType } from '../../../services/portalTypeService';
 import { getRegisterTypes, saveRegisterTypes } from '../../../constants/registerTypes';
@@ -13,8 +14,8 @@ import { loadBillingProfiles, fetchBillingProfilesFromApi } from '../../../const
 import { stateCodeFromGstin } from '../../../utils/gstUtils';
 import {
   getCategories,
-  createCategory, deleteCategory,
-  createSubcategory, deleteSubcategory,
+  createCategory, deleteCategory, updateCategory,
+  createSubcategory, deleteSubcategory, updateSubcategory,
   createEngagementTypeForSubcategory, deleteEngagementType, updateEngagementType,
 } from '../../../services/serviceCategoryService';
 import {
@@ -26,6 +27,22 @@ import {
 import { API_BASE_URL } from '../../../constants/config';
 import { Link, useNavigate } from 'react-router-dom';
 import { getZoomIntegrationStatus, getZoomAuthorizeUrl } from '../../../services/zoomIntegrationService';
+import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
+
+function registerDeleteBlockedReason(key) {
+  try {
+    const stored = localStorage.getItem('registers');
+    if (stored) {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed) && parsed.some((r) => r.registerType === key)) {
+        return 'Cannot delete this register type — it has existing records. Delete those records first.';
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
 
 // ── Available permission modules ─────────────────────────────────────────────
 const PERMISSION_LABELS = {
@@ -384,6 +401,135 @@ function ResetPasswordModal({ user, onClose }) {
   );
 }
 
+/**
+ * Confirmation / validation feedback for deleting service categories, subcategories, or engagement types.
+ */
+function ServiceStructureDeleteModal({ target, busy, error, onClose, onConfirm }) {
+  if (!target) return null;
+  const titleByKind = {
+    category: 'Delete service category?',
+    subcategory: 'Delete subcategory?',
+    engagementType: 'Delete engagement type?',
+  };
+  const blocked = Boolean(target.blockingMessage);
+  return (
+    <div style={overlayStyle}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="svc-struct-delete-title"
+        style={{ background:'#fff', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', width:'100%', maxWidth:480, display:'flex', flexDirection:'column' }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+          <span id="svc-struct-delete-title" style={{ fontSize:15, fontWeight:700, color:blocked ? '#92400e' : '#b91c1c' }}>{titleByKind[target.kind]}</span>
+          <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close">✕</button>
+        </div>
+        <div style={{ padding:'18px 24px', fontSize:13, color:'#334155', lineHeight:1.55 }}>
+          <p style={{ margin:'0 0 10px' }}>
+            <strong>{target.primaryLabel}</strong>
+            {target.parentLabel && (
+              <span style={{ color:'#64748b', fontWeight:500 }}>{' '}· under {target.parentLabel}</span>
+            )}
+          </p>
+          {blocked ? (
+            <div style={{ color:'#b45309', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'12px 14px', fontSize:13 }}>
+              {target.blockingMessage}
+            </div>
+          ) : (
+            <>
+              <p style={{ margin:0, color:'#64748b', fontSize:12 }}>
+                {target.detail}
+              </p>
+              {error && (
+                <div style={{ marginTop:12, color:'#dc2626', fontSize:13, background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 12px' }}>
+                  {error}
+                </div>
+              )}
+              <p style={{ margin:'14px 0 0', fontSize:12, fontWeight:600, color:'#991b1b' }}>
+                This cannot be undone. Only continue if you are sure.
+              </p>
+            </>
+          )}
+        </div>
+        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10, borderTop:'1px solid #f1f5f9', flexShrink:0 }}>
+          {!blocked ? (
+            <>
+              <button type="button" onClick={onClose} style={btnSecondary} disabled={busy}>Cancel</button>
+              <button
+                type="button"
+                onClick={onConfirm}
+                disabled={busy}
+                style={{ ...btnPrimary, background:'#b91c1c', borderColor:'transparent' }}
+              >
+                {busy ? 'Deleting…' : 'Delete'}
+              </button>
+            </>
+          ) : (
+            <button type="button" onClick={onClose} style={btnPrimary}>Close</button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Rename category / subcategory / engagement type — server keeps IDs and refreshes denormalized labels. */
+function ServiceCatalogRenameModal({ target, draft, onDraftChange, busy, error, onClose, onSave }) {
+  if (!target) return null;
+  const titleByKind = {
+    category: 'Rename category',
+    subcategory: 'Rename subcategory',
+    engagementType: 'Rename engagement type',
+  };
+  return (
+    <div style={overlayStyle}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="svc-catalog-rename-title"
+        style={{ background:'#fff', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', width:'100%', maxWidth:480, display:'flex', flexDirection:'column' }}
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+          <span id="svc-catalog-rename-title" style={{ fontSize:15, fontWeight:700 }}>{titleByKind[target.kind]}</span>
+          <button type="button" onClick={onClose} style={closeBtnStyle} aria-label="Close">✕</button>
+        </div>
+        <div style={{ padding:'18px 24px', fontSize:13, color:'#334155', lineHeight:1.55 }}>
+          <p style={{ margin:'0 0 10px' }}>
+            <strong>{target.primaryLabel}</strong>
+            {target.parentLabel && (
+              <span style={{ color:'#64748b', fontWeight:500 }}>{' '}· {target.parentLabel}</span>
+            )}
+          </p>
+          <p style={{ margin:'0 0 12px', fontSize:12, color:'#64748b' }}>
+            Internal IDs stay the same; existing engagements (and related labels) are updated to use the new name.
+          </p>
+          <label style={labelStyle}>Name</label>
+          <input
+            value={draft}
+            onChange={(e) => onDraftChange(e.target.value)}
+            style={inputStyle}
+            autoFocus
+            onKeyDown={(e) => { if (e.key === 'Enter') onSave(); }}
+          />
+          {error && (
+            <div style={{ marginTop:12, color:'#dc2626', fontSize:13, background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 12px' }}>
+              {error}
+            </div>
+          )}
+        </div>
+        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10, borderTop:'1px solid #f1f5f9', flexShrink:0 }}>
+          <button type="button" onClick={onClose} style={btnSecondary} disabled={busy}>Cancel</button>
+          <button type="button" onClick={onSave} style={btnPrimary} disabled={busy}>
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const FIRM_PROFILE_STORAGE_KEY = 'firm_profile';
 
 const DEFAULT_FIRM_PROFILE = {
@@ -425,12 +571,15 @@ const SETTINGS_SECTIONS = [
 ];
 
 export default function Settings() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const navigate = useNavigate();
   const canManageUserRates = hasPermission('users.manage');
   const canManageUsers     = hasPermission('users.manage') || hasPermission('users.delegate');
   const canConfigureRoles  = hasPermission('users.manage');
   const canManageBillingFirms = hasPermission('settings.view');
+  /** Same roles as API `role:super_admin,admin` on service category / engagement type mutations. */
+  const canManageServiceCatalog =
+    user?.role === ROLES.SUPER_ADMIN || user?.role === ROLES.ADMIN;
   const [tab, setTab] = useState(null);
   const [zoomStatus, setZoomStatus] = useState({ connected: false, accountId: null });
   const [zoomLoading, setZoomLoading] = useState(false);
@@ -479,6 +628,19 @@ export default function Settings() {
   const [quoteOtpBusy, setQuoteOtpBusy] = useState(false);
   const [quoteOtpMsg, setQuoteOtpMsg] = useState('');
   const [quoteRowDrafts, setQuoteRowDrafts] = useState({});
+
+  const [svcStructDeleteModal, setSvcStructDeleteModal] = useState(null);
+  const [svcStructDeleteBusy, setSvcStructDeleteBusy] = useState(false);
+  const [svcStructDeleteModalErr, setSvcStructDeleteModalErr] = useState('');
+
+  const [svcCatalogRenameModal, setSvcCatalogRenameModal] = useState(null);
+  const [svcCatalogRenameDraft, setSvcCatalogRenameDraft] = useState('');
+  const [svcCatalogRenameBusy, setSvcCatalogRenameBusy] = useState(false);
+  const [svcCatalogRenameErr, setSvcCatalogRenameErr] = useState('');
+
+  const [settingsDestructivePrompt, setSettingsDestructivePrompt] = useState(null);
+  const [settingsDestructiveErr, setSettingsDestructiveErr] = useState('');
+  const [settingsDestructiveBusy, setSettingsDestructiveBusy] = useState(false);
 
   useEffect(() => {
     if (tab !== 'billing') return;
@@ -702,11 +864,197 @@ export default function Settings() {
       .catch(() => setSvcCatError('Failed to add category.'));
   }
 
-  function handleDeleteCategory(id) {
-    if (!window.confirm('Delete this category and all its subcategories and engagement types? You cannot delete it if any service engagements still reference this category.')) return;
-    deleteCategory(id)
-      .then(() => setServiceCategories(prev => prev.filter(c => c.id !== id)))
-      .catch((e) => setSvcCatError(e.message || 'Failed to delete category.'));
+  function closeSvcStructDeleteModal() {
+    setSvcStructDeleteModal(null);
+    setSvcStructDeleteModalErr('');
+    setSvcStructDeleteBusy(false);
+  }
+
+  function openDeleteCategoryModal(cat) {
+    const subCount = (cat.subcategories || []).length;
+    setSvcCatError('');
+    setSvcStructDeleteModalErr('');
+    setSvcStructDeleteModal({
+      kind: 'category',
+      categoryId: cat.id,
+      targetId: cat.id,
+      primaryLabel: cat.name,
+      detail:
+        subCount === 0
+          ? 'This will remove this category row. Nested data is already empty. If any service engagements still reference this category tree, deletion will be blocked by the server.'
+          : `This will remove ${subCount} subcategor${subCount === 1 ? 'y' : 'ies'} and their engagement types under “${cat.name}”. If any service engagements still reference this category or anything beneath it, deletion will be blocked by the server.`,
+    });
+  }
+
+  function openDeleteSubcategoryModal(cat, sub) {
+    setSvcCatError('');
+    setSvcStructDeleteModalErr('');
+    const etLen = (sub.engagementTypes || []).length;
+    if (etLen > 0) {
+      setSvcStructDeleteModal({
+        kind: 'subcategory',
+        categoryId: cat.id,
+        subcategoryId: sub.id,
+        targetId: sub.id,
+        primaryLabel: sub.name,
+        parentLabel: cat.name,
+        blockingMessage:
+          'This subcategory cannot be deleted while it has engagement types. Remove those engagement types first.',
+      });
+      return;
+    }
+    setSvcStructDeleteModal({
+      kind: 'subcategory',
+      categoryId: cat.id,
+      subcategoryId: sub.id,
+      targetId: sub.id,
+      primaryLabel: sub.name,
+      parentLabel: cat.name,
+      detail:
+        'If any service engagements still reference this subcategory, deletion will be blocked by the server.',
+    });
+  }
+
+  function openDeleteEngagementTypeModal(cat, sub, et) {
+    setSvcCatError('');
+    setSvcStructDeleteModalErr('');
+    setSvcStructDeleteModal({
+      kind: 'engagementType',
+      categoryId: cat.id,
+      subcategoryId: sub.id,
+      targetId: et.id,
+      primaryLabel: et.name,
+      parentLabel: `${cat.name} · ${sub.name}`,
+      detail:
+        'If any service engagements still use this engagement type, deletion will be blocked by the server.',
+    });
+  }
+
+  async function confirmSvcStructDelete() {
+    const m = svcStructDeleteModal;
+    if (!m || m.blockingMessage) return;
+    setSvcStructDeleteBusy(true);
+    setSvcStructDeleteModalErr('');
+    try {
+      if (m.kind === 'category') {
+        await deleteCategory(m.targetId);
+        setServiceCategories((prev) => prev.filter((c) => c.id !== m.targetId));
+      } else if (m.kind === 'subcategory') {
+        await deleteSubcategory(m.targetId);
+        setServiceCategories((prev) =>
+          prev.map((c) =>
+            c.id === m.categoryId
+              ? {
+                  ...c,
+                  subcategories: (c.subcategories || []).filter((s) => s.id !== m.targetId),
+                }
+              : c,
+          ),
+        );
+      } else {
+        await deleteEngagementType(m.targetId);
+        setServiceCategories((prev) =>
+          prev.map((c) => {
+            if (c.id !== m.categoryId) return c;
+            return {
+              ...c,
+              subcategories: (c.subcategories || []).map((sub) =>
+                sub.id === m.subcategoryId
+                  ? {
+                      ...sub,
+                      engagementTypes: (sub.engagementTypes || []).filter((e) => e.id !== m.targetId),
+                    }
+                  : sub,
+              ),
+            };
+          }),
+        );
+      }
+      closeSvcStructDeleteModal();
+    } catch (e) {
+      setSvcStructDeleteModalErr(e.message || 'Delete failed.');
+    } finally {
+      setSvcStructDeleteBusy(false);
+    }
+  }
+
+  function closeSvcCatalogRenameModal() {
+    setSvcCatalogRenameModal(null);
+    setSvcCatalogRenameDraft('');
+    setSvcCatalogRenameErr('');
+    setSvcCatalogRenameBusy(false);
+  }
+
+  function openRenameCategoryModal(cat) {
+    setSvcCatError('');
+    setSvcCatalogRenameErr('');
+    setSvcCatalogRenameDraft(cat.name || '');
+    setSvcCatalogRenameModal({
+      kind: 'category',
+      categoryId: cat.id,
+      targetId: cat.id,
+      primaryLabel: cat.name,
+      parentLabel: '',
+    });
+  }
+
+  function openRenameSubcategoryModal(cat, sub) {
+    setSvcCatError('');
+    setSvcCatalogRenameErr('');
+    setSvcCatalogRenameDraft(sub.name || '');
+    setSvcCatalogRenameModal({
+      kind: 'subcategory',
+      categoryId: cat.id,
+      targetId: sub.id,
+      primaryLabel: sub.name,
+      parentLabel: `Category: ${cat.name}`,
+    });
+  }
+
+  function openRenameEngagementTypeModal(cat, sub, et) {
+    setSvcCatError('');
+    setSvcCatalogRenameErr('');
+    setSvcCatalogRenameDraft(et.name || '');
+    setSvcCatalogRenameModal({
+      kind: 'engagementType',
+      categoryId: cat.id,
+      subcategoryId: sub.id,
+      targetId: et.id,
+      primaryLabel: et.name,
+      parentLabel: `${cat.name} · ${sub.name}`,
+    });
+  }
+
+  async function confirmSvcCatalogRename() {
+    const m = svcCatalogRenameModal;
+    if (!m) return;
+    const name = svcCatalogRenameDraft.trim();
+    if (!name) {
+      setSvcCatalogRenameErr('Name is required.');
+      return;
+    }
+    setSvcCatalogRenameBusy(true);
+    setSvcCatalogRenameErr('');
+    try {
+      if (m.kind === 'category') {
+        await updateCategory(m.targetId, { name });
+      } else if (m.kind === 'subcategory') {
+        await updateSubcategory(m.targetId, { name });
+      } else {
+        await updateEngagementType(m.targetId, { name });
+      }
+      const refreshed = await getCategories();
+      setServiceCategories(refreshed);
+      try {
+        const qRows = await getQuotationDefaults();
+        setQuotationRows(qRows);
+      } catch { /* ignore */ }
+      closeSvcCatalogRenameModal();
+    } catch (e) {
+      setSvcCatalogRenameErr(e.message || 'Save failed.');
+    } finally {
+      setSvcCatalogRenameBusy(false);
+    }
   }
 
   function handleAddSubcategory(categoryId) {
@@ -722,13 +1070,6 @@ export default function Settings() {
       .catch(() => setSvcCatError('Failed to add subcategory.'));
   }
 
-  function handleDeleteSubcategory(categoryId, subId) {
-    deleteSubcategory(subId)
-      .then(() => setServiceCategories(prev => prev.map(c =>
-        c.id === categoryId ? { ...c, subcategories: (c.subcategories || []).filter(s => s.id !== subId) } : c
-      )))
-      .catch((e) => setSvcCatError(e.message || 'Failed to delete subcategory.'));
-  }
 
   function handleAddEngagementType(categoryId, subcategoryId) {
     const name = (newEtName[subcategoryId] || '').trim();
@@ -751,21 +1092,6 @@ export default function Settings() {
       .catch(() => setSvcCatError('Failed to add engagement type.'));
   }
 
-  function handleDeleteEngagementType(categoryId, subcategoryId, etId) {
-    deleteEngagementType(etId)
-      .then(() => setServiceCategories(prev => prev.map(c => {
-        if (c.id !== categoryId) return c;
-        return {
-          ...c,
-          subcategories: (c.subcategories || []).map(sub =>
-            sub.id === subcategoryId
-              ? { ...sub, engagementTypes: (sub.engagementTypes || []).filter(e => e.id !== etId) }
-              : sub
-          ),
-        };
-      })))
-      .catch((e) => setSvcCatError(e.message || 'Failed to delete engagement type.'));
-  }
 
   async function handleSaveEngagementStandards(etId) {
     const draft = etStandardsDraft[etId] || { fee: '', hours: '' };
@@ -800,14 +1126,55 @@ export default function Settings() {
     }
   }
 
-  async function handleDeletePortal(portal) {
-    if (!window.confirm(`Delete portal type "${portal.name}"? This cannot be undone.`)) return;
+  function promptDeletePortal(portal) {
+    setPortalError('');
+    setSettingsDestructiveErr('');
+    setSettingsDestructivePrompt({ kind: 'portal', portal });
+  }
+
+  function promptDeleteBilling(profile) {
+    setBillingError('');
+    setSettingsDestructiveErr('');
+    setSettingsDestructivePrompt({ kind: 'billing', profile });
+  }
+
+  function promptDeleteRegister(row) {
+    setRegisterError('');
+    setSettingsDestructiveErr('');
+    const block = registerDeleteBlockedReason(row.key);
+    setSettingsDestructivePrompt(block ? { kind: 'register', row, blockingMessage: block } : { kind: 'register', row });
+  }
+
+  function closeSettingsDestructive() {
+    setSettingsDestructivePrompt(null);
+    setSettingsDestructiveErr('');
+    setSettingsDestructiveBusy(false);
+  }
+
+  async function confirmSettingsDestructive() {
+    const p = settingsDestructivePrompt;
+    if (!p || (p.kind === 'register' && p.blockingMessage)) return;
+    setSettingsDestructiveBusy(true);
+    setSettingsDestructiveErr('');
     try {
-      await deletePortalType(portal.id);
-      setPortalTypes(prev => prev.filter(p => p.id !== portal.id));
-      setPortalError('');
+      if (p.kind === 'portal') {
+        await deletePortalType(p.portal.id);
+        setPortalTypes((prev) => prev.filter((x) => x.id !== p.portal.id));
+      } else if (p.kind === 'billing') {
+        await deleteBillingFirm(p.profile.code);
+        await fetchBillingProfilesFromApi();
+        const rows = await listBillingFirms();
+        setBillingProfiles(Array.isArray(rows) && rows.length ? rows : loadBillingProfiles());
+      } else if (p.kind === 'register') {
+        const updated = registerTypes.filter((r) => r.key !== p.row.key);
+        setRegisterTypes(updated);
+        saveRegisterTypes(updated);
+      }
+      closeSettingsDestructive();
     } catch (e) {
-      setPortalError(e.message || `Cannot delete "${portal.name}".`);
+      setSettingsDestructiveErr(e.message || 'Operation failed.');
+    } finally {
+      setSettingsDestructiveBusy(false);
     }
   }
 
@@ -853,24 +1220,6 @@ export default function Settings() {
     setRegisterTypes(updated);
     saveRegisterTypes(updated);
     setNewRegister('');
-    setRegisterError('');
-  }
-
-  function handleDeleteRegister(key) {
-    // Check localStorage registers for existing records
-    try {
-      const stored = localStorage.getItem('registers');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed) && parsed.some(r => r.registerType === key)) {
-          setRegisterError('Cannot delete this register type — it has existing records. Delete those records first.');
-          return;
-        }
-      }
-    } catch { /* ignore */ }
-    const updated = registerTypes.filter(r => r.key !== key);
-    setRegisterTypes(updated);
-    saveRegisterTypes(updated);
     setRegisterError('');
   }
 
@@ -978,6 +1327,87 @@ export default function Settings() {
       {/* Active section with back + tabs */}
       {tab !== null && (
         <>
+      {svcStructDeleteModal && (
+        <ServiceStructureDeleteModal
+          target={svcStructDeleteModal}
+          busy={svcStructDeleteBusy}
+          error={svcStructDeleteModalErr}
+          onClose={closeSvcStructDeleteModal}
+          onConfirm={confirmSvcStructDelete}
+        />
+      )}
+      {svcCatalogRenameModal && (
+        <ServiceCatalogRenameModal
+          target={svcCatalogRenameModal}
+          draft={svcCatalogRenameDraft}
+          onDraftChange={(v) => { setSvcCatalogRenameDraft(v); setSvcCatalogRenameErr(''); }}
+          busy={svcCatalogRenameBusy}
+          error={svcCatalogRenameErr}
+          onClose={closeSvcCatalogRenameModal}
+          onSave={confirmSvcCatalogRename}
+        />
+      )}
+      {settingsDestructivePrompt && (
+        <DestructiveConfirmModal
+          open
+          blocked={Boolean(settingsDestructivePrompt.blockingMessage)}
+          title={
+            settingsDestructivePrompt.blockingMessage
+              ? 'Cannot delete register type'
+              : settingsDestructivePrompt.kind === 'portal'
+                ? 'Delete portal type?'
+                : settingsDestructivePrompt.kind === 'billing'
+                  ? 'Delete billing firm?'
+                  : 'Delete register type?'
+          }
+          titleAccent={settingsDestructivePrompt.blockingMessage ? '#92400e' : '#b91c1c'}
+          tone="danger"
+          error={settingsDestructiveErr}
+          busy={settingsDestructiveBusy}
+          confirmLabel={
+            settingsDestructivePrompt.kind === 'portal'
+              ? 'Delete portal'
+              : settingsDestructivePrompt.kind === 'billing'
+                ? 'Delete firm'
+                : 'Delete register type'
+          }
+          onClose={closeSettingsDestructive}
+          onConfirm={confirmSettingsDestructive}
+        >
+          {settingsDestructivePrompt.blockingMessage ? (
+            <div style={{ color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '12px 14px', fontSize: 13 }}>
+              {settingsDestructivePrompt.blockingMessage}
+            </div>
+          ) : settingsDestructivePrompt.kind === 'portal' ? (
+            <>
+              <p style={{ margin: '0 0 8px' }}>
+                Delete <strong>{settingsDestructivePrompt.portal.name}</strong> from portal types?
+              </p>
+              <p style={{ margin: 0, color: '#64748b', fontSize: 12 }}>
+                Linked credentials and references may still use this label until updated. This action cannot be undone on the server.
+              </p>
+            </>
+          ) : settingsDestructivePrompt.kind === 'billing' ? (
+            <>
+              <p style={{ margin: '0 0 8px' }}>
+                Delete billing firm <strong>{settingsDestructivePrompt.profile.name}</strong> (<code style={{ fontSize: 12, background: '#f1f5f9', padding: '2px 6px', borderRadius: 4 }}>{settingsDestructivePrompt.profile.code}</code>)?
+              </p>
+              <p style={{ margin: 0, color: '#64748b', fontSize: 12 }}>
+                The server will refuse this if the firm is still in use by invoices or other records.
+              </p>
+            </>
+          ) : (
+            <>
+              <p style={{ margin: '0 0 8px' }}>
+                Remove <strong>{settingsDestructivePrompt.row.label}</strong> from configured register types?
+              </p>
+              <p style={{ margin: 0, color: '#64748b', fontSize: 12 }}>
+                This updates the dropdown in this browser. It does not delete historical register rows in the database.
+              </p>
+            </>
+          )}
+        </DestructiveConfirmModal>
+      )}
       <div style={{ display:'flex', gap:4, marginBottom:24, borderBottom:'2px solid #e2e8f0', alignItems: 'center' }}>
         <button onClick={() => setTab(null)} style={{ padding:'8px 12px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600, color:'#F37920', marginRight: 8 }}>← Back</button>
         {SETTINGS_SECTIONS.map(({ key, label: l }) => (
@@ -1234,18 +1664,7 @@ export default function Settings() {
                         setBillingEdit(p.id);
                         setShowBillingForm(true);
                       }}>✏️ Edit</button>
-                      <button type="button" style={{ ...iconBtn, color:'#ef4444' }} disabled={!canManageBillingFirms} onClick={async () => {
-                        if (!window.confirm(`Delete "${p.name}"?`)) return;
-                        setBillingError('');
-                        try {
-                          await deleteBillingFirm(p.code);
-                          await fetchBillingProfilesFromApi();
-                          const rows = await listBillingFirms();
-                          setBillingProfiles(Array.isArray(rows) && rows.length ? rows : loadBillingProfiles());
-                        } catch (e) {
-                          setBillingError(e.message || 'Delete failed.');
-                        }
-                      }}>🗑️</button>
+                      <button type="button" style={{ ...iconBtn, color:'#ef4444' }} disabled={!canManageBillingFirms} onClick={() => promptDeleteBilling(p)}>🗑️</button>
                     </td>
                   </tr>
                 ))}
@@ -1402,7 +1821,7 @@ export default function Settings() {
                     </div>
                     <div style={{ display:'flex', gap:4 }}>
                       <button onClick={() => handleStartEditPortal(pt)} style={iconBtn} title="Edit">✏️</button>
-                      <button onClick={() => handleDeletePortal(pt)} style={iconBtn} title="Delete">🗑️</button>
+                      <button onClick={() => promptDeletePortal(pt)} style={iconBtn} title="Delete">🗑️</button>
                     </div>
                   </div>
                 )}
@@ -1435,7 +1854,7 @@ export default function Settings() {
             {registerTypes.map(r => (
               <div key={r.key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
                 <span style={{ fontSize:13, color:'#334155' }}>{r.icon} {r.label}</span>
-                <button onClick={() => handleDeleteRegister(r.key)} style={iconBtn} title="Delete">🗑️</button>
+                <button type="button" onClick={() => promptDeleteRegister(r)} style={iconBtn} title="Delete">🗑️</button>
               </div>
             ))}
             <div style={{ display:'flex', gap:8, marginTop:12 }}>
@@ -1502,10 +1921,17 @@ export default function Settings() {
           <h3 style={sectionTitle}>⚙️ Service Configuration</h3>
           <p style={{ fontSize:13, color:'#64748b', marginBottom:20 }}>
             Manage service categories, subcategories, and engagement types. These drive the dropdowns in New Service Engagement.
+            Renaming keeps the same database IDs; existing engagements (and cached labels on services and leads) are updated automatically.
             Set <strong>Standard fee (₹)</strong> and <strong>Standard hours</strong> per engagement type for invoice prefill and variance reporting; optional per-service overrides live on the engagement detail screen.
           </p>
+          {!canManageServiceCatalog && (
+            <div style={{ fontSize:12, color:'#92400e', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', marginBottom:16 }}>
+              Only <strong>Super Admin</strong> and <strong>Admin</strong> can add, remove, rename, or reorganize categories and engagement types. You can still view the catalog below.
+            </div>
+          )}
 
           {/* Add new category */}
+          {canManageServiceCatalog && (
           <div style={{ display:'flex', gap:8, marginBottom:20 }}>
             <input
               value={newCatName}
@@ -1516,6 +1942,7 @@ export default function Settings() {
             />
             <button onClick={handleAddCategory} style={btnPrimary}>➕ Add Category</button>
           </div>
+          )}
 
           {svcCatError && <div style={{ color:'#dc2626', background:'#fef2f2', padding:'8px 12px', borderRadius:6, fontSize:13, marginBottom:12 }}>{svcCatError}</div>}
           {svcCatLoading && <div style={{ color:'#64748b', fontSize:13 }}>Loading…</div>}
@@ -1527,15 +1954,20 @@ export default function Settings() {
             return (
             <div key={cat.id} style={{ border:'1px solid #e2e8f0', borderRadius:8, marginBottom:12, overflow:'hidden' }}>
               {/* Category header */}
-              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 14px', background:'#f8fafc', cursor:'pointer' }}
+              <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 14px', background:'#f8fafc', cursor:'pointer', minWidth: 0 }}
                    onClick={() => setExpandedCat(prev => ({ ...prev, [cat.id]: !prev[cat.id] }))}>
-                <span style={{ fontSize:13, fontWeight:700, color:'#1e293b', flex:1 }}>
+                <span style={{ fontSize:13, fontWeight:700, color:'#1e293b', flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                   {expandedCat[cat.id] ? '▾' : '▸'} {cat.name}
                 </span>
-                <span style={{ fontSize:11, color:'#64748b' }}>
+                <span style={{ fontSize:11, color:'#64748b', flexShrink:0 }}>
                   {subs.length} subcats · {totalEngagementTypes} types
                 </span>
-                <button onClick={e => { e.stopPropagation(); handleDeleteCategory(cat.id); }} style={{ ...iconBtn, color:'#dc2626' }} title="Delete category">🗑️</button>
+                {canManageServiceCatalog && (
+                  <>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); openRenameCategoryModal(cat); }} style={{ ...iconBtn, color:'#2563eb', flexShrink:0 }} title="Rename category">✏️</button>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); openDeleteCategoryModal(cat); }} style={{ ...iconBtn, color:'#dc2626', flexShrink:0 }} title="Delete category">🗑️</button>
+                  </>
+                )}
               </div>
 
               {expandedCat[cat.id] && (
@@ -1549,21 +1981,24 @@ export default function Settings() {
                     {(cat.subcategories || []).map(sub => (
                       <div key={sub.id} style={{ border:'1px solid #e2e8f0', borderRadius:6, marginBottom:10, overflow:'hidden' }}>
                         {/* Subcategory header */}
-                        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', background:'#f1f5f9' }}>
-                          <span style={{ fontSize:13, color:'#1e293b', fontWeight:600, flex:1 }}>📂 {sub.name}</span>
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteSubcategory(cat.id, sub.id)}
-                            disabled={(sub.engagementTypes || []).length > 0}
-                            title={(sub.engagementTypes || []).length > 0
-                              ? 'Remove all engagement types under this subcategory before deleting it.'
-                              : 'Delete subcategory'}
-                            style={{
-                              ...iconBtn,
-                              color: (sub.engagementTypes || []).length > 0 ? '#cbd5e1' : '#dc2626',
-                              cursor: (sub.engagementTypes || []).length > 0 ? 'not-allowed' : 'pointer',
-                            }}
-                          >🗑️</button>
+                        <div style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', background:'#f1f5f9', minWidth: 0 }}>
+                          <span style={{ fontSize:13, color:'#1e293b', fontWeight:600, flex:1, minWidth:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>📂 {sub.name}</span>
+                          {canManageServiceCatalog && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => openRenameSubcategoryModal(cat, sub)}
+                              title="Rename subcategory"
+                              style={{ ...iconBtn, color:'#2563eb', cursor:'pointer', flexShrink:0 }}
+                            >✏️</button>
+                            <button
+                              type="button"
+                              onClick={() => openDeleteSubcategoryModal(cat, sub)}
+                              title="Delete subcategory"
+                              style={{ ...iconBtn, color:'#dc2626', cursor:'pointer', flexShrink:0 }}
+                            >🗑️</button>
+                          </>
+                          )}
                         </div>
                         {/* Engagement types under this subcategory */}
                         <div style={{ padding:'8px 12px' }}>
@@ -1575,9 +2010,14 @@ export default function Settings() {
                             const saving = etStandardsSaving[et.id];
                             return (
                               <div key={et.id} style={{ padding:'8px 0', borderBottom:'1px solid #f8fafc' }}>
-                                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                                  <span style={{ fontSize:12, color:'#334155', flex:1, fontWeight:600 }}>↳ {et.name}</span>
-                                  <button type="button" onClick={() => handleDeleteEngagementType(cat.id, sub.id, et.id)} style={{ ...iconBtn, color:'#dc2626', fontSize:12 }}>🗑️</button>
+                                <div style={{ display:'flex', alignItems:'center', gap:8, minWidth: 0 }}>
+                                  <span style={{ fontSize:12, color:'#334155', flex:1, minWidth:0, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>↳ {et.name}</span>
+                                  {canManageServiceCatalog && (
+                                  <>
+                                    <button type="button" onClick={() => openRenameEngagementTypeModal(cat, sub, et)} style={{ ...iconBtn, color:'#2563eb', fontSize:12, flexShrink:0 }} title="Rename engagement type">✏️</button>
+                                    <button type="button" onClick={() => openDeleteEngagementTypeModal(cat, sub, et)} style={{ ...iconBtn, color:'#dc2626', fontSize:12, flexShrink:0 }}>🗑️</button>
+                                  </>
+                                  )}
                                 </div>
                                 <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:6, alignItems:'center', fontSize:11 }}>
                                   <label style={{ display:'flex', alignItems:'center', gap:4, color:'#64748b' }}>
@@ -1591,7 +2031,8 @@ export default function Settings() {
                                         ...prev,
                                         [et.id]: { ...d, fee: e.target.value },
                                       }))}
-                                      style={{ ...inputStyle, width:100, fontSize:11, padding:'4px 6px' }}
+                                      disabled={!canManageServiceCatalog}
+                                      style={{ ...inputStyle, width:100, fontSize:11, padding:'4px 6px', opacity: canManageServiceCatalog ? 1 : 0.7 }}
                                       placeholder="—"
                                     />
                                   </label>
@@ -1602,26 +2043,30 @@ export default function Settings() {
                                       min="0"
                                       step="0.01"
                                       value={d.hours}
+                                      disabled={!canManageServiceCatalog}
                                       onChange={(e) => setEtStandardsDraft((prev) => ({
                                         ...prev,
                                         [et.id]: { ...d, hours: e.target.value },
                                       }))}
-                                      style={{ ...inputStyle, width:88, fontSize:11, padding:'4px 6px' }}
+                                      style={{ ...inputStyle, width:88, fontSize:11, padding:'4px 6px', opacity: canManageServiceCatalog ? 1 : 0.7 }}
                                       placeholder="—"
                                     />
                                   </label>
+                                  {canManageServiceCatalog && (
                                   <button
                                     type="button"
-                                    disabled={saving}
+                                    disabled={saving || !canManageServiceCatalog}
                                     onClick={() => handleSaveEngagementStandards(et.id)}
                                     style={{ ...btnPrimary, fontSize:11, padding:'4px 10px', opacity: saving ? 0.6 : 1 }}
                                   >
                                     {saving ? '…' : 'Save'}
                                   </button>
+                                  )}
                                 </div>
                               </div>
                             );
                           })}
+                          {canManageServiceCatalog && (
                           <div style={{ display:'flex', gap:6, marginTop:6 }}>
                             <input
                               value={newEtName[sub.id] || ''}
@@ -1632,9 +2077,11 @@ export default function Settings() {
                             />
                             <button onClick={() => handleAddEngagementType(cat.id, sub.id)} style={{ ...btnPrimary, fontSize:11, padding:'4px 10px' }}>Add</button>
                           </div>
+                          )}
                         </div>
                       </div>
                     ))}
+                    {canManageServiceCatalog && (
                     <div style={{ display:'flex', gap:8, marginTop:8 }}>
                       <input
                         value={newSubName[cat.id] || ''}
@@ -1643,8 +2090,9 @@ export default function Settings() {
                         placeholder="New subcategory name"
                         style={{ ...inputStyle, flex:1, fontSize:12, padding:'6px 8px' }}
                       />
-                      <button onClick={() => handleAddSubcategory(cat.id)} style={{ ...btnPrimary, fontSize:12, padding:'6px 12px' }}>Add Subcategory</button>
+                      <button type="button" onClick={() => handleAddSubcategory(cat.id)} style={{ ...btnPrimary, fontSize:12, padding:'6px 12px' }}>Add Subcategory</button>
                     </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1654,7 +2102,9 @@ export default function Settings() {
 
           {!svcCatLoading && serviceCategories.length === 0 && (
             <div style={{ color:'#94a3b8', fontSize:13, textAlign:'center', padding:'24px 0' }}>
-              No service categories yet. Add one above to get started.
+              {canManageServiceCatalog
+                ? 'No service categories yet. Add one above to get started.'
+                : 'No service categories yet. A super admin or admin can add categories in this section.'}
             </div>
           )}
         </div>

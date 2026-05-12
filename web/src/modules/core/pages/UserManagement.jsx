@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../../auth/AuthContext';
 import { API_BASE_URL, SUPER_ADMIN_EMAIL } from '../../../constants/config';
 import { ROLE_LABELS, ROLE_BADGE_COLORS } from '../../../constants/roles';
+import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
 
 /* ─── API helpers ─────────────────────────────────────────────────────────── */
 
@@ -59,6 +60,7 @@ function StatusBadge({ active }) {
 /* ─── Add / Edit User Modal ──────────────────────────────────────────────── */
 
 function UserModal({ mode, user, roles, onClose, onSave }) {
+  const isPrimarySuperAdmin = mode === 'edit' && user?.email === SUPER_ADMIN_EMAIL;
   const [form, setForm] = useState({
     name:                   user?.name     || '',
     email:                  user?.email    || '',
@@ -101,7 +103,7 @@ function UserModal({ mode, user, roles, onClose, onSave }) {
       <div style={styles.modal}>
         <div style={styles.modalHeader}>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
-            {mode === 'add' ? '➕ Add New User' : '✏️ Edit User'}
+            {mode === 'add' ? '➕ Add New User' : (isPrimarySuperAdmin ? '✏️ Shift target (primary account)' : '✏️ Edit User')}
           </h2>
           <button onClick={onClose} style={styles.closeBtn}>✕</button>
         </div>
@@ -110,12 +112,19 @@ function UserModal({ mode, user, roles, onClose, onSave }) {
           <div style={styles.formBody}>
             {error && <div style={styles.errorBox}>{error}</div>}
 
+            {isPrimarySuperAdmin && (
+              <p style={{ margin: '0 0 8px', fontSize: 13, color: '#64748b', lineHeight: 1.45 }}>
+                Name, email, role, and status are fixed for this account. You can change the daily shift target below.
+              </p>
+            )}
+
             <label style={styles.label}>Full Name *</label>
             <input
               style={styles.input}
               value={form.name}
               onChange={(e) => set('name', e.target.value)}
               required
+              disabled={isPrimarySuperAdmin}
               placeholder="e.g. Priya Sharma"
             />
 
@@ -150,6 +159,7 @@ function UserModal({ mode, user, roles, onClose, onSave }) {
               style={styles.input}
               value={form.role_id}
               onChange={(e) => set('role_id', Number(e.target.value))}
+              disabled={isPrimarySuperAdmin}
             >
               {roles.map((r) => (
                 <option key={r.id} value={r.id}>
@@ -201,6 +211,7 @@ function UserModal({ mode, user, roles, onClose, onSave }) {
                   style={styles.input}
                   value={form.is_active ? 'active' : 'inactive'}
                   onChange={(e) => set('is_active', e.target.value === 'active')}
+                  disabled={isPrimarySuperAdmin}
                 >
                   <option value="active">Active</option>
                   <option value="inactive">Inactive</option>
@@ -240,6 +251,9 @@ export default function UserManagement() {
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState('');
   const [modal,      setModal]      = useState(null); // null | { mode: 'add'|'edit', user? }
+  const [deactivateTarget, setDeactivateTarget] = useState(null);
+  const [deactivateBusy, setDeactivateBusy] = useState(false);
+  const [deactivateErr, setDeactivateErr] = useState('');
 
   // ── Fetch data ─────────────────────────────────────────────────────────────
 
@@ -299,21 +313,33 @@ export default function UserManagement() {
       });
     } else {
       const { password: _pw, ...updateData } = form;
+      const isPrimary = modal.user?.email === SUPER_ADMIN_EMAIL;
+      const payload = isPrimary
+        ? {
+            shift_target_minutes:   updateData.shift_target_minutes,
+            shift_target_disabled:  updateData.shift_target_disabled,
+          }
+        : updateData;
       await apiFetch(token, `/admin/users/${modal.user.id}`, {
         method: 'PUT',
-        body:   JSON.stringify(updateData),
+        body:   JSON.stringify(payload),
       });
     }
     loadUsers();
   }
 
-  async function handleDeactivate(user) {
-    if (!window.confirm(`Deactivate ${user.name}?`)) return;
+  async function executeDeactivateUser() {
+    if (!token || !API_BASE_URL || !deactivateTarget) return;
+    setDeactivateBusy(true);
+    setDeactivateErr('');
     try {
-      await apiFetch(token, `/admin/users/${user.id}`, { method: 'DELETE' });
+      await apiFetch(token, `/admin/users/${deactivateTarget.id}`, { method: 'DELETE' });
+      setDeactivateTarget(null);
       loadUsers();
     } catch (err) {
-      alert(err.message || 'Failed to deactivate user');
+      setDeactivateErr(err.message || 'Failed to deactivate user');
+    } finally {
+      setDeactivateBusy(false);
     }
   }
 
@@ -412,7 +438,7 @@ export default function UserManagement() {
                         <div style={{ fontWeight: 600, color: '#1e293b' }}>
                           {u.name}
                           {isSuperAdmin && (
-                            <span title="Super Admin — protected" style={{ marginLeft: 6 }}>🔒</span>
+                            <span title="Primary account — profile locked; shift target can be edited" style={{ marginLeft: 6 }}>🔒</span>
                           )}
                         </div>
                         <div style={{ fontSize: 12, color: '#64748b' }}>{u.email}</div>
@@ -450,26 +476,22 @@ export default function UserManagement() {
                     )}
                   </td>
                   <td style={{ ...styles.td, textAlign: 'right' }}>
-                    {isSuperAdmin ? (
-                      <span style={{ color: '#9ca3af', fontSize: 13 }}>Protected</span>
-                    ) : (
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                      <button
+                        style={styles.editBtn}
+                        onClick={() => setModal({ mode: 'edit', user: u })}
+                      >
+                        Edit
+                      </button>
+                      {!isSuperAdmin && u.is_active && (
                         <button
-                          style={styles.editBtn}
-                          onClick={() => setModal({ mode: 'edit', user: u })}
+                          style={styles.deactivateBtn}
+                          onClick={() => { setDeactivateErr(''); setDeactivateTarget(u); }}
                         >
-                          Edit
+                          Deactivate
                         </button>
-                        {u.is_active && (
-                          <button
-                            style={styles.deactivateBtn}
-                            onClick={() => handleDeactivate(u)}
-                          >
-                            Deactivate
-                          </button>
-                        )}
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -499,6 +521,25 @@ export default function UserManagement() {
             Next →
           </button>
         </div>
+      )}
+
+      {deactivateTarget && (
+        <DestructiveConfirmModal
+          open
+          title="Deactivate user?"
+          tone="warning"
+          titleAccent="#c2410c"
+          confirmLabel="Deactivate"
+          busy={deactivateBusy}
+          error={deactivateErr}
+          onClose={() => !deactivateBusy && setDeactivateTarget(null)}
+          onConfirm={executeDeactivateUser}
+        >
+          <p style={{ margin: 0 }}>
+            Deactivate <strong>{deactivateTarget.name}</strong> ({deactivateTarget.email})?
+            They will no longer be able to sign in until an admin reactivates the account.
+          </p>
+        </DestructiveConfirmModal>
       )}
 
       {/* Modal */}

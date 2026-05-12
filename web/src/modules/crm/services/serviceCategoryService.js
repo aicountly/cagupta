@@ -66,6 +66,21 @@ export async function deleteCategory(id) {
   await parseResponse(res);
 }
 
+/**
+ * Rename a service category (IDs unchanged; linked engagements get refreshed labels server-side).
+ * @param {number|string} id
+ * @param {{ name: string }} payload
+ */
+export async function updateCategory(id, payload) {
+  const res = await fetch(`${API_BASE}/admin/service-categories/${id}`, {
+    method:  'PATCH',
+    headers: authHeaders(),
+    body:    JSON.stringify({ name: payload.name }),
+  });
+  const data = await parseResponse(res);
+  return data.data;
+}
+
 // ── Subcategories ─────────────────────────────────────────────────────────────
 
 /**
@@ -107,6 +122,21 @@ export async function deleteSubcategory(id) {
     headers: authHeaders(),
   });
   await parseResponse(res);
+}
+
+/**
+ * Rename a subcategory.
+ * @param {number|string} id
+ * @param {{ name: string }} payload
+ */
+export async function updateSubcategory(id, payload) {
+  const res = await fetch(`${API_BASE}/admin/service-subcategories/${id}`, {
+    method:  'PATCH',
+    headers: authHeaders(),
+    body:    JSON.stringify({ name: payload.name }),
+  });
+  const data = await parseResponse(res);
+  return data.data;
 }
 
 // ── Engagement Types ──────────────────────────────────────────────────────────

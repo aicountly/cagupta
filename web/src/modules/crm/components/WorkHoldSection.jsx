@@ -8,6 +8,7 @@ import {
   createWorkHoldExceptionOrganization,
   deleteWorkHoldException,
 } from '../services/workHoldService';
+import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
 
 const card = {
   background: '#fff',
@@ -77,6 +78,9 @@ export default function WorkHoldSection({ variant, entityId, canMutate }) {
   const [exKind, setExKind] = useState('service');
   const [exServiceId, setExServiceId] = useState('');
   const [exExpiresLocal, setExExpiresLocal] = useState('');
+  const [revokeExceptionId, setRevokeExceptionId] = useState(null);
+  const [revokeExceptionBusy, setRevokeExceptionBusy] = useState(false);
+  const [revokeExceptionErr, setRevokeExceptionErr] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -163,18 +167,25 @@ export default function WorkHoldSection({ variant, entityId, canMutate }) {
     }
   }
 
-  async function onRevokeException(id) {
-    if (!window.confirm('Remove this work-hold exception?')) return;
-    setBusy(true);
+  async function executeRevokeException() {
+    if (revokeExceptionId == null) return;
+    setRevokeExceptionBusy(true);
+    setRevokeExceptionErr('');
     setErr(null);
     try {
-      await deleteWorkHoldException(id);
+      await deleteWorkHoldException(revokeExceptionId);
+      setRevokeExceptionId(null);
       await load();
     } catch (ex) {
-      setErr(ex.message || 'Could not remove exception.');
+      setRevokeExceptionErr(ex.message || 'Could not remove exception.');
     } finally {
-      setBusy(false);
+      setRevokeExceptionBusy(false);
     }
+  }
+
+  function openRevokeException(id) {
+    setRevokeExceptionErr('');
+    setRevokeExceptionId(id);
   }
 
   if (loading && !data) {
@@ -186,6 +197,7 @@ export default function WorkHoldSection({ variant, entityId, canMutate }) {
   }
 
   return (
+    <>
     <div>
       {err && (
         <div style={{ ...card, borderColor: '#fecaca', background: '#fef2f2', color: '#991b1b', fontSize: 13 }}>
@@ -278,7 +290,7 @@ export default function WorkHoldSection({ variant, entityId, canMutate }) {
                     </td>
                     <td style={{ padding: '8px', textAlign: 'right' }}>
                       {canMutate && (
-                        <button type="button" style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }} disabled={busy} onClick={() => void onRevokeException(row.id)}>
+                        <button type="button" style={{ ...btnGhost, padding: '4px 10px', fontSize: 12 }} disabled={busy || revokeExceptionBusy} onClick={() => openRevokeException(row.id)}>
                           Revoke
                         </button>
                       )}
@@ -337,5 +349,21 @@ export default function WorkHoldSection({ variant, entityId, canMutate }) {
         )}
       </div>
     </div>
+
+    <DestructiveConfirmModal
+      open={revokeExceptionId != null}
+      title="Remove work-hold exception?"
+      tone="warning"
+      confirmLabel="Remove"
+      busy={revokeExceptionBusy}
+      error={revokeExceptionErr}
+      onClose={() => !revokeExceptionBusy && setRevokeExceptionId(null)}
+      onConfirm={executeRevokeException}
+    >
+      <p style={{ margin: 0 }}>
+        Clients on work hold resume normal blocking rules for this scope after the exception is removed.
+      </p>
+    </DestructiveConfirmModal>
+    </>
   );
 }

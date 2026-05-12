@@ -10,6 +10,7 @@
 import { useState, useEffect } from 'react';
 import { getAllEngagements } from '../../../services/engagementService';
 import { createHandover, revokeAssignment } from '../../../services/leaveService';
+import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
 
 export default function HandoverAssignmentModal({ leave, staffUsers, onClose, onSaved }) {
   const [services, setServices]     = useState([]);
@@ -21,6 +22,7 @@ export default function HandoverAssignmentModal({ leave, staffUsers, onClose, on
 
   // assignments: map service_id → { temp_user_id, existing_assignment }
   const [selections, setSelections] = useState({});
+  const [revokePromptAssignment, setRevokePromptAssignment] = useState(null);
 
   const leaveUserId = Number(leave.user_id);
 
@@ -81,8 +83,10 @@ export default function HandoverAssignmentModal({ leave, staffUsers, onClose, on
     }
   }
 
-  async function handleRevoke(assignment) {
-    if (!window.confirm(`Revoke temporary charge for "${assignment.service_type || 'this service'}"?`)) return;
+  async function executeRevoke() {
+    const assignment = revokePromptAssignment;
+    if (!assignment) return;
+    setRevokePromptAssignment(null);
     setRevoking(assignment.id);
     setError('');
     try {
@@ -104,6 +108,23 @@ export default function HandoverAssignmentModal({ leave, staffUsers, onClose, on
 
   return (
     <div style={styles.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
+      {revokePromptAssignment && (
+        <DestructiveConfirmModal
+          open
+          title="Revoke handover?"
+          tone="warning"
+          titleAccent="#d97706"
+          confirmLabel="Revoke assignment"
+          onClose={() => setRevokePromptAssignment(null)}
+          onConfirm={executeRevoke}
+        >
+          <p style={{ margin: 0 }}>
+            Stop temporary ownership of{' '}
+            <strong>{revokePromptAssignment.service_type || `service #${revokePromptAssignment.service_id}`}</strong>?
+            The substitute loses access immediately.
+          </p>
+        </DestructiveConfirmModal>
+      )}
       <div style={styles.modal}>
         {/* Header */}
         <div style={styles.header}>
@@ -196,7 +217,7 @@ export default function HandoverAssignmentModal({ leave, staffUsers, onClose, on
                             <button
                               type="button"
                               disabled={isRevoking}
-                              onClick={() => handleRevoke(existing)}
+                              onClick={() => setRevokePromptAssignment(existing)}
                               style={styles.revokeBtn}
                             >
                               {isRevoking ? 'Revoking…' : 'Revoke'}

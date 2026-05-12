@@ -153,8 +153,8 @@ export default function AppointmentFeeRules() {
 
               <label style={{ ...labelStyle, marginTop: 12 }}>Line kind</label>
               <select style={inputStyle} value={form.default_line_kind} onChange={(e) => setForm((v) => ({ ...v, default_line_kind: e.target.value }))}>
-                <option value="professional_fee">Professional fee</option>
-                <option value="cost_recovery">Cost recovery</option>
+                <option value="professional_fee">Professional Fee</option>
+                <option value="cost_recovery">Tax Challans n Reimbursements</option>
               </select>
 
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13 }}>

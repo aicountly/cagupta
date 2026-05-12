@@ -6,6 +6,7 @@ import {
   deleteAppointmentFeeRule,
 } from '../services/appointmentFeeRuleService';
 import { getBillingProfiles } from '../../../constants/billingProfiles';
+import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
 
 const empty = {
   name: '',
@@ -24,6 +25,9 @@ export default function AppointmentFeeRules() {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(empty);
   const billingProfiles = getBillingProfiles();
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteErr, setDeleteErr] = useState('');
 
   function load() {
     setLoading(true);
@@ -77,6 +81,21 @@ export default function AppointmentFeeRules() {
       .catch((err) => window.alert(err.message || 'Save failed'));
   }
 
+  async function executeDeleteFeeRule() {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    setDeleteErr('');
+    try {
+      await deleteAppointmentFeeRule(deleteTarget.id);
+      setDeleteTarget(null);
+      load();
+    } catch (err) {
+      setDeleteErr(err.message || 'Delete failed.');
+    } finally {
+      setDeleteBusy(false);
+    }
+  }
+
   return (
     <div style={{ padding: 24 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
@@ -112,8 +131,8 @@ export default function AppointmentFeeRules() {
                   <td style={tdStyle}>
                     <button type="button" style={iconBtn} onClick={() => openEdit(r)}>Edit</button>
                     <button type="button" style={{ ...iconBtn, color: '#dc2626' }} onClick={() => {
-                      if (!window.confirm('Delete this rule?')) return;
-                      deleteAppointmentFeeRule(r.id).then(load).catch((err) => window.alert(err.message));
+                      setDeleteErr('');
+                      setDeleteTarget({ id: r.id, name: r.name });
                     }}>Delete</button>
                   </td>
                 </tr>
@@ -153,8 +172,8 @@ export default function AppointmentFeeRules() {
 
               <label style={{ ...labelStyle, marginTop: 12 }}>Line kind</label>
               <select style={inputStyle} value={form.default_line_kind} onChange={(e) => setForm((v) => ({ ...v, default_line_kind: e.target.value }))}>
-                <option value="professional_fee">Professional fee</option>
-                <option value="cost_recovery">Cost recovery</option>
+                <option value="professional_fee">Professional Fee</option>
+                <option value="cost_recovery">Tax Challans n Reimbursements</option>
               </select>
 
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12, fontSize: 13 }}>
@@ -170,6 +189,20 @@ export default function AppointmentFeeRules() {
           </div>
         </div>
       )}
+
+      <DestructiveConfirmModal
+        open={!!deleteTarget}
+        title="Delete appointment fee rule?"
+        tone="danger"
+        busy={deleteBusy}
+        error={deleteErr}
+        onClose={() => !deleteBusy && setDeleteTarget(null)}
+        onConfirm={executeDeleteFeeRule}
+      >
+        <p style={{ margin: 0 }}>
+          Delete the rule &quot;{deleteTarget?.name}&quot;? Calendar bookings using this rule may need to be reassigned manually.
+        </p>
+      </DestructiveConfirmModal>
     </div>
   );
 }

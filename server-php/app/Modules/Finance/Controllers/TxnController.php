@@ -338,6 +338,68 @@ class TxnController extends BaseController
 
     // ── DELETE /api/admin/txn/:id ────────────────────────────────────────────
 
+    /**
+     * Ledger rows that require superadmin OTP + invoices.delete (same as invoice delete).
+     *
+     * @return list<string>
+     */
+    private function txnTypesRequiringSuperadminDelete(): array
+    {
+        return [
+            'invoice',
+            'receipt',
+            'payment_expense',
+            'tds_provisional',
+            'tds_final',
+            'rebate',
+            'credit_note',
+        ];
+    }
+
+    private function txnRequiresSuperadminDelete(string $txnType): bool
+    {
+        return in_array($txnType, $this->txnTypesRequiringSuperadminDelete(), true);
+    }
+
+    /** Lower sorts earlier (delete first). Receipts/payments before credit notes; credit notes before invoices. */
+    private function txnDeleteSortPriority(string $txnType): int
+    {
+        return match ($txnType) {
+            'receipt', 'payment_expense', 'tds_provisional', 'tds_final', 'rebate' => 10,
+            'credit_note' => 20,
+            'invoice' => 30,
+            default => 0,
+        };
+    }
+
+    /**
+     * Delete one txn row with commission / notification side effects (caller verified OTP when required).
+     *
+     * @param array<string, mixed> $row
+     */
+    private function performTxnDelete(array $row): void
+    {
+        $id   = (int)($row['id'] ?? 0);
+        $type = (string)($row['txn_type'] ?? '');
+        if ($type === 'credit_note') {
+            $linked = (int)($row['linked_txn_id'] ?? 0);
+            $this->txn->delete($id);
+            if ($linked > 0) {
+                (new CommissionSyncService())->afterCreditNote($linked);
+            }
+
+            return;
+        }
+        if ($type === 'invoice') {
+            (new CommissionSyncService())->onInvoiceDeleted($id);
+            $this->txn->delete($id);
+            $this->notifyAdminsInvoiceChange('deleted', $row, null, $this->authUser());
+
+            return;
+        }
+        $this->txn->delete($id);
+    }
+
     public function destroy(int $id): never
     {
         $row = $this->txn->find($id);
@@ -345,27 +407,184 @@ class TxnController extends BaseController
             $this->error('Transaction not found.', 404);
         }
 
-        $isInvoice = (($row['txn_type'] ?? '') === 'invoice');
-        if ($isInvoice) {
+        $type = (string)($row['txn_type'] ?? '');
+        if ($this->txnRequiresSuperadminDelete($type)) {
             if (!$this->userHasPermission($this->authUser(), 'invoices.delete')) {
                 $this->error('Access denied. Required permission: invoices.delete.', 403);
             }
             $otp = $this->readSuperadminOtpFromRequest();
             if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
-                $this->error('Valid superadmin OTP is required to delete an invoice. Request a code first.', 403);
+                $this->error('Valid superadmin OTP is required to delete this ledger record. Request a code first.', 403);
             }
-        } elseif (!$this->userHasPermission($this->authUser(), 'invoices.edit')) {
+            $this->performTxnDelete($row);
+            $this->success(null, 'Transaction deleted');
+        }
+
+        if (!$this->userHasPermission($this->authUser(), 'invoices.edit')) {
             $this->error('Access denied. Required permission: invoices.edit.', 403);
         }
 
-        if ($isInvoice) {
-            (new CommissionSyncService())->onInvoiceDeleted($id);
-        }
         $this->txn->delete($id);
-        if ($isInvoice) {
-            $this->notifyAdminsInvoiceChange('deleted', $row, null, $this->authUser());
-        }
         $this->success(null, 'Transaction deleted');
+    }
+
+    /**
+     * POST /api/admin/txn/request-ledger-delete-otp
+     * Body: { "ids": [1,2,3] } — superadmin receives one OTP email for a subsequent bulk or single delete.
+     */
+    public function requestLedgerDeleteOtp(): never
+    {
+        $acting = $this->authUser();
+        if (!$this->userHasPermission($acting, 'invoices.delete')) {
+            $this->error('Access denied. Required permission: invoices.delete.', 403);
+        }
+
+        $body   = $this->getJsonBody();
+        $idsRaw = $body['ids'] ?? null;
+        if (!is_array($idsRaw) || $idsRaw === []) {
+            $this->error('ids must be a non-empty array.', 422);
+        }
+
+        $ids = [];
+        foreach ($idsRaw as $v) {
+            $n = (int)$v;
+            if ($n > 0) {
+                $ids[$n] = $n;
+            }
+        }
+        if ($ids === []) {
+            $this->error('No valid transaction ids.', 422);
+        }
+        if (count($ids) > 200) {
+            $this->error('Too many transactions (max 200 per request).', 422);
+        }
+
+        $counts = [];
+        foreach ($ids as $id) {
+            $row = $this->txn->find($id);
+            if ($row === null) {
+                $this->error('Transaction not found: ' . $id, 404);
+            }
+            $tt = (string)($row['txn_type'] ?? '');
+            if (!$this->txnRequiresSuperadminDelete($tt)) {
+                $this->error('OTP delete is not used for transaction type: ' . $tt, 422);
+            }
+            $counts[$tt] = ($counts[$tt] ?? 0) + 1;
+        }
+
+        $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
+        if ($super === null || !$super['is_active']) {
+            $this->error('Super admin account is not provisioned.', 500);
+        }
+        $superId = (int)$super['id'];
+        $email   = trim((string)($super['email'] ?? ''));
+        if ($email === '') {
+            $this->error('Super admin has no email.', 500);
+        }
+
+        $otp = OtpService::generate($superId);
+        $summaryParts = [];
+        foreach ($counts as $t => $c) {
+            $summaryParts[] = $c . ' × ' . str_replace('_', ' ', $t);
+        }
+        $summaryText = implode(', ', $summaryParts);
+        $idList      = implode(', ', array_keys($ids));
+
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('ledger-delete-otp', [
+                'userName'      => (string)($super['name'] ?? $email),
+                'otpCode'       => $otp,
+                'expiryMinutes' => (string)OtpService::expiryMinutes(),
+                'count'         => (string)count($ids),
+                'summaryText'   => $summaryText,
+                'idList'        => $idList,
+            ]);
+            if ($htmlBody !== '') {
+                BrevoMailer::send(
+                    $email,
+                    (string)($super['name'] ?? $email),
+                    'Ledger delete OTP - CA Rahul Gupta',
+                    $htmlBody
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[TxnController] Ledger delete OTP email failed: ' . $e->getMessage());
+        }
+
+        $this->success([
+            'otp_sent'     => true,
+            'masked_email' => $this->maskEmail($email),
+            'count'        => count($ids),
+        ], 'OTP sent.');
+    }
+
+    /**
+     * POST /api/admin/txn/bulk-delete
+     * Body: { "ids": [1,2,3] } — header X-Superadmin-Otp required; one OTP authorizes the whole batch.
+     */
+    public function bulkDestroy(): never
+    {
+        $acting = $this->authUser();
+        if (!$this->userHasPermission($acting, 'invoices.delete')) {
+            $this->error('Access denied. Required permission: invoices.delete.', 403);
+        }
+
+        $otp = $this->readSuperadminOtpFromRequest();
+        if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
+            $this->error('Valid superadmin OTP is required. Request a code first.', 403);
+        }
+
+        $body   = $this->getJsonBody();
+        $idsRaw = $body['ids'] ?? null;
+        if (!is_array($idsRaw) || $idsRaw === []) {
+            $this->error('ids must be a non-empty array.', 422);
+        }
+
+        $ids = [];
+        foreach ($idsRaw as $v) {
+            $n = (int)$v;
+            if ($n > 0) {
+                $ids[$n] = $n;
+            }
+        }
+        if ($ids === []) {
+            $this->error('No valid transaction ids.', 422);
+        }
+        if (count($ids) > 200) {
+            $this->error('Too many transactions (max 200 per request).', 422);
+        }
+
+        $rows = [];
+        foreach ($ids as $id) {
+            $row = $this->txn->find($id);
+            if ($row === null) {
+                $this->error('Transaction not found: ' . $id, 404);
+            }
+            $tt = (string)($row['txn_type'] ?? '');
+            if (!$this->txnRequiresSuperadminDelete($tt)) {
+                $this->error('Bulk delete is not allowed for transaction type: ' . $tt, 422);
+            }
+            $rows[] = $row;
+        }
+
+        usort($rows, function (array $a, array $b): int {
+            $pa = $this->txnDeleteSortPriority((string)($a['txn_type'] ?? ''));
+            $pb = $this->txnDeleteSortPriority((string)($b['txn_type'] ?? ''));
+            if ($pa !== $pb) {
+                return $pa <=> $pb;
+            }
+
+            return (int)($a['id'] ?? 0) <=> (int)($b['id'] ?? 0);
+        });
+
+        foreach ($rows as $row) {
+            $this->performTxnDelete($row);
+        }
+
+        $this->success([
+            'deleted'   => count($rows),
+            'txn_ids'   => array_map(static fn (array $r): int => (int)($r['id'] ?? 0), $rows),
+        ], 'Transactions deleted.');
     }
 
     // ── GET /api/admin/txn/ledger ────────────────────────────────────────────

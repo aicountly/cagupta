@@ -10,12 +10,15 @@
 import { useState, useEffect } from 'react';
 import { getAllEngagements } from '../../services/engagementService';
 import { createHandover, revokeAssignment } from '../../services/leaveService';
+import DestructiveConfirmModal from '../common/DestructiveConfirmModal';
 
 export default function HandoverAssignmentModal({ leave, staffUsers, onClose, onSaved }) {
   const [services, setServices]     = useState([]);
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(false);
   const [revoking, setRevoking]     = useState(null); // assignment id being revoked
+  const [revokeTarget, setRevokeTarget] = useState(null);
+  const [revokeErr, setRevokeErr]   = useState('');
   const [error, setError]           = useState('');
   const [success, setSuccess]       = useState('');
 
@@ -81,12 +84,15 @@ export default function HandoverAssignmentModal({ leave, staffUsers, onClose, on
     }
   }
 
-  async function handleRevoke(assignment) {
-    if (!window.confirm(`Revoke temporary charge for "${assignment.service_type || 'this service'}"?`)) return;
+  async function executeRevoke() {
+    const assignment = revokeTarget;
+    if (!assignment) return;
     setRevoking(assignment.id);
+    setRevokeErr('');
     setError('');
     try {
       await revokeAssignment(leave.id, assignment.id);
+      setRevokeTarget(null);
       setSuccess('Handover revoked for that service.');
       onSaved?.();
       // Update local assignment list so the row clears immediately
@@ -94,15 +100,21 @@ export default function HandoverAssignmentModal({ leave, staffUsers, onClose, on
       // Mark in existingByService so the row re-renders as unassigned
       existingByService[assignment.service_id] = { ...assignment, revoked_at: new Date().toISOString() };
     } catch (err) {
-      setError(err.message || 'Failed to revoke.');
+      setRevokeErr(err.message || 'Failed to revoke.');
     } finally {
       setRevoking(null);
     }
   }
 
+  function openRevokePrompt(assignment) {
+    setRevokeErr('');
+    setRevokeTarget(assignment);
+  }
+
   const eligibleStaff = staffUsers.filter((u) => Number(u.id) !== leaveUserId && u.is_active !== false);
 
   return (
+    <>
     <div style={styles.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div style={styles.modal}>
         {/* Header */}
@@ -196,7 +208,7 @@ export default function HandoverAssignmentModal({ leave, staffUsers, onClose, on
                             <button
                               type="button"
                               disabled={isRevoking}
-                              onClick={() => handleRevoke(existing)}
+                              onClick={() => openRevokePrompt(existing)}
                               style={styles.revokeBtn}
                             >
                               {isRevoking ? 'Revoking…' : 'Revoke'}
@@ -226,6 +238,23 @@ export default function HandoverAssignmentModal({ leave, staffUsers, onClose, on
         </div>
       </div>
     </div>
+
+    <DestructiveConfirmModal
+        open={!!revokeTarget}
+        title="Revoke handover?"
+        tone="warning"
+        confirmLabel="Revoke"
+        cancelLabel="Cancel"
+        busy={revoking !== null}
+        error={revokeErr}
+        onClose={() => !revoking && setRevokeTarget(null)}
+        onConfirm={executeRevoke}
+      >
+        <p style={{ margin: 0 }}>
+          Revoke temporary charge for &quot;{revokeTarget?.service_type || 'this service'}&quot;? The substitute will no longer appear on this service for this leave.
+        </p>
+      </DestructiveConfirmModal>
+    </>
   );
 }
 

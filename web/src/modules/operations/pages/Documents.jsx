@@ -11,6 +11,7 @@ import { useNavigate } from 'react-router-dom';
 import { Search, FileText, Image as ImageIcon, Eye, Download, History, X, ChevronLeft, ChevronRight as ChevronRightIcon, Trash2 } from 'lucide-react';
 import { listAllKycDocuments, fetchDocumentBlob, getKycDocumentAudit, deleteKycDocumentAudit } from '../services/kycDocumentService';
 import { useAuth } from '../../../auth/AuthContext';
+import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -139,6 +140,7 @@ function AuditModal({ doc, onClose, isSuperAdmin }) {
   const [err,      setErr]      = useState('');
   const [deleting, setDeleting] = useState(false);
   const [delErr,   setDelErr]   = useState('');
+  const [showClearAuditModal, setShowClearAuditModal] = useState(false);
 
   const loadLog = useCallback(() => {
     if (!doc) return;
@@ -151,15 +153,13 @@ function AuditModal({ doc, onClose, isSuperAdmin }) {
 
   useEffect(() => { loadLog(); }, [loadLog]);
 
-  async function handleDeleteAuditLog() {
-    if (!window.confirm(
-      `Delete the entire audit log for "${doc.original_file_name}"?\n\nThis action cannot be undone.`
-    )) return;
-
+  async function executeClearAudit() {
+    if (!doc) return;
     setDeleting(true); setDelErr('');
     try {
       await deleteKycDocumentAudit(doc.id);
       setLog([]);
+      setShowClearAuditModal(false);
     } catch (e) {
       setDelErr(e.message || 'Failed to delete audit log.');
     } finally {
@@ -170,6 +170,7 @@ function AuditModal({ doc, onClose, isSuperAdmin }) {
   if (!doc) return null;
 
   return (
+    <>
     <div style={overlay}>
       <div style={{ ...auditBox }}>
         <div style={previewHeader}>
@@ -210,18 +211,36 @@ function AuditModal({ doc, onClose, isSuperAdmin }) {
         {isSuperAdmin && (
           <div style={{ padding: '10px 18px', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10 }}>
             <button
-              onClick={handleDeleteAuditLog}
+              type="button"
+              onClick={() => { setDelErr(''); setShowClearAuditModal(true); }}
               disabled={deleting || loading}
               style={btnDanger}
             >
               <Trash2 size={13} style={{ marginRight: 5 }} />
               {deleting ? 'Clearing…' : 'Clear Audit Log'}
             </button>
-            {delErr && <span style={{ fontSize: 12, color: '#dc2626' }}>{delErr}</span>}
+            {delErr && !showClearAuditModal && <span style={{ fontSize: 12, color: '#dc2626' }}>{delErr}</span>}
           </div>
         )}
       </div>
     </div>
+    {showClearAuditModal && (
+      <DestructiveConfirmModal
+        open
+        title="Clear audit log?"
+        tone="danger"
+        error={delErr}
+        busy={deleting}
+        confirmLabel="Clear audit log"
+        onClose={() => !deleting && setShowClearAuditModal(false)}
+        onConfirm={executeClearAudit}
+      >
+        <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>
+          Delete the entire audit trail for <strong>{doc.original_file_name}</strong>. Compliance and forensic review may rely on this history. This cannot be undone.
+        </p>
+      </DestructiveConfirmModal>
+    )}
+    </>
   );
 }
 

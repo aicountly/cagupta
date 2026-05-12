@@ -100,6 +100,17 @@ class ServiceCategoryModel
     }
 
     /**
+     * Rename a category (primary key unchanged).
+     */
+    public function updateName(int $id, string $name): bool
+    {
+        $stmt = $this->db->prepare(
+            'UPDATE service_categories SET name = :name, updated_at = NOW() WHERE id = :id'
+        );
+        return $stmt->execute([':name' => $name, ':id' => $id]);
+    }
+
+    /**
      * Delete a category and its children.
      */
     public function delete(int $id): bool

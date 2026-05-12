@@ -131,6 +131,7 @@ export default function ServiceEngagementManage() {
   const [reopenError, setReopenError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [serviceDeleteStep, setServiceDeleteStep] = useState('warn');
   const [deleteOtp, setDeleteOtp] = useState('');
   const [deleteOtpSent, setDeleteOtpSent] = useState(false);
   const [deleteModalErr, setDeleteModalErr] = useState('');
@@ -595,6 +596,15 @@ export default function ServiceEngagementManage() {
 
   function openDeleteEngagementModal() {
     setDeleteModalOpen(true);
+    setServiceDeleteStep('warn');
+    setDeleteOtp('');
+    setDeleteOtpSent(false);
+    setDeleteModalErr('');
+  }
+
+  function closeDeleteEngagementModal() {
+    setDeleteModalOpen(false);
+    setServiceDeleteStep('warn');
     setDeleteOtp('');
     setDeleteOtpSent(false);
     setDeleteModalErr('');
@@ -624,7 +634,7 @@ export default function ServiceEngagementManage() {
     setDeleteModalErr('');
     try {
       await deleteEngagement(id, { superadminOtp: deleteOtp.trim() });
-      setDeleteModalOpen(false);
+      closeDeleteEngagementModal();
       navigate('/services');
     } catch (e) {
       setDeleteModalErr(e.message || 'Delete failed.');
@@ -700,42 +710,80 @@ export default function ServiceEngagementManage() {
           <div style={deleteModalStyle}>
             <div style={deleteModalHeaderStyle}>
               <span style={{ fontSize: 15, fontWeight: 700, color: '#b91c1c' }}>Delete service engagement</span>
-              <button type="button" onClick={() => setDeleteModalOpen(false)} style={deleteCloseBtnStyle}>✕</button>
+              <button type="button" onClick={closeDeleteEngagementModal} style={deleteCloseBtnStyle}>✕</button>
             </div>
             <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
-                Permanently delete this engagement for <strong>{clientName || 'this client'}</strong> ({serviceType || 'service'})? Assigned users will be notified by email. This cannot be undone.
-              </p>
-              <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
-                Request a superadmin OTP, then enter it to confirm.
-              </p>
-              {deleteModalErr && <div style={{ color: '#dc2626', fontSize: 13 }}>{deleteModalErr}</div>}
-              <button type="button" style={deleteBtnSecondaryStyle} disabled={requestingDeleteOtp} onClick={sendDeleteOtp}>
-                {requestingDeleteOtp && !deleteOtpSent ? 'Sending…' : 'Request superadmin OTP'}
-              </button>
-              {deleteOtpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent to superadmin email</span>}
-              <label style={deleteLabelStyle}>
-                Superadmin OTP *
-                <input
-                  type="text"
-                  style={deleteInputStyle}
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  value={deleteOtp}
-                  onChange={(e) => setDeleteOtp(e.target.value.replace(/\s/g, ''))}
-                />
-              </label>
+              {serviceDeleteStep === 'warn' ? (
+                <>
+                  <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+                    You are about to <strong>permanently delete</strong> this engagement for{' '}
+                    <strong>{clientName || 'this client'}</strong> ({serviceType || 'service'}, {fy || 'FY —'}).
+                  </p>
+                  <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+                    Assigned users can be notified by email. This cannot be undone. Continue only if you are sure — the next step will ask for a superadmin OTP.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setServiceDeleteStep('warn');
+                      setDeleteOtp('');
+                      setDeleteOtpSent(false);
+                      setDeleteModalErr('');
+                    }}
+                    style={{ ...deleteBtnSecondaryStyle, alignSelf: 'flex-start' }}
+                  >
+                    ← Back
+                  </button>
+                  <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+                    Request a superadmin OTP and enter it to authorize deletion for <strong>{clientName || 'this client'}</strong> ({serviceType || 'service'}).
+                  </p>
+                  {deleteModalErr && <div style={{ color: '#dc2626', fontSize: 13 }}>{deleteModalErr}</div>}
+                  <button type="button" style={deleteBtnSecondaryStyle} disabled={requestingDeleteOtp} onClick={sendDeleteOtp}>
+                    {requestingDeleteOtp && !deleteOtpSent ? 'Sending…' : 'Request superadmin OTP'}
+                  </button>
+                  {deleteOtpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent to superadmin email</span>}
+                  <label style={deleteLabelStyle}>
+                    Superadmin OTP *
+                    <input
+                      type="text"
+                      style={deleteInputStyle}
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={deleteOtp}
+                      onChange={(e) => setDeleteOtp(e.target.value.replace(/\s/g, ''))}
+                    />
+                  </label>
+                </>
+              )}
             </div>
             <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-              <button type="button" onClick={() => setDeleteModalOpen(false)} style={deleteBtnSecondaryStyle}>Cancel</button>
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={confirmDeleteEngagement}
-                style={{ ...deleteBtnPrimaryStyle, background: '#b91c1c' }}
-              >
-                {deleting ? 'Deleting…' : 'Delete engagement'}
-              </button>
+              {serviceDeleteStep === 'warn' ? (
+                <>
+                  <button type="button" onClick={closeDeleteEngagementModal} style={deleteBtnSecondaryStyle}>Cancel</button>
+                  <button
+                    type="button"
+                    onClick={() => setServiceDeleteStep('otp')}
+                    style={{ ...deleteBtnPrimaryStyle, background: '#b91c1c' }}
+                  >
+                    Continue to OTP
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={closeDeleteEngagementModal} style={deleteBtnSecondaryStyle}>Cancel</button>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={confirmDeleteEngagement}
+                    style={{ ...deleteBtnPrimaryStyle, background: '#b91c1c' }}
+                  >
+                    {deleting ? 'Deleting…' : 'Delete engagement'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

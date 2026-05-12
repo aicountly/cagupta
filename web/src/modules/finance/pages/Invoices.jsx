@@ -4,7 +4,8 @@ import {
   getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createTds, finalizeTds,
   getTdsEntries, createRebate, createCreditNote, getLedger,
   getOpeningBalance, setOpeningBalance,
-  updateTxn, deleteTxn, requestInvoiceModifyOtp,
+  updateTxn, requestInvoiceModifyOtp,
+  requestLedgerDeleteOtp, bulkDeleteTxns,
   postInvoiceCostAnalysisPreview,
 } from '../services/txnService';
 import { useAuth } from '../../../auth/AuthContext';
@@ -22,6 +23,7 @@ import { buildLedgerDetailLine } from '../../../utils/ledgerTxnDetails';
 import StatusBadge from '../../../components/common/StatusBadge';
 import ClientSearchDropdown from '../../../components/common/ClientSearchDropdown';
 import EntitySearchDropdown from '../../../components/common/EntitySearchDropdown';
+import LineItemPresetCombobox from '../../../components/common/LineItemPresetCombobox';
 import DateInput from '../../../components/common/DateInput';
 import { getBillingProfiles, getBillingProfileByCode } from '../../../constants/billingProfiles';
 import { listFirmBankAccounts } from '../../../services/firmBankAccountService';
@@ -405,16 +407,13 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
             <div style={{ display:'flex', flexDirection:'column', gap:10, marginTop:4 }}>
               {form.lines.map((row, idx) => (
                 <div key={idx} style={{ display:'flex', flexDirection:'column', gap:6, paddingBottom:8, borderBottom:'1px solid #f1f5f9' }}>
-                  <select
-                    style={{ ...inputStyle, fontSize:12 }}
+                  <LineItemPresetCombobox
                     value={row.presetKey}
-                    onChange={(e) => applyPreset(idx, e.target.value)}
-                  >
-                    <option value="">Custom description…</option>
-                    {lineOptions.map((o) => (
-                      <option key={o.key} value={o.key}>{o.description}</option>
-                    ))}
-                  </select>
+                    options={lineOptions}
+                    onChange={(key) => applyPreset(idx, key)}
+                    placeholder="Custom — type to search services…"
+                    style={{ ...inputStyle, fontSize: 12 }}
+                  />
                   <div style={{ display:'grid', gridTemplateColumns:'1fr 120px 36px', gap:8, alignItems:'center' }}>
                     <input
                       type="text"
@@ -450,8 +449,8 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
                         value={row.lineKind}
                         onChange={(e) => setLine(idx, 'lineKind', e.target.value)}
                       >
-                        <option value="professional_fee">Professional fee</option>
-                        <option value="cost_recovery">Cost recovery</option>
+                        <option value="professional_fee">Professional Fee</option>
+                        <option value="cost_recovery">Tax Challans n Reimbursements</option>
                       </select>
                     </label>
                   </div>
@@ -664,7 +663,7 @@ function InvoiceViewModal({ txn, onClose, onEdit, onDelete, canEditInvoice, canD
                           <td style={{ padding:'8px 0', verticalAlign:'top' }}>
                             <div>{row.description}</div>
                             {row.lineKind === 'cost_recovery' ? (
-                              <div style={{ fontSize:10, fontWeight:700, color:'#b45309', marginTop:4 }}>Cost recovery</div>
+                              <div style={{ fontSize:10, fontWeight:700, color:'#b45309', marginTop:4 }}>Tax Challans n Reimbursements</div>
                             ) : null}
                           </td>
                           <td style={{ padding:'8px 0', textAlign:'right', fontWeight:600 }}>{Number(row.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
@@ -926,8 +925,8 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                     <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                       Line type
                       <select style={{ ...inputStyle, fontSize: 12, width: 160 }} value={line.lineKind} onChange={(e) => setLine(idx, 'lineKind', e.target.value)}>
-                        <option value="professional_fee">Professional fee</option>
-                        <option value="cost_recovery">Cost recovery</option>
+                        <option value="professional_fee">Professional Fee</option>
+                        <option value="cost_recovery">Tax Challans n Reimbursements</option>
                       </select>
                     </label>
                   </div>
@@ -956,17 +955,21 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
   );
 }
 
-function DeleteInvoiceModal({ invoice, onClose, onDeleted }) {
+/** Single or bulk ledger delete: one superadmin OTP authorizes the batch. */
+function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const ids = useMemo(() => items.map((i) => i.id), [items]);
+  const isPlural = items.length !== 1;
+  const heading = title || (isPlural ? `Delete ${items.length} records` : 'Delete ledger record');
 
   async function sendOtp() {
     setErr('');
     setBusy(true);
     try {
-      await requestInvoiceModifyOtp(invoice.id, { intent: 'delete' });
+      await requestLedgerDeleteOtp(ids);
       setOtpSent(true);
     } catch (e) {
       setErr(e.message || 'Failed to send OTP.');
@@ -983,8 +986,9 @@ function DeleteInvoiceModal({ invoice, onClose, onDeleted }) {
     setBusy(true);
     setErr('');
     try {
-      await deleteTxn(invoice.id, { superadminOtp: otp.trim() });
-      onDeleted(invoice.id);
+      const raw = await bulkDeleteTxns(ids, { superadminOtp: otp.trim() });
+      const removed = Array.isArray(raw?.txn_ids) ? raw.txn_ids : ids;
+      onDeleted(removed);
       onClose();
     } catch (e) {
       setErr(e.message || 'Delete failed.');
@@ -997,15 +1001,26 @@ function DeleteInvoiceModal({ invoice, onClose, onDeleted }) {
     <div style={overlayStyle}>
       <div style={modalStyle}>
         <div style={modalHeaderStyle}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: '#b91c1c' }}>Delete invoice</span>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#b91c1c' }}>{heading}</span>
           <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
         </div>
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
-            Permanently delete <strong>{invoice.invoiceNumber || `INV-${invoice.id}`}</strong> for {invoice.clientName}? This cannot be undone.
+            {isPlural ? (
+              <>Permanently delete <strong>{items.length}</strong> selected ledger transaction(s). This cannot be undone.</>
+            ) : (
+              <>Permanently delete <strong>{items[0]?.label || `#${items[0]?.id}`}</strong>? This cannot be undone.</>
+            )}
           </p>
+          {isPlural && (
+            <ul style={{ fontSize: 12, color: '#475569', margin: 0, paddingLeft: 18, maxHeight: 160, overflow: 'auto' }}>
+              {items.map((it) => (
+                <li key={it.id} style={{ marginBottom: 4 }}>{it.label || `Transaction #${it.id}`}</li>
+              ))}
+            </ul>
+          )}
           <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
-            Request a superadmin OTP, then enter it to confirm.
+            Request a superadmin OTP (one code for this entire batch), then enter it to confirm.
           </p>
           {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
           <button type="button" style={btnSecondary} disabled={busy} onClick={sendOtp}>
@@ -1019,7 +1034,9 @@ function DeleteInvoiceModal({ invoice, onClose, onDeleted }) {
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button type="button" disabled={busy} onClick={confirmDelete} style={{ ...btnPrimary, background: '#b91c1c' }}>Delete invoice</button>
+          <button type="button" disabled={busy} onClick={confirmDelete} style={{ ...btnPrimary, background: '#b91c1c' }}>
+            {isPlural ? `Delete ${items.length} records` : 'Delete'}
+          </button>
         </div>
       </div>
     </div>
@@ -1758,7 +1775,8 @@ export default function Invoices() {
   const [selectedInvoice, setSelectedInvoice]   = useState(null);
   const [viewInvoiceTxn, setViewInvoiceTxn]     = useState(null);
   const [editInvoiceId, setEditInvoiceId]       = useState(null);
-  const [deleteInvoiceTxn, setDeleteInvoiceTxn] = useState(null);
+  const [ledgerDeletePrompt, setLedgerDeletePrompt] = useState(null);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState([]);
   const [invoices, setInvoices]                 = useState([]);
   const [invLoading, setInvLoading]             = useState(true);
 
@@ -1767,18 +1785,21 @@ export default function Invoices() {
   const [recLoading, setRecLoading]     = useState(false);
   const [recLoaded, setRecLoaded]       = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [selectedReceiptIds, setSelectedReceiptIds] = useState([]);
 
   // ── Payments (on behalf) tab state ─────────────────────────────────────────
   const [paymentExpenses, setPaymentExpenses] = useState([]);
   const [payLoading, setPayLoading] = useState(false);
   const [payLoaded, setPayLoaded] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState([]);
 
   // ── TDS tab state ───────────────────────────────────────────────────────────
   const [tdsFilter, setTdsFilter]       = useState('all');
   const [tdsEntries, setTdsEntries]     = useState([]);
   const [tdsLoading, setTdsLoading]     = useState(false);
   const [selectedTds, setSelectedTds]   = useState([]);
+  const [selectedTdsDeleteIds, setSelectedTdsDeleteIds] = useState([]);
   const [showTdsModal, setShowTdsModal] = useState(false);
 
   // ── Rebate tab state ────────────────────────────────────────────────────────
@@ -1786,12 +1807,14 @@ export default function Invoices() {
   const [rebLoading, setRebLoading]         = useState(false);
   const [rebLoaded, setRebLoaded]           = useState(false);
   const [showRebateModal, setShowRebateModal] = useState(false);
+  const [selectedRebateIds, setSelectedRebateIds] = useState([]);
 
   // ── Credit Note tab state ───────────────────────────────────────────────────
   const [creditNotes, setCreditNotes]     = useState([]);
   const [cnLoading, setCnLoading]         = useState(false);
   const [cnLoaded, setCnLoaded]           = useState(false);
   const [showCnModal, setShowCnModal]     = useState(false);
+  const [selectedCreditNoteIds, setSelectedCreditNoteIds] = useState([]);
 
   // ── Ledger tab state ────────────────────────────────────────────────────────
   const [ledgerClientId, setLedgerClientId]       = useState('');
@@ -2234,6 +2257,29 @@ export default function Invoices() {
     );
   }
 
+  function toggleTdsDeleteSelect(id) {
+    setSelectedTdsDeleteIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  function handleLedgerDeleted(deletedIds) {
+    const idSet = new Set((deletedIds || []).map((x) => String(x)));
+    setInvoices((prev) => prev.filter((x) => !idSet.has(String(x.id))));
+    setReceipts((prev) => prev.filter((x) => !idSet.has(String(x.id))));
+    setPaymentExpenses((prev) => prev.filter((x) => !idSet.has(String(x.id))));
+    setTdsEntries((prev) => prev.filter((x) => !idSet.has(String(x.id))));
+    setRebates((prev) => prev.filter((x) => !idSet.has(String(x.id))));
+    setCreditNotes((prev) => prev.filter((x) => !idSet.has(String(x.id))));
+    setSelectedInvoiceIds([]);
+    setSelectedReceiptIds([]);
+    setSelectedPaymentIds([]);
+    setSelectedTds([]);
+    setSelectedTdsDeleteIds([]);
+    setSelectedRebateIds([]);
+    setSelectedCreditNoteIds([]);
+  }
+
   function refreshBillingReport() {
     getBillingReport({
       page: billingPage,
@@ -2387,7 +2433,13 @@ export default function Invoices() {
           canEditInvoice={canEditInvoice}
           canDeleteInvoice={canDeleteInvoice}
           onEdit={(t) => { setViewInvoiceTxn(null); setEditInvoiceId(t.id); }}
-          onDelete={(t) => { setViewInvoiceTxn(null); setDeleteInvoiceTxn(t); }}
+          onDelete={(t) => {
+            setViewInvoiceTxn(null);
+            setLedgerDeletePrompt({
+              title: 'Delete invoice',
+              items: [{ id: t.id, label: `${t.invoiceNumber || `INV-${t.id}`} — ${t.clientName}` }],
+            });
+          }}
         />
       )}
       {editInvoiceId != null && (
@@ -2399,13 +2451,12 @@ export default function Invoices() {
           }}
         />
       )}
-      {deleteInvoiceTxn && (
-        <DeleteInvoiceModal
-          invoice={deleteInvoiceTxn}
-          onClose={() => setDeleteInvoiceTxn(null)}
-          onDeleted={(id) => {
-            setInvoices((prev) => prev.filter((x) => String(x.id) !== String(id)));
-          }}
+      {ledgerDeletePrompt && (
+        <LedgerDeleteModal
+          title={ledgerDeletePrompt.title}
+          items={ledgerDeletePrompt.items}
+          onClose={() => setLedgerDeletePrompt(null)}
+          onDeleted={handleLedgerDeleted}
         />
       )}
       {showRecordPayment && (
@@ -2518,15 +2569,55 @@ export default function Invoices() {
               </button>
             ))}
           </div>
+          {canDeleteInvoice && selectedInvoiceIds.length > 0 && (
+            <div style={{ padding: '10px 16px', background: '#fef2f2', borderBottom: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#991b1b', fontWeight: 600 }}>{selectedInvoiceIds.length} selected</span>
+              <button
+                type="button"
+                style={{ ...btnPrimary, background: '#b91c1c', fontSize: 12, padding: '6px 12px' }}
+                onClick={() => setLedgerDeletePrompt({
+                  title: 'Delete invoices',
+                  items: selectedInvoiceIds.map((id) => {
+                    const inv = invoices.find((x) => Number(x.id) === Number(id));
+                    return {
+                      id,
+                      label: inv ? `${inv.invoiceNumber || `INV-${inv.id}`} — ${inv.clientName}` : `Invoice #${id}`,
+                    };
+                  }),
+                })}
+              >
+                Delete selected
+              </button>
+              <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedInvoiceIds([])}>Clear selection</button>
+            </div>
+          )}
           <table style={tableStyle}>
             <thead>
-              <tr>{['Invoice #','Client','Date','Due Date','Amount','Billing Profile','Status','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
+              <tr>
+                {canDeleteInvoice && (
+                  <th style={{ ...thStyle, width: 36 }}>
+                    <input
+                      type="checkbox"
+                      title="Select all"
+                      checked={filteredInvoices.length > 0 && filteredInvoices.every((i) => selectedInvoiceIds.some((x) => Number(x) === Number(i.id)))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedInvoiceIds(filteredInvoices.map((x) => x.id));
+                        } else {
+                          setSelectedInvoiceIds([]);
+                        }
+                      }}
+                    />
+                  </th>
+                )}
+                {['Invoice #','Client','Date','Due Date','Amount','Billing Profile','Status','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+              </tr>
             </thead>
             <tbody>
               {invLoading ? (
-                <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading invoices…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading invoices…</td></tr>
               ) : filteredInvoices.length === 0 ? (
-                <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices found.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices found.</td></tr>
               ) : filteredInvoices.map(i=>(
                 <tr
                   key={i.id}
@@ -2534,6 +2625,18 @@ export default function Invoices() {
                   style={{ ...trStyle, cursor: 'pointer' }}
                   onClick={() => setViewInvoiceTxn(i)}
                 >
+                  {canDeleteInvoice && (
+                    <td style={{ ...tdStyle, width: 36 }} onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedInvoiceIds.some((x) => Number(x) === Number(i.id))}
+                        onChange={() => setSelectedInvoiceIds((prev) => {
+                          const has = prev.some((x) => Number(x) === Number(i.id));
+                          return has ? prev.filter((x) => Number(x) !== Number(i.id)) : [...prev, i.id];
+                        })}
+                      />
+                    </td>
+                  )}
                   <td style={{ ...tdStyle, fontWeight:600, fontFamily:'monospace', fontSize:12 }}>{i.invoiceNumber || `INV-${i.id}`}</td>
                   <td style={tdStyle}>{i.clientName}</td>
                   <td style={tdStyle}>{i.txnDate || i.invoiceDate}</td>
@@ -2551,7 +2654,19 @@ export default function Invoices() {
                       <button type="button" style={iconBtn} onClick={(e) => { e.stopPropagation(); handleRazorpayCollect(i); }} title="Collect with Razorpay">₹ Razorpay</button>
                     )}
                     {canDeleteInvoice && (
-                      <button type="button" style={iconBtn} onClick={() => setDeleteInvoiceTxn(i)}>🗑 Delete</button>
+                      <button
+                        type="button"
+                        style={iconBtn}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLedgerDeletePrompt({
+                            title: 'Delete invoice',
+                            items: [{ id: i.id, label: `${i.invoiceNumber || `INV-${i.id}`} — ${i.clientName}` }],
+                          });
+                        }}
+                      >
+                        🗑 Delete
+                      </button>
                     )}
                   </td>
                 </tr>
@@ -2564,17 +2679,71 @@ export default function Invoices() {
       {/* ── Tab: Receipts ─────────────────────────────────────────────────── */}
       {tab==='receipts' && (
         <div style={cardStyle}>
+          {canDeleteInvoice && selectedReceiptIds.length > 0 && (
+            <div style={{ padding: '10px 16px', background: '#fef2f2', borderBottom: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#991b1b', fontWeight: 600 }}>{selectedReceiptIds.length} selected</span>
+              <button
+                type="button"
+                style={{ ...btnPrimary, background: '#b91c1c', fontSize: 12, padding: '6px 12px' }}
+                onClick={() => setLedgerDeletePrompt({
+                  title: 'Delete receipts',
+                  items: selectedReceiptIds.map((id) => {
+                    const r = receipts.find((x) => Number(x.id) === Number(id));
+                    return {
+                      id,
+                      label: r
+                        ? `${r.txnDate || '—'} — ${r.clientName} — ₹${(r.amount || 0).toLocaleString('en-IN')}`
+                        : `Receipt #${id}`,
+                    };
+                  }),
+                })}
+              >
+                Delete selected
+              </button>
+              <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedReceiptIds([])}>Clear selection</button>
+            </div>
+          )}
           <table style={tableStyle}>
             <thead>
-              <tr>{['Date','Client','Amount','Method','Reference No.','Billing Profile','Linked Invoice','Notes'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
+              <tr>
+                {canDeleteInvoice && (
+                  <th style={{ ...thStyle, width: 36 }}>
+                    <input
+                      type="checkbox"
+                      title="Select all"
+                      checked={receipts.length > 0 && receipts.every((r) => selectedReceiptIds.some((x) => Number(x) === Number(r.id)))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedReceiptIds(receipts.map((x) => x.id));
+                        } else {
+                          setSelectedReceiptIds([]);
+                        }
+                      }}
+                    />
+                  </th>
+                )}
+                {['Date','Client','Amount','Method','Reference No.','Billing Profile','Linked Invoice','Notes','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+              </tr>
             </thead>
             <tbody>
               {recLoading ? (
-                <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
               ) : receipts.length === 0 ? (
-                <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
               ) : receipts.map(r=>(
                 <tr key={r.id} style={trStyle}>
+                  {canDeleteInvoice && (
+                    <td style={{ ...tdStyle, width: 36 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedReceiptIds.some((x) => Number(x) === Number(r.id))}
+                        onChange={() => setSelectedReceiptIds((prev) => {
+                          const has = prev.some((x) => Number(x) === Number(r.id));
+                          return has ? prev.filter((x) => Number(x) !== Number(r.id)) : [...prev, r.id];
+                        })}
+                      />
+                    </td>
+                  )}
                   <td style={tdStyle}>{r.txnDate}</td>
                   <td style={tdStyle}>{r.clientName}</td>
                   <td style={{ ...tdStyle, fontWeight:600, color:'#16a34a' }}>₹{r.amount.toLocaleString('en-IN')}</td>
@@ -2583,6 +2752,23 @@ export default function Invoices() {
                   <td style={tdStyle}><BillingProfileBadge code={r.billingProfileCode} /></td>
                   <td style={tdStyle}>{r.linkedTxnId ? `#${r.linkedTxnId}` : '—'}</td>
                   <td style={tdStyle}>{r.notes || '—'}</td>
+                  <td style={tdStyle}>
+                    {canDeleteInvoice && (
+                      <button
+                        type="button"
+                        style={iconBtn}
+                        onClick={() => setLedgerDeletePrompt({
+                          title: 'Delete receipt',
+                          items: [{
+                            id: r.id,
+                            label: `${r.txnDate || '—'} — ${r.clientName} — ₹${(r.amount || 0).toLocaleString('en-IN')}`,
+                          }],
+                        })}
+                      >
+                        🗑 Delete
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -2593,21 +2779,73 @@ export default function Invoices() {
       {/* ── Tab: Payments (on behalf) ───────────────────────────────────────── */}
       {tab === 'payments' && (
         <div style={cardStyle}>
+          {canDeleteInvoice && selectedPaymentIds.length > 0 && (
+            <div style={{ padding: '10px 16px', background: '#fef2f2', borderBottom: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#991b1b', fontWeight: 600 }}>{selectedPaymentIds.length} selected</span>
+              <button
+                type="button"
+                style={{ ...btnPrimary, background: '#b91c1c', fontSize: 12, padding: '6px 12px' }}
+                onClick={() => setLedgerDeletePrompt({
+                  title: 'Delete payments (on behalf)',
+                  items: selectedPaymentIds.map((id) => {
+                    const p = paymentExpenses.find((x) => Number(x.id) === Number(id));
+                    return {
+                      id,
+                      label: p
+                        ? `${p.txnDate || '—'} — ${p.clientName} — ₹${(p.amount || 0).toLocaleString('en-IN')}`
+                        : `Payment #${id}`,
+                    };
+                  }),
+                })}
+              >
+                Delete selected
+              </button>
+              <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedPaymentIds([])}>Clear selection</button>
+            </div>
+          )}
           <table style={tableStyle}>
             <thead>
               <tr>
-                {['Date', 'Client', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes'].map((h) => (
+                {canDeleteInvoice && (
+                  <th style={{ ...thStyle, width: 36 }}>
+                    <input
+                      type="checkbox"
+                      title="Select all"
+                      checked={paymentExpenses.length > 0 && paymentExpenses.every((p) => selectedPaymentIds.some((x) => Number(x) === Number(p.id)))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedPaymentIds(paymentExpenses.map((x) => x.id));
+                        } else {
+                          setSelectedPaymentIds([]);
+                        }
+                      }}
+                    />
+                  </th>
+                )}
+                {['Date', 'Client', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Actions'].map((h) => (
                   <th key={h} style={thStyle}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {payLoading ? (
-                <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
               ) : paymentExpenses.length === 0 ? (
-                <tr><td colSpan={10} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
               ) : paymentExpenses.map((p) => (
                 <tr key={p.id} style={trStyle}>
+                  {canDeleteInvoice && (
+                    <td style={{ ...tdStyle, width: 36 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedPaymentIds.some((x) => Number(x) === Number(p.id))}
+                        onChange={() => setSelectedPaymentIds((prev) => {
+                          const has = prev.some((x) => Number(x) === Number(p.id));
+                          return has ? prev.filter((x) => Number(x) !== Number(p.id)) : [...prev, p.id];
+                        })}
+                      />
+                    </td>
+                  )}
                   <td style={tdStyle}>{p.txnDate}</td>
                   <td style={tdStyle}>{p.clientName}</td>
                   <td style={{ ...tdStyle, fontWeight: 600, color: '#b91c1c' }} title="Recoverable from client (ledger debit)">₹{p.amount.toLocaleString('en-IN')}</td>
@@ -2618,6 +2856,23 @@ export default function Invoices() {
                   <td style={{ ...tdStyle, maxWidth: 200, whiteSpace: 'normal' }}>{p.narration || '—'}</td>
                   <td style={tdStyle}><BillingProfileBadge code={p.billingProfileCode} /></td>
                   <td style={{ ...tdStyle, maxWidth: 160, whiteSpace: 'normal' }}>{p.notes || '—'}</td>
+                  <td style={tdStyle}>
+                    {canDeleteInvoice && (
+                      <button
+                        type="button"
+                        style={iconBtn}
+                        onClick={() => setLedgerDeletePrompt({
+                          title: 'Delete payment (on behalf)',
+                          items: [{
+                            id: p.id,
+                            label: `${p.txnDate || '—'} — ${p.clientName} — ₹${(p.amount || 0).toLocaleString('en-IN')}`,
+                          }],
+                        })}
+                      >
+                        🗑 Delete
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -2628,9 +2883,9 @@ export default function Invoices() {
       {/* ── Tab: TDS ──────────────────────────────────────────────────────── */}
       {tab==='tds' && (
         <div style={cardStyle}>
-          <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', gap:8, alignItems:'center' }}>
+          <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
             {['all','provisional','final'].map(s=>(
-              <button key={s} onClick={()=>{ setTdsFilter(s); setSelectedTds([]); }} style={{ padding:'4px 12px', background: tdsFilter===s?'#7c3aed':'#f8fafc', color: tdsFilter===s?'#fff':'#64748b', border:'1px solid #e2e8f0', borderRadius:16, fontSize:12, cursor:'pointer', fontWeight:600 }}>
+              <button key={s} onClick={()=>{ setTdsFilter(s); setSelectedTds([]); setSelectedTdsDeleteIds([]); }} style={{ padding:'4px 12px', background: tdsFilter===s?'#7c3aed':'#f8fafc', color: tdsFilter===s?'#fff':'#64748b', border:'1px solid #e2e8f0', borderRadius:16, fontSize:12, cursor:'pointer', fontWeight:600 }}>
                 {s==='all'?'All':s.charAt(0).toUpperCase()+s.slice(1)}
               </button>
             ))}
@@ -2639,23 +2894,57 @@ export default function Invoices() {
                 ✅ Mark as Final ({selectedTds.length} selected)
               </button>
             )}
+            {canDeleteInvoice && selectedTdsDeleteIds.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setLedgerDeletePrompt({
+                  title: 'Delete TDS entries',
+                  items: selectedTdsDeleteIds.map((id) => {
+                    const t = tdsEntries.find((x) => Number(x.id) === Number(id));
+                    return {
+                      id,
+                      label: t
+                        ? `${t.txnDate || '—'} — ${t.clientName} — ₹${(t.amount || 0).toLocaleString('en-IN')} (${t.txnType || ''})`
+                        : `TDS #${id}`,
+                    };
+                  }),
+                })}
+                style={{ ...btnPrimary, background:'#b91c1c', marginLeft:8, fontSize:12, padding:'6px 14px' }}
+              >
+                🗑 Delete selected ({selectedTdsDeleteIds.length})
+              </button>
+            )}
           </div>
           <table style={tableStyle}>
             <thead>
-              <tr>{['','Date','Client','Amount','Section','Rate','Status','Billing Profile'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
+              <tr>
+                <th style={{ ...thStyle, width: 44, fontSize: 11 }} title="Mark provisional as final">Final</th>
+                {canDeleteInvoice && <th style={{ ...thStyle, width: 36, fontSize: 11 }}>Del</th>}
+                {['Date','Client','Amount','Section','Rate','Status','Billing Profile'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+                {canDeleteInvoice && <th style={thStyle}>Actions</th>}
+              </tr>
             </thead>
             <tbody>
               {tdsLoading ? (
-                <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading TDS entries…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading TDS entries…</td></tr>
               ) : tdsEntries.length === 0 ? (
-                <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries found. Click "+ Book TDS" to add one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries found. Click "+ Book TDS" to add one.</td></tr>
               ) : tdsEntries.map(t=>(
                 <tr key={t.id} style={trStyle}>
-                  <td style={{ ...tdStyle, width:32 }}>
+                  <td style={{ ...tdStyle, width:44 }}>
                     {t.tdsStatus === 'provisional' && (
                       <input type="checkbox" checked={selectedTds.includes(t.id)} onChange={()=>toggleTdsSelect(t.id)} />
                     )}
                   </td>
+                  {canDeleteInvoice && (
+                    <td style={{ ...tdStyle, width:36 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedTdsDeleteIds.includes(t.id)}
+                        onChange={() => toggleTdsDeleteSelect(t.id)}
+                      />
+                    </td>
+                  )}
                   <td style={tdStyle}>{t.txnDate}</td>
                   <td style={tdStyle}>{t.clientName}</td>
                   <td style={{ ...tdStyle, fontWeight:600 }}>₹{t.amount.toLocaleString('en-IN')}</td>
@@ -2663,6 +2952,23 @@ export default function Invoices() {
                   <td style={tdStyle}>{t.tdsRate ? `${t.tdsRate}%` : '—'}</td>
                   <td style={tdStyle}><TxnTypeBadge type={t.txnType} /></td>
                   <td style={tdStyle}><BillingProfileBadge code={t.billingProfileCode} /></td>
+                  {canDeleteInvoice && (
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        style={iconBtn}
+                        onClick={() => setLedgerDeletePrompt({
+                          title: 'Delete TDS entry',
+                          items: [{
+                            id: t.id,
+                            label: `${t.txnDate || '—'} — ${t.clientName} — ₹${(t.amount || 0).toLocaleString('en-IN')} (${t.txnType || ''})`,
+                          }],
+                        })}
+                      >
+                        🗑 Delete
+                      </button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -2673,23 +2979,94 @@ export default function Invoices() {
       {/* ── Tab: Rebate/Discount ──────────────────────────────────────────── */}
       {tab==='rebate' && (
         <div style={cardStyle}>
+          {canDeleteInvoice && selectedRebateIds.length > 0 && (
+            <div style={{ padding: '10px 16px', background: '#fef2f2', borderBottom: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#991b1b', fontWeight: 600 }}>{selectedRebateIds.length} selected</span>
+              <button
+                type="button"
+                style={{ ...btnPrimary, background: '#b91c1c', fontSize: 12, padding: '6px 12px' }}
+                onClick={() => setLedgerDeletePrompt({
+                  title: 'Delete rebate / discount',
+                  items: selectedRebateIds.map((id) => {
+                    const r = rebates.find((x) => Number(x.id) === Number(id));
+                    return {
+                      id,
+                      label: r
+                        ? `${r.txnDate || '—'} — ${r.clientName} — ₹${(r.amount || 0).toLocaleString('en-IN')}`
+                        : `Rebate #${id}`,
+                    };
+                  }),
+                })}
+              >
+                Delete selected
+              </button>
+              <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedRebateIds([])}>Clear selection</button>
+            </div>
+          )}
           <table style={tableStyle}>
             <thead>
-              <tr>{['Date','Client','Amount','Narration','Billing Profile','Notes'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
+              <tr>
+                {canDeleteInvoice && (
+                  <th style={{ ...thStyle, width: 36 }}>
+                    <input
+                      type="checkbox"
+                      title="Select all"
+                      checked={rebates.length > 0 && rebates.every((r) => selectedRebateIds.some((x) => Number(x) === Number(r.id)))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedRebateIds(rebates.map((x) => x.id));
+                        } else {
+                          setSelectedRebateIds([]);
+                        }
+                      }}
+                    />
+                  </th>
+                )}
+                {['Date','Client','Amount','Narration','Billing Profile','Notes','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+              </tr>
             </thead>
             <tbody>
               {rebLoading ? (
-                <tr><td colSpan={6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading rebate entries…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 8 : 6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading rebate entries…</td></tr>
               ) : rebates.length === 0 ? (
-                <tr><td colSpan={6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No rebate/discount entries found. Click "+ Rebate/Discount" to add one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 8 : 6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No rebate/discount entries found. Click "+ Rebate/Discount" to add one.</td></tr>
               ) : rebates.map(r=>(
                 <tr key={r.id} style={trStyle}>
+                  {canDeleteInvoice && (
+                    <td style={{ ...tdStyle, width: 36 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedRebateIds.some((x) => Number(x) === Number(r.id))}
+                        onChange={() => setSelectedRebateIds((prev) => {
+                          const has = prev.some((x) => Number(x) === Number(r.id));
+                          return has ? prev.filter((x) => Number(x) !== Number(r.id)) : [...prev, r.id];
+                        })}
+                      />
+                    </td>
+                  )}
                   <td style={tdStyle}>{r.txnDate}</td>
                   <td style={tdStyle}>{r.clientName}</td>
                   <td style={{ ...tdStyle, fontWeight:600, color:'#be123c' }}>₹{r.amount.toLocaleString('en-IN')}</td>
                   <td style={tdStyle}>{r.narration || '—'}</td>
                   <td style={tdStyle}><BillingProfileBadge code={r.billingProfileCode} /></td>
                   <td style={tdStyle}>{r.notes || '—'}</td>
+                  <td style={tdStyle}>
+                    {canDeleteInvoice && (
+                      <button
+                        type="button"
+                        style={iconBtn}
+                        onClick={() => setLedgerDeletePrompt({
+                          title: 'Delete rebate / discount',
+                          items: [{
+                            id: r.id,
+                            label: `${r.txnDate || '—'} — ${r.clientName} — ₹${(r.amount || 0).toLocaleString('en-IN')}`,
+                          }],
+                        })}
+                      >
+                        🗑 Delete
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -2700,23 +3077,94 @@ export default function Invoices() {
       {/* ── Tab: Credit Notes ─────────────────────────────────────────────── */}
       {tab==='credit_note' && (
         <div style={cardStyle}>
+          {canDeleteInvoice && selectedCreditNoteIds.length > 0 && (
+            <div style={{ padding: '10px 16px', background: '#fef2f2', borderBottom: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#991b1b', fontWeight: 600 }}>{selectedCreditNoteIds.length} selected</span>
+              <button
+                type="button"
+                style={{ ...btnPrimary, background: '#b91c1c', fontSize: 12, padding: '6px 12px' }}
+                onClick={() => setLedgerDeletePrompt({
+                  title: 'Delete credit notes',
+                  items: selectedCreditNoteIds.map((id) => {
+                    const c = creditNotes.find((x) => Number(x.id) === Number(id));
+                    return {
+                      id,
+                      label: c
+                        ? `${c.txnDate || '—'} — ${c.clientName} — ₹${(c.amount || 0).toLocaleString('en-IN')}${c.linkedTxnId ? ` (inv #${c.linkedTxnId})` : ''}`
+                        : `Credit note #${id}`,
+                    };
+                  }),
+                })}
+              >
+                Delete selected
+              </button>
+              <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedCreditNoteIds([])}>Clear selection</button>
+            </div>
+          )}
           <table style={tableStyle}>
             <thead>
-              <tr>{['Date','Client','Amount','Linked Invoice','Narration','Billing Profile'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
+              <tr>
+                {canDeleteInvoice && (
+                  <th style={{ ...thStyle, width: 36 }}>
+                    <input
+                      type="checkbox"
+                      title="Select all"
+                      checked={creditNotes.length > 0 && creditNotes.every((c) => selectedCreditNoteIds.some((x) => Number(x) === Number(c.id)))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedCreditNoteIds(creditNotes.map((x) => x.id));
+                        } else {
+                          setSelectedCreditNoteIds([]);
+                        }
+                      }}
+                    />
+                  </th>
+                )}
+                {['Date','Client','Amount','Linked Invoice','Narration','Billing Profile','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+              </tr>
             </thead>
             <tbody>
               {cnLoading ? (
-                <tr><td colSpan={6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading credit notes…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 8 : 6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading credit notes…</td></tr>
               ) : creditNotes.length === 0 ? (
-                <tr><td colSpan={6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes found. Click "+ Credit Note" to add one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 8 : 6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes found. Click "+ Credit Note" to add one.</td></tr>
               ) : creditNotes.map(c=>(
                 <tr key={c.id} style={trStyle}>
+                  {canDeleteInvoice && (
+                    <td style={{ ...tdStyle, width: 36 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedCreditNoteIds.some((x) => Number(x) === Number(c.id))}
+                        onChange={() => setSelectedCreditNoteIds((prev) => {
+                          const has = prev.some((x) => Number(x) === Number(c.id));
+                          return has ? prev.filter((x) => Number(x) !== Number(c.id)) : [...prev, c.id];
+                        })}
+                      />
+                    </td>
+                  )}
                   <td style={tdStyle}>{c.txnDate}</td>
                   <td style={tdStyle}>{c.clientName}</td>
                   <td style={{ ...tdStyle, fontWeight:600, color:'#854d0e' }}>₹{c.amount.toLocaleString('en-IN')}</td>
                   <td style={tdStyle}>{c.linkedTxnId ? `#${c.linkedTxnId}` : '—'}</td>
                   <td style={tdStyle}>{c.narration || '—'}</td>
                   <td style={tdStyle}><BillingProfileBadge code={c.billingProfileCode} /></td>
+                  <td style={tdStyle}>
+                    {canDeleteInvoice && (
+                      <button
+                        type="button"
+                        style={iconBtn}
+                        onClick={() => setLedgerDeletePrompt({
+                          title: 'Delete credit note',
+                          items: [{
+                            id: c.id,
+                            label: `${c.txnDate || '—'} — ${c.clientName} — ₹${(c.amount || 0).toLocaleString('en-IN')}${c.linkedTxnId ? ` (inv #${c.linkedTxnId})` : ''}`,
+                          }],
+                        })}
+                      >
+                        🗑 Delete
+                      </button>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
