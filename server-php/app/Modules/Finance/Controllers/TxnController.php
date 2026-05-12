@@ -198,6 +198,13 @@ class TxnController extends BaseController
                 } catch (\InvalidArgumentException $e) {
                     $this->error($e->getMessage(), 422);
                 }
+                $settlementMode = trim((string)($body['settlement_mode'] ?? ''));
+                if (!in_array($settlementMode, ['receipt', 'unallocated_advance'], true)) {
+                    $this->error(
+                        'settlement_mode is required for payment_expense: receipt or unallocated_advance.',
+                        422
+                    );
+                }
                 $settleReceiptId = (int)($body['settle_from_receipt_id'] ?? 0);
                 $settleRef       = trim((string)($body['settle_from_receipt_public_ref'] ?? ''));
                 $explicitLinkAmt = null;
@@ -208,14 +215,28 @@ class TxnController extends BaseController
                     }
                 }
                 unset(
+                    $body['settlement_mode'],
                     $body['settle_from_receipt_id'],
                     $body['settle_from_receipt_public_ref'],
                     $body['settle_from_receipt_amount']
                 );
-                $linkReceipt = ($settleReceiptId > 0 || $settleRef !== '');
                 $this->attachValidatedBankAccount($body);
                 $dbConn = Database::getConnection();
-                if ($linkReceipt) {
+                if ($settlementMode === 'unallocated_advance') {
+                    if ($settleReceiptId > 0 || $settleRef !== '') {
+                        $this->error(
+                            'Do not pass receipt fields when settlement_mode is unallocated_advance.',
+                            422
+                        );
+                    }
+                    $id = $this->txn->createPaymentExpense($body);
+                } else {
+                    if ($settleReceiptId <= 0 && $settleRef === '') {
+                        $this->error(
+                            'settle_from_receipt_id or settle_from_receipt_public_ref is required when settlement_mode is receipt.',
+                            422
+                        );
+                    }
                     $dbConn->beginTransaction();
                     try {
                         $id = $this->txn->createPaymentExpense($body);
@@ -247,8 +268,6 @@ class TxnController extends BaseController
                         }
                         throw $e;
                     }
-                } else {
-                    $id = $this->txn->createPaymentExpense($body);
                 }
                 break;
             case 'tds_provisional':

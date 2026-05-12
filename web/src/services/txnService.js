@@ -244,7 +244,10 @@ export async function getLedger(clientIdOrObj) {
   return (data.data || []).map(normalizeTxn);
 }
 
-/** POST /api/admin/txn with txn_type payment_expense */
+/** POST /api/admin/txn with txn_type payment_expense
+ *  Required: settlement_mode 'receipt' | 'unallocated_advance'.
+ *  If receipt: settle_from_receipt_id or settle_from_receipt_public_ref; optional settle_from_receipt_amount.
+ */
 export async function createPaymentExpense(payload) {
   const body = { txn_type: 'payment_expense', ...payload };
   return createTxn(body);

@@ -1019,12 +1019,17 @@ function PaymentExpenseModal({ onClose, onSave }) {
     billingProfileCode: '',
     description: '',
     notes: '',
+    settlementMode: 'unallocated_advance',
     settleFromReceiptRef: '',
     settleFromReceiptAmount: '',
   });
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
   const handleSave = () => {
     if (!form.entityId || !form.amount || !form.txnDate || !form.description.trim()) return;
+    if (form.settlementMode === 'receipt' && !(form.settleFromReceiptRef || '').trim()) {
+      window.alert('Choose a client receipt: enter its RCP- reference or numeric id.');
+      return;
+    }
     onSave(form);
     onClose();
   };
@@ -1104,32 +1109,59 @@ function PaymentExpenseModal({ onClose, onSave }) {
             <input type="text" style={inputStyle} placeholder="Optional" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
           </label>
           <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14, marginTop: 4 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Bill-by-bill vs client receipt (optional)</div>
-            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px' }}>
-              If the client already paid you (a receipt exists), enter its public ref (RCP-…) or numeric id so this payment is settled from that receipt&apos;s unallocated balance.
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>Bill-by-bill settlement (required)</div>
+            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>
+              Same as recording a receipt: either apply from an existing client receipt or leave as recoverable advance on this payment (PAY-…).
             </p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-              <label style={labelStyle}>
-                Client receipt ref / id
-                <input
-                  type="text"
-                  style={inputStyle}
-                  placeholder="e.g. RCP-2026-00123"
-                  value={form.settleFromReceiptRef}
-                  onChange={(e) => set('settleFromReceiptRef', e.target.value)}
-                />
-              </label>
-              <label style={labelStyle}>
-                Amount from receipt (₹)
-                <input
-                  type="number"
-                  style={inputStyle}
-                  placeholder={`Default: ${form.amount || 'same as payment'}`}
-                  value={form.settleFromReceiptAmount}
-                  onChange={(e) => set('settleFromReceiptAmount', e.target.value)}
-                />
-              </label>
-            </div>
+            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 10 }}>
+              <input
+                type="radio"
+                name="paymentExpenseSettlementLegacy"
+                checked={form.settlementMode === 'unallocated_advance'}
+                onChange={() => set('settlementMode', 'unallocated_advance')}
+                style={{ marginTop: 3 }}
+              />
+              <span style={{ fontSize: 13, color: '#334155' }}>
+                <strong>Unallocated advance</strong> — bill-by-bill uses this payment. Client has not paid the firm yet.
+              </span>
+            </label>
+            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 12 }}>
+              <input
+                type="radio"
+                name="paymentExpenseSettlementLegacy"
+                checked={form.settlementMode === 'receipt'}
+                onChange={() => set('settlementMode', 'receipt')}
+                style={{ marginTop: 3 }}
+              />
+              <span style={{ fontSize: 13, color: '#334155' }}>
+                <strong>Client receipt</strong> — settle from receipt unallocated balance (RCP-… or id).
+              </span>
+            </label>
+            {form.settlementMode === 'receipt' && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, paddingLeft: 4 }}>
+                <label style={labelStyle}>
+                  Receipt ref / id *
+                  <input
+                    type="text"
+                    style={inputStyle}
+                    placeholder="e.g. RCP-2026-00123"
+                    value={form.settleFromReceiptRef}
+                    onChange={(e) => set('settleFromReceiptRef', e.target.value)}
+                    aria-required
+                  />
+                </label>
+                <label style={labelStyle}>
+                  Amount from receipt (₹)
+                  <input
+                    type="number"
+                    style={inputStyle}
+                    placeholder={form.amount ? `Default: ${form.amount}` : 'Defaults to payment amount'}
+                    value={form.settleFromReceiptAmount}
+                    onChange={(e) => set('settleFromReceiptAmount', e.target.value)}
+                  />
+                </label>
+              </div>
+            )}
           </div>
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -1962,25 +1994,29 @@ export default function Invoices() {
       paid_from: data.paidFrom || null,
       narration,
       notes: data.notes || null,
+      ledger_class: 'regular',
+      ledger_movement_kind: 'fees',
     };
     if (data.entityType === 'organization') {
       payload.organization_id = idNum;
     } else {
       payload.client_id = idNum;
     }
-    const receiptKey = (data.settleFromReceiptRef || '').trim();
-    if (receiptKey) {
+    const mode = data.settlementMode === 'receipt' ? 'receipt' : 'unallocated_advance';
+    payload.settlement_mode = mode;
+    if (mode === 'receipt') {
+      const receiptKey = (data.settleFromReceiptRef || '').trim();
       if (/^\d+$/.test(receiptKey)) {
         payload.settle_from_receipt_id = parseInt(receiptKey, 10);
       } else {
         payload.settle_from_receipt_public_ref = receiptKey;
       }
-    }
-    const settleAmtRaw = (data.settleFromReceiptAmount || '').trim();
-    if (settleAmtRaw !== '') {
-      const a = parseFloat(settleAmtRaw, 10);
-      if (Number.isFinite(a) && a > 0) {
-        payload.settle_from_receipt_amount = a;
+      const settleAmtRaw = (data.settleFromReceiptAmount || '').trim();
+      if (settleAmtRaw !== '') {
+        const a = parseFloat(settleAmtRaw, 10);
+        if (Number.isFinite(a) && a > 0) {
+          payload.settle_from_receipt_amount = a;
+        }
       }
     }
     createPaymentExpense(payload)
