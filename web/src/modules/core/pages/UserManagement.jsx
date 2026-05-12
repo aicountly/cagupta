@@ -60,12 +60,13 @@ function StatusBadge({ active }) {
 
 function UserModal({ mode, user, roles, onClose, onSave }) {
   const [form, setForm] = useState({
-    name:                 user?.name     || '',
-    email:                user?.email    || '',
-    password:             '',
-    role_id:              user?.role_id  || (roles[0]?.id ?? ''),
-    is_active:            user?.is_active !== false,
-    shift_target_minutes: user?.shift_target_minutes ?? 510,
+    name:                   user?.name     || '',
+    email:                  user?.email    || '',
+    password:               '',
+    role_id:                user?.role_id  || (roles[0]?.id ?? ''),
+    is_active:              user?.is_active !== false,
+    shift_target_minutes:   user?.shift_target_minutes ?? 510,
+    shift_target_disabled:  user?.shift_target_disabled === true,
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -77,6 +78,13 @@ function UserModal({ mode, user, roles, onClose, onSave }) {
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
+    if (!form.shift_target_disabled) {
+      const m = Number(form.shift_target_minutes);
+      if (!Number.isFinite(m) || m < 60 || m > 1440) {
+        setError('Daily target must be between 60 and 1440 minutes, or enable “does not apply”.');
+        return;
+      }
+    }
     setSaving(true);
     try {
       await onSave(form);
@@ -152,15 +160,39 @@ function UserModal({ mode, user, roles, onClose, onSave }) {
 
             <label style={styles.label}>Daily target (minutes)</label>
             <input
-              style={styles.input}
+              style={{
+                ...styles.input,
+                ...(form.shift_target_disabled ? { background: '#f8fafc', color: '#94a3b8' } : {}),
+              }}
               type="number"
-              min={60}
-              max={1440}
+              min={form.shift_target_disabled ? undefined : 60}
+              max={form.shift_target_disabled ? undefined : 1440}
               step={1}
               value={form.shift_target_minutes}
+              disabled={form.shift_target_disabled}
               onChange={(e) => set('shift_target_minutes', Number(e.target.value))}
               placeholder="510"
             />
+            <label style={{
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: 10,
+              marginTop: 10,
+              cursor: 'pointer',
+              fontSize: 13,
+              fontWeight: 500,
+              color: '#475569',
+              lineHeight: 1.35,
+            }}
+            >
+              <input
+                type="checkbox"
+                checked={form.shift_target_disabled}
+                onChange={(e) => set('shift_target_disabled', e.target.checked)}
+                style={{ marginTop: 2, accentColor: '#4f46e5', flexShrink: 0 }}
+              />
+              <span>Daily shift target does not apply (omit from targets in reports; no minimum-intimation for this user).</span>
+            </label>
 
             {mode === 'edit' && (
               <>
@@ -227,6 +259,7 @@ export default function UserManagement() {
       setUsers([{
         id: 1, name: 'Rahul Gupta', email: SUPER_ADMIN_EMAIL,
         role: 'super_admin', is_active: true, last_login_at: null, login_provider: 'local',
+        shift_target_minutes: 510, shift_target_disabled: false,
       }]);
       setTotal(1);
       setLoading(false);
@@ -349,19 +382,20 @@ export default function UserManagement() {
               <th style={styles.th}>Status</th>
               <th style={styles.th}>Last Login</th>
               <th style={styles.th}>Provider</th>
+              <th style={styles.th}>Target minutes</th>
               <th style={{ ...styles.th, textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
+                <td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
                   Loading…
                 </td>
               </tr>
             ) : users.length === 0 ? (
               <tr>
-                <td colSpan={6} style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
+                <td colSpan={7} style={{ textAlign: 'center', padding: 40, color: '#6b7280' }}>
                   No users found.
                 </td>
               </tr>
@@ -403,6 +437,17 @@ export default function UserManagement() {
                     <span style={{ textTransform: 'capitalize', fontSize: 12, color: '#475569' }}>
                       {u.login_provider || 'local'}
                     </span>
+                  </td>
+                  <td style={styles.td}>
+                    {u.shift_target_disabled === true ? (
+                      <span style={{ color: '#94a3b8', fontSize: 13 }} title="Daily shift target does not apply">
+                        —
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 13, color: '#374151', fontVariantNumeric: 'tabular-nums' }}>
+                        {Number(u.shift_target_minutes) || 510}
+                      </span>
+                    )}
                   </td>
                   <td style={{ ...styles.td, textAlign: 'right' }}>
                     {isSuperAdmin ? (

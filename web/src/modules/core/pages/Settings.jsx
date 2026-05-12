@@ -164,6 +164,7 @@ function EditUserModal({ user, roles, onClose, onSaved }) {
     roleId: matchedRole ? String(matchedRole.id) : '',
     isActive: user.is_active !== false,
     shiftTargetMinutes: user.shift_target_minutes || 510,
+    shiftTargetDisabled: user.shift_target_disabled === true,
   });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
@@ -171,11 +172,23 @@ function EditUserModal({ user, roles, onClose, onSaved }) {
   async function handleSave() {
     const name = form.name.trim();
     if (!name) { setError('Name is required.'); return; }
+    if (!form.shiftTargetDisabled) {
+      const shiftMins = parseInt(form.shiftTargetMinutes, 10);
+      if (!Number.isFinite(shiftMins) || shiftMins < 60 || shiftMins > 1440) {
+        setError('Daily target must be between 60 and 1440 minutes, or enable “does not apply”.');
+        return;
+      }
+    }
     const shiftMins = Math.max(60, Math.min(1440, parseInt(form.shiftTargetMinutes, 10) || 510));
     setSaving(true);
     setError('');
     try {
-      const payload = { name, is_active: form.isActive, shift_target_minutes: shiftMins };
+      const payload = {
+        name,
+        is_active: form.isActive,
+        shift_target_disabled: form.shiftTargetDisabled,
+        shift_target_minutes: shiftMins,
+      };
       if (form.roleId) payload.role_id = parseInt(form.roleId, 10);
       const res = await fetch(`${API_BASE_URL}/admin/users/${user.id}`, {
         method: 'PUT',
@@ -235,13 +248,26 @@ function EditUserModal({ user, roles, onClose, onSaved }) {
             <label style={labelStyle}>Daily shift target (minutes)</label>
             <input
               type="number"
-              min={60}
-              max={1440}
+              min={form.shiftTargetDisabled ? undefined : 60}
+              max={form.shiftTargetDisabled ? undefined : 1440}
               value={form.shiftTargetMinutes}
+              disabled={form.shiftTargetDisabled}
               onChange={e => setForm(p => ({ ...p, shiftTargetMinutes: e.target.value }))}
-              style={inputStyle}
+              style={{
+                ...inputStyle,
+                ...(form.shiftTargetDisabled ? { background: '#f8fafc', color: '#94a3b8' } : {}),
+              }}
             />
             <div style={{ fontSize:11, color:'#94a3b8', marginTop:3 }}>60–1440 min. Default: 510 (8 h 30 m).</div>
+            <label style={{ display:'flex', alignItems:'flex-start', gap:8, marginTop:10, cursor:'pointer', fontSize:13, color:'#334155', lineHeight:1.35 }}>
+              <input
+                type="checkbox"
+                checked={form.shiftTargetDisabled}
+                onChange={e => setForm(p => ({ ...p, shiftTargetDisabled: e.target.checked }))}
+                style={{ marginTop: 2, accentColor:'#2563eb', flexShrink: 0 }}
+              />
+              <span>Daily shift target does not apply (reports omit targets for this user).</span>
+            </label>
           </div>
           <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, color:'#334155', cursor:'pointer' }}>
             <input

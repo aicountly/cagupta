@@ -96,13 +96,13 @@ foreach ($rows as $row) {
         continue;
     }
 
-    $targetMinutes = (int)($row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
+    $targetMinutes = (int)($row['effective_shift_target_minutes'] ?? $row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
     $billable = (int)($row['billable_minutes'] ?? 0);
     $nonBillable = (int)($row['non_billable_minutes'] ?? 0);
     $punched = (int)($row['total_punched_minutes'] ?? 0);
     $idle = max(0, $targetMinutes - $punched);
 
-    if ($punched >= $targetMinutes) {
+    if ($targetMinutes <= 0 || $punched >= $targetMinutes) {
         $skipCount++;
         continue;
     }

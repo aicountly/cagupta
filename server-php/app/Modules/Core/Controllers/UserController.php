@@ -53,7 +53,16 @@ class UserController extends BaseController
 
         $result = $this->users->paginate($page, $perPage, $search, $role, $status, $delegatorId);
 
-        $this->success($result['users'], 'Users retrieved', 200, [
+        $users = array_map(static function (array $u): array {
+            $u['shift_target_disabled'] = UserController::coerceBool($u['shift_target_disabled'] ?? false);
+            if (isset($u['shift_target_minutes'])) {
+                $u['shift_target_minutes'] = (int)$u['shift_target_minutes'];
+            }
+
+            return $u;
+        }, $result['users']);
+
+        $this->success($users, 'Users retrieved', 200, [
             'pagination' => [
                 'page'       => $page,
                 'per_page'   => $perPage,
@@ -106,23 +115,34 @@ class UserController extends BaseController
             $this->assertDelegateAssignableRole((int)($body['role_id'] ?? 0));
         }
 
-        $shiftTarget = 510;
-        if (array_key_exists('shift_target_minutes', $body)) {
-            $stv = (int)$body['shift_target_minutes'];
-            if ($stv < 60 || $stv > 1440) {
-                $this->error('shift_target_minutes must be between 60 and 1440.', 422);
+        $shiftDisabled = array_key_exists('shift_target_disabled', $body)
+            ? self::coerceBool($body['shift_target_disabled'])
+            : false;
+        $shiftTarget   = 510;
+        if (!$shiftDisabled) {
+            if (array_key_exists('shift_target_minutes', $body)) {
+                $stv = (int)$body['shift_target_minutes'];
+                if ($stv < 60 || $stv > 1440) {
+                    $this->error('shift_target_minutes must be between 60 and 1440.', 422);
+                }
+                $shiftTarget = $stv;
             }
-            $shiftTarget = $stv;
+        } elseif (array_key_exists('shift_target_minutes', $body)) {
+            $stv = (int)$body['shift_target_minutes'];
+            if ($stv >= 60 && $stv <= 1440) {
+                $shiftTarget = $stv;
+            }
         }
 
         $newId = $this->users->create([
-            'name'                 => $name,
-            'email'                => $email,
-            'password'             => $pass,
-            'role_id'              => isset($body['role_id']) ? (int)$body['role_id'] : null,
-            'is_active'            => isset($body['is_active']) ? (bool)$body['is_active'] : true,
-            'created_by'           => $actingUser ? (int)$actingUser['id'] : null,
-            'shift_target_minutes' => $shiftTarget,
+            'name'                   => $name,
+            'email'                  => $email,
+            'password'               => $pass,
+            'role_id'                => isset($body['role_id']) ? (int)$body['role_id'] : null,
+            'is_active'              => isset($body['is_active']) ? (bool)$body['is_active'] : true,
+            'created_by'             => $actingUser ? (int)$actingUser['id'] : null,
+            'shift_target_minutes'   => $shiftTarget,
+            'shift_target_disabled'  => $shiftDisabled,
         ]);
 
         $roleRow = isset($body['role_id']) ? $this->roles->find((int)$body['role_id']) : null;
@@ -223,12 +243,24 @@ class UserController extends BaseController
             }
             $data['password'] = $pass;
         }
+        $nextDisabled = array_key_exists('shift_target_disabled', $body)
+            ? self::coerceBool($body['shift_target_disabled'])
+            : self::coerceBool($user['shift_target_disabled'] ?? false);
+
+        if (array_key_exists('shift_target_disabled', $body)) {
+            $data['shift_target_disabled'] = $nextDisabled;
+        }
+
         if (array_key_exists('shift_target_minutes', $body)) {
             $stv = (int)$body['shift_target_minutes'];
-            if ($stv < 60 || $stv > 1440) {
-                $this->error('shift_target_minutes must be between 60 and 1440.', 422);
+            if (!$nextDisabled) {
+                if ($stv < 60 || $stv > 1440) {
+                    $this->error('shift_target_minutes must be between 60 and 1440.', 422);
+                }
+                $data['shift_target_minutes'] = $stv;
+            } elseif ($stv >= 60 && $stv <= 1440) {
+                $data['shift_target_minutes'] = $stv;
             }
-            $data['shift_target_minutes'] = $stv;
         }
 
         $this->users->update($id, $data);
@@ -445,7 +477,27 @@ class UserController extends BaseController
             'planned_billable_rate_per_hour' => isset($user['planned_billable_rate_per_hour']) && $user['planned_billable_rate_per_hour'] !== null && $user['planned_billable_rate_per_hour'] !== ''
                 ? round((float)$user['planned_billable_rate_per_hour'], 2)
                 : null,
-            'shift_target_minutes' => (int)($user['shift_target_minutes'] ?? 510),
+            'shift_target_minutes'   => (int)($user['shift_target_minutes'] ?? 510),
+            'shift_target_disabled'  => self::coerceBool($user['shift_target_disabled'] ?? false),
         ];
+    }
+
+    /**
+     * Normalise PostgreSQL / PDO boolean-ish values for JSON responses.
+     */
+    private static function coerceBool(mixed $v): bool
+    {
+        if ($v === null) {
+            return false;
+        }
+        if (is_bool($v)) {
+            return $v;
+        }
+        if (is_int($v)) {
+            return $v !== 0;
+        }
+        $s = strtolower(trim((string)$v));
+
+        return in_array($s, ['1', 'true', 't', 'yes', 'on'], true);
     }
 }

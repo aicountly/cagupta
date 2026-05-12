@@ -1,6 +1,13 @@
-const toYmd = (d) => d.toISOString().slice(0, 10);
+/** Calendar YYYY-MM-DD in the user's local timezone (not UTC — avoids IST-style off-by-one vs toISOString). */
+const toYmd = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
 
 export const DATE_PRESETS = [
+  { value: 'today',         label: 'Today' },
   { value: 'this_week',     label: 'This Week' },
   { value: 'yesterday',     label: 'Yesterday' },
   { value: 'last_week',     label: 'Last Week' },
@@ -19,6 +26,9 @@ export function getPresetDates(preset) {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
   switch (preset) {
+    case 'today':
+      return { from: toYmd(today), to: toYmd(today) };
+
     case 'yesterday': {
       const d = new Date(today);
       d.setDate(today.getDate() - 1);

@@ -744,10 +744,12 @@ class TimeEntryModel
                 COALESCE(NULLIF(TRIM(u.name), ''), TRIM(u.email), 'User') AS user_name,
                 TRIM(u.email) AS user_email,
                 u.shift_target_minutes,
+                COALESCE(u.shift_target_disabled, FALSE) AS shift_target_disabled,
+                (CASE WHEN COALESCE(u.shift_target_disabled, FALSE) THEN 0 ELSE u.shift_target_minutes END) AS effective_shift_target_minutes,
                 COALESCE(SUM(te.duration_minutes) FILTER (WHERE te.is_billable), 0) AS billable_minutes,
                 COALESCE(SUM(te.duration_minutes) FILTER (WHERE NOT te.is_billable), 0) AS non_billable_minutes,
                 COALESCE(SUM(te.duration_minutes), 0) AS total_punched_minutes,
-                GREATEST(0, u.shift_target_minutes - COALESCE(SUM(te.duration_minutes), 0)) AS idle_minutes
+                GREATEST(0, (CASE WHEN COALESCE(u.shift_target_disabled, FALSE) THEN 0 ELSE u.shift_target_minutes END) - COALESCE(SUM(te.duration_minutes), 0)) AS idle_minutes
             FROM users u
             LEFT JOIN time_entries te
                 ON te.user_id = u.id
@@ -755,7 +757,7 @@ class TimeEntryModel
                AND te.timer_status <> :running
             WHERE u.is_active = TRUE
               AND TRIM(COALESCE(u.email, '')) <> ''
-            GROUP BY u.id, u.name, u.email, u.shift_target_minutes
+            GROUP BY u.id, u.name, u.email, u.shift_target_minutes, u.shift_target_disabled
             ORDER BY u.name ASC, u.id ASC"
         );
         $stmt->execute([
@@ -808,12 +810,14 @@ class TimeEntryModel
                 COALESCE(NULLIF(TRIM(u.name), ''), TRIM(u.email), 'User') AS user_name,
                 TRIM(u.email) AS user_email,
                 u.shift_target_minutes,
-                ({$dayCount} * u.shift_target_minutes) AS total_target_minutes,
+                COALESCE(u.shift_target_disabled, FALSE) AS shift_target_disabled,
+                (CASE WHEN COALESCE(u.shift_target_disabled, FALSE) THEN 0 ELSE u.shift_target_minutes END) AS effective_shift_target_minutes,
+                ({$dayCount} * (CASE WHEN COALESCE(u.shift_target_disabled, FALSE) THEN 0 ELSE u.shift_target_minutes END)) AS total_target_minutes,
                 COALESCE(SUM(te.duration_minutes) FILTER (WHERE te.is_billable), 0) AS billable_minutes,
                 COALESCE(SUM(te.duration_minutes) FILTER (WHERE NOT te.is_billable), 0) AS non_billable_minutes,
                 COALESCE(SUM(te.duration_minutes), 0) AS total_punched_minutes,
-                GREATEST(0, ({$dayCount} * u.shift_target_minutes) - COALESCE(SUM(te.duration_minutes), 0)) AS deficit_minutes,
-                GREATEST(0, COALESCE(SUM(te.duration_minutes), 0) - ({$dayCount} * u.shift_target_minutes)) AS overtime_minutes
+                GREATEST(0, ({$dayCount} * (CASE WHEN COALESCE(u.shift_target_disabled, FALSE) THEN 0 ELSE u.shift_target_minutes END)) - COALESCE(SUM(te.duration_minutes), 0)) AS deficit_minutes,
+                (CASE WHEN COALESCE(u.shift_target_disabled, FALSE) THEN 0 ELSE GREATEST(0, COALESCE(SUM(te.duration_minutes), 0) - ({$dayCount} * u.shift_target_minutes)) END) AS overtime_minutes
             FROM users u
             LEFT JOIN time_entries te
                 ON te.user_id = u.id
@@ -823,7 +827,7 @@ class TimeEntryModel
             WHERE u.is_active = TRUE
               AND TRIM(COALESCE(u.email, '')) <> ''
               {$uidClause}
-            GROUP BY u.id, u.name, u.email, u.shift_target_minutes
+            GROUP BY u.id, u.name, u.email, u.shift_target_minutes, u.shift_target_disabled
             ORDER BY u.name ASC, u.id ASC"
         );
         $stmt->execute($params);

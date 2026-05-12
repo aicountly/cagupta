@@ -77,7 +77,7 @@ function renderBelowTargetTable(array $rows): string
     foreach ($rows as $row) {
         $name = $h(trim((string)($row['user_name'] ?? 'User')));
         $email = $h(trim((string)($row['user_email'] ?? '')));
-        $rowTarget = (int)($row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
+        $rowTarget = (int)($row['effective_shift_target_minutes'] ?? $row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
         $bill = (int)($row['billable_minutes'] ?? 0);
         $non = (int)($row['non_billable_minutes'] ?? 0);
         $punched = (int)($row['total_punched_minutes'] ?? 0);
@@ -112,10 +112,10 @@ function renderMetOrOverTable(array $rows): string
     foreach ($rows as $row) {
         $name = $h(trim((string)($row['user_name'] ?? 'User')));
         $email = $h(trim((string)($row['user_email'] ?? '')));
-        $rowTarget = (int)($row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
+        $rowTarget = (int)($row['effective_shift_target_minutes'] ?? $row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
         $punched = (int)($row['total_punched_minutes'] ?? 0);
         $overtime = max(0, $punched - $rowTarget);
-        $extraMultiples = $punched > $rowTarget ? intdiv($punched - $rowTarget, $rowTarget) : 0;
+        $extraMultiples = ($rowTarget > 0 && $punched > $rowTarget) ? intdiv($punched - $rowTarget, $rowTarget) : 0;
         $out .= '<tr>'
             . "<td>{$name}</td>"
             . "<td><small>{$email}</small></td>"
@@ -156,7 +156,10 @@ $metOrOver = [];
 
 foreach ($rows as $row) {
     $punched = (int)($row['total_punched_minutes'] ?? 0);
-    $rowTarget = (int)($row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
+    $rowTarget = (int)($row['effective_shift_target_minutes'] ?? $row['shift_target_minutes'] ?? TimeEntryModel::SHIFT_TARGET_MINUTES);
+    if ($rowTarget <= 0) {
+        continue;
+    }
     if ($punched < $rowTarget) {
         $below[] = $row;
     } else {

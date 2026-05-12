@@ -183,7 +183,8 @@ export default function ShiftTargetTimesheetReport() {
                 const bill      = Number(r.billable_minutes) || 0;
                 const non       = Number(r.non_billable_minutes) || 0;
                 const punched   = Number(r.total_punched_minutes) || 0;
-                const dailyTarget = Number(r.shift_target_minutes) || 510;
+                const targetOff = r.shift_target_disabled === true || Number(r.effective_shift_target_minutes) === 0;
+                const storedDaily = Number(r.shift_target_minutes) || 510;
                 const target    = Number(r.total_target_minutes) || 0;
                 const deficit   = Number(r.deficit_minutes) || 0;
                 const overtime  = Number(r.overtime_minutes) || 0;
@@ -207,13 +208,21 @@ export default function ShiftTargetTimesheetReport() {
                     <td style={{ padding: '10px 12px' }}>{fmtMinutes(bill)} <span style={{ color: '#94a3b8' }}>({bill})</span></td>
                     <td style={{ padding: '10px 12px' }}>{fmtMinutes(non)} <span style={{ color: '#94a3b8' }}>({non})</span></td>
                     <td style={{ padding: '10px 12px' }}>{fmtMinutes(punched)} <span style={{ color: '#94a3b8' }}>({punched})</span></td>
-                    <td style={{ padding: '10px 12px' }}>{fmtMinutes(dailyTarget)} <span style={{ color: '#94a3b8' }}>({dailyTarget}/day)</span></td>
-                    <td style={{ padding: '10px 12px' }}>{fmtMinutes(target)} <span style={{ color: '#94a3b8' }}>({target})</span></td>
-                    <td style={{ padding: '10px 12px', color: deficit > 0 ? '#b45309' : '#94a3b8' }}>
-                      {fmtMinutes(deficit)} <span style={{ color: '#94a3b8' }}>({deficit})</span>
+                    <td style={{ padding: '10px 12px' }}>
+                      {targetOff ? (
+                        <span style={{ color: '#94a3b8' }} title={storedDaily ? `Stored value if re-enabled: ${storedDaily} min` : 'No daily target'}>N/A</span>
+                      ) : (
+                        <>{fmtMinutes(storedDaily)} <span style={{ color: '#94a3b8' }}>({storedDaily}/day)</span></>
+                      )}
                     </td>
-                    <td style={{ padding: '10px 12px', color: overtime > 0 ? '#15803d' : '#94a3b8' }}>
-                      {fmtMinutes(overtime)} <span style={{ color: '#94a3b8' }}>({overtime})</span>
+                    <td style={{ padding: '10px 12px' }}>
+                      {targetOff ? <span style={{ color: '#94a3b8' }}>—</span> : <>{fmtMinutes(target)} <span style={{ color: '#94a3b8' }}>({target})</span></>}
+                    </td>
+                    <td style={{ padding: '10px 12px', color: !targetOff && deficit > 0 ? '#b45309' : '#94a3b8' }}>
+                      {targetOff ? <span style={{ color: '#94a3b8' }}>—</span> : <>{fmtMinutes(deficit)} <span style={{ color: '#94a3b8' }}>({deficit})</span></>}
+                    </td>
+                    <td style={{ padding: '10px 12px', color: !targetOff && overtime > 0 ? '#15803d' : '#94a3b8' }}>
+                      {targetOff ? <span style={{ color: '#94a3b8' }}>—</span> : <>{fmtMinutes(overtime)} <span style={{ color: '#94a3b8' }}>({overtime})</span></>}
                     </td>
                   </tr>
                 );
