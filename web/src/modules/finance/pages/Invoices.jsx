@@ -1340,6 +1340,16 @@ function PaymentExpenseModal({ onClose, onSave }) {
     return () => { cancel = true; };
   }, [form.entityId, form.entityType, form.ledgerClass, form.ledgerMovementKind]);
 
+  useEffect(() => {
+    setSettlementLines((L) => {
+      if (L.length !== 1 || L[0].targetType !== 'unallocated_advance') return L;
+      if (String(L[0].amount || '').trim() !== '') return L;
+      const amt = String(form.amount || '').trim();
+      if (!amt) return L;
+      return [{ ...L[0], amount: form.amount }];
+    });
+  }, [form.amount]);
+
   const setSettleLine = (idx, patch) => {
     setSettlementLines((L) => L.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
   };
@@ -1525,11 +1535,19 @@ function PaymentExpenseModal({ onClose, onSave }) {
                 <select
                   style={inputStyle}
                   value={line.targetType}
-                  onChange={(e) => setSettleLine(idx, {
-                    targetType: e.target.value,
-                    targetTxnId: '',
-                    amount: line.amount,
-                  })}
+                  onChange={(e) => {
+                    const targetType = e.target.value;
+                    const patch = {
+                      targetType,
+                      targetTxnId: '',
+                      amount: line.amount,
+                    };
+                    if (targetType === 'unallocated_advance') {
+                      const amt = String(form.amount || '').trim();
+                      if (amt) patch.amount = form.amount;
+                    }
+                    setSettleLine(idx, patch);
+                  }}
                 >
                   {PAYMENT_EXPENSE_SETTLEMENT_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
@@ -1553,7 +1571,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
                     </select>
                   )}
                   {line.targetType === 'unallocated_advance' && (
-                    <span style={{ fontSize: 12, color: '#64748b', lineHeight: '38px' }}>No target — bill-by-bill uses this payment (PAY-…)</span>
+                    <span style={{ fontSize: 12, color: '#64748b', lineHeight: '38px' }}>No target — bill-by-bill uses unallocated advance</span>
                   )}
                 </div>
                 <input
@@ -1791,6 +1809,16 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
     return () => { cancel = true; };
   }, [form.clientId, form.ledgerClass, form.ledgerMovementKind]);
 
+  useEffect(() => {
+    setAllocLines((L) => {
+      if (L.length !== 1 || L[0].targetType !== 'unallocated_advance') return L;
+      if (String(L[0].amount || '').trim() !== '') return L;
+      const amt = String(form.amount || '').trim();
+      if (!amt) return L;
+      return [{ ...L[0], amount: form.amount }];
+    });
+  }, [form.amount]);
+
   const ledgerMatchedInvoices = useMemo(
     () => (openInvoices || []).filter((inv) => (inv.ledgerClass || 'regular') === form.ledgerClass),
     [openInvoices, form.ledgerClass],
@@ -1949,11 +1977,19 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
                 <select
                   style={inputStyle}
                   value={line.targetType}
-                  onChange={(e) => setLine(idx, {
-                    targetType: e.target.value,
-                    targetTxnId: '',
-                    amount: line.amount,
-                  })}
+                  onChange={(e) => {
+                    const targetType = e.target.value;
+                    const patch = {
+                      targetType,
+                      targetTxnId: '',
+                      amount: line.amount,
+                    };
+                    if (targetType === 'unallocated_advance') {
+                      const amt = String(form.amount || '').trim();
+                      if (amt) patch.amount = form.amount;
+                    }
+                    setLine(idx, patch);
+                  }}
                 >
                   {RECEIPT_ALLOC_TARGET_OPTIONS.map((o) => (
                     <option key={o.value} value={o.value}>{o.label}</option>
