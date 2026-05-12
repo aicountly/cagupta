@@ -24,7 +24,12 @@ final class TxnPublicRefGenerator
         }
         $key = $p . '_' . $year;
 
-        $db->beginTransaction();
+        // When callers already hold a transaction (e.g. payment_expense create + receipt link),
+        // nesting beginTransaction() on PostgreSQL PDO throws and surfaces as HTTP 500.
+        $ownTransaction = !$db->inTransaction();
+        if ($ownTransaction) {
+            $db->beginTransaction();
+        }
         try {
             $ins = $db->prepare(
                 'INSERT INTO app_numeric_sequence (seq_key, last_value) VALUES (:k, 0)
@@ -38,11 +43,13 @@ final class TxnPublicRefGenerator
             );
             $upd->execute([':k' => $key]);
             $n = (int)$upd->fetchColumn();
-            $db->commit();
+            if ($ownTransaction) {
+                $db->commit();
+            }
 
             return sprintf('%s-%d-%06d', $p, $year, $n);
         } catch (\Throwable $e) {
-            if ($db->inTransaction()) {
+            if ($ownTransaction && $db->inTransaction()) {
                 $db->rollBack();
             }
             throw $e;
