@@ -226,7 +226,8 @@ foreach ($routes as $route) {
 
     // Build regex from pattern (e.g. /api/admin/users/:id → /api/admin/users/(\d+))
     $pattern = preg_replace('/\/:id/', '/(\d+)', $route['pattern']);
-    $pattern = preg_replace('/\/:slug/', '/([a-zA-Z0-9\-]+)', $pattern);
+    // :slug — used only for billing-firm codes (underscores, dots, etc.); exclude slash only.
+    $pattern = preg_replace('/\/:slug/', '/([^/]+)', $pattern);
     $regex   = '#^' . $pattern . '$#';
 
     if (!preg_match($regex, $requestUri, $matches)) {

@@ -9,7 +9,7 @@ const STATUS_OPTIONS = [
 
 const PAYMENT_METHOD_FILTER_OPTIONS = [
   { value: '__all__', label: 'All' },
-  ...['NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'IMPS'].map((m) => ({ value: m, label: m })),
+  ...['NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'IMPS', 'Payment Gateway'].map((m) => ({ value: m, label: m })),
 ];
 
 export const REGISTER_CONFIG = {

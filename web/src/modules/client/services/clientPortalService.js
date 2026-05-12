@@ -39,9 +39,16 @@ export async function getClientService(id) {
   return data.data || null;
 }
 
-export async function getClientLedger({ organizationId } = {}) {
+export async function getClientLedger({
+  organizationId,
+  ledgerClass = 'regular',
+  ledgerView = 'consolidated',
+} = {}) {
   const q = new URLSearchParams();
   if (organizationId) q.set('organization_id', String(organizationId));
+  q.set('ledger_class', ledgerClass === 'memorandum' ? 'memorandum' : 'regular');
+  const view = ['fees', 'reimbursement', 'consolidated'].includes(ledgerView) ? ledgerView : 'consolidated';
+  q.set('ledger_view', view);
   const res = await fetch(`${API_BASE}/client/ledger?${q}`, { headers: authHeaders() });
   const data = await parseResponse(res);
   return data.data || [];

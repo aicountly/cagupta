@@ -84,7 +84,7 @@ function TxnTypeBadge({ type }) {
 
 const TDS_SECTIONS = ['194J','194C','194H','194I','194A','194Q','Other'];
 
-const PAYMENT_METHOD_OPTIONS = ['NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'IMPS'];
+const PAYMENT_METHOD_OPTIONS = ['NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'IMPS', 'Payment Gateway'];
 
 function buildEngagementLineOptions(categories) {
   const out = [];

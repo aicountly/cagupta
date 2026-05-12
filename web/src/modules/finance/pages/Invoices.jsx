@@ -88,7 +88,7 @@ function TxnTypeBadge({ type }) {
 
 const TDS_SECTIONS = ['194J','194C','194H','194I','194A','194Q','Other'];
 
-const PAYMENT_METHOD_OPTIONS = ['NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'IMPS'];
+const PAYMENT_METHOD_OPTIONS = ['NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'IMPS', 'Payment Gateway'];
 
 function buildEngagementLineOptions(categories) {
   const out = [];
@@ -128,6 +128,22 @@ const emptyInvoiceLine = () => ({
   lineKind: 'professional_fee',
 });
 
+const LEDGER_CLASS_OPTIONS = [
+  { value: 'regular', label: 'Regular' },
+  { value: 'memorandum', label: 'Memorandum' },
+];
+
+const LEDGER_MOVEMENT_OPTIONS = [
+  { value: 'fees', label: 'Fees (professional)' },
+  { value: 'reimbursement', label: 'Reimbursement (tax challans & reimbursements)' },
+];
+
+const LEDGER_VIEW_OPTIONS = [
+  { value: 'consolidated', label: 'Consolidated' },
+  { value: 'fees', label: 'Fees only' },
+  { value: 'reimbursement', label: 'Reimbursement only' },
+];
+
 function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
   const { session } = useAuth();
   const [costPreview, setCostPreview] = useState(null);
@@ -141,6 +157,7 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
     notes: '',
     billingProfileCode: '',
     serviceEngagementId: '',
+    ledgerClass: 'regular',
     lines: [emptyInvoiceLine(), emptyInvoiceLine()],
   });
   const [serviceCategories, setServiceCategories] = useState([]);
@@ -158,6 +175,7 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
       notes: '',
       billingProfileCode: '',
       serviceEngagementId: '',
+      ledgerClass: 'regular',
       lines: [emptyInvoiceLine(), emptyInvoiceLine()],
     });
     const next = blank();
@@ -392,6 +410,14 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
               </select>
             </label>
           ) : null}
+          <label style={labelStyle}>
+            Ledger type
+            <select style={inputStyle} value={form.ledgerClass} onChange={(e) => set('ledgerClass', e.target.value)}>
+              {LEDGER_CLASS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </select>
+          </label>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Invoice Date
@@ -1097,6 +1123,8 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
     reference: '',
     billingProfileCode: invoice?.billingProfileCode || '',
     firmBankAccountId: '',
+    ledgerClass: invoice?.ledgerClass || 'regular',
+    ledgerMovementKind: 'fees',
   });
   const [banks, setBanks] = useState([]);
   const [banksLoading, setBanksLoading] = useState(false);
@@ -1125,6 +1153,15 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
     return () => { cancel = true; };
   }, [form.billingProfileCode]);
 
+  useEffect(() => {
+    if (!invoice) return;
+    setForm((f) => ({
+      ...f,
+      billingProfileCode: invoice.billingProfileCode || f.billingProfileCode,
+      ledgerClass: invoice.ledgerClass || 'regular',
+    }));
+  }, [invoice?.id]);
+
   const handleSave = () => {
     if (!form.amount || !form.paymentDate || !form.billingProfileCode || !form.firmBankAccountId) return;
     onSave(form);
@@ -1143,6 +1180,24 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
           </div>
         )}
         <div style={{ padding:'16px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+            <label style={labelStyle}>
+              Ledger type
+              <select style={inputStyle} value={form.ledgerClass} onChange={(e) => set('ledgerClass', e.target.value)} disabled={!!invoice}>
+                {LEDGER_CLASS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Ledger view
+              <select style={inputStyle} value={form.ledgerMovementKind} onChange={(e) => set('ledgerMovementKind', e.target.value)}>
+                {LEDGER_MOVEMENT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Amount (₹)
@@ -1218,6 +1273,8 @@ function PaymentExpenseModal({ onClose, onSave }) {
     firmBankAccountId: '',
     description: '',
     notes: '',
+    ledgerClass: 'regular',
+    ledgerMovementKind: 'fees',
   });
   const [banks, setBanks] = useState([]);
   const [banksLoading, setBanksLoading] = useState(false);
@@ -1275,6 +1332,24 @@ function PaymentExpenseModal({ onClose, onSave }) {
               style={inputStyle}
             />
           </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Ledger type
+              <select style={inputStyle} value={form.ledgerClass} onChange={(e) => set('ledgerClass', e.target.value)}>
+                {LEDGER_CLASS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Ledger view
+              <select style={inputStyle} value={form.ledgerMovementKind} onChange={(e) => set('ledgerMovementKind', e.target.value)}>
+                {LEDGER_MOVEMENT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Amount (₹)
@@ -1364,6 +1439,8 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
     firmBankAccountId: '',
     linkedTxnId: '',
     notes: '',
+    ledgerClass: 'regular',
+    ledgerMovementKind: 'fees',
   });
   const [banks, setBanks] = useState([]);
   const [banksLoading, setBanksLoading] = useState(false);
@@ -1414,6 +1491,24 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
               placeholder="Search client by name…"
             />
           </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Ledger type
+              <select style={inputStyle} value={form.ledgerClass} onChange={(e) => setForm((f) => ({ ...f, ledgerClass: e.target.value, linkedTxnId: '' }))}>
+                {LEDGER_CLASS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Ledger view
+              <select style={inputStyle} value={form.ledgerMovementKind} onChange={(e) => set('ledgerMovementKind', e.target.value)}>
+                {LEDGER_MOVEMENT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Amount (₹)
@@ -1463,7 +1558,7 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
             Linked Invoice (optional)
             <select style={inputStyle} value={form.linkedTxnId} onChange={e=>set('linkedTxnId',e.target.value)}>
               <option value="">— None —</option>
-              {(openInvoices || []).map(inv=>(
+              {(openInvoices || []).filter((inv) => (inv.ledgerClass || 'regular') === form.ledgerClass).map(inv=>(
                 <option key={inv.id} value={inv.id}>{inv.invoiceNumber} – {inv.clientName}</option>
               ))}
             </select>
@@ -1485,7 +1580,18 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
 // ── TdsModal ──────────────────────────────────────────────────────────────────
 
 function TdsModal({ onClose, onSave }) {
-  const [form, setForm] = useState({ clientId: '', clientName: '', amount: '', txnDate: new Date().toISOString().slice(0,10), tdsSection: '194J', tdsRate: '', billingProfileCode: '', notes: '' });
+  const [form, setForm] = useState({
+    clientId: '',
+    clientName: '',
+    amount: '',
+    txnDate: new Date().toISOString().slice(0,10),
+    tdsSection: '194J',
+    tdsRate: '',
+    billingProfileCode: '',
+    notes: '',
+    ledgerClass: 'regular',
+    ledgerMovementKind: 'fees',
+  });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const handleSave = () => {
     if (!form.clientId || !form.amount || !form.txnDate) return;
@@ -1509,6 +1615,24 @@ function TdsModal({ onClose, onSave }) {
               placeholder="Search client by name…"
             />
           </label>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+            <label style={labelStyle}>
+              Ledger type
+              <select style={inputStyle} value={form.ledgerClass} onChange={e=>set('ledgerClass',e.target.value)}>
+                {LEDGER_CLASS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Ledger view
+              <select style={inputStyle} value={form.ledgerMovementKind} onChange={e=>set('ledgerMovementKind',e.target.value)}>
+                {LEDGER_MOVEMENT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Amount (₹)
@@ -1557,7 +1681,17 @@ function TdsModal({ onClose, onSave }) {
 // ── RebateModal ───────────────────────────────────────────────────────────────
 
 function RebateModal({ onClose, onSave }) {
-  const [form, setForm] = useState({ clientId: '', clientName: '', amount: '', txnDate: new Date().toISOString().slice(0,10), narration: '', billingProfileCode: '', notes: '' });
+  const [form, setForm] = useState({
+    clientId: '',
+    clientName: '',
+    amount: '',
+    txnDate: new Date().toISOString().slice(0,10),
+    narration: '',
+    billingProfileCode: '',
+    notes: '',
+    ledgerClass: 'regular',
+    ledgerMovementKind: 'fees',
+  });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const handleSave = () => {
     if (!form.clientId || !form.amount || !form.txnDate) return;
@@ -1581,6 +1715,24 @@ function RebateModal({ onClose, onSave }) {
               placeholder="Search client by name…"
             />
           </label>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+            <label style={labelStyle}>
+              Ledger type
+              <select style={inputStyle} value={form.ledgerClass} onChange={e=>set('ledgerClass',e.target.value)}>
+                {LEDGER_CLASS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Ledger view
+              <select style={inputStyle} value={form.ledgerMovementKind} onChange={e=>set('ledgerMovementKind',e.target.value)}>
+                {LEDGER_MOVEMENT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Amount (₹)
@@ -1620,14 +1772,47 @@ function RebateModal({ onClose, onSave }) {
 
 // ── CreditNoteModal ───────────────────────────────────────────────────────────
 
-function CreditNoteModal({ onClose, onSave, openInvoices }) {
-  const [form, setForm] = useState({ clientId: '', clientName: '', linkedTxnId: '', amount: '', txnDate: new Date().toISOString().slice(0,10), narration: '', billingProfileCode: '', notes: '' });
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+function CreditNoteModal({ onClose, onSave, openInvoices, creditNotes }) {
+  const [ledgerClassFilter, setLedgerClassFilter] = useState('regular');
+  const [form, setForm] = useState({
+    clientId: '',
+    clientName: '',
+    linkedTxnId: '',
+    amount: '',
+    txnDate: new Date().toISOString().slice(0, 10),
+    narration: '',
+    billingProfileCode: '',
+    notes: '',
+  });
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  const creditedByInvoice = useMemo(() => {
+    const m = {};
+    (creditNotes || []).forEach((c) => {
+      if (!c.linkedTxnId) return;
+      const k = String(c.linkedTxnId);
+      m[k] = (m[k] || 0) + (parseFloat(c.amount, 10) || 0);
+    });
+    return m;
+  }, [creditNotes]);
+
+  const invoiceOptions = useMemo(() => (
+    (openInvoices || []).filter((inv) => {
+      if ((inv.ledgerClass || 'regular') !== ledgerClassFilter) return false;
+      const st = inv.status || inv.invoiceStatus || '';
+      if (st === 'cancelled') return false;
+      const cred = creditedByInvoice[String(inv.id)] || 0;
+      const rem = (parseFloat(inv.amount, 10) || 0) - cred;
+      return rem > 0.0001;
+    })
+  ), [openInvoices, ledgerClassFilter, creditedByInvoice]);
+
   const handleSave = () => {
-    if (!form.clientId || !form.amount || !form.linkedTxnId) return;
+    if (!form.amount || !form.linkedTxnId) return;
     onSave(form);
     onClose();
   };
+
   return (
     <div style={overlayStyle}>
       <div style={modalStyle}>
@@ -1637,23 +1822,54 @@ function CreditNoteModal({ onClose, onSave, openInvoices }) {
         </div>
         <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
           <label style={labelStyle}>
-            Client
-            <ClientSearchDropdown
-              value={form.clientId}
-              displayValue={form.clientName}
-              onChange={c => setForm(f => ({ ...f, clientId: c.id, clientName: c.displayName }))}
-              placeholder="Search client by name…"
-            />
-          </label>
-          <label style={labelStyle}>
-            Original Invoice (required)
-            <select style={inputStyle} value={form.linkedTxnId} onChange={e=>set('linkedTxnId',e.target.value)}>
-              <option value="">— Select Invoice —</option>
-              {(openInvoices || []).map(inv=>(
-                <option key={inv.id} value={inv.id}>{inv.invoiceNumber} – {inv.clientName} (₹{inv.amount?.toLocaleString('en-IN')})</option>
+            Invoice ledger type
+            <select
+              style={inputStyle}
+              value={ledgerClassFilter}
+              onChange={(e) => {
+                setLedgerClassFilter(e.target.value);
+                setForm((f) => ({ ...f, linkedTxnId: '' }));
+              }}
+            >
+              {LEDGER_CLASS_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
           </label>
+          <label style={labelStyle}>
+            Original Invoice (required)
+            <select
+              style={inputStyle}
+              value={form.linkedTxnId}
+              onChange={(e) => {
+                const idStr = e.target.value;
+                const inv = (openInvoices || []).find((i) => String(i.id) === String(idStr));
+                setForm((f) => ({
+                  ...f,
+                  linkedTxnId: idStr,
+                  clientId: inv?.clientId != null ? String(inv.clientId) : f.clientId,
+                  clientName: inv?.clientName || f.clientName,
+                  billingProfileCode: inv?.billingProfileCode || f.billingProfileCode,
+                }));
+              }}
+            >
+              <option value="">— Select Invoice —</option>
+              {invoiceOptions.map((inv) => {
+                const cred = creditedByInvoice[String(inv.id)] || 0;
+                const rem = Math.max(0, (parseFloat(inv.amount, 10) || 0) - cred);
+                return (
+                  <option key={inv.id} value={inv.id}>
+                    {inv.invoiceNumber} – {inv.clientName} (balance ₹{rem.toLocaleString('en-IN')})
+                  </option>
+                );
+              })}
+            </select>
+          </label>
+          {form.linkedTxnId ? (
+            <div style={{ fontSize: 12, color: '#64748b' }}>
+              Ledger type for this credit note is taken from the selected invoice ({ledgerClassFilter === 'memorandum' ? 'Memorandum' : 'Regular'}).
+            </div>
+          ) : null}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Amount (₹)
@@ -1871,6 +2087,8 @@ export default function Invoices() {
   const [ledgerFyStartYear, setLedgerFyStartYear] = useState(null);
   const [ledgerFilterDateFrom, setLedgerFilterDateFrom] = useState('');
   const [ledgerFilterDateTo, setLedgerFilterDateTo]     = useState('');
+  const [ledgerLedgerClass, setLedgerLedgerClass] = useState('regular');
+  const [ledgerLedgerView, setLedgerLedgerView] = useState('consolidated');
 
   // ── Service billing tab ─────────────────────────────────────────────────────
   const [billingCompletion, setBillingCompletion]       = useState('any');
@@ -1993,8 +2211,16 @@ export default function Invoices() {
     if (tab !== 'ledger' || !ledgerClientId) return;
     setLedgerLoading(true);
     const ledgerParam = ledgerEntityType === 'organization'
-      ? { organizationId: ledgerClientId }
-      : { clientId: ledgerClientId };
+      ? {
+        organizationId: ledgerClientId,
+        ledgerClass:    ledgerLedgerClass,
+        ledgerView:     ledgerLedgerView,
+      }
+      : {
+        clientId:    ledgerClientId,
+        ledgerClass: ledgerLedgerClass,
+        ledgerView:  ledgerLedgerView,
+      };
     Promise.all([
       getLedger(ledgerParam).catch(() => []),
       getOpeningBalance(ledgerClientId).catch(() => []),
@@ -2007,12 +2233,12 @@ export default function Invoices() {
         return fys[fys.length - 1];
       });
     }).finally(() => setLedgerLoading(false));
-  }, [tab, ledgerClientId, ledgerEntityType]);
+  }, [tab, ledgerClientId, ledgerEntityType, ledgerLedgerClass, ledgerLedgerView]);
 
   useEffect(() => {
     setLedgerFilterDateFrom('');
     setLedgerFilterDateTo('');
-  }, [ledgerClientId]);
+  }, [ledgerClientId, ledgerLedgerClass, ledgerLedgerView]);
 
   useEffect(() => {
     setBillingPage(1);
@@ -2116,6 +2342,7 @@ export default function Invoices() {
     } else {
       payload.client_id = idNum;
     }
+    payload.ledger_class = data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular';
     payload.invoice_cost_analysis_confirm = Boolean(data.invoiceCostAnalysisConfirm);
     createTxn(payload)
       .then((newInv) => {
@@ -2158,6 +2385,8 @@ export default function Invoices() {
       billing_profile_code: data.billingProfileCode,
       linked_txn_id:        selectedInvoice.id,
       firm_bank_account_id: parseInt(data.firmBankAccountId, 10),
+      ledger_class:         data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
     };
     if (selectedInvoice.organizationId) {
       receiptBody.organization_id = selectedInvoice.organizationId;
@@ -2194,6 +2423,8 @@ export default function Invoices() {
       paid_from: data.paidFrom || null,
       narration,
       notes: data.notes || null,
+      ledger_class: data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
     };
     if (data.entityType === 'organization') {
       payload.organization_id = idNum;
@@ -2216,6 +2447,8 @@ export default function Invoices() {
       firm_bank_account_id: parseInt(data.firmBankAccountId, 10),
       linked_txn_id:        data.linkedTxnId || null,
       notes:                data.notes,
+      ledger_class:         data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
     })
       .then(rec => setReceipts(prev => [rec, ...prev]))
       .catch(() => {});
@@ -2230,6 +2463,8 @@ export default function Invoices() {
       tds_rate:             parseFloat(data.tdsRate) || 0,
       billing_profile_code: data.billingProfileCode,
       notes:                data.notes,
+      ledger_class:         data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
     })
       .then(entry => setTdsEntries(prev => [entry, ...prev]))
       .catch(() => {});
@@ -2256,30 +2491,59 @@ export default function Invoices() {
       narration:            data.narration,
       billing_profile_code: data.billingProfileCode,
       notes:                data.notes,
+      ledger_class:         data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
     })
       .then(reb => setRebates(prev => [reb, ...prev]))
       .catch(() => {});
   }
 
   function handleSaveCreditNote(data) {
-    createCreditNote({
-      client_id:            data.clientId,
-      amount:               parseFloat(data.amount),
+    const inv = invoices.find((i) => String(i.id) === String(data.linkedTxnId));
+    if (!inv) {
+      window.alert('Invoice not found.');
+      return;
+    }
+    const cred = creditNotes
+      .filter((c) => String(c.linkedTxnId) === String(inv.id))
+      .reduce((s, c) => s + (parseFloat(c.amount, 10) || 0), 0);
+    const remaining = (parseFloat(inv.amount, 10) || 0) - cred;
+    const amt = parseFloat(data.amount, 10);
+    if (amt > remaining + 0.0001) {
+      window.alert(`Amount exceeds remaining creditable balance (₹${remaining.toLocaleString('en-IN')}).`);
+      return;
+    }
+    const payload = {
+      amount:               amt,
       txn_date:             data.txnDate,
-      linked_txn_id:        data.linkedTxnId,
+      linked_txn_id:        parseInt(data.linkedTxnId, 10),
       narration:            data.narration,
-      billing_profile_code: data.billingProfileCode,
+      billing_profile_code: data.billingProfileCode || inv.billingProfileCode,
       notes:                data.notes,
-    })
+    };
+    if (inv.organizationId) {
+      payload.organization_id = inv.organizationId;
+    } else {
+      payload.client_id = inv.clientId || data.clientId;
+    }
+    createCreditNote(payload)
       .then(cn => setCreditNotes(prev => [cn, ...prev]))
-      .catch(() => {});
+      .catch((err) => { window.alert(err?.message || 'Could not create credit note.'); });
   }
 
   function handleOpeningBalanceSaved() {
     if (ledgerClientId) {
       const ledgerParam = ledgerEntityType === 'organization'
-        ? { organizationId: ledgerClientId }
-        : { clientId: ledgerClientId };
+        ? {
+          organizationId: ledgerClientId,
+          ledgerClass:    ledgerLedgerClass,
+          ledgerView:     ledgerLedgerView,
+        }
+        : {
+          clientId:    ledgerClientId,
+          ledgerClass: ledgerLedgerClass,
+          ledgerView:  ledgerLedgerView,
+        };
       Promise.all([
         getLedger(ledgerParam).catch(() => []),
         getOpeningBalance(ledgerClientId).catch(() => []),
@@ -2538,6 +2802,7 @@ export default function Invoices() {
       {showCnModal && (
         <CreditNoteModal
           openInvoices={invoices}
+          creditNotes={creditNotes}
           onClose={() => setShowCnModal(false)}
           onSave={(data) => { handleSaveCreditNote(data); setShowCnModal(false); }}
         />
@@ -3234,6 +3499,30 @@ export default function Invoices() {
                 placeholder="Search contact or organization…"
               />
             </div>
+            {ledgerClientId && (
+              <>
+                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Ledger type:</span>
+                <select
+                  style={{ ...inputStyle, minWidth: 116, cursor:'pointer' }}
+                  value={ledgerLedgerClass}
+                  onChange={(e) => setLedgerLedgerClass(e.target.value)}
+                >
+                  {LEDGER_CLASS_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>View:</span>
+                <select
+                  style={{ ...inputStyle, minWidth: 144, cursor:'pointer' }}
+                  value={ledgerLedgerView}
+                  onChange={(e) => setLedgerLedgerView(e.target.value)}
+                >
+                  {LEDGER_VIEW_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </>
+            )}
             {ledgerClientId && !ledgerLoading && (
               <>
                 <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Financial year:</span>

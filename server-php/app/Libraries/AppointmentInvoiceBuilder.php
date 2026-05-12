@@ -66,6 +66,7 @@ final class AppointmentInvoiceBuilder
             'invoice_status'             => 'sent',
             'appointment_id'           => (int)($appointment['id'] ?? 0),
             'created_by'                 => $createdBy,
+            'ledger_class'               => LedgerDimensions::CLASS_REGULAR,
         ];
         if ($cid > 0) {
             $body['client_id'] = $cid;

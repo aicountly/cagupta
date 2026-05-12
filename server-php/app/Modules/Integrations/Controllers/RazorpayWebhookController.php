@@ -5,6 +5,7 @@ namespace App\Controllers\Webhooks;
 
 use App\Controllers\BaseController;
 use App\Libraries\AppointmentPaymentHooks;
+use App\Libraries\LedgerDimensions;
 use App\Libraries\RazorpayClient;
 use App\Models\RazorpayWebhookEventModel;
 use App\Models\TxnModel;
@@ -123,6 +124,15 @@ class RazorpayWebhookController extends BaseController
             'created_by'         => null,
             'appointment_id'     => $aptId > 0 ? $aptId : null,
         ];
+        $lines = $invoice['line_items'] ?? [];
+        if (!is_array($lines)) {
+            $lines = [];
+        }
+        $totals = LedgerDimensions::invoiceLineSubtotalsByKind($lines);
+        $receipt['ledger_class'] = LedgerDimensions::normalizeLedgerClass($invoice['ledger_class'] ?? null);
+        $receipt['ledger_movement_kind'] = $totals['fee_sub'] >= $totals['reimbursement_sub']
+            ? LedgerDimensions::KIND_FEES
+            : LedgerDimensions::KIND_REIMBURSEMENT;
         if (($receipt['client_id'] ?? null) === null && ($receipt['organization_id'] ?? null) === null) {
             http_response_code(200);
             echo json_encode(['ok' => true, 'ignored' => 'no_entity']);

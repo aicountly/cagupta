@@ -101,6 +101,16 @@ function normalizeTxn(t) {
     createdAt:          t.created_at       || '',
     lineItems:          normalizeLineItems(t.line_items),
     gstBreakdown:       normalizeGstBreakdown(t.gst_breakdown),
+    firmBankAccountId:  t.firm_bank_account_id != null ? parseInt(t.firm_bank_account_id, 10) || null : null,
+    counterpartyFirmBankAccountId: t.counterparty_firm_bank_account_id != null
+      ? parseInt(t.counterparty_firm_bank_account_id, 10) || null : null,
+    firmExpenseCategory: t.firm_expense_category || '',
+    movement:           t.movement != null ? parseFloat(t.movement) : null,
+    rowType:            t.row_type || '',
+    ledgerClass:        t.ledger_class || 'regular',
+    ledgerMovementKind: t.ledger_movement_kind || null,
+    sourceTxnId:        t.source_txn_id != null ? parseInt(t.source_txn_id, 10) || null : null,
+    ledgerSlice:        t.ledger_slice || null,
   };
 }
 
@@ -223,6 +233,8 @@ export async function getLedger(clientIdOrObj) {
   if (clientIdOrObj && typeof clientIdOrObj === 'object') {
     if (clientIdOrObj.clientId)       params.set('client_id', clientIdOrObj.clientId);
     if (clientIdOrObj.organizationId) params.set('organization_id', clientIdOrObj.organizationId);
+    if (clientIdOrObj.ledgerClass)    params.set('ledger_class', clientIdOrObj.ledgerClass);
+    if (clientIdOrObj.ledgerView)     params.set('ledger_view', clientIdOrObj.ledgerView);
   } else if (clientIdOrObj) {
     // backward-compatible: plain number/string treated as clientId
     params.set('client_id', clientIdOrObj);

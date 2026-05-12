@@ -7,7 +7,7 @@ namespace App\Config;
  * Route definitions.
  *
  * Maps HTTP METHOD + path patterns to Controller@method pairs.
- * Patterns support :id (numeric) and :slug (alphanumeric + dash) placeholders.
+ * Patterns support :id (numeric) and :slug (single path segment; no slash) placeholders.
  *
  * Used by public/index.php to dispatch incoming requests.
  */

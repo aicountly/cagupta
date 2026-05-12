@@ -77,6 +77,8 @@ final class CommissionSyncService
             return;
         }
 
+        // Commission accrual is not gated on ledger_class: memorandum invoices use the same rules as regular unless product opts out later.
+
         $lines = $inv['line_items'] ?? [];
         if (!is_array($lines)) {
             $lines = [];

@@ -9,6 +9,7 @@ use App\Libraries\BrevoMailer;
 use App\Libraries\CommissionSyncService;
 use App\Libraries\GstInvoiceTax;
 use App\Libraries\InvoiceCostAnalysis;
+use App\Libraries\LedgerDimensions;
 use App\Libraries\OtpService;
 use App\Libraries\RazorpayClient;
 use App\Models\ClientModel;
@@ -150,6 +151,9 @@ class TxnController extends BaseController
                         $merged['invoice_cost_analysis_ack_at']      = gmdate('Y-m-d H:i:s');
                     }
 
+                    $merged['ledger_class'] = LedgerDimensions::assertLedgerClass($merged['ledger_class'] ?? '');
+                    $merged['ledger_movement_kind'] = null;
+
                     $id = $this->txn->createInvoice($merged);
                 } catch (\InvalidArgumentException $e) {
                     $this->error($e->getMessage(), 422);
@@ -163,6 +167,11 @@ class TxnController extends BaseController
                 }
                 if ($rcid > 0 && $roid > 0) {
                     $this->error('Provide only one of client_id or organization_id for a receipt.', 422);
+                }
+                try {
+                    $this->enforceMovementLedgerDimensions($body, true);
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
                 }
                 $this->attachValidatedBankAccount($body);
                 $id = $this->txn->createReceipt($body);
@@ -180,17 +189,36 @@ class TxnController extends BaseController
                 if ($pcid > 0 && $poid > 0) {
                     $this->error('Provide only one of client_id or organization_id for a payment expense.', 422);
                 }
+                try {
+                    $this->enforceMovementLedgerDimensions($body, false);
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
+                }
                 $this->attachValidatedBankAccount($body);
                 $id = $this->txn->createPaymentExpense($body);
                 break;
             case 'tds_provisional':
+                try {
+                    $this->enforceMovementLedgerDimensions($body, false);
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
+                }
                 $id = $this->txn->createTds($body);
                 break;
             case 'rebate':
+                try {
+                    $this->enforceMovementLedgerDimensions($body, false);
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
+                }
                 $id = $this->txn->createRebate($body);
                 break;
             case 'credit_note':
-                $id = $this->txn->createCreditNote($body);
+                try {
+                    $id = $this->txn->createCreditNote($body);
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
+                }
                 break;
             case 'opening_balance':
                 $id = $this->txn->setOpeningBalance($body);
@@ -602,10 +630,18 @@ class TxnController extends BaseController
             $this->error('client_id or organization_id is required.', 422);
         }
 
+        $ledgerClass = LedgerDimensions::normalizeLedgerClass($this->query('ledger_class', ''));
+        $viewRaw     = trim((string)$this->query('ledger_view', 'consolidated'));
+        try {
+            $ledgerView = LedgerDimensions::assertLedgerView($viewRaw !== '' ? $viewRaw : 'consolidated');
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
         if ($orgId > 0) {
-            $entries = $this->txn->getLedgerByOrganization($orgId);
+            $entries = $this->txn->getLedgerByOrganization($orgId, $ledgerClass, $ledgerView);
         } else {
-            $entries = $this->txn->getLedgerByClient($clientId);
+            $entries = $this->txn->getLedgerByClient($clientId, $ledgerClass, $ledgerView);
         }
         $this->success($entries, 'Ledger retrieved');
     }
@@ -634,6 +670,12 @@ class TxnController extends BaseController
         $actingUser    = $this->authUser();
         $body['created_by'] = $actingUser ? (int)$actingUser['id'] : null;
 
+        try {
+            $this->enforceMovementLedgerDimensions($body, true);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
         $this->attachValidatedBankAccount($body);
 
         $id  = $this->txn->createReceipt($body);
@@ -659,6 +701,12 @@ class TxnController extends BaseController
 
         $actingUser    = $this->authUser();
         $body['created_by'] = $actingUser ? (int)$actingUser['id'] : null;
+
+        try {
+            $this->enforceMovementLedgerDimensions($body, false);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
 
         $id  = $this->txn->createTds($body);
         $row = $this->txn->find($id);
@@ -718,6 +766,12 @@ class TxnController extends BaseController
         $actingUser    = $this->authUser();
         $body['created_by'] = $actingUser ? (int)$actingUser['id'] : null;
 
+        try {
+            $this->enforceMovementLedgerDimensions($body, false);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
         $id  = $this->txn->createRebate($body);
         $row = $this->txn->find($id);
         $this->success($row, 'Rebate recorded', 201);
@@ -735,14 +789,18 @@ class TxnController extends BaseController
         if ($amount <= 0) {
             $this->error('amount must be greater than zero.', 422);
         }
-        if (empty($body['client_id'])) {
-            $this->error('client_id is required.', 422);
+        if (empty($body['linked_txn_id'])) {
+            $this->error('linked_txn_id is required.', 422);
         }
 
         $actingUser    = $this->authUser();
         $body['created_by'] = $actingUser ? (int)$actingUser['id'] : null;
 
-        $id  = $this->txn->createCreditNote($body);
+        try {
+            $id = $this->txn->createCreditNote($body);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
         $row = $this->txn->find($id);
         $this->success($row, 'Credit note created', 201);
     }
@@ -1040,5 +1098,28 @@ class TxnController extends BaseController
             'currency'    => 'INR',
             'keyId'       => trim((string)(getenv('RAZORPAY_KEY_ID') ?: '')),
         ], 'Razorpay order created');
+    }
+
+    /**
+     * Require ledger_class + ledger_movement_kind for client ledger movements; optionally validate receipt vs invoice.
+     *
+     * @param array<string, mixed> $body
+     */
+    private function enforceMovementLedgerDimensions(array &$body, bool $validateReceiptInvoiceLink): void
+    {
+        $body['ledger_class'] = LedgerDimensions::assertLedgerClass($body['ledger_class'] ?? '');
+        $body['ledger_movement_kind'] = LedgerDimensions::assertLedgerMovementKindRequired($body['ledger_movement_kind'] ?? '');
+        if (!$validateReceiptInvoiceLink || empty($body['linked_txn_id'])) {
+            return;
+        }
+        $inv = $this->txn->find((int)$body['linked_txn_id']);
+        if ($inv === null || ($inv['txn_type'] ?? '') !== 'invoice') {
+            throw new \InvalidArgumentException('linked_txn_id must reference an invoice.');
+        }
+        $invLc = LedgerDimensions::normalizeLedgerClass($inv['ledger_class'] ?? null);
+        if ($invLc !== $body['ledger_class']) {
+            throw new \InvalidArgumentException('Receipt ledger_class must match the linked invoice.');
+        }
+        LedgerDimensions::assertReceiptMovementMatchesInvoice($inv, $body['ledger_movement_kind']);
     }
 }

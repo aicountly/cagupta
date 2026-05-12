@@ -5,6 +5,7 @@ namespace App\Controllers\Client;
 
 use App\Config\Database;
 use App\Controllers\BaseController;
+use App\Libraries\LedgerDimensions;
 use App\Models\ServiceModel;
 use App\Models\TxnModel;
 use PDO;
@@ -106,20 +107,28 @@ final class ClientPortalController extends BaseController
     public function ledger(): never
     {
         $u = $this->assertClient();
+        $ledgerClass = LedgerDimensions::normalizeLedgerClass($this->query('ledger_class', ''));
+        $viewRaw     = trim((string)$this->query('ledger_view', 'consolidated'));
+        try {
+            $ledgerView = LedgerDimensions::assertLedgerView($viewRaw !== '' ? $viewRaw : 'consolidated');
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
         $targetOrg = (int)$this->query('organization_id', 0);
         if ($targetOrg > 0) {
             $allowed = array_map(static fn (array $r): int => (int)$r['id'], $this->allowedOrgIds($u, true));
             if (!in_array($targetOrg, $allowed, true)) {
                 $this->error('Organization access denied.', 403);
             }
-            $this->success($this->txn->getLedgerByOrganization($targetOrg), 'Ledger retrieved');
+            $this->success($this->txn->getLedgerByOrganization($targetOrg, $ledgerClass, $ledgerView), 'Ledger retrieved');
         }
 
         $contactId = (int)($u['contact_id'] ?? 0);
         if ($contactId <= 0) {
             $this->error('No contact ledger is linked to this login.', 422);
         }
-        $this->success($this->txn->getLedgerByClient($contactId), 'Ledger retrieved');
+        $this->success($this->txn->getLedgerByClient($contactId, $ledgerClass, $ledgerView), 'Ledger retrieved');
     }
 
     private function assertClient(): array

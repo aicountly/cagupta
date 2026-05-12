@@ -5,6 +5,8 @@ namespace App\Models;
 
 use App\Config\Database;
 use App\Libraries\InvoiceLineCommission;
+use App\Libraries\LedgerDimensions;
+use App\Libraries\LedgerPresentation;
 use PDO;
 
 /**
@@ -209,43 +211,27 @@ class TxnModel
      *
      * @return array<int, array<string, mixed>>
      */
-    public function getLedgerByClient(int $clientId): array
+    public function getLedgerByClient(int $clientId, string $ledgerClass = LedgerDimensions::CLASS_REGULAR, string $ledgerView = LedgerDimensions::VIEW_CONSOLIDATED): array
     {
         $stmt = $this->db->prepare(
-            "SELECT
-                t.id,
-                t.txn_date          AS date,
-                COALESCE(t.narration, t.invoice_number, t.txn_type) AS narration,
-                t.debit,
-                t.credit,
-                t.billing_profile_code,
-                t.txn_type          AS entry_type,
-                t.invoice_number,
-                t.invoice_status,
-                t.tds_status,
-                t.payment_method,
-                t.reference_number,
-                t.amount,
-                t.notes,
-                t.expense_purpose,
-                t.paid_from,
-                0.0                 AS balance
+            "SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
                AND t.status != 'cancelled'
+               AND t.ledger_class = :ledger_class
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
         );
-        $stmt->execute([':client_id' => $clientId]);
-        $rows = $stmt->fetchAll();
-
-        $balance = 0.0;
+        $stmt->execute([
+            ':client_id'     => $clientId,
+            ':ledger_class' => LedgerDimensions::normalizeLedgerClass($ledgerClass),
+        ]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         foreach ($rows as &$row) {
-            $balance += (float)$row['debit'] - (float)$row['credit'];
-            $row['balance'] = $balance;
+            $this->decodeJsonbInvoiceFields($row);
         }
         unset($row);
 
-        return $rows;
+        return LedgerPresentation::buildLedger($rows, $ledgerView);
     }
 
     /**
@@ -253,43 +239,27 @@ class TxnModel
      *
      * @return array<int, array<string, mixed>>
      */
-    public function getLedgerByOrganization(int $orgId): array
+    public function getLedgerByOrganization(int $orgId, string $ledgerClass = LedgerDimensions::CLASS_REGULAR, string $ledgerView = LedgerDimensions::VIEW_CONSOLIDATED): array
     {
         $stmt = $this->db->prepare(
-            "SELECT
-                t.id,
-                t.txn_date          AS date,
-                COALESCE(t.narration, t.invoice_number, t.txn_type) AS narration,
-                t.debit,
-                t.credit,
-                t.billing_profile_code,
-                t.txn_type          AS entry_type,
-                t.invoice_number,
-                t.invoice_status,
-                t.tds_status,
-                t.payment_method,
-                t.reference_number,
-                t.amount,
-                t.notes,
-                t.expense_purpose,
-                t.paid_from,
-                0.0                 AS balance
+            "SELECT t.*
              FROM txn t
              WHERE t.organization_id = :org_id
                AND t.status != 'cancelled'
+               AND t.ledger_class = :ledger_class
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
         );
-        $stmt->execute([':org_id' => $orgId]);
-        $rows = $stmt->fetchAll();
-
-        $balance = 0.0;
+        $stmt->execute([
+            ':org_id'        => $orgId,
+            ':ledger_class' => LedgerDimensions::normalizeLedgerClass($ledgerClass),
+        ]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         foreach ($rows as &$row) {
-            $balance += (float)$row['debit'] - (float)$row['credit'];
-            $row['balance'] = $balance;
+            $this->decodeJsonbInvoiceFields($row);
         }
         unset($row);
 
-        return $rows;
+        return LedgerPresentation::buildLedger($rows, $ledgerView);
     }
 
     /**
@@ -347,7 +317,8 @@ class TxnModel
                 linked_txn_id, notes, status, created_by, line_items, gst_breakdown,
                 appointment_id,
                 firm_bank_account_id, counterparty_firm_bank_account_id, firm_expense_category,
-                invoice_cost_analysis_ack_user_id, invoice_cost_analysis_ack_at, invoice_cost_analysis
+                invoice_cost_analysis_ack_user_id, invoice_cost_analysis_ack_at, invoice_cost_analysis,
+                ledger_class, ledger_movement_kind
              ) VALUES (
                 :client_id, :organization_id, :txn_type, :txn_date, :narration,
                 :debit, :credit, :amount, :billing_profile_code,
@@ -359,12 +330,19 @@ class TxnModel
                 :linked_txn_id, :notes, :status, :created_by, CAST(:line_items AS jsonb), CAST(:gst_breakdown AS jsonb),
                 :appointment_id,
                 :firm_bank_account_id, :counterparty_firm_bank_account_id, :firm_expense_category,
-                :invoice_cost_analysis_ack_user_id, :invoice_cost_analysis_ack_at, CAST(:invoice_cost_analysis AS jsonb)
+                :invoice_cost_analysis_ack_user_id, :invoice_cost_analysis_ack_at, CAST(:invoice_cost_analysis AS jsonb),
+                :ledger_class, :ledger_movement_kind
              ) RETURNING id'
         );
         $ica = $data['invoice_cost_analysis'] ?? [];
         if (!is_array($ica)) {
             $ica = [];
+        }
+        $ledgerClass = LedgerDimensions::normalizeLedgerClass($data['ledger_class'] ?? null);
+        $lmkRaw = $data['ledger_movement_kind'] ?? null;
+        $ledgerMovementKind = null;
+        if ($lmkRaw !== null && $lmkRaw !== '') {
+            $ledgerMovementKind = LedgerDimensions::assertLedgerMovementKindRequired($lmkRaw);
         }
         $stmt->execute([
             ':client_id'           => $data['client_id']           ?? null,
@@ -407,6 +385,8 @@ class TxnModel
                 ? (int)$data['invoice_cost_analysis_ack_user_id'] : null,
             ':invoice_cost_analysis_ack_at' => $data['invoice_cost_analysis_ack_at'] ?? null,
             ':invoice_cost_analysis' => json_encode($ica, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
+            ':ledger_class'          => $ledgerClass,
+            ':ledger_movement_kind'  => $ledgerMovementKind,
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -436,16 +416,17 @@ class TxnModel
         $this->assertLineItemsSumMatchesSubtotal($lines, $subtotal);
 
         return $this->create(array_merge($data, [
-            'txn_type'       => 'invoice',
-            'invoice_number' => $invoiceNumber,
-            'narration'      => $invoiceNumber,
-            'debit'          => $total,
-            'credit'         => 0,
-            'amount'         => $total,
-            'subtotal'       => $subtotal,
-            'invoice_status' => $data['invoice_status'] ?? $data['status_val'] ?? 'draft',
-            'status'         => 'active',
-            'line_items'     => $lines,
+            'txn_type'             => 'invoice',
+            'invoice_number'       => $invoiceNumber,
+            'narration'            => $invoiceNumber,
+            'debit'                => $total,
+            'credit'               => 0,
+            'amount'               => $total,
+            'subtotal'             => $subtotal,
+            'invoice_status'       => $data['invoice_status'] ?? $data['status_val'] ?? 'draft',
+            'status'               => 'active',
+            'line_items'           => $lines,
+            'ledger_movement_kind' => null,
         ]));
     }
 
@@ -553,6 +534,22 @@ class TxnModel
     }
 
     /**
+     * Sum credit notes already issued against an invoice txn (excludes cancelled credit notes).
+     */
+    public function sumLinkedCreditNotesForInvoice(int $invoiceTxnId): float
+    {
+        $stmt = $this->db->prepare(
+            "SELECT COALESCE(SUM(amount), 0) FROM txn
+             WHERE linked_txn_id = :invoice_id
+               AND txn_type = 'credit_note'
+               AND status != 'cancelled'"
+        );
+        $stmt->execute([':invoice_id' => $invoiceTxnId]);
+
+        return (float)$stmt->fetchColumn();
+    }
+
+    /**
      * Create a credit note (partial or full reversal of an invoice).
      * Marks the original invoice as cancelled or partially reversed.
      *
@@ -562,15 +559,48 @@ class TxnModel
     public function createCreditNote(array $data): int
     {
         $amount = (float)($data['amount'] ?? 0);
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('Credit note amount must be greater than zero.');
+        }
 
-        $newId = $this->create(array_merge($data, [
-            'txn_type'     => 'credit_note',
-            'narration'    => $data['narration'] ?? 'Credit Note',
-            'debit'        => 0,
-            'credit'       => $amount,
-            'amount'       => $amount,
-            'status'       => 'active',
-        ]));
+        $linkedId = (int)($data['linked_txn_id'] ?? 0);
+        if ($linkedId <= 0) {
+            throw new \InvalidArgumentException('linked_txn_id is required for a credit note.');
+        }
+
+        $orig = $this->find($linkedId);
+        if ($orig === null || ($orig['txn_type'] ?? '') !== 'invoice') {
+            throw new \InvalidArgumentException('Credit note must reference an invoice transaction.');
+        }
+
+        $alreadyCredited = $this->sumLinkedCreditNotesForInvoice($linkedId);
+        $invoiceAmount   = (float)($orig['amount'] ?? 0);
+        $remaining       = round($invoiceAmount - $alreadyCredited, 2);
+        if ($amount > $remaining + 0.0001) {
+            throw new \InvalidArgumentException(
+                'Credit note amount exceeds remaining creditable balance on this invoice (₹'
+                . number_format($remaining, 2, '.', '')
+                . ' available).'
+            );
+        }
+
+        $ledgerClass = LedgerDimensions::normalizeLedgerClass($orig['ledger_class'] ?? null);
+
+        $merged = array_merge($data, [
+            'txn_type'               => 'credit_note',
+            'narration'              => $data['narration'] ?? 'Credit Note',
+            'debit'                  => 0,
+            'credit'                 => $amount,
+            'amount'                 => $amount,
+            'status'                 => 'active',
+            'ledger_class'           => $ledgerClass,
+            'ledger_movement_kind'   => null,
+            'client_id'              => $data['client_id'] ?? $orig['client_id'] ?? null,
+            'organization_id'        => $data['organization_id'] ?? $orig['organization_id'] ?? null,
+            'billing_profile_code'   => $data['billing_profile_code'] ?? $orig['billing_profile_code'] ?? null,
+        ]);
+
+        $newId = $this->create($merged);
 
         // Mark original invoice as reversed/cancelled if linked
         if (!empty($data['linked_txn_id'])) {
@@ -610,17 +640,19 @@ class TxnModel
         )->execute([':client_id' => $clientId, ':profile_code' => $profileCode]);
 
         return $this->create([
-            'client_id'            => $clientId,
-            'txn_type'             => 'opening_balance',
-            'txn_date'             => $data['txn_date'] ?? date('Y-m-d'),
-            'narration'            => 'Opening Balance',
-            'invoice_number'       => 'OB-' . $clientId . '-' . $profileCode,
-            'debit'                => $type === 'debit'  ? $amount : 0,
-            'credit'               => $type === 'credit' ? $amount : 0,
-            'amount'               => $amount,
-            'billing_profile_code' => $profileCode,
-            'status'               => 'active',
-            'created_by'           => $data['created_by'] ?? null,
+            'client_id'              => $clientId,
+            'txn_type'               => 'opening_balance',
+            'txn_date'               => $data['txn_date'] ?? date('Y-m-d'),
+            'narration'              => 'Opening Balance',
+            'invoice_number'         => 'OB-' . $clientId . '-' . $profileCode,
+            'debit'                  => $type === 'debit'  ? $amount : 0,
+            'credit'                 => $type === 'credit' ? $amount : 0,
+            'amount'                 => $amount,
+            'billing_profile_code'   => $profileCode,
+            'status'                 => 'active',
+            'created_by'             => $data['created_by'] ?? null,
+            'ledger_class'           => LedgerDimensions::CLASS_REGULAR,
+            'ledger_movement_kind'   => null,
         ]);
     }
 
@@ -776,6 +808,7 @@ class TxnModel
             'tds_status', 'tds_section', 'tds_rate',
             'linked_txn_id', 'notes', 'status', 'line_items', 'gst_breakdown',
             'invoice_cost_analysis_ack_user_id', 'invoice_cost_analysis_ack_at', 'invoice_cost_analysis',
+            'ledger_class', 'ledger_movement_kind',
         ];
         foreach ($allowed as $field) {
             if (!array_key_exists($field, $data)) {

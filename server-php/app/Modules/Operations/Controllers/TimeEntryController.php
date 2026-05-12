@@ -53,6 +53,26 @@ class TimeEntryController extends BaseController
             . 'setting app_role there to match DB_USER.';
     }
 
+    /**
+     * Missing table/column (migrations not applied) → operator-facing hint instead of a generic 500.
+     */
+    private static function isDbSchemaMismatch(\Throwable $e): bool
+    {
+        if (!$e instanceof \PDOException) {
+            return false;
+        }
+        $state = (string)($e->errorInfo[0] ?? '');
+
+        return $state === '42P01' || $state === '42703';
+    }
+
+    private static function dbSchemaMismatchMessage(): string
+    {
+        return 'The database schema is missing objects required for timesheets (tables or columns). '
+            . 'Apply pending migrations under server-php/database/migrations (for example cap/overflow support '
+            . '037_time_entry_timers.sql and 057_timesheet_overflow_approvals.sql) so schema_migrations is up to date.';
+    }
+
     public function __construct()
     {
         $this->services = new ServiceModel();
@@ -91,6 +111,29 @@ class TimeEntryController extends BaseController
             $this->error('Service not found.', 404);
         }
 
+        try {
+            $this->storeForServiceExecute($id, $service);
+        } catch (\Throwable $e) {
+            if (self::isDbPermissionDenied($e)) {
+                $this->error(
+                    self::dbGrantDeniedMessage(
+                        'SELECT/INSERT on time_entries, timesheet_overflow_requests, and related tables'
+                    ),
+                    503
+                );
+            }
+            if (self::isDbSchemaMismatch($e)) {
+                $this->error(self::dbSchemaMismatchMessage(), 503);
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $service
+     */
+    private function storeForServiceExecute(int $id, array $service): never
+    {
         $body    = $this->getJsonBody();
         $actor   = $this->authUser();
         $actorId = $actor ? (int)$actor['id'] : 0;
