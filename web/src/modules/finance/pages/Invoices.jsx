@@ -960,21 +960,23 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [err, setErr] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [sendingOtp, setSendingOtp] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const ids = useMemo(() => items.map((i) => i.id), [items]);
   const isPlural = items.length !== 1;
   const heading = title || (isPlural ? `Delete ${items.length} records` : 'Delete ledger record');
+  const otpBusy = sendingOtp || deleting;
 
   async function sendOtp() {
     setErr('');
-    setBusy(true);
+    setSendingOtp(true);
     try {
       await requestLedgerDeleteOtp(ids);
       setOtpSent(true);
     } catch (e) {
       setErr(e.message || 'Failed to send OTP.');
     } finally {
-      setBusy(false);
+      setSendingOtp(false);
     }
   }
 
@@ -983,7 +985,7 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
       setErr('Enter the superadmin OTP.');
       return;
     }
-    setBusy(true);
+    setDeleting(true);
     setErr('');
     try {
       const raw = await bulkDeleteTxns(ids, { superadminOtp: otp.trim() });
@@ -993,18 +995,37 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
     } catch (e) {
       setErr(e.message || 'Delete failed.');
     } finally {
-      setBusy(false);
+      setDeleting(false);
     }
   }
 
   return (
-    <div style={overlayStyle}>
-      <div style={modalStyle}>
+    <div style={{ ...overlayStyle, zIndex: 10100 }}>
+      <div
+        style={{
+          ...modalStyle,
+          display: 'flex',
+          flexDirection: 'column',
+          maxHeight: '90vh',
+          overflow: 'hidden',
+          zIndex: 1,
+        }}
+      >
         <div style={modalHeaderStyle}>
           <span style={{ fontSize: 15, fontWeight: 700, color: '#b91c1c' }}>{heading}</span>
-          <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
+          <button type="button" onClick={() => !deleting && onClose()} style={closeBtnStyle}>✕</button>
         </div>
-        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            overflowY: 'auto',
+            padding: '16px 24px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 12,
+          }}
+        >
           <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
             {isPlural ? (
               <>Permanently delete <strong>{items.length}</strong> selected ledger transaction(s). This cannot be undone.</>
@@ -1013,7 +1034,7 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
             )}
           </p>
           {isPlural && (
-            <ul style={{ fontSize: 12, color: '#475569', margin: 0, paddingLeft: 18, maxHeight: 160, overflow: 'auto' }}>
+            <ul style={{ fontSize: 12, color: '#475569', margin: 0, paddingLeft: 18, maxHeight: 220, overflow: 'auto' }}>
               {items.map((it) => (
                 <li key={it.id} style={{ marginBottom: 4 }}>{it.label || `Transaction #${it.id}`}</li>
               ))}
@@ -1023,19 +1044,42 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
             Request a superadmin OTP (one code for this entire batch), then enter it to confirm.
           </p>
           {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
-          <button type="button" style={btnSecondary} disabled={busy} onClick={sendOtp}>
-            {busy && !otpSent ? 'Sending…' : 'Request superadmin OTP'}
+          <button type="button" style={btnSecondary} disabled={otpBusy} onClick={sendOtp}>
+            {sendingOtp ? 'Sending…' : 'Request superadmin OTP'}
           </button>
           {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent</span>}
           <label style={labelStyle}>
             Superadmin OTP *
-            <input type="text" style={inputStyle} inputMode="numeric" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\s/g, ''))} />
+            <input
+              type="text"
+              style={inputStyle}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="6-digit code"
+              value={otp}
+              onChange={(e) => setOtp(e.target.value.replace(/\s/g, ''))}
+            />
           </label>
         </div>
-        <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button type="button" disabled={busy} onClick={confirmDelete} style={{ ...btnPrimary, background: '#b91c1c' }}>
-            {isPlural ? `Delete ${items.length} records` : 'Delete'}
+        <div
+          style={{
+            flexShrink: 0,
+            padding: '12px 24px 20px',
+            borderTop: '1px solid #f1f5f9',
+            display: 'flex',
+            justifyContent: 'flex-end',
+            gap: 10,
+            background: '#fff',
+          }}
+        >
+          <button type="button" disabled={deleting} onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button
+            type="button"
+            disabled={deleting}
+            onClick={confirmDelete}
+            style={{ ...btnPrimary, background: deleting ? '#cbd5e1' : '#b91c1c', cursor: deleting ? 'default' : 'pointer' }}
+          >
+            {deleting ? 'Deleting…' : (isPlural ? `Delete ${items.length} records` : 'Delete')}
           </button>
         </div>
       </div>
