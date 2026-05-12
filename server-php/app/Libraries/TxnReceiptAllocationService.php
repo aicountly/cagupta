@@ -348,4 +348,112 @@ final class TxnReceiptAllocationService
 
         $allocModel->replaceForReceipt($receiptId, $newRows);
     }
+
+    /**
+     * Validate payment_expense settlement lines (receipt + unallocated_advance) and return per-receipt link totals.
+     *
+     * @return array{receipt_totals: array<int, float>}
+     */
+    public static function normalizePaymentExpenseSettlementLines(
+        float $paymentAmount,
+        mixed $linesRaw,
+        int $clientId,
+        int $orgId,
+        string $ledgerClass,
+        string $ledgerMovementKind,
+        TxnModel $txn
+    ): array {
+        $paymentAmount = round($paymentAmount, 2);
+        if ($paymentAmount <= 0) {
+            throw new InvalidArgumentException('Invalid payment amount.');
+        }
+        if ($clientId <= 0 && $orgId <= 0) {
+            throw new InvalidArgumentException('client_id or organization_id is required.');
+        }
+        if ($clientId > 0 && $orgId > 0) {
+            throw new InvalidArgumentException('Provide only one of client_id or organization_id.');
+        }
+        if (!is_array($linesRaw) || $linesRaw === []) {
+            throw new InvalidArgumentException('settlement_lines is required and must not be empty.');
+        }
+        $payLc  = LedgerDimensions::assertLedgerClass($ledgerClass);
+        $payMk  = LedgerDimensions::assertLedgerMovementKindRequired($ledgerMovementKind);
+        $receiptTotals = [];
+        $unallocSum    = 0.0;
+        foreach ($linesRaw as $line) {
+            if (!is_array($line)) {
+                throw new InvalidArgumentException('Each settlement line must be an object.');
+            }
+            $tt = strtolower(trim((string)($line['target_type'] ?? '')));
+            $tt = match ($tt) {
+                'receipt', 'unallocated_advance' => $tt,
+                default => throw new InvalidArgumentException(
+                    'Invalid settlement target_type; use receipt or unallocated_advance.'
+                ),
+            };
+            $amt = round((float)($line['amount'] ?? 0), 2);
+            if ($amt <= 0) {
+                throw new InvalidArgumentException('Each settlement line amount must be greater than zero.');
+            }
+            if ($tt === 'unallocated_advance') {
+                $unallocSum += $amt;
+                continue;
+            }
+            $tid = (int)($line['target_txn_id'] ?? 0);
+            if ($tid <= 0) {
+                throw new InvalidArgumentException('target_txn_id is required for receipt settlement lines.');
+            }
+            $receiptTotals[$tid] = round(($receiptTotals[$tid] ?? 0) + $amt, 2);
+        }
+        $receiptSum = 0.0;
+        foreach ($receiptTotals as $a) {
+            $receiptSum += $a;
+        }
+        $lineTotal = round($receiptSum + $unallocSum, 2);
+        if (abs($lineTotal - $paymentAmount) > 0.02) {
+            throw new InvalidArgumentException(
+                'Settlement lines must sum to the payment amount (₹'
+                . number_format($paymentAmount, 2, '.', '') . ').'
+            );
+        }
+        $allocModel = new TxnSettlementAllocationModel();
+        foreach ($receiptTotals as $rid => $need) {
+            $rec = $txn->find((int)$rid);
+            if ($rec === null || ($rec['txn_type'] ?? '') !== 'receipt') {
+                throw new InvalidArgumentException('Settlement receipt not found.');
+            }
+            if (($rec['status'] ?? '') === 'cancelled') {
+                throw new InvalidArgumentException('Cannot settle against a cancelled receipt.');
+            }
+            $rc = (int)($rec['client_id'] ?? 0);
+            $ro = (int)($rec['organization_id'] ?? 0);
+            if ($clientId > 0) {
+                if ($rc !== $clientId || $ro !== 0) {
+                    throw new InvalidArgumentException('Receipt does not belong to this contact ledger.');
+                }
+            } elseif ($orgId > 0) {
+                if ($ro !== $orgId || $rc !== 0) {
+                    throw new InvalidArgumentException('Receipt does not belong to this organization ledger.');
+                }
+            }
+            $rlc = LedgerDimensions::normalizeLedgerClass($rec['ledger_class'] ?? null);
+            if ($rlc !== $payLc) {
+                throw new InvalidArgumentException('Receipt ledger type must match the payment expense.');
+            }
+            $rMk = (string)($rec['ledger_movement_kind'] ?? '');
+            if ($rMk !== $payMk) {
+                throw new InvalidArgumentException('Receipt ledger view must match the payment expense.');
+            }
+            $avail = round($allocModel->sumUnallocatedAdvanceForSourceReceipt((int)$rid), 2);
+            if ($need > $avail + 0.01) {
+                $label = trim((string)($rec['public_ref'] ?? ''));
+                $lid   = $label !== '' ? $label : ('#' . (string)$rid);
+                throw new InvalidArgumentException(
+                    'Receipt ' . $lid . ' has only ₹' . number_format($avail, 2, '.', '') . ' unallocated.'
+                );
+            }
+        }
+
+        return ['receipt_totals' => $receiptTotals];
+    }
 }

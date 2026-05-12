@@ -1984,8 +1984,9 @@ export default function Invoices() {
     const narration = data.description.trim()
       ? `${purposeLabel} — ${data.description.trim()}`
       : purposeLabel;
+    const payAmt = parseFloat(data.amount);
     const payload = {
-      amount: parseFloat(data.amount),
+      amount: payAmt,
       txn_date: data.txnDate,
       payment_method: data.method,
       reference_number: data.referenceNumber || null,
@@ -2003,21 +2004,23 @@ export default function Invoices() {
       payload.client_id = idNum;
     }
     const mode = data.settlementMode === 'receipt' ? 'receipt' : 'unallocated_advance';
-    payload.settlement_mode = mode;
-    if (mode === 'receipt') {
+    if (mode === 'unallocated_advance') {
+      payload.settlement_lines = [{ target_type: 'unallocated_advance', amount: payAmt }];
+    } else {
       const receiptKey = (data.settleFromReceiptRef || '').trim();
-      if (/^\d+$/.test(receiptKey)) {
-        payload.settle_from_receipt_id = parseInt(receiptKey, 10);
-      } else {
-        payload.settle_from_receipt_public_ref = receiptKey;
+      if (!receiptKey) {
+        window.alert('Enter the receipt numeric id, or use Finance → Invoices for full receipt picker.');
+        return;
       }
-      const settleAmtRaw = (data.settleFromReceiptAmount || '').trim();
-      if (settleAmtRaw !== '') {
-        const a = parseFloat(settleAmtRaw, 10);
-        if (Number.isFinite(a) && a > 0) {
-          payload.settle_from_receipt_amount = a;
-        }
+      if (!/^\d+$/.test(receiptKey)) {
+        window.alert('This screen only accepts numeric receipt ids. Open Finance → Invoices to pick by RCP- reference.');
+        return;
       }
+      payload.settlement_lines = [{
+        target_type: 'receipt',
+        target_txn_id: parseInt(receiptKey, 10),
+        amount: payAmt,
+      }];
     }
     createPaymentExpense(payload)
       .then((row) => setPaymentExpenses((prev) => [row, ...prev]))

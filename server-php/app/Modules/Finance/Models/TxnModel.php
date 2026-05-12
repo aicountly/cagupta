@@ -106,6 +106,69 @@ class TxnModel
     }
 
     /**
+     * Receipts on this ledger with a positive unallocated_advance balance (for payment-on-behalf pickers).
+     *
+     * @return list<array{id:int, public_ref:?string, txn_date:string, amount:float, unallocated_advance:float}>
+     */
+    public function listReceiptsWithUnallocatedAdvance(
+        int $clientId,
+        int $orgId,
+        string $ledgerClass,
+        string $ledgerMovementKind
+    ): array {
+        $lc = LedgerDimensions::normalizeLedgerClass($ledgerClass);
+        $mk = LedgerDimensions::assertLedgerMovementKindRequired($ledgerMovementKind);
+        if ($clientId <= 0 && $orgId <= 0) {
+            return [];
+        }
+        if ($clientId > 0 && $orgId > 0) {
+            return [];
+        }
+        $where = [
+            "r.txn_type = 'receipt'",
+            "r.status IS DISTINCT FROM 'cancelled'",
+            'r.ledger_class = :lc',
+            'r.ledger_movement_kind = :mk',
+        ];
+        $params = [':lc' => $lc, ':mk' => $mk];
+        if ($clientId > 0) {
+            $where[]        = 'r.client_id = :cid';
+            $where[]        = 'COALESCE(r.organization_id, 0) = 0';
+            $params[':cid'] = $clientId;
+        } else {
+            $where[]        = 'r.organization_id = :oid';
+            $where[]        = 'COALESCE(r.client_id, 0) = 0';
+            $params[':oid'] = $orgId;
+        }
+        $sql = 'SELECT r.id,
+                       r.public_ref,
+                       r.txn_date::text AS txn_date,
+                       r.amount::float8 AS amount,
+                       COALESCE(SUM(CASE WHEN a.target_type = \'unallocated_advance\' THEN a.amount::float8 ELSE 0 END), 0) AS unallocated_advance
+                FROM txn r
+                LEFT JOIN txn_settlement_allocation a ON a.source_txn_id = r.id
+                WHERE ' . implode(' AND ', $where) . '
+                GROUP BY r.id, r.public_ref, r.txn_date, r.amount
+                HAVING COALESCE(SUM(CASE WHEN a.target_type = \'unallocated_advance\' THEN a.amount::float8 ELSE 0 END), 0) > 0.005
+                ORDER BY r.txn_date DESC, r.id DESC';
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        $out  = [];
+        foreach ($rows as $row) {
+            $out[] = [
+                'id'                    => (int)$row['id'],
+                'public_ref'            => isset($row['public_ref']) ? (string)$row['public_ref'] : '',
+                'txn_date'              => (string)($row['txn_date'] ?? ''),
+                'amount'                => round((float)($row['amount'] ?? 0), 2),
+                'unallocated_advance'   => round((float)($row['unallocated_advance'] ?? 0), 2),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
      * Return a paginated list of transactions, optionally filtered.
      *
      * @return array{total: int, txns: array<int, array<string, mixed>>}

@@ -7,6 +7,7 @@ import {
   updateTxn, requestInvoiceModifyOtp,
   requestLedgerDeleteOtp, bulkDeleteTxns,
   postInvoiceCostAnalysisPreview,
+  getReceiptsWithUnallocated,
 } from '../services/txnService';
 import { useAuth } from '../../../auth/AuthContext';
 import { getContact } from '../../../services/contactService';
@@ -1258,6 +1259,11 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
 
 // ── PaymentExpenseModal (firm paid on behalf of client) ─────────────────────
 
+const PAYMENT_EXPENSE_SETTLEMENT_OPTIONS = [
+  { value: 'receipt', label: 'Client receipt' },
+  { value: 'unallocated_advance', label: 'Unallocated advance' },
+];
+
 function PaymentExpenseModal({ onClose, onSave }) {
   const [form, setForm] = useState({
     entityId: '',
@@ -1274,10 +1280,12 @@ function PaymentExpenseModal({ onClose, onSave }) {
     notes: '',
     ledgerClass: 'regular',
     ledgerMovementKind: 'fees',
-    settlementMode: 'unallocated_advance',
-    settleFromReceiptRef: '',
-    settleFromReceiptAmount: '',
   });
+  const [settlementLines, setSettlementLines] = useState([
+    { targetType: 'unallocated_advance', targetTxnId: '', amount: '' },
+  ]);
+  const [receiptOpts, setReceiptOpts] = useState([]);
+  const [receiptOptsLoading, setReceiptOptsLoading] = useState(false);
   const [banks, setBanks] = useState([]);
   const [banksLoading, setBanksLoading] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -1305,13 +1313,68 @@ function PaymentExpenseModal({ onClose, onSave }) {
     return () => { cancel = true; };
   }, [form.billingProfileCode]);
 
-  const handleSave = () => {
-    if (!form.entityId || !form.amount || !form.txnDate || !form.description.trim() || !form.billingProfileCode || !form.firmBankAccountId) return;
-    if (form.settlementMode === 'receipt' && !(form.settleFromReceiptRef || '').trim()) {
-      window.alert('Choose a client receipt: enter its RCP- reference or numeric id (same as when recording a receipt).');
+  useEffect(() => {
+    const idNum = parseInt(form.entityId, 10);
+    if (!form.entityId || Number.isNaN(idNum) || idNum <= 0) {
+      setReceiptOpts([]);
       return;
     }
-    onSave(form);
+    let cancel = false;
+    setReceiptOptsLoading(true);
+    const params = {
+      ledgerClass: form.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledgerMovementKind: form.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
+    };
+    if (form.entityType === 'organization') {
+      params.organizationId = idNum;
+    } else {
+      params.clientId = idNum;
+    }
+    getReceiptsWithUnallocated(params)
+      .then((rows) => {
+        if (cancel) return;
+        setReceiptOpts(Array.isArray(rows) ? rows : []);
+      })
+      .catch(() => { if (!cancel) setReceiptOpts([]); })
+      .finally(() => { if (!cancel) setReceiptOptsLoading(false); });
+    return () => { cancel = true; };
+  }, [form.entityId, form.entityType, form.ledgerClass, form.ledgerMovementKind]);
+
+  const setSettleLine = (idx, patch) => {
+    setSettlementLines((L) => L.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
+  };
+  const addSettleLine = () => {
+    setSettlementLines((L) => [...L, { targetType: 'unallocated_advance', targetTxnId: '', amount: '' }]);
+  };
+  const removeSettleLine = (idx) => {
+    setSettlementLines((L) => (L.length <= 1 ? L : L.filter((_, i) => i !== idx)));
+  };
+
+  const handleSave = () => {
+    if (!form.entityId || !form.amount || !form.txnDate || !form.description.trim() || !form.billingProfileCode || !form.firmBankAccountId) return;
+    const total = parseFloat(form.amount);
+    if (Number.isNaN(total) || total <= 0) return;
+    const lines = settlementLines.map((l) => ({
+      target_type: l.targetType,
+      target_txn_id: l.targetType === 'receipt' ? (parseInt(l.targetTxnId, 10) || 0) : undefined,
+      amount: parseFloat(l.amount) || 0,
+    })).filter((l) => l.amount > 0);
+    if (lines.length === 0) {
+      window.alert('Add at least one settlement line with a positive amount.');
+      return;
+    }
+    const sum = lines.reduce((s, l) => s + l.amount, 0);
+    if (Math.abs(sum - total) > 0.02) {
+      window.alert(`Allocation lines must sum to the payment amount (₹${total.toFixed(2)}); currently ₹${sum.toFixed(2)}.`);
+      return;
+    }
+    for (const l of lines) {
+      if (l.target_type === 'receipt' && (!l.target_txn_id || l.target_txn_id <= 0)) {
+        window.alert('Select a client receipt for each receipt line, or switch the line to Unallocated advance.');
+        return;
+      }
+    }
+    onSave({ ...form, settlementLines });
     onClose();
   };
   return (
@@ -1328,12 +1391,15 @@ function PaymentExpenseModal({ onClose, onSave }) {
               value={form.entityId}
               displayValue={form.entityName}
               entityType={form.entityType}
-              onChange={(c) => setForm((f) => ({
-                ...f,
-                entityId: String(c.id),
-                entityName: c.displayName,
-                entityType: c.entityType,
-              }))}
+              onChange={(c) => {
+                setForm((f) => ({
+                  ...f,
+                  entityId: String(c.id),
+                  entityName: c.displayName,
+                  entityType: c.entityType,
+                }));
+                setSettlementLines([{ targetType: 'unallocated_advance', targetTxnId: '', amount: '' }]);
+              }}
               placeholder="Search contact or organization…"
               style={inputStyle}
             />
@@ -1341,7 +1407,14 @@ function PaymentExpenseModal({ onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Ledger type
-              <select style={inputStyle} value={form.ledgerClass} onChange={(e) => set('ledgerClass', e.target.value)}>
+              <select
+                style={inputStyle}
+                value={form.ledgerClass}
+                onChange={(e) => {
+                  set('ledgerClass', e.target.value);
+                  setSettlementLines([{ targetType: 'unallocated_advance', targetTxnId: '', amount: '' }]);
+                }}
+              >
                 {LEDGER_CLASS_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
@@ -1349,7 +1422,14 @@ function PaymentExpenseModal({ onClose, onSave }) {
             </label>
             <label style={labelStyle}>
               Ledger view
-              <select style={inputStyle} value={form.ledgerMovementKind} onChange={(e) => set('ledgerMovementKind', e.target.value)}>
+              <select
+                style={inputStyle}
+                value={form.ledgerMovementKind}
+                onChange={(e) => {
+                  set('ledgerMovementKind', e.target.value);
+                  setSettlementLines([{ targetType: 'unallocated_advance', targetTxnId: '', amount: '' }]);
+                }}
+              >
                 {LEDGER_MOVEMENT_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
@@ -1425,60 +1505,67 @@ function PaymentExpenseModal({ onClose, onSave }) {
             Internal notes
             <input type="text" style={inputStyle} placeholder="Optional" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
           </label>
-          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14, marginTop: 4 }}>
-            <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 6 }}>Bill-by-bill settlement (required)</div>
-            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>
-              Same idea as <strong>Record receipt → Apply to</strong>: you must say whether this on-behalf payment is covered from an existing client receipt or left as recoverable advance on this payment (PAY-…) until a receipt is recorded.
-            </p>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 10 }}>
-              <input
-                type="radio"
-                name="paymentExpenseSettlement"
-                checked={form.settlementMode === 'unallocated_advance'}
-                onChange={() => set('settlementMode', 'unallocated_advance')}
-                style={{ marginTop: 3 }}
-              />
-              <span style={{ fontSize: 13, color: '#334155' }}>
-                <strong>Unallocated advance</strong> — bill-by-bill uses this payment (PAY-…). Use when the client has not paid the firm yet.
-              </span>
-            </label>
-            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', marginBottom: 12 }}>
-              <input
-                type="radio"
-                name="paymentExpenseSettlement"
-                checked={form.settlementMode === 'receipt'}
-                onChange={() => set('settlementMode', 'receipt')}
-                style={{ marginTop: 3 }}
-              />
-              <span style={{ fontSize: 13, color: '#334155' }}>
-                <strong>Client receipt</strong> — settle from an existing receipt&apos;s unallocated balance (RCP-… or receipt id), like choosing receipt lines when recording money in.
-              </span>
-            </label>
-            {form.settlementMode === 'receipt' && (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, paddingLeft: 4 }}>
-                <label style={labelStyle}>
-                  Receipt ref / id *
-                  <input
-                    type="text"
-                    style={inputStyle}
-                    placeholder="e.g. RCP-2026-00123"
-                    value={form.settleFromReceiptRef}
-                    onChange={(e) => set('settleFromReceiptRef', e.target.value)}
-                    aria-required
-                  />
-                </label>
-                <label style={labelStyle}>
-                  Amount from receipt (₹)
-                  <input
-                    type="number"
-                    style={inputStyle}
-                    placeholder={form.amount ? `Default: ${form.amount} (full payment)` : 'Defaults to payment amount'}
-                    value={form.settleFromReceiptAmount}
-                    onChange={(e) => set('settleFromReceiptAmount', e.target.value)}
-                  />
-                </label>
+
+          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 8, marginTop: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>Settlement (must sum to amount)</span>
+              <button type="button" onClick={addSettleLine} style={{ ...btnSecondary, fontSize: 12, padding: '4px 10px' }}>+ Line</button>
+            </div>
+            {settlementLines.map((line, idx) => (
+              <div
+                key={`pay-settle-${idx}-${line.targetType}`}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '150px 1fr 100px 32px',
+                  gap: 8,
+                  alignItems: 'start',
+                  marginBottom: 10,
+                }}
+              >
+                <select
+                  style={inputStyle}
+                  value={line.targetType}
+                  onChange={(e) => setSettleLine(idx, {
+                    targetType: e.target.value,
+                    targetTxnId: '',
+                    amount: line.amount,
+                  })}
+                >
+                  {PAYMENT_EXPENSE_SETTLEMENT_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <div style={{ minWidth: 0 }}>
+                  {line.targetType === 'receipt' && (
+                    <select
+                      style={inputStyle}
+                      value={line.targetTxnId}
+                      onChange={(e) => setSettleLine(idx, { targetTxnId: e.target.value })}
+                    >
+                      <option value="">
+                        {receiptOptsLoading ? 'Loading receipts…' : (receiptOpts.length === 0 ? '— No receipts with unallocated balance —' : '— Select receipt —')}
+                      </option>
+                      {receiptOpts.map((r) => (
+                        <option key={r.id} value={String(r.id)}>
+                          {(r.public_ref || `Receipt #${r.id}`)} · {r.txn_date} · ₹{Number(r.unallocated_advance).toLocaleString('en-IN')} avail
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {line.targetType === 'unallocated_advance' && (
+                    <span style={{ fontSize: 12, color: '#64748b', lineHeight: '38px' }}>No target — bill-by-bill uses this payment (PAY-…)</span>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  style={inputStyle}
+                  placeholder="₹"
+                  value={line.amount}
+                  onChange={(e) => setSettleLine(idx, { amount: e.target.value })}
+                />
+                <button type="button" onClick={() => removeSettleLine(idx)} style={{ ...iconBtn, alignSelf: 'start' }} title="Remove line">−</button>
               </div>
-            )}
+            ))}
           </div>
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -2844,8 +2931,34 @@ export default function Invoices() {
     const narration = data.description.trim()
       ? `${purposeLabel} — ${data.description.trim()}`
       : purposeLabel;
+    const lines = (data.settlementLines || []).map((l) => ({
+      target_type: l.targetType,
+      target_txn_id: l.targetType === 'receipt' ? (parseInt(l.targetTxnId, 10) || 0) : undefined,
+      amount: parseFloat(l.amount) || 0,
+    })).filter((l) => l.amount > 0);
+    if (lines.length === 0) {
+      window.alert('Add settlement lines that sum to the payment amount.');
+      return;
+    }
+    const payAmt = parseFloat(data.amount);
+    const sum = lines.reduce((s, l) => s + l.amount, 0);
+    if (Math.abs(sum - payAmt) > 0.02) {
+      window.alert(`Settlement lines must sum to the payment amount (₹${payAmt.toFixed(2)}).`);
+      return;
+    }
+    for (const l of lines) {
+      if (l.target_type === 'receipt' && (!l.target_txn_id || l.target_txn_id <= 0)) {
+        window.alert('Select a client receipt for each receipt line, or use Unallocated advance.');
+        return;
+      }
+    }
+    const settlement_lines = lines.map((l) => (
+      l.target_type === 'receipt'
+        ? { target_type: 'receipt', target_txn_id: l.target_txn_id, amount: l.amount }
+        : { target_type: 'unallocated_advance', amount: l.amount }
+    ));
     const payload = {
-      amount: parseFloat(data.amount),
+      amount: payAmt,
       txn_date: data.txnDate,
       payment_method: data.method,
       reference_number: data.referenceNumber || null,
@@ -2856,28 +2969,12 @@ export default function Invoices() {
       notes: data.notes || null,
       ledger_class: data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
       ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
+      settlement_lines,
     };
     if (data.entityType === 'organization') {
       payload.organization_id = idNum;
     } else {
       payload.client_id = idNum;
-    }
-    const mode = data.settlementMode === 'receipt' ? 'receipt' : 'unallocated_advance';
-    payload.settlement_mode = mode;
-    if (mode === 'receipt') {
-      const receiptKey = (data.settleFromReceiptRef || '').trim();
-      if (/^\d+$/.test(receiptKey)) {
-        payload.settle_from_receipt_id = parseInt(receiptKey, 10);
-      } else {
-        payload.settle_from_receipt_public_ref = receiptKey;
-      }
-      const settleAmtRaw = (data.settleFromReceiptAmount || '').trim();
-      if (settleAmtRaw !== '') {
-        const a = parseFloat(settleAmtRaw, 10);
-        if (Number.isFinite(a) && a > 0) {
-          payload.settle_from_receipt_amount = a;
-        }
-      }
     }
     createPaymentExpense(payload)
       .then((row) => setPaymentExpenses((prev) => [row, ...prev]))

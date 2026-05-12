@@ -84,6 +84,20 @@ final class TxnSettlementAllocationModel
         return (float)$stmt->fetchColumn();
     }
 
+    /** Sum of unallocated_advance rows for a receipt (source txn). */
+    public function sumUnallocatedAdvanceForSourceReceipt(int $receiptTxnId): float
+    {
+        $stmt = $this->db->prepare(
+            "SELECT COALESCE(SUM(amount), 0)
+             FROM txn_settlement_allocation
+             WHERE source_txn_id = :sid
+               AND target_type = 'unallocated_advance'"
+        );
+        $stmt->execute([':sid' => $receiptTxnId]);
+
+        return (float)$stmt->fetchColumn();
+    }
+
     /**
      * Replace all allocation rows for a receipt (caller runs inside txn if needed).
      *

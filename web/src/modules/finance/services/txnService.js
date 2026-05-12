@@ -289,9 +289,25 @@ export async function getBillSettlementReport({
   return data.data || {};
 }
 
+/** GET /api/admin/txn/receipts-with-unallocated — receipts with unallocated_advance > 0 */
+export async function getReceiptsWithUnallocated({
+  clientId,
+  organizationId,
+  ledgerClass = 'regular',
+  ledgerMovementKind = 'fees',
+}) {
+  const query = new URLSearchParams();
+  if (clientId) query.set('client_id', String(clientId));
+  if (organizationId) query.set('organization_id', String(organizationId));
+  query.set('ledger_class', ledgerClass === 'memorandum' ? 'memorandum' : 'regular');
+  query.set('ledger_movement_kind', ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees');
+  const res = await fetch(`${API_BASE}/admin/txn/receipts-with-unallocated?${query}`, { headers: authHeaders() });
+  const data = await parseResponse(res);
+  return Array.isArray(data.data) ? data.data : [];
+}
+
 /** POST /api/admin/txn with txn_type payment_expense
- *  Required: settlement_mode 'receipt' | 'unallocated_advance'.
- *  If receipt: settle_from_receipt_id or settle_from_receipt_public_ref; optional settle_from_receipt_amount.
+ *  Required: settlement_lines[] each { target_type: 'receipt'|'unallocated_advance', target_txn_id?, amount }; must sum to amount.
  */
 export async function createPaymentExpense(payload) {
   const body = { txn_type: 'payment_expense', ...payload };

@@ -1216,6 +1216,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/receipts-with-unallocated',
+                'handler'    => 'Admin\TxnController@receiptsWithUnallocated',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/bank-ledger',
                 'handler'    => 'Admin\TxnController@bankLedger',
                 'middleware' => ['auth', 'permission:invoices.view'],

@@ -198,76 +198,58 @@ class TxnController extends BaseController
                 } catch (\InvalidArgumentException $e) {
                     $this->error($e->getMessage(), 422);
                 }
-                $settlementMode = trim((string)($body['settlement_mode'] ?? ''));
-                if (!in_array($settlementMode, ['receipt', 'unallocated_advance'], true)) {
-                    $this->error(
-                        'settlement_mode is required for payment_expense: receipt or unallocated_advance.',
-                        422
-                    );
-                }
-                $settleReceiptId = (int)($body['settle_from_receipt_id'] ?? 0);
-                $settleRef       = trim((string)($body['settle_from_receipt_public_ref'] ?? ''));
-                $explicitLinkAmt = null;
-                if (array_key_exists('settle_from_receipt_amount', $body)) {
-                    $rawAmt = $body['settle_from_receipt_amount'];
-                    if ($rawAmt !== null && $rawAmt !== '') {
-                        $explicitLinkAmt = round((float)$rawAmt, 2);
-                    }
-                }
+                $linesRaw = $body['settlement_lines'] ?? null;
                 unset(
+                    $body['settlement_lines'],
                     $body['settlement_mode'],
                     $body['settle_from_receipt_id'],
                     $body['settle_from_receipt_public_ref'],
                     $body['settle_from_receipt_amount']
                 );
+                try {
+                    $parsed = TxnReceiptAllocationService::normalizePaymentExpenseSettlementLines(
+                        $pAmount,
+                        $linesRaw,
+                        $pcid,
+                        $poid,
+                        (string)($body['ledger_class'] ?? ''),
+                        (string)($body['ledger_movement_kind'] ?? ''),
+                        $this->txn
+                    );
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
+                }
                 $this->attachValidatedBankAccount($body);
                 $dbConn = Database::getConnection();
-                if ($settlementMode === 'unallocated_advance') {
-                    if ($settleReceiptId > 0 || $settleRef !== '') {
-                        $this->error(
-                            'Do not pass receipt fields when settlement_mode is unallocated_advance.',
-                            422
-                        );
-                    }
+                $dbConn->beginTransaction();
+                try {
                     $id = $this->txn->createPaymentExpense($body);
-                } else {
-                    if ($settleReceiptId <= 0 && $settleRef === '') {
-                        $this->error(
-                            'settle_from_receipt_id or settle_from_receipt_public_ref is required when settlement_mode is receipt.',
-                            422
-                        );
+                    $createdPay = $this->txn->find((int)$id);
+                    if ($createdPay === null) {
+                        throw new \InvalidArgumentException('Payment expense not found after create.');
                     }
-                    $dbConn->beginTransaction();
-                    try {
-                        $id = $this->txn->createPaymentExpense($body);
-                        $receiptRow = TxnReceiptAllocationService::resolveReceiptForPaymentExpenseLink(
-                            $this->txn,
-                            $settleReceiptId,
-                            $settleRef,
-                            $pcid,
-                            $poid
-                        );
-                        $createdPay = $this->txn->find((int)$id);
-                        if ($createdPay === null) {
-                            throw new \InvalidArgumentException('Payment expense not found after create.');
+                    foreach ($parsed['receipt_totals'] as $rid => $amt) {
+                        $receiptRow = $this->txn->find((int)$rid);
+                        if ($receiptRow === null) {
+                            throw new \InvalidArgumentException('Receipt not found.');
                         }
                         TxnReceiptAllocationService::linkPaymentExpenseToReceipt(
                             $receiptRow,
                             $createdPay,
-                            $explicitLinkAmt
+                            $amt
                         );
-                        $dbConn->commit();
-                    } catch (\InvalidArgumentException $e) {
-                        if ($dbConn->inTransaction()) {
-                            $dbConn->rollBack();
-                        }
-                        $this->error($e->getMessage(), 422);
-                    } catch (\Throwable $e) {
-                        if ($dbConn->inTransaction()) {
-                            $dbConn->rollBack();
-                        }
-                        throw $e;
                     }
+                    $dbConn->commit();
+                } catch (\InvalidArgumentException $e) {
+                    if ($dbConn->inTransaction()) {
+                        $dbConn->rollBack();
+                    }
+                    $this->error($e->getMessage(), 422);
+                } catch (\Throwable $e) {
+                    if ($dbConn->inTransaction()) {
+                        $dbConn->rollBack();
+                    }
+                    throw $e;
                 }
                 break;
             case 'tds_provisional':
@@ -767,6 +749,30 @@ class TxnController extends BaseController
             $this->error($e->getMessage(), 422);
         }
         $this->success($payload, 'Bill settlement report');
+    }
+
+    /**
+     * GET /api/admin/txn/receipts-with-unallocated
+     * Query: client_id or organization_id (one required), ledger_class, ledger_movement_kind
+     */
+    public function receiptsWithUnallocated(): never
+    {
+        $clientId = (int)$this->query('client_id', 0);
+        $orgId    = (int)$this->query('organization_id', 0);
+        if ($clientId <= 0 && $orgId <= 0) {
+            $this->error('client_id or organization_id is required.', 422);
+        }
+        if ($clientId > 0 && $orgId > 0) {
+            $this->error('Provide only one of client_id or organization_id.', 422);
+        }
+        try {
+            $lc = LedgerDimensions::assertLedgerClass($this->query('ledger_class', ''));
+            $mk = LedgerDimensions::assertLedgerMovementKindRequired($this->query('ledger_movement_kind', ''));
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+        $rows = $this->txn->listReceiptsWithUnallocatedAdvance($clientId, $orgId, $lc, $mk);
+        $this->success($rows, 'Receipts with unallocated balance');
     }
 
     // ── POST /api/admin/txn/receipt ──────────────────────────────────────────
