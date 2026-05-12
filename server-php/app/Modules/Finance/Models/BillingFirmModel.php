@@ -54,7 +54,7 @@ final class BillingFirmModel
         $stmt->execute([
             ':code'       => $code,
             ':name'       => $data['name'],
-            ':gst_reg'    => $data['gst_registered'],
+            ':gst_reg'    => (bool)$data['gst_registered'] ? 'true' : 'false',
             ':gstin'      => $data['gstin'] ?? '',
             ':state_code' => $data['state_code'] ?? '',
             ':gst_rate'   => $data['default_gst_rate'],
@@ -77,7 +77,7 @@ final class BillingFirmModel
         }
         if (array_key_exists('gst_registered', $data)) {
             $sets[]               = 'gst_registered = :gst_reg';
-            $params[':gst_reg']   = (bool)$data['gst_registered'];
+            $params[':gst_reg']   = (bool)$data['gst_registered'] ? 'true' : 'false';
         }
         if (array_key_exists('gstin', $data)) {
             $sets[]            = 'gstin = :gstin';

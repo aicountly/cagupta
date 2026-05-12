@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, createElement } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { createTask, deleteEngagement, requestServiceDeleteOtp, updateEngagement, getEngagement } from '../../services/engagementService';
 import StatusBadge from '../common/StatusBadge';
 import DateInput from '../common/DateInput';
@@ -16,6 +16,21 @@ const ROW_STATUS_OPTIONS = ['not_started', 'in_progress', 'pending_info', 'revie
 
 function formatStatusLabel(s) {
   return s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+const engagementCellLinkStyle = {
+  color: 'inherit',
+  textDecoration: 'none',
+  display: 'block',
+};
+
+/** Plain primary click: keep SPA behavior. Modified click / middle-click: browser follows `<Link>` (new tab, etc.). */
+function engagementCellLinkClick(e, onPlainLeft) {
+  if (e.button !== 0) return;
+  if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  e.stopPropagation();
+  onPlainLeft();
 }
 
 function ActionBtn({ icon, title, onClick }) {
@@ -393,30 +408,90 @@ export default function ServicesEngagementTableBlock({
                   let rowBg = isOdd ? '#FAFBFD' : '#ffffff';
                   if (isActive) rowBg = '#FEF0E6';
                   else if (isHover) rowBg = '#FFF5EE';
+                  const openEngagementPath = `/services/${s.id}`;
+                  const toggleRowSelection = () => setSelectedService(isActive ? null : s);
                   return (
                     <tr
                       key={s.id}
                       style={{ ...trStyle, background: rowBg, cursor: 'pointer' }}
-                      onClick={() => setSelectedService(isActive ? null : s)}
+                      onClick={(e) => {
+                        if (e.target.closest('a')) return;
+                        if (e.target.closest('button')) return;
+                        if (e.target.closest('select')) return;
+                        toggleRowSelection();
+                      }}
                       onMouseEnter={() => setHoverRow(s.id)}
                       onMouseLeave={() => setHoverRow(null)}
                     >
                       <td style={tdStyle}>
-                        <div style={clientCell}>
-                          <div style={clientAvatar}>{s.clientName[0]}</div>
-                          <span style={{ fontWeight: 600, color: '#0B1F3B' }}>{s.clientName}</span>
-                        </div>
+                        <Link
+                          to={openEngagementPath}
+                          style={engagementCellLinkStyle}
+                          aria-label={`Open engagement: ${s.clientName}, ${s.type || 'service'}`}
+                          onClick={(e) => engagementCellLinkClick(e, toggleRowSelection)}
+                        >
+                          <div style={clientCell}>
+                            <div style={clientAvatar}>{s.clientName[0]}</div>
+                            <span style={{ fontWeight: 600, color: '#0B1F3B' }}>{s.clientName}</span>
+                          </div>
+                        </Link>
                       </td>
-                      <td style={tdStyle}><span style={serviceTag}>{s.type}</span></td>
-                      <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12, color: '#64748b' }}>{s.financialYear}</td>
-                      <td style={tdStyle}>{s.assignedTo}</td>
+                      <td style={tdStyle}>
+                        <Link
+                          to={openEngagementPath}
+                          tabIndex={-1}
+                          aria-hidden="true"
+                          style={engagementCellLinkStyle}
+                          onClick={(e) => engagementCellLinkClick(e, toggleRowSelection)}
+                        >
+                          <span style={serviceTag}>{s.type}</span>
+                        </Link>
+                      </td>
+                      <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12, color: '#64748b' }}>
+                        <Link
+                          to={openEngagementPath}
+                          tabIndex={-1}
+                          aria-hidden="true"
+                          style={engagementCellLinkStyle}
+                          onClick={(e) => engagementCellLinkClick(e, toggleRowSelection)}
+                        >
+                          {s.financialYear}
+                        </Link>
+                      </td>
+                      <td style={tdStyle}>
+                        <Link
+                          to={openEngagementPath}
+                          tabIndex={-1}
+                          aria-hidden="true"
+                          style={engagementCellLinkStyle}
+                          onClick={(e) => engagementCellLinkClick(e, toggleRowSelection)}
+                        >
+                          {s.assignedTo}
+                        </Link>
+                      </td>
                       <td style={{ ...tdStyle, color: isOverdue ? '#ef4444' : '#334155', fontWeight: isOverdue ? 600 : 400 }}>
-                        {s.dueDate}
+                        <Link
+                          to={openEngagementPath}
+                          tabIndex={-1}
+                          aria-hidden="true"
+                          style={{ ...engagementCellLinkStyle, color: 'inherit', fontWeight: 'inherit' }}
+                          onClick={(e) => engagementCellLinkClick(e, toggleRowSelection)}
+                        >
+                          {s.dueDate}
+                        </Link>
                       </td>
                       <td style={{ ...tdStyle, fontWeight: 600, color: '#0B1F3B' }}>
-                        {s.feeAgreed != null && !Number.isNaN(Number(s.feeAgreed))
-                          ? `₹${Number(s.feeAgreed).toLocaleString('en-IN')}`
-                          : '—'}
+                        <Link
+                          to={openEngagementPath}
+                          tabIndex={-1}
+                          aria-hidden="true"
+                          style={{ ...engagementCellLinkStyle, fontWeight: 'inherit', color: 'inherit' }}
+                          onClick={(e) => engagementCellLinkClick(e, toggleRowSelection)}
+                        >
+                          {s.feeAgreed != null && !Number.isNaN(Number(s.feeAgreed))
+                            ? `₹${Number(s.feeAgreed).toLocaleString('en-IN')}`
+                            : '—'}
+                        </Link>
                       </td>
                       <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                         {canEditService ? (
@@ -532,28 +607,42 @@ export default function ServicesEngagementTableBlock({
             {serviceTasks.length === 0 && (
               <div style={{ color: '#94a3b8', fontSize: 13, textAlign: 'center', padding: '24px 0' }}>No tasks yet.</div>
             )}
-            {serviceTasks.map((t) => (
-              <div key={t.id} style={taskRow}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1, minWidth: 0 }}>
-                    <div style={{ ...taskDot, background: t.status === 'done' ? '#55B848' : t.status === 'in_progress' ? '#F37920' : '#e2e8f0', marginTop: 4, flexShrink: 0 }} />
-                    <span style={{ fontSize: 13, fontWeight: t.status === 'done' ? 400 : 600, textDecoration: t.status === 'done' ? 'line-through' : 'none', color: t.status === 'done' ? '#94a3b8' : '#1e293b' }}>
-                      {t.title}
-                    </span>
+            {serviceTasks.map((t) => {
+              const taskEngagementPath = `/services/${selectedService.id}`;
+              return (
+                <Link
+                  key={t.id}
+                  to={taskEngagementPath}
+                  style={{
+                    ...taskRow,
+                    textDecoration: 'none',
+                    color: 'inherit',
+                    display: 'block',
+                    cursor: 'pointer',
+                  }}
+                  aria-label={`Open engagement for task: ${t.title}`}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1, minWidth: 0 }}>
+                      <div style={{ ...taskDot, background: t.status === 'done' ? '#55B848' : t.status === 'in_progress' ? '#F37920' : '#e2e8f0', marginTop: 4, flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, fontWeight: t.status === 'done' ? 400 : 600, textDecoration: t.status === 'done' ? 'line-through' : 'none', color: t.status === 'done' ? '#94a3b8' : '#1e293b' }}>
+                        {t.title}
+                      </span>
+                    </div>
+                    <StatusBadge status={t.priority} />
                   </div>
-                  <StatusBadge status={t.priority} />
-                </div>
-                <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, paddingLeft: 20 }}>
-                  {[
-                    t.assignedTo
-                      || (t.assignedToUserId != null
-                        ? (assigneeNameById[t.assignedToUserId] || `User #${t.assignedToUserId}`)
-                        : null),
-                    t.dueDate ? `Due: ${t.dueDate}` : null,
-                  ].filter(Boolean).join(' · ')}
-                </div>
-              </div>
-            ))}
+                  <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, paddingLeft: 20 }}>
+                    {[
+                      t.assignedTo
+                        || (t.assignedToUserId != null
+                          ? (assigneeNameById[t.assignedToUserId] || `User #${t.assignedToUserId}`)
+                          : null),
+                      t.dueDate ? `Due: ${t.dueDate}` : null,
+                    ].filter(Boolean).join(' · ')}
+                  </div>
+                </Link>
+              );
+            })}
             {serviceTimeEntries.length > 0 ? (
               <div style={{ marginTop: 14 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#0B1F3B', marginBottom: 6 }}>Recent time</div>

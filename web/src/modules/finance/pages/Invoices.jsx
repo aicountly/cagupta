@@ -1267,11 +1267,10 @@ function PaymentExpenseModal({ onClose, onSave }) {
     txnDate: new Date().toISOString().slice(0, 10),
     expensePurpose: 'challan',
     method: 'NEFT',
-    paidFrom: '',
     referenceNumber: '',
     billingProfileCode: '',
     firmBankAccountId: '',
-    description: '',
+    description: expensePurposeLabel('challan'),
     notes: '',
     ledgerClass: 'regular',
     ledgerMovementKind: 'fees',
@@ -1362,7 +1361,18 @@ function PaymentExpenseModal({ onClose, onSave }) {
           </div>
           <label style={labelStyle}>
             Purpose
-            <select style={inputStyle} value={form.expensePurpose} onChange={(e) => set('expensePurpose', e.target.value)}>
+            <select
+              style={inputStyle}
+              value={form.expensePurpose}
+              onChange={(e) => {
+                const v = e.target.value;
+                setForm((f) => ({
+                  ...f,
+                  expensePurpose: v,
+                  description: expensePurposeLabel(v),
+                }));
+              }}
+            >
               {EXPENSE_PURPOSE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
@@ -1372,18 +1382,12 @@ function PaymentExpenseModal({ onClose, onSave }) {
             Description (shown on ledger)
             <input type="text" style={inputStyle} placeholder="What was paid and why" value={form.description} onChange={(e) => set('description', e.target.value)} />
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-            <label style={labelStyle}>
-              Paid via
-              <select style={inputStyle} value={form.method} onChange={(e) => set('method', e.target.value)}>
-                {PAYMENT_METHOD_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
-              </select>
-            </label>
-            <label style={labelStyle}>
-              Paid from (cash / bank account)
-              <input type="text" style={inputStyle} placeholder="e.g. Cash, HDFC ****1234" value={form.paidFrom} onChange={(e) => set('paidFrom', e.target.value)} />
-            </label>
-          </div>
+          <label style={labelStyle}>
+            Paid via
+            <select style={inputStyle} value={form.method} onChange={(e) => set('method', e.target.value)}>
+              {PAYMENT_METHOD_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+            </select>
+          </label>
           <label style={labelStyle}>
             Reference no. (UTR / challan / cheque)
             <input type="text" style={inputStyle} placeholder="Optional" value={form.referenceNumber} onChange={(e) => set('referenceNumber', e.target.value)} />
@@ -1910,14 +1914,23 @@ function CreditNoteModal({ onClose, onSave, openInvoices, creditNotes }) {
 // ── OpeningBalanceModal ───────────────────────────────────────────────────────
 
 function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBalances }) {
+  const rowGrid = { display:'grid', gridTemplateColumns:'minmax(100px,1fr) 108px 82px 108px 82px', gap:8, alignItems:'center', marginBottom:10 };
+
   const [balances, setBalances] = useState(
     getBillingProfiles().map(p => {
-      const existing = existingBalances.find(b => b.billingProfileCode === p.code);
+      const reg = existingBalances.find(
+        b => b.billingProfileCode === p.code && (b.ledgerClass === 'regular' || !b.ledgerClass)
+      );
+      const mem = existingBalances.find(
+        b => b.billingProfileCode === p.code && b.ledgerClass === 'memorandum'
+      );
       return {
-        profileCode: p.code,
-        profileName: p.name,
-        amount:      existing ? String(existing.amount) : '',
-        type:        existing ? existing.type : 'debit',
+        profileCode:       p.code,
+        profileName:       p.name,
+        regularAmount:     reg ? String(reg.amount) : '',
+        regularType:       reg ? reg.type : 'debit',
+        memorandumAmount:  mem ? String(mem.amount) : '',
+        memorandumType:    mem ? mem.type : 'debit',
       };
     })
   );
@@ -1932,18 +1945,38 @@ function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBa
     setSaving(true);
     setError('');
     try {
-      const results = await Promise.allSettled(
-        balances
-          .filter(b => b.amount !== '' && parseFloat(b.amount) >= 0)
-          .map(b =>
-            setOpeningBalance({
-              client_id:            clientId,
-              billing_profile_code: b.profileCode,
-              amount:               parseFloat(b.amount || '0'),
-              type:                 b.type,
-            })
-          )
-      );
+      const ops = [];
+      for (const b of balances) {
+        const regAmt = b.regularAmount === '' ? 0 : parseFloat(b.regularAmount);
+        const memAmt = b.memorandumAmount === '' ? 0 : parseFloat(b.memorandumAmount);
+        if (Number.isNaN(regAmt) || Number.isNaN(memAmt)) {
+          setError('Enter valid amounts or leave fields blank to clear.');
+          return;
+        }
+        if (regAmt < 0 || memAmt < 0) {
+          setError('Amounts cannot be negative.');
+          return;
+        }
+        ops.push(
+          setOpeningBalance({
+            client_id:            clientId,
+            billing_profile_code: b.profileCode,
+            amount:               regAmt,
+            type:                 b.regularType,
+            ledger_class:         'regular',
+          })
+        );
+        ops.push(
+          setOpeningBalance({
+            client_id:            clientId,
+            billing_profile_code: b.profileCode,
+            amount:               memAmt,
+            type:                 b.memorandumType,
+            ledger_class:         'memorandum',
+          })
+        );
+      }
+      const results = await Promise.allSettled(ops);
       const failures = results.filter(r => r.status === 'rejected');
       if (failures.length > 0) {
         setError(failures.map(f => f.reason?.message || 'Unknown error').join('; '));
@@ -1960,17 +1993,26 @@ function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBa
 
   return (
     <div style={overlayStyle}>
-      <div style={{ ...modalStyle, minWidth:520, maxWidth:620 }}>
+      <div style={{ ...modalStyle, minWidth:640, maxWidth:720 }}>
         <div style={modalHeaderStyle}>
           <span style={{ fontSize:15, fontWeight:700 }}>📖 Opening Balances — {clientName}</span>
           <button onClick={onClose} style={closeBtnStyle}>✕</button>
         </div>
         <div style={{ padding:'16px 24px' }}>
           <p style={{ fontSize:12, color:'#64748b', margin:'0 0 16px 0' }}>
-            Set the opening balance for each billing profile. Debit (Dr) = client owes you; Credit (Cr) = you owe client.
+            Regular balances feed the regular ledger; memorandum balances feed the memorandum ledger.
+            Debit (Dr) = client owes you; Credit (Cr) = you owe client.
+            Leave blank or use zero to clear an opening balance for that ledger type.
           </p>
+          <div style={{ ...rowGrid, marginBottom:8, paddingBottom:6, borderBottom:'1px solid #e2e8f0' }}>
+            <div style={{ fontSize:11, fontWeight:700, color:'#64748b' }}>Profile</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textAlign:'right' }}>Regular ₹</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#64748b' }}>Dr/Cr</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textAlign:'right' }}>Memorandum ₹</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#64748b' }}>Dr/Cr</div>
+          </div>
           {balances.map((b, idx) => (
-            <div key={b.profileCode} style={{ display:'grid', gridTemplateColumns:'1fr 140px 90px', gap:10, alignItems:'center', marginBottom:12 }}>
+            <div key={b.profileCode} style={rowGrid}>
               <div>
                 <div style={{ fontSize:12, fontWeight:700, color:'#475569' }}>{b.profileCode}</div>
                 <div style={{ fontSize:11, color:'#94a3b8' }}>{b.profileName}</div>
@@ -1979,18 +2021,35 @@ function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBa
                 type="number"
                 min="0"
                 step="0.01"
-                placeholder="0.00"
-                value={b.amount}
-                onChange={e => setField(idx, 'amount', e.target.value)}
+                placeholder="0"
+                value={b.regularAmount}
+                onChange={e => setField(idx, 'regularAmount', e.target.value)}
                 style={{ ...inputStyle, textAlign:'right' }}
               />
               <select
-                value={b.type}
-                onChange={e => setField(idx, 'type', e.target.value)}
+                value={b.regularType}
+                onChange={e => setField(idx, 'regularType', e.target.value)}
                 style={inputStyle}
               >
-                <option value="debit">Dr (Debit)</option>
-                <option value="credit">Cr (Credit)</option>
+                <option value="debit">Dr</option>
+                <option value="credit">Cr</option>
+              </select>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0"
+                value={b.memorandumAmount}
+                onChange={e => setField(idx, 'memorandumAmount', e.target.value)}
+                style={{ ...inputStyle, textAlign:'right' }}
+              />
+              <select
+                value={b.memorandumType}
+                onChange={e => setField(idx, 'memorandumType', e.target.value)}
+                style={inputStyle}
+              >
+                <option value="debit">Dr</option>
+                <option value="credit">Cr</option>
               </select>
             </div>
           ))}
@@ -2420,7 +2479,6 @@ export default function Invoices() {
       billing_profile_code: data.billingProfileCode || null,
       firm_bank_account_id: parseInt(data.firmBankAccountId, 10),
       expense_purpose: data.expensePurpose || null,
-      paid_from: data.paidFrom || null,
       narration,
       notes: data.notes || null,
       ledger_class: data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',

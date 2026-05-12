@@ -465,14 +465,28 @@ class TxnModel
     public function createPaymentExpense(array $data): int
     {
         $amount = (float)($data['amount'] ?? 0);
+        $bankId = (int)($data['firm_bank_account_id'] ?? 0);
+        $paidFrom = null;
+        if ($bankId > 0) {
+            $acc = (new FirmBankAccountModel())->find($bankId);
+            if ($acc !== null) {
+                $name = trim((string)($acc['name'] ?? ''));
+                $type = trim((string)($acc['account_type'] ?? ''));
+                $paidFrom = $name !== '' && $type !== ''
+                    ? $name . ' (' . $type . ')'
+                    : ($name !== '' ? $name : $type);
+                $paidFrom = $paidFrom !== '' ? $paidFrom : null;
+            }
+        }
         // Firm paid on the client's behalf → recoverable from client (same sign as an invoice charge).
         return $this->create(array_merge($data, [
-            'txn_type' => 'payment_expense',
-            'narration'=> $data['narration'] ?? 'Payment — ' . ($data['payment_method'] ?? 'Transfer'),
-            'debit'    => $amount,
-            'credit'   => 0,
-            'amount'   => $amount,
-            'status'   => 'active',
+            'txn_type'   => 'payment_expense',
+            'narration'  => $data['narration'] ?? 'Payment — ' . ($data['payment_method'] ?? 'Transfer'),
+            'debit'      => $amount,
+            'credit'     => 0,
+            'amount'     => $amount,
+            'status'     => 'active',
+            'paid_from'  => $paidFrom,
         ]));
     }
 
@@ -619,39 +633,51 @@ class TxnModel
     }
 
     /**
-     * Set/upsert an opening balance for a client + billing profile.
+     * Set/upsert an opening balance for a client + billing profile + ledger class.
+     * Amount zero removes the row for that class.
      *
      * @param array<string, mixed> $data
-     * @return int
+     * @return int|null  New row id, or null if cleared
      */
-    public function setOpeningBalance(array $data): int
+    public function setOpeningBalance(array $data): ?int
     {
         $clientId    = (int)$data['client_id'];
         $profileCode = (string)$data['billing_profile_code'];
         $amount      = (float)$data['amount'];
         $type        = $data['type'] ?? 'debit'; // 'debit' or 'credit'
+        $ledgerClass = LedgerDimensions::normalizeLedgerClass($data['ledger_class'] ?? null);
 
-        // Delete existing opening balance for this client + profile
         $this->db->prepare(
             "DELETE FROM txn
              WHERE client_id = :client_id
                AND billing_profile_code = :profile_code
-               AND txn_type = 'opening_balance'"
-        )->execute([':client_id' => $clientId, ':profile_code' => $profileCode]);
+               AND txn_type = 'opening_balance'
+               AND ledger_class = :ledger_class"
+        )->execute([
+            ':client_id'    => $clientId,
+            ':profile_code' => $profileCode,
+            ':ledger_class' => $ledgerClass,
+        ]);
+
+        if ($amount <= 0) {
+            return null;
+        }
+
+        $obSuffix = $ledgerClass === LedgerDimensions::CLASS_MEMORANDUM ? '-M' : '-R';
 
         return $this->create([
             'client_id'              => $clientId,
             'txn_type'               => 'opening_balance',
             'txn_date'               => $data['txn_date'] ?? date('Y-m-d'),
             'narration'              => 'Opening Balance',
-            'invoice_number'         => 'OB-' . $clientId . '-' . $profileCode,
+            'invoice_number'         => 'OB-' . $clientId . '-' . $profileCode . $obSuffix,
             'debit'                  => $type === 'debit'  ? $amount : 0,
             'credit'                 => $type === 'credit' ? $amount : 0,
             'amount'                 => $amount,
             'billing_profile_code'   => $profileCode,
             'status'                 => 'active',
             'created_by'             => $data['created_by'] ?? null,
-            'ledger_class'           => LedgerDimensions::CLASS_REGULAR,
+            'ledger_class'           => $ledgerClass,
             'ledger_movement_kind'   => null,
         ]);
     }
@@ -667,7 +693,7 @@ class TxnModel
             "SELECT * FROM txn
              WHERE client_id = :client_id
                AND txn_type  = 'opening_balance'
-             ORDER BY billing_profile_code ASC"
+             ORDER BY billing_profile_code ASC, ledger_class ASC"
         );
         $stmt->execute([':client_id' => $clientId]);
         return $stmt->fetchAll();

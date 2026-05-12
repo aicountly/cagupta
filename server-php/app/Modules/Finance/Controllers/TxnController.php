@@ -222,6 +222,9 @@ class TxnController extends BaseController
                 break;
             case 'opening_balance':
                 $id = $this->txn->setOpeningBalance($body);
+                if ($id === null) {
+                    $this->success(null, 'Opening balance cleared', 200);
+                }
                 break;
             case 'firm_expense':
                 try {
@@ -833,6 +836,7 @@ class TxnController extends BaseController
         $profileCode = trim((string)($body['billing_profile_code'] ?? ''));
         $amount      = (float)($body['amount'] ?? 0);
         $type        = trim((string)($body['type'] ?? 'debit'));
+        $ledgerClass = LedgerDimensions::normalizeLedgerClass($body['ledger_class'] ?? null);
 
         $errors = [];
         if ($clientId <= 0) {
@@ -858,8 +862,12 @@ class TxnController extends BaseController
                 'billing_profile_code' => $profileCode,
                 'amount'               => $amount,
                 'type'                 => $type,
+                'ledger_class'         => $ledgerClass,
                 'created_by'           => $actingUser ? (int)$actingUser['id'] : null,
             ]);
+            if ($id === null) {
+                $this->success(null, 'Opening balance cleared');
+            }
             $row = $this->txn->find($id);
             $this->success($row, 'Opening balance saved');
         } catch (\Throwable $e) {

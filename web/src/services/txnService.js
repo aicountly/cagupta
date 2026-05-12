@@ -325,6 +325,7 @@ export async function getOpeningBalance(clientId) {
     billingProfileCode: row.billing_profile_code,
     amount:             parseFloat(row.amount || 0),
     type:               row.debit > 0 ? 'debit' : 'credit',
+    ledgerClass:        row.ledger_class === 'memorandum' ? 'memorandum' : 'regular',
   }));
 }
 
