@@ -1274,6 +1274,8 @@ function PaymentExpenseModal({ onClose, onSave }) {
     notes: '',
     ledgerClass: 'regular',
     ledgerMovementKind: 'fees',
+    settleFromReceiptRef: '',
+    settleFromReceiptAmount: '',
   });
   const [banks, setBanks] = useState([]);
   const [banksLoading, setBanksLoading] = useState(false);
@@ -1418,6 +1420,34 @@ function PaymentExpenseModal({ onClose, onSave }) {
             Internal notes
             <input type="text" style={inputStyle} placeholder="Optional" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
           </label>
+          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 14, marginTop: 4 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 8 }}>Bill-by-bill vs client receipt (optional)</div>
+            <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px' }}>
+              If the client already paid you (a receipt exists), enter its public ref (RCP-…) or numeric id so this payment is settled from that receipt&apos;s unallocated balance. Leave blank when the client has not paid yet (advance on payment id).
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+              <label style={labelStyle}>
+                Client receipt ref / id
+                <input
+                  type="text"
+                  style={inputStyle}
+                  placeholder="e.g. RCP-2026-00123"
+                  value={form.settleFromReceiptRef}
+                  onChange={(e) => set('settleFromReceiptRef', e.target.value)}
+                />
+              </label>
+              <label style={labelStyle}>
+                Amount from receipt (₹)
+                <input
+                  type="number"
+                  style={inputStyle}
+                  placeholder={`Default: ${form.amount || 'same as payment'}`}
+                  value={form.settleFromReceiptAmount}
+                  onChange={(e) => set('settleFromReceiptAmount', e.target.value)}
+                />
+              </label>
+            </div>
+          </div>
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
@@ -2800,9 +2830,26 @@ export default function Invoices() {
     } else {
       payload.client_id = idNum;
     }
+    const receiptKey = (data.settleFromReceiptRef || '').trim();
+    if (receiptKey) {
+      if (/^\d+$/.test(receiptKey)) {
+        payload.settle_from_receipt_id = parseInt(receiptKey, 10);
+      } else {
+        payload.settle_from_receipt_public_ref = receiptKey;
+      }
+    }
+    const settleAmtRaw = (data.settleFromReceiptAmount || '').trim();
+    if (settleAmtRaw !== '') {
+      const a = parseFloat(settleAmtRaw, 10);
+      if (Number.isFinite(a) && a > 0) {
+        payload.settle_from_receipt_amount = a;
+      }
+    }
     createPaymentExpense(payload)
       .then((row) => setPaymentExpenses((prev) => [row, ...prev]))
-      .catch(() => {});
+      .catch((err) => {
+        window.alert(err?.message || 'Could not save payment on behalf.');
+      });
   }
 
   function handleSaveReceipt(data) {

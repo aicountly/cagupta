@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Config\Auth as AuthConfig;
+use App\Config\Database;
 use App\Libraries\BillSettlementReportBuilder;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
@@ -197,8 +198,58 @@ class TxnController extends BaseController
                 } catch (\InvalidArgumentException $e) {
                     $this->error($e->getMessage(), 422);
                 }
+                $settleReceiptId = (int)($body['settle_from_receipt_id'] ?? 0);
+                $settleRef       = trim((string)($body['settle_from_receipt_public_ref'] ?? ''));
+                $explicitLinkAmt = null;
+                if (array_key_exists('settle_from_receipt_amount', $body)) {
+                    $rawAmt = $body['settle_from_receipt_amount'];
+                    if ($rawAmt !== null && $rawAmt !== '') {
+                        $explicitLinkAmt = round((float)$rawAmt, 2);
+                    }
+                }
+                unset(
+                    $body['settle_from_receipt_id'],
+                    $body['settle_from_receipt_public_ref'],
+                    $body['settle_from_receipt_amount']
+                );
+                $linkReceipt = ($settleReceiptId > 0 || $settleRef !== '');
                 $this->attachValidatedBankAccount($body);
-                $id = $this->txn->createPaymentExpense($body);
+                $dbConn = Database::getConnection();
+                if ($linkReceipt) {
+                    $dbConn->beginTransaction();
+                    try {
+                        $id = $this->txn->createPaymentExpense($body);
+                        $receiptRow = TxnReceiptAllocationService::resolveReceiptForPaymentExpenseLink(
+                            $this->txn,
+                            $settleReceiptId,
+                            $settleRef,
+                            $pcid,
+                            $poid
+                        );
+                        $createdPay = $this->txn->find((int)$id);
+                        if ($createdPay === null) {
+                            throw new \InvalidArgumentException('Payment expense not found after create.');
+                        }
+                        TxnReceiptAllocationService::linkPaymentExpenseToReceipt(
+                            $receiptRow,
+                            $createdPay,
+                            $explicitLinkAmt
+                        );
+                        $dbConn->commit();
+                    } catch (\InvalidArgumentException $e) {
+                        if ($dbConn->inTransaction()) {
+                            $dbConn->rollBack();
+                        }
+                        $this->error($e->getMessage(), 422);
+                    } catch (\Throwable $e) {
+                        if ($dbConn->inTransaction()) {
+                            $dbConn->rollBack();
+                        }
+                        throw $e;
+                    }
+                } else {
+                    $id = $this->txn->createPaymentExpense($body);
+                }
                 break;
             case 'tds_provisional':
                 try {

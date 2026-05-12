@@ -61,6 +61,51 @@ class TxnModel
     }
 
     /**
+     * Find a non-cancelled txn by public_ref for a single client or organization ledger.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findActiveTxnByPublicRef(string $publicRef, string $txnType, int $clientId, int $orgId): ?array
+    {
+        $ref = trim($publicRef);
+        $tt  = trim($txnType);
+        if ($ref === '' || $tt === '') {
+            return null;
+        }
+        if ($clientId <= 0 && $orgId <= 0) {
+            return null;
+        }
+        if ($clientId > 0 && $orgId > 0) {
+            return null;
+        }
+        $where  = [
+            't.public_ref = :ref',
+            't.txn_type = :tt',
+            "t.status IS DISTINCT FROM 'cancelled'",
+        ];
+        $params = [':ref' => $ref, ':tt' => $tt];
+        if ($clientId > 0) {
+            $where[]            = 't.client_id = :cid';
+            $where[]            = 'COALESCE(t.organization_id, 0) = 0';
+            $params[':cid']     = $clientId;
+        } else {
+            $where[]            = 't.organization_id = :oid';
+            $where[]            = 'COALESCE(t.client_id, 0) = 0';
+            $params[':oid']     = $orgId;
+        }
+        $stmt = $this->db->prepare(
+            'SELECT t.* FROM txn t WHERE ' . implode(' AND ', $where) . ' LIMIT 1'
+        );
+        $stmt->execute($params);
+        $row = $stmt->fetch();
+        if ($row) {
+            $this->decodeJsonbInvoiceFields($row);
+        }
+
+        return $row ?: null;
+    }
+
+    /**
      * Return a paginated list of transactions, optionally filtered.
      *
      * @return array{total: int, txns: array<int, array<string, mixed>>}

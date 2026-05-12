@@ -51,7 +51,13 @@ import ShiftTargetTimesheetReport from './modules/operations/pages/ShiftTargetTi
 
 // ── Finance module ───────────────────────────────────────────────────────────
 import Invoices from './modules/finance/pages/Invoices';
-import BankFirmReports from './modules/finance/pages/BankFirmReports';
+import { BankFirmWorkspaceProvider } from './modules/finance/pages/bank-firm/BankFirmWorkspaceContext';
+import BankFirmShell from './modules/finance/pages/bank-firm/BankFirmShell';
+import BankFirmAccountsPage from './modules/finance/pages/bank-firm/BankFirmAccountsPage';
+import BankFirmLedgerPage from './modules/finance/pages/bank-firm/BankFirmLedgerPage';
+import BankFirmTransferPage from './modules/finance/pages/bank-firm/BankFirmTransferPage';
+import BankFirmExpensePage from './modules/finance/pages/bank-firm/BankFirmExpensePage';
+import BankFirmReportPage from './modules/finance/pages/bank-firm/BankFirmReportPage';
 import InvoiceCostVarianceReport from './modules/finance/pages/InvoiceCostVarianceReport';
 import AffiliatePayoutCycles from './modules/finance/pages/AffiliatePayoutCycles';
 import PartnerPayoutCycles from './modules/finance/pages/PartnerPayoutCycles';
@@ -200,7 +206,25 @@ export default function App() {
           <Route path="/services/:id/files" element={<ProtectedRoute staffOnly><Layout routePath="/services/files"><ServiceEngagementFiles /></Layout></ProtectedRoute>} />
           <Route path="/documents" element={<ProtectedRoute staffOnly><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute staffOnly><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
-          <Route path="/finance/bank-reports" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/finance/bank-reports"><BankFirmReports /></Layout></ProtectedRoute>} />
+          <Route
+            path="/finance/bank-reports"
+            element={(
+              <ProtectedRoute staffOnly requiredPermission="invoices.view">
+                <Layout routePath="/finance/bank-reports">
+                  <BankFirmWorkspaceProvider>
+                    <BankFirmShell />
+                  </BankFirmWorkspaceProvider>
+                </Layout>
+              </ProtectedRoute>
+            )}
+          >
+            <Route index element={<Navigate to="accounts" replace />} />
+            <Route path="accounts" element={<BankFirmAccountsPage />} />
+            <Route path="ledger" element={<BankFirmLedgerPage />} />
+            <Route path="transfer" element={<BankFirmTransferPage />} />
+            <Route path="expense" element={<BankFirmExpensePage />} />
+            <Route path="report" element={<BankFirmReportPage />} />
+          </Route>
           <Route path="/reports/invoice-cost-variance" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/reports/invoice-cost-variance"><InvoiceCostVarianceReport /></Layout></ProtectedRoute>} />
           <Route path="/finance/invoice-cost-variance" element={<Navigate to="/reports/invoice-cost-variance" replace />} />
           <Route path="/finance/affiliate-payout-cycles" element={

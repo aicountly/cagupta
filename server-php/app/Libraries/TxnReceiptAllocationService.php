@@ -179,4 +179,173 @@ final class TxnReceiptAllocationService
             $txn->recomputeInvoiceReceiptStatus((int)$iid);
         }
     }
+
+    /**
+     * Load the receipt row for linking payment_expense settlement (same entity as payment).
+     *
+     * @return array<string, mixed>
+     */
+    public static function resolveReceiptForPaymentExpenseLink(
+        TxnModel $txn,
+        int $receiptId,
+        string $publicRef,
+        int $paymentClientId,
+        int $paymentOrgId
+    ): array {
+        $row = null;
+        if ($receiptId > 0) {
+            $row = $txn->find($receiptId);
+        } elseif ($publicRef !== '') {
+            $row = $txn->findActiveTxnByPublicRef($publicRef, 'receipt', $paymentClientId, $paymentOrgId);
+        }
+        if ($row === null) {
+            throw new InvalidArgumentException('Receipt not found for settlement link (check RCP- ref or id for this client).');
+        }
+        if (($row['txn_type'] ?? '') !== 'receipt') {
+            throw new InvalidArgumentException('The referenced transaction is not a receipt.');
+        }
+        if (($row['status'] ?? '') === 'cancelled') {
+            throw new InvalidArgumentException('Cannot link to a cancelled receipt.');
+        }
+        $rc = (int)($row['client_id'] ?? 0);
+        $ro = (int)($row['organization_id'] ?? 0);
+        if ($paymentClientId > 0) {
+            if ($rc !== $paymentClientId || $ro !== 0) {
+                throw new InvalidArgumentException('Receipt does not belong to this contact ledger.');
+            }
+        } elseif ($paymentOrgId > 0) {
+            if ($ro !== $paymentOrgId || $rc !== 0) {
+                throw new InvalidArgumentException('Receipt does not belong to this organization ledger.');
+            }
+        }
+
+        return $row;
+    }
+
+    /**
+     * Move amount from receipt unallocated_advance onto this payment_expense (bill-by-bill settlement).
+     *
+     * @param array<string, mixed> $receiptRow
+     * @param array<string, mixed> $paymentExpenseRow
+     */
+    public static function linkPaymentExpenseToReceipt(
+        array $receiptRow,
+        array $paymentExpenseRow,
+        ?float $explicitLinkAmount
+    ): void {
+        if (($paymentExpenseRow['txn_type'] ?? '') !== 'payment_expense') {
+            throw new InvalidArgumentException('Settlement target must be a payment expense.');
+        }
+        if (($paymentExpenseRow['status'] ?? '') === 'cancelled') {
+            throw new InvalidArgumentException('Cannot link to a cancelled payment expense.');
+        }
+        $payAmt = round((float)($paymentExpenseRow['amount'] ?? 0), 2);
+        if ($payAmt <= 0) {
+            throw new InvalidArgumentException('Invalid payment expense amount.');
+        }
+        $linkAmt = $explicitLinkAmount === null ? $payAmt : round($explicitLinkAmount, 2);
+        if ($linkAmt <= 0) {
+            throw new InvalidArgumentException('settle_from_receipt_amount must be greater than zero when provided.');
+        }
+        if ($linkAmt > $payAmt + 0.01) {
+            throw new InvalidArgumentException('Amount applied from receipt cannot exceed the payment expense amount.');
+        }
+
+        $recvLc = LedgerDimensions::normalizeLedgerClass($receiptRow['ledger_class'] ?? null);
+        $payLc  = LedgerDimensions::normalizeLedgerClass($paymentExpenseRow['ledger_class'] ?? null);
+        if ($recvLc !== $payLc) {
+            throw new InvalidArgumentException('Receipt ledger type (regular / memorandum) must match the payment expense.');
+        }
+        $rKind = (string)($receiptRow['ledger_movement_kind'] ?? '');
+        $pKind = (string)($paymentExpenseRow['ledger_movement_kind'] ?? '');
+        if ($rKind !== $pKind) {
+            throw new InvalidArgumentException(
+                'Receipt ledger view (fees vs reimbursement) must match the payment expense.'
+            );
+        }
+
+        $receiptId  = (int)$receiptRow['id'];
+        $paymentId  = (int)$paymentExpenseRow['id'];
+        $receiptAmt = round((float)($receiptRow['amount'] ?? 0), 2);
+
+        $allocModel = new TxnSettlementAllocationModel();
+        $existing   = $allocModel->listForReceipt($receiptId);
+        $sumExist   = 0.0;
+        foreach ($existing as $e) {
+            $sumExist += round((float)($e['amount'] ?? 0), 2);
+        }
+        if ($receiptAmt > 0 && abs($sumExist - $receiptAmt) > 0.02) {
+            throw new InvalidArgumentException(
+                'Receipt allocation total does not match receipt amount; fix receipt allocations before linking.'
+            );
+        }
+
+        $unallocAvail = 0.0;
+        foreach ($existing as $e) {
+            if (($e['target_type'] ?? '') === 'unallocated_advance') {
+                $unallocAvail += round((float)($e['amount'] ?? 0), 2);
+            }
+        }
+        if ($linkAmt > $unallocAvail + 0.01) {
+            throw new InvalidArgumentException(
+                'This receipt has only ₹' . number_format($unallocAvail, 2, '.', '')
+                . ' unallocated; reduce the amount or edit the receipt to free unallocated funds before linking.'
+            );
+        }
+
+        $newRows   = [];
+        $remaining = $linkAmt;
+        foreach ($existing as $e) {
+            $tt  = (string)($e['target_type'] ?? '');
+            $amt = round((float)($e['amount'] ?? 0), 2);
+            if ($tt === 'unallocated_advance' && $remaining > 0.00001) {
+                $take = min($amt, $remaining);
+                $left = round($amt - $take, 2);
+                if ($left > 0.00001) {
+                    $newRows[] = [
+                        'target_type'   => 'unallocated_advance',
+                        'target_txn_id' => null,
+                        'amount'        => $left,
+                    ];
+                }
+                $remaining -= $take;
+            } elseif ($tt === 'unallocated_advance') {
+                if ($amt > 0.00001) {
+                    $newRows[] = [
+                        'target_type'   => 'unallocated_advance',
+                        'target_txn_id' => null,
+                        'amount'        => $amt,
+                    ];
+                }
+            } else {
+                $tid = isset($e['target_txn_id']) ? (int)$e['target_txn_id'] : 0;
+                if ($tid <= 0 && $tt !== 'unallocated_advance') {
+                    continue;
+                }
+                $newRows[] = [
+                    'target_type'   => $tt,
+                    'target_txn_id' => $tid,
+                    'amount'        => $amt,
+                ];
+            }
+        }
+        if ($remaining > 0.01) {
+            throw new InvalidArgumentException('Could not consume unallocated receipt balance for this link.');
+        }
+        $newRows[] = [
+            'target_type'   => 'payment_expense',
+            'target_txn_id' => $paymentId,
+            'amount'        => $linkAmt,
+        ];
+
+        $sumNew = 0.0;
+        foreach ($newRows as $r) {
+            $sumNew += round((float)($r['amount'] ?? 0), 2);
+        }
+        if ($receiptAmt > 0 && abs($sumNew - $receiptAmt) > 0.02) {
+            throw new InvalidArgumentException('Internal error: receipt allocations would not balance after link.');
+        }
+
+        $allocModel->replaceForReceipt($receiptId, $newRows);
+    }
 }
