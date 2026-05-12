@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createTds, finalizeTds,
@@ -1428,6 +1428,143 @@ function PaymentExpenseModal({ onClose, onSave }) {
   );
 }
 
+/** Searchable picker for linking an open invoice (Record Receipt modal). */
+function LinkedInvoiceSearchDropdown({ invoices, value, onChange, placeholder = 'Search invoice # or client…' }) {
+  const containerRef = useRef(null);
+  const selectedLabel = useMemo(() => {
+    if (!value) return '';
+    const inv = (invoices || []).find((i) => String(i.id) === String(value));
+    return inv ? `${inv.invoiceNumber} – ${inv.clientName}` : '';
+  }, [value, invoices]);
+
+  const [query, setQuery] = useState('');
+  useEffect(() => {
+    setQuery(selectedLabel);
+  }, [selectedLabel]);
+
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const list = invoices || [];
+    if (!q) return list.slice(0, 100);
+    return list.filter((inv) =>
+      String(inv.invoiceNumber || '').toLowerCase().includes(q)
+      || String(inv.clientName || '').toLowerCase().includes(q),
+    ).slice(0, 50);
+  }, [invoices, query]);
+
+  const dropdownStyle = {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    background: '#fff',
+    border: '1px solid #e2e8f0',
+    borderRadius: 6,
+    boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+    maxHeight: 240,
+    overflowY: 'auto',
+    marginTop: 2,
+  };
+
+  const itemStyle = {
+    padding: '8px 12px',
+    cursor: 'pointer',
+    fontSize: 13,
+    color: '#334155',
+    background: '#fff',
+    borderBottom: '1px solid #f8fafc',
+  };
+
+  function handleInput(e) {
+    const val = e.target.value;
+    setQuery(val);
+    setOpen(true);
+    if (!val.trim()) {
+      onChange('');
+      return;
+    }
+    const exact = (invoices || []).find((i) => `${i.invoiceNumber} – ${i.clientName}` === val.trim());
+    if (!exact) {
+      onChange('');
+    }
+  }
+
+  function handleFocus() {
+    setOpen(true);
+  }
+
+  function handleSelect(inv) {
+    const label = `${inv.invoiceNumber} – ${inv.clientName}`;
+    setQuery(label);
+    setOpen(false);
+    onChange(String(inv.id));
+  }
+
+  function handleClearNone(e) {
+    e.preventDefault();
+    setQuery('');
+    setOpen(false);
+    onChange('');
+  }
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      <input
+        type="text"
+        value={query}
+        onChange={handleInput}
+        onFocus={handleFocus}
+        placeholder={placeholder}
+        style={{ ...inputStyle, width: '100%', boxSizing: 'border-box' }}
+        autoComplete="off"
+      />
+      {open && (
+        <div style={dropdownStyle}>
+          <div
+            style={{ ...itemStyle, fontStyle: 'italic', color: '#64748b' }}
+            onMouseDown={handleClearNone}
+          >
+            — None —
+          </div>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '8px 12px', fontSize: 12, color: '#94a3b8' }}>No matching invoices</div>
+          ) : (
+            filtered.map((inv) => (
+              <div
+                key={inv.id}
+                style={itemStyle}
+                onMouseEnter={(e) => { e.currentTarget.style.background = '#f0f4ff'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = '#fff'; }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  handleSelect(inv);
+                }}
+              >
+                {inv.invoiceNumber}
+                {' – '}
+                {inv.clientName}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── ReceiptModal ──────────────────────────────────────────────────────────────
 
 function ReceiptModal({ onClose, onSave, openInvoices }) {
@@ -1471,6 +1608,11 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
       .finally(() => { if (!cancel) setBanksLoading(false); });
     return () => { cancel = true; };
   }, [form.billingProfileCode]);
+
+  const ledgerMatchedInvoices = useMemo(
+    () => (openInvoices || []).filter((inv) => (inv.ledgerClass || 'regular') === form.ledgerClass),
+    [openInvoices, form.ledgerClass],
+  );
 
   const handleSave = () => {
     if (!form.clientId || !form.amount || !form.txnDate || !form.billingProfileCode || !form.firmBankAccountId) return;
@@ -1534,37 +1676,39 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
               <input type="text" style={inputStyle} placeholder="UTR / Cheque No." value={form.referenceNumber} onChange={e=>set('referenceNumber',e.target.value)} />
             </label>
           </div>
-          <label style={labelStyle}>
-            Billing Profile
-            <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
-              <option value="">— Select Billing Profile —</option>
-              {getBillingProfiles().map(p=>(
-                <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
-              ))}
-            </select>
-          </label>
-          <label style={labelStyle}>
-            Bank / cash account
-            <select
-              style={inputStyle}
-              value={form.firmBankAccountId}
-              onChange={(e) => set('firmBankAccountId', e.target.value)}
-              disabled={!form.billingProfileCode || banksLoading}
-            >
-              <option value="">{banksLoading ? 'Loading…' : '— Select account —'}</option>
-              {banks.map((b) => (
-                <option key={b.id} value={String(b.id)}>{b.name} ({b.accountType})</option>
-              ))}
-            </select>
-          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Billing Profile
+              <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
+                <option value="">— Select Billing Profile —</option>
+                {getBillingProfiles().map(p=>(
+                  <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
+                ))}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Bank / cash account
+              <select
+                style={inputStyle}
+                value={form.firmBankAccountId}
+                onChange={(e) => set('firmBankAccountId', e.target.value)}
+                disabled={!form.billingProfileCode || banksLoading}
+              >
+                <option value="">{banksLoading ? 'Loading…' : '— Select account —'}</option>
+                {banks.map((b) => (
+                  <option key={b.id} value={String(b.id)}>{b.name} ({b.accountType})</option>
+                ))}
+              </select>
+            </label>
+          </div>
           <label style={labelStyle}>
             Linked Invoice (optional)
-            <select style={inputStyle} value={form.linkedTxnId} onChange={e=>set('linkedTxnId',e.target.value)}>
-              <option value="">— None —</option>
-              {(openInvoices || []).filter((inv) => (inv.ledgerClass || 'regular') === form.ledgerClass).map(inv=>(
-                <option key={inv.id} value={inv.id}>{inv.invoiceNumber} – {inv.clientName}</option>
-              ))}
-            </select>
+            <LinkedInvoiceSearchDropdown
+              invoices={ledgerMatchedInvoices}
+              value={form.linkedTxnId}
+              onChange={(id) => set('linkedTxnId', id)}
+              placeholder="Search invoice # or client…"
+            />
           </label>
           <label style={labelStyle}>
             Notes
