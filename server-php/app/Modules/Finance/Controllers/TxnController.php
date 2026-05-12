@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Config\Auth as AuthConfig;
+use App\Libraries\BillSettlementReportBuilder;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
 use App\Libraries\CommissionSyncService;
@@ -12,10 +13,12 @@ use App\Libraries\InvoiceCostAnalysis;
 use App\Libraries\LedgerDimensions;
 use App\Libraries\OtpService;
 use App\Libraries\RazorpayClient;
+use App\Libraries\TxnReceiptAllocationService;
 use App\Models\ClientModel;
 use App\Models\FirmBankAccountModel;
 use App\Models\OrganizationModel;
 use App\Models\TxnModel;
+use App\Models\TxnSettlementAllocationModel;
 use App\Models\UserModel;
 
 /**
@@ -169,12 +172,12 @@ class TxnController extends BaseController
                     $this->error('Provide only one of client_id or organization_id for a receipt.', 422);
                 }
                 try {
-                    $this->enforceMovementLedgerDimensions($body, true);
+                    $allocRows = TxnReceiptAllocationService::normalizeAndValidateAllocations($body, $body['allocations'] ?? null);
                 } catch (\InvalidArgumentException $e) {
                     $this->error($e->getMessage(), 422);
                 }
                 $this->attachValidatedBankAccount($body);
-                $id = $this->txn->createReceipt($body);
+                $id = $this->txn->createReceipt($body, $allocRows);
                 break;
             case 'payment_expense':
                 $pAmount = (float)($body['amount'] ?? 0);
@@ -428,6 +431,14 @@ class TxnController extends BaseController
 
             return;
         }
+        if ($type === 'receipt') {
+            $alloc = new TxnSettlementAllocationModel();
+            $targets = $alloc->distinctTargetsForReceipt($id);
+            $this->txn->delete($id);
+            TxnReceiptAllocationService::afterReceiptDeleted($targets['invoices']);
+
+            return;
+        }
         $this->txn->delete($id);
     }
 
@@ -649,6 +660,45 @@ class TxnController extends BaseController
         $this->success($entries, 'Ledger retrieved');
     }
 
+    /**
+     * GET /api/admin/txn/bill-settlement-report
+     * Query: client_id or organization_id, ledger_class, ledger_view, date_from?, date_to?
+     */
+    public function billSettlementReport(): never
+    {
+        $clientId = (int)$this->query('client_id', 0);
+        $orgId    = (int)$this->query('organization_id', 0);
+        if ($clientId <= 0 && $orgId <= 0) {
+            $this->error('client_id or organization_id is required.', 422);
+        }
+        $ledgerClass = LedgerDimensions::normalizeLedgerClass($this->query('ledger_class', ''));
+        $viewRaw     = trim((string)$this->query('ledger_view', 'consolidated'));
+        try {
+            $ledgerView = LedgerDimensions::assertLedgerView($viewRaw !== '' ? $viewRaw : 'consolidated');
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+        $dateFrom = trim((string)$this->query('date_from', ''));
+        $dateTo   = trim((string)$this->query('date_to', ''));
+        $df       = $dateFrom !== '' ? $dateFrom : null;
+        $dt       = $dateTo !== '' ? $dateTo : null;
+
+        try {
+            $payload = BillSettlementReportBuilder::build(
+                $this->txn,
+                $clientId,
+                $orgId,
+                $ledgerClass,
+                $ledgerView,
+                $df,
+                $dt
+            );
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+        $this->success($payload, 'Bill settlement report');
+    }
+
     // ── POST /api/admin/txn/receipt ──────────────────────────────────────────
 
     /**
@@ -674,14 +724,14 @@ class TxnController extends BaseController
         $body['created_by'] = $actingUser ? (int)$actingUser['id'] : null;
 
         try {
-            $this->enforceMovementLedgerDimensions($body, true);
+            $allocRows = TxnReceiptAllocationService::normalizeAndValidateAllocations($body, $body['allocations'] ?? null);
         } catch (\InvalidArgumentException $e) {
             $this->error($e->getMessage(), 422);
         }
 
         $this->attachValidatedBankAccount($body);
 
-        $id  = $this->txn->createReceipt($body);
+        $id  = $this->txn->createReceipt($body, $allocRows);
         $row = $this->txn->find($id);
         $this->success($row, 'Receipt recorded', 201);
     }

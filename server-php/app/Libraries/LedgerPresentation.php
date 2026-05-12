@@ -110,6 +110,50 @@ final class LedgerPresentation
     }
 
     /**
+     * Fee / reimbursement totals (incl. tax split) for an invoice txn — used by bill settlement report.
+     *
+     * @param array<string, mixed> $invoiceTxn
+     * @return array{fee_total: float, reim_total: float, inv_total: float}
+     */
+    public static function invoiceBucketParts(array $invoiceTxn): array
+    {
+        $lines = self::lineItemsArray($invoiceTxn);
+        $totals = LedgerDimensions::invoiceLineSubtotalsByKind($lines);
+        $subtotal = (float)($invoiceTxn['subtotal'] ?? 0);
+        if ($subtotal <= 0.00001) {
+            $subtotal = $totals['fee_sub'] + $totals['reimbursement_sub'];
+        }
+        $tax   = (float)($invoiceTxn['tax_amount'] ?? 0);
+        $parts = self::bucketTotals($totals, $subtotal, $tax);
+
+        return [
+            'fee_total'  => $parts['fee_total'],
+            'reim_total' => $parts['reim_total'],
+            'inv_total'  => round((float)($invoiceTxn['amount'] ?? 0), 2),
+        ];
+    }
+
+    /**
+     * Credit note amount attributed to a ledger slice (fees or reimbursement), same split as buildSliced.
+     *
+     * @param array<string, mixed> $cn  credit_note txn
+     * @param array<string, mixed> $invoice linked invoice txn
+     */
+    public static function creditNoteCreditForSlice(array $cn, array $invoice, string $targetView): float
+    {
+        $tv = trim($targetView);
+        if ($tv === LedgerDimensions::VIEW_CONSOLIDATED) {
+            return round((float)($cn['amount'] ?? 0), 2);
+        }
+        $targetView = LedgerDimensions::assertLedgerView($tv);
+        foreach (self::sliceCreditNoteRows($cn, $invoice, $targetView) as $row) {
+            return round((float)($row['credit'] ?? 0), 2);
+        }
+
+        return 0.0;
+    }
+
+    /**
      * @return array<int, array<string, mixed>>
      */
     private static function sliceInvoiceRows(array $t, string $targetView): array

@@ -1210,6 +1210,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/bill-settlement-report',
+                'handler'    => 'Admin\TxnController@billSettlementReport',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/bank-ledger',
                 'handler'    => 'Admin\TxnController@bankLedger',
                 'middleware' => ['auth', 'permission:invoices.view'],

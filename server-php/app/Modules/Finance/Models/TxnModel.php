@@ -7,6 +7,7 @@ use App\Config\Database;
 use App\Libraries\InvoiceLineCommission;
 use App\Libraries\LedgerDimensions;
 use App\Libraries\LedgerPresentation;
+use App\Libraries\TxnReceiptAllocationService;
 use PDO;
 
 /**
@@ -263,6 +264,60 @@ class TxnModel
     }
 
     /**
+     * Raw txn rows for reporting (decoded JSON), same filter as getLedgerByClient.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function fetchRawLedgerRowsForClient(int $clientId, string $ledgerClass): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT t.*
+             FROM txn t
+             WHERE t.client_id = :client_id
+               AND t.status != 'cancelled'
+               AND t.ledger_class = :ledger_class
+             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
+        );
+        $stmt->execute([
+            ':client_id'     => $clientId,
+            ':ledger_class' => LedgerDimensions::normalizeLedgerClass($ledgerClass),
+        ]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($rows as &$row) {
+            $this->decodeJsonbInvoiceFields($row);
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function fetchRawLedgerRowsForOrganization(int $orgId, string $ledgerClass): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT t.*
+             FROM txn t
+             WHERE t.organization_id = :org_id
+               AND t.status != 'cancelled'
+               AND t.ledger_class = :ledger_class
+             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
+        );
+        $stmt->execute([
+            ':org_id'        => $orgId,
+            ':ledger_class' => LedgerDimensions::normalizeLedgerClass($ledgerClass),
+        ]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($rows as &$row) {
+            $this->decodeJsonbInvoiceFields($row);
+        }
+        unset($row);
+
+        return $rows;
+    }
+
+    /**
      * Total receivable across all contact and organization ledgers.
      *
      * For each ledger entity, closing balance is SUM(debit − credit) on non-cancelled
@@ -318,7 +373,7 @@ class TxnModel
                 appointment_id,
                 firm_bank_account_id, counterparty_firm_bank_account_id, firm_expense_category,
                 invoice_cost_analysis_ack_user_id, invoice_cost_analysis_ack_at, invoice_cost_analysis,
-                ledger_class, ledger_movement_kind
+                ledger_class, ledger_movement_kind, public_ref
              ) VALUES (
                 :client_id, :organization_id, :txn_type, :txn_date, :narration,
                 :debit, :credit, :amount, :billing_profile_code,
@@ -331,7 +386,7 @@ class TxnModel
                 :appointment_id,
                 :firm_bank_account_id, :counterparty_firm_bank_account_id, :firm_expense_category,
                 :invoice_cost_analysis_ack_user_id, :invoice_cost_analysis_ack_at, CAST(:invoice_cost_analysis AS jsonb),
-                :ledger_class, :ledger_movement_kind
+                :ledger_class, :ledger_movement_kind, :public_ref
              ) RETURNING id'
         );
         $ica = $data['invoice_cost_analysis'] ?? [];
@@ -359,6 +414,10 @@ class TxnModel
         $referenceNumber = $this->clipDbText(
             isset($data['reference_number']) ? (string)$data['reference_number'] : null,
             100
+        );
+        $publicRef = $this->clipDbText(
+            isset($data['public_ref']) ? (string)$data['public_ref'] : null,
+            40
         );
         $expensePurpose = $this->clipDbText(
             isset($data['expense_purpose']) ? (string)$data['expense_purpose'] : null,
@@ -420,6 +479,7 @@ class TxnModel
             ':invoice_cost_analysis' => json_encode($ica, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR),
             ':ledger_class'          => $ledgerClass,
             ':ledger_movement_kind'  => $ledgerMovementKind,
+            ':public_ref'            => $publicRef !== '' ? $publicRef : null,
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -467,18 +527,19 @@ class TxnModel
      * Create a receipt transaction (payment received from client).
      *
      * @param array<string, mixed> $data
+     * @param list<array{target_type:string, target_txn_id?:int|null, amount:float}>|null $prevalidatedAllocations
      * @return int
      */
-    public function createReceipt(array $data): int
+    public function createReceipt(array $data, ?array $prevalidatedAllocations = null): int
     {
         $amount = (float)($data['amount'] ?? 0);
+        $allocRows = $prevalidatedAllocations
+            ?? TxnReceiptAllocationService::normalizeAndValidateAllocations($data, $data['allocations'] ?? null);
+        unset($data['allocations']);
+        TxnReceiptAllocationService::assignPublicRef($data);
+        $data['linked_txn_id'] = null;
 
-        // If linked to an invoice, update the invoice_status
-        if (!empty($data['linked_txn_id'])) {
-            $this->updateLinkedInvoiceOnReceipt((int)$data['linked_txn_id'], $amount);
-        }
-
-        return $this->create(array_merge($data, [
+        $id = $this->create(array_merge($data, [
             'txn_type'       => 'receipt',
             'narration'      => $data['narration'] ?? 'Receipt — ' . ($data['payment_method'] ?? 'Transfer'),
             'debit'          => 0,
@@ -487,6 +548,9 @@ class TxnModel
             'status'         => 'active',
             'appointment_id' => $data['appointment_id'] ?? null,
         ]));
+        TxnReceiptAllocationService::persistForNewReceipt($id, $allocRows);
+
+        return $id;
     }
 
     /**
@@ -510,6 +574,13 @@ class TxnModel
                     : ($name !== '' ? $name : $type);
                 $paidFrom = $paidFrom !== '' ? $paidFrom : null;
             }
+        }
+        if (empty($data['public_ref'])) {
+            $data['public_ref'] = \App\Libraries\TxnPublicRefGenerator::next(
+                $this->db,
+                'PAY',
+                isset($data['txn_date']) ? (string)$data['txn_date'] : null
+            );
         }
         // Firm paid on the client's behalf → recoverable from client (same sign as an invoice charge).
         return $this->create(array_merge($data, [
@@ -867,7 +938,7 @@ class TxnModel
             'tds_status', 'tds_section', 'tds_rate',
             'linked_txn_id', 'notes', 'status', 'line_items', 'gst_breakdown',
             'invoice_cost_analysis_ack_user_id', 'invoice_cost_analysis_ack_at', 'invoice_cost_analysis',
-            'ledger_class', 'ledger_movement_kind',
+            'ledger_class', 'ledger_movement_kind', 'public_ref',
         ];
         foreach ($allowed as $field) {
             if (!array_key_exists($field, $data)) {
@@ -1293,30 +1364,25 @@ class TxnModel
     }
 
     /**
-     * Update the invoice_status on a linked invoice after a receipt is recorded.
+     * Recompute invoice_status from settlement allocations (receipts only).
      */
-    private function updateLinkedInvoiceOnReceipt(int $invoiceId, float $receiptAmount): void
+    public function recomputeInvoiceReceiptStatus(int $invoiceTxnId): void
     {
-        $invoice = $this->find($invoiceId);
-        if (!$invoice || $invoice['txn_type'] !== 'invoice') {
+        $invoice = $this->find($invoiceTxnId);
+        if ($invoice === null || ($invoice['txn_type'] ?? '') !== 'invoice') {
+            return;
+        }
+        $st = (string)($invoice['invoice_status'] ?? '');
+        if ($st === 'cancelled' || $st === 'reversed') {
             return;
         }
 
-        // Sum all receipts linked to this invoice
-        $stmt = $this->db->prepare(
-            "SELECT COALESCE(SUM(amount),0)
-             FROM txn
-             WHERE linked_txn_id = :invoice_id
-               AND txn_type = 'receipt'
-               AND status != 'cancelled'"
-        );
-        $stmt->execute([':invoice_id' => $invoiceId]);
-        $totalReceived = (float)$stmt->fetchColumn() + $receiptAmount;
-
-        $invoiceTotal = (float)$invoice['amount'];
+        $allocModel      = new TxnSettlementAllocationModel();
+        $totalReceived   = $allocModel->sumAllocatedToInvoice($invoiceTxnId);
+        $invoiceTotal    = (float)$invoice['amount'];
         if ($totalReceived <= 0) {
             $newStatus = 'sent';
-        } elseif ($totalReceived >= $invoiceTotal) {
+        } elseif ($totalReceived >= $invoiceTotal - 0.001) {
             $newStatus = 'paid';
         } else {
             $newStatus = 'partially_paid';
@@ -1324,20 +1390,14 @@ class TxnModel
 
         $this->db->prepare(
             "UPDATE txn SET invoice_status = :status, updated_at = NOW() WHERE id = :id"
-        )->execute([':status' => $newStatus, ':id' => $invoiceId]);
+        )->execute([':status' => $newStatus, ':id' => $invoiceTxnId]);
     }
 
-    /** Sum existing receipt credits linked to an invoice txn (excludes cancelled). */
+    /** Sum existing receipt amounts allocated to an invoice txn (excludes cancelled receipts). */
     public function sumLinkedReceipts(int $invoiceTxnId): float
     {
-        $stmt = $this->db->prepare(
-            "SELECT COALESCE(SUM(amount), 0) FROM txn
-             WHERE linked_txn_id = :invoice_id
-               AND txn_type = 'receipt'
-               AND status != 'cancelled'"
-        );
-        $stmt->execute([':invoice_id' => $invoiceTxnId]);
+        $allocModel = new TxnSettlementAllocationModel();
 
-        return (float)$stmt->fetchColumn();
+        return $allocModel->sumAllocatedToInvoice($invoiceTxnId);
     }
 }

@@ -109,6 +109,7 @@ function normalizeTxn(t) {
     rowType:            t.row_type || '',
     ledgerClass:        t.ledger_class || 'regular',
     ledgerMovementKind: t.ledger_movement_kind || null,
+    publicRef:          t.public_ref || '',
     sourceTxnId:        t.source_txn_id != null ? parseInt(t.source_txn_id, 10) || null : null,
     ledgerSlice:        t.ledger_slice || null,
   };
@@ -265,6 +266,27 @@ export async function getLedger(clientIdOrObj) {
   const res  = await fetch(`${API_BASE}/admin/txn/ledger?${params}`, { headers: authHeaders() });
   const data = await parseResponse(res);
   return (data.data || []).map(normalizeTxn);
+}
+
+/** GET /api/admin/txn/bill-settlement-report */
+export async function getBillSettlementReport({
+  clientId,
+  organizationId,
+  ledgerClass = 'regular',
+  ledgerView = 'consolidated',
+  dateFrom,
+  dateTo,
+} = {}) {
+  const query = new URLSearchParams();
+  if (clientId) query.set('client_id', clientId);
+  if (organizationId) query.set('organization_id', organizationId);
+  query.set('ledger_class', ledgerClass);
+  query.set('ledger_view', ledgerView);
+  if (dateFrom) query.set('date_from', dateFrom);
+  if (dateTo) query.set('date_to', dateTo);
+  const res = await fetch(`${API_BASE}/admin/txn/bill-settlement-report?${query}`, { headers: authHeaders() });
+  const data = await parseResponse(res);
+  return data.data || {};
 }
 
 /** POST /api/admin/txn with txn_type payment_expense */

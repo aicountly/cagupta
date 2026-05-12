@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createTds, finalizeTds,
-  getTdsEntries, createRebate, createCreditNote, getLedger,
+  getTdsEntries, createRebate, createCreditNote, getLedger, getBillSettlementReport,
   getOpeningBalance, setOpeningBalance,
   updateTxn, requestInvoiceModifyOtp,
   requestLedgerDeleteOtp, bulkDeleteTxns,
@@ -1567,6 +1567,12 @@ function LinkedInvoiceSearchDropdown({ invoices, value, onChange, placeholder = 
 
 // ── ReceiptModal ──────────────────────────────────────────────────────────────
 
+const RECEIPT_ALLOC_TARGET_OPTIONS = [
+  { value: 'invoice', label: 'Invoice' },
+  { value: 'payment_expense', label: 'Payment (on behalf)' },
+  { value: 'unallocated_advance', label: 'Unallocated advance' },
+];
+
 function ReceiptModal({ onClose, onSave, openInvoices }) {
   const [form, setForm] = useState({
     clientId: '',
@@ -1577,11 +1583,14 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
     referenceNumber: '',
     billingProfileCode: '',
     firmBankAccountId: '',
-    linkedTxnId: '',
     notes: '',
     ledgerClass: 'regular',
     ledgerMovementKind: 'fees',
   });
+  const [allocLines, setAllocLines] = useState([
+    { targetType: 'invoice', targetTxnId: '', amount: '' },
+  ]);
+  const [payRows, setPayRows] = useState([]);
   const [banks, setBanks] = useState([]);
   const [banksLoading, setBanksLoading] = useState(false);
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -1609,37 +1618,107 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
     return () => { cancel = true; };
   }, [form.billingProfileCode]);
 
+  useEffect(() => {
+    if (!form.clientId) {
+      setPayRows([]);
+      return;
+    }
+    let cancel = false;
+    getTxns({
+      clientId: form.clientId,
+      txnType: 'payment_expense',
+      perPage: 100,
+      status: 'active',
+    })
+      .then(({ txns }) => {
+        if (cancel) return;
+        const f = (txns || []).filter((t) =>
+          (t.ledgerClass || 'regular') === form.ledgerClass
+          && (t.ledgerMovementKind || 'fees') === form.ledgerMovementKind,
+        );
+        setPayRows(f);
+      })
+      .catch(() => { if (!cancel) setPayRows([]); });
+    return () => { cancel = true; };
+  }, [form.clientId, form.ledgerClass, form.ledgerMovementKind]);
+
   const ledgerMatchedInvoices = useMemo(
     () => (openInvoices || []).filter((inv) => (inv.ledgerClass || 'regular') === form.ledgerClass),
     [openInvoices, form.ledgerClass],
   );
 
+  const setLine = (idx, patch) => {
+    setAllocLines((L) => L.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
+  };
+
+  const addAllocLine = () => {
+    setAllocLines((L) => [...L, { targetType: 'unallocated_advance', targetTxnId: '', amount: '' }]);
+  };
+
+  const removeAllocLine = (idx) => {
+    setAllocLines((L) => (L.length <= 1 ? L : L.filter((_, i) => i !== idx)));
+  };
+
   const handleSave = () => {
     if (!form.clientId || !form.amount || !form.txnDate || !form.billingProfileCode || !form.firmBankAccountId) return;
-    onSave(form);
+    const total = parseFloat(form.amount);
+    if (Number.isNaN(total) || total <= 0) return;
+    const lines = allocLines.map((l) => ({
+      target_type: l.targetType,
+      target_txn_id: l.targetType === 'unallocated_advance' ? undefined : (parseInt(l.targetTxnId, 10) || 0),
+      amount: parseFloat(l.amount) || 0,
+    })).filter((l) => l.amount > 0);
+    if (lines.length === 0) return;
+    const sum = lines.reduce((s, l) => s + l.amount, 0);
+    if (Math.abs(sum - total) > 0.02) {
+      window.alert(`Allocation lines must sum to the receipt amount (₹${total.toFixed(2)}); currently ₹${sum.toFixed(2)}.`);
+      return;
+    }
+    for (const l of lines) {
+      if (l.target_type !== 'unallocated_advance' && (!l.target_txn_id || l.target_txn_id <= 0)) {
+        window.alert('Select an invoice or payment for each non-advance line.');
+        return;
+      }
+    }
+    onSave({ ...form, allocations: lines });
     onClose();
   };
+
   return (
     <div style={overlayStyle}>
       <div style={modalStyle}>
         <div style={modalHeaderStyle}>
-          <span style={{ fontSize:15, fontWeight:700 }}>💵 Record Receipt</span>
-          <button onClick={onClose} style={closeBtnStyle}>✕</button>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>💵 Record Receipt</span>
+          <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
         </div>
-        <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
+        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <label style={labelStyle}>
             Client
             <ClientSearchDropdown
               value={form.clientId}
               displayValue={form.clientName}
-              onChange={c => setForm(f => ({ ...f, clientId: c.id, clientName: c.displayName }))}
+              onChange={(c) => {
+                setForm((f) => ({
+                  ...f,
+                  clientId: c.id,
+                  clientName: c.displayName,
+                }));
+                setAllocLines([{ targetType: 'invoice', targetTxnId: '', amount: '' }]);
+              }}
               placeholder="Search client by name…"
             />
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Ledger type
-              <select style={inputStyle} value={form.ledgerClass} onChange={(e) => setForm((f) => ({ ...f, ledgerClass: e.target.value, linkedTxnId: '' }))}>
+              <select
+                style={inputStyle}
+                value={form.ledgerClass}
+                onChange={(e) => {
+                  setForm((f) => ({ ...f, ledgerClass: e.target.value }));
+                  setAllocLines([{ targetType: 'invoice', targetTxnId: '', amount: '' }]);
+                }}
+              >
                 {LEDGER_CLASS_OPTIONS.map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
@@ -1654,34 +1733,34 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
               </select>
             </label>
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Amount (₹)
-              <input type="number" style={inputStyle} placeholder="e.g. 5900" value={form.amount} onChange={e=>set('amount',e.target.value)} />
+              <input type="number" style={inputStyle} placeholder="e.g. 5900" value={form.amount} onChange={(e) => set('amount', e.target.value)} />
             </label>
             <label style={labelStyle}>
               Receipt Date
-              <DateInput style={inputStyle} value={form.txnDate} onChange={e=>set('txnDate',e.target.value)} />
+              <DateInput style={inputStyle} value={form.txnDate} onChange={(e) => set('txnDate', e.target.value)} />
             </label>
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Payment Method
-              <select style={inputStyle} value={form.method} onChange={e=>set('method',e.target.value)}>
+              <select style={inputStyle} value={form.method} onChange={(e) => set('method', e.target.value)}>
                 {PAYMENT_METHOD_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
               </select>
             </label>
             <label style={labelStyle}>
               Reference No. (UTR / Cheque No)
-              <input type="text" style={inputStyle} placeholder="UTR / Cheque No." value={form.referenceNumber} onChange={e=>set('referenceNumber',e.target.value)} />
+              <input type="text" style={inputStyle} placeholder="UTR / Cheque No." value={form.referenceNumber} onChange={(e) => set('referenceNumber', e.target.value)} />
             </label>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Billing Profile
-              <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
+              <select style={inputStyle} value={form.billingProfileCode} onChange={(e) => set('billingProfileCode', e.target.value)}>
                 <option value="">— Select Billing Profile —</option>
-                {getBillingProfiles().map(p=>(
+                {getBillingProfiles().map((p) => (
                   <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
                 ))}
               </select>
@@ -1701,23 +1780,83 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
               </select>
             </label>
           </div>
-          <label style={labelStyle}>
-            Linked Invoice (optional)
-            <LinkedInvoiceSearchDropdown
-              invoices={ledgerMatchedInvoices}
-              value={form.linkedTxnId}
-              onChange={(id) => set('linkedTxnId', id)}
-              placeholder="Search invoice # or client…"
-            />
-          </label>
+
+          <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 8, marginTop: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+              <span style={{ fontWeight: 600, fontSize: 13 }}>Settlement (must sum to amount)</span>
+              <button type="button" onClick={addAllocLine} style={{ ...btnSecondary, fontSize: 12, padding: '4px 10px' }}>+ Line</button>
+            </div>
+            {allocLines.map((line, idx) => (
+              <div
+                key={`alloc-${idx}-${line.targetType}`}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '130px 1fr 100px 32px',
+                  gap: 8,
+                  alignItems: 'start',
+                  marginBottom: 10,
+                }}
+              >
+                <select
+                  style={inputStyle}
+                  value={line.targetType}
+                  onChange={(e) => setLine(idx, {
+                    targetType: e.target.value,
+                    targetTxnId: '',
+                    amount: line.amount,
+                  })}
+                >
+                  {RECEIPT_ALLOC_TARGET_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <div style={{ minWidth: 0 }}>
+                  {line.targetType === 'invoice' && (
+                    <LinkedInvoiceSearchDropdown
+                      invoices={ledgerMatchedInvoices}
+                      value={line.targetTxnId}
+                      onChange={(id) => setLine(idx, { targetTxnId: id })}
+                      placeholder="Invoice…"
+                    />
+                  )}
+                  {line.targetType === 'payment_expense' && (
+                    <select
+                      style={inputStyle}
+                      value={line.targetTxnId}
+                      onChange={(e) => setLine(idx, { targetTxnId: e.target.value })}
+                    >
+                      <option value="">— Payment —</option>
+                      {payRows.map((p) => (
+                        <option key={p.id} value={String(p.id)}>
+                          #{p.id} — ₹{(p.amount || 0).toLocaleString('en-IN')} — {(p.narration || '').slice(0, 40)}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {line.targetType === 'unallocated_advance' && (
+                    <span style={{ fontSize: 12, color: '#64748b', lineHeight: '38px' }}>No target — advance held on ledger</span>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  style={inputStyle}
+                  placeholder="₹"
+                  value={line.amount}
+                  onChange={(e) => setLine(idx, { amount: e.target.value })}
+                />
+                <button type="button" onClick={() => removeAllocLine(idx)} style={{ ...iconBtn, alignSelf: 'start' }} title="Remove line">−</button>
+              </div>
+            ))}
+          </div>
+
           <label style={labelStyle}>
             Notes
-            <input type="text" style={inputStyle} placeholder="Optional notes" value={form.notes} onChange={e=>set('notes',e.target.value)} />
+            <input type="text" style={inputStyle} placeholder="Optional notes" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
           </label>
         </div>
-        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }}>
-          <button onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button onClick={handleSave} style={btnPrimary}>Save Receipt</button>
+        <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button type="button" onClick={handleSave} style={btnPrimary}>Save Receipt</button>
         </div>
       </div>
     </div>
@@ -2226,7 +2365,7 @@ export default function Invoices() {
   useEffect(() => {
     const t = searchParams.get('tab');
     if (!t) return;
-    const allowed = ['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note', 'ledger', 'service_billing'];
+    const allowed = ['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note', 'ledger', 'bill_settlement', 'service_billing'];
     if (allowed.includes(t)) setTab(t);
   }, [searchParams]);
 
@@ -2280,6 +2419,8 @@ export default function Invoices() {
 
   // ── Ledger tab state ────────────────────────────────────────────────────────
   const [ledgerClientId, setLedgerClientId]       = useState('');
+  const [billReport, setBillReport]               = useState(null);
+  const [billLoading, setBillLoading]             = useState(false);
   const [ledgerClientName, setLedgerClientName]   = useState('');
   const [ledgerEntityType, setLedgerEntityType]   = useState('contact');
   const [ledger, setLedger]                       = useState([]);
@@ -2410,7 +2551,7 @@ export default function Invoices() {
 
   // ── Ledger reload ───────────────────────────────────────────────────────────
   useEffect(() => {
-    if (tab !== 'ledger' || !ledgerClientId) return;
+    if ((tab !== 'ledger' && tab !== 'bill_settlement') || !ledgerClientId) return;
     setLedgerLoading(true);
     const ledgerParam = ledgerEntityType === 'organization'
       ? {
@@ -2436,6 +2577,29 @@ export default function Invoices() {
       });
     }).finally(() => setLedgerLoading(false));
   }, [tab, ledgerClientId, ledgerEntityType, ledgerLedgerClass, ledgerLedgerView]);
+
+  useEffect(() => {
+    if (tab !== 'bill_settlement' || !ledgerClientId) {
+      setBillReport(null);
+      return;
+    }
+    setBillLoading(true);
+    const params = {
+      ledgerClass: ledgerLedgerClass,
+      ledgerView: ledgerLedgerView,
+      dateFrom: ledgerFilterDateFrom || undefined,
+      dateTo: ledgerFilterDateTo || undefined,
+    };
+    if (ledgerEntityType === 'organization') {
+      params.organizationId = ledgerClientId;
+    } else {
+      params.clientId = ledgerClientId;
+    }
+    getBillSettlementReport(params)
+      .then((r) => setBillReport(r))
+      .catch(() => setBillReport(null))
+      .finally(() => setBillLoading(false));
+  }, [tab, ledgerClientId, ledgerEntityType, ledgerLedgerClass, ledgerLedgerView, ledgerFilterDateFrom, ledgerFilterDateTo]);
 
   useEffect(() => {
     setLedgerFilterDateFrom('');
@@ -2585,10 +2749,14 @@ export default function Invoices() {
       payment_method:       data.method,
       reference_number:     data.reference,
       billing_profile_code: data.billingProfileCode,
-      linked_txn_id:        selectedInvoice.id,
       firm_bank_account_id: parseInt(data.firmBankAccountId, 10),
       ledger_class:         data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
       ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
+      allocations: [{
+        target_type:     'invoice',
+        target_txn_id:   selectedInvoice.id,
+        amount:          parseFloat(data.amount),
+      }],
     };
     if (selectedInvoice.organizationId) {
       receiptBody.organization_id = selectedInvoice.organizationId;
@@ -2646,10 +2814,10 @@ export default function Invoices() {
       reference_number:     data.referenceNumber,
       billing_profile_code: data.billingProfileCode,
       firm_bank_account_id: parseInt(data.firmBankAccountId, 10),
-      linked_txn_id:        data.linkedTxnId || null,
       notes:                data.notes,
       ledger_class:         data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
       ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
+      allocations:          data.allocations,
     })
       .then(rec => setReceipts(prev => [rec, ...prev]))
       .catch(() => {});
@@ -2875,6 +3043,7 @@ export default function Invoices() {
     { key:'rebate',      label:'💸 Rebate/Discount' },
     { key:'credit_note', label:'📝 Credit Notes' },
     { key:'ledger',      label:'📒 Ledger' },
+    { key:'bill_settlement', label:'📑 Bill by bill' },
     { key:'service_billing', label:'📋 Service billing' },
   ];
 
@@ -3232,14 +3401,14 @@ export default function Invoices() {
                     />
                   </th>
                 )}
-                {['Date','Client','Amount','Method','Reference No.','Billing Profile','Linked Invoice','Notes','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+                {['Date','Ref','Client','Amount','Method','Reference No.','Billing Profile','Linked Invoice','Notes','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {recLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 11 : 10} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
               ) : receipts.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 11 : 10} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
               ) : receipts.map(r=>(
                 <tr key={r.id} style={trStyle}>
                   {canDeleteInvoice && (
@@ -3255,6 +3424,7 @@ export default function Invoices() {
                     </td>
                   )}
                   <td style={tdStyle}>{r.txnDate}</td>
+                  <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{r.publicRef || '—'}</td>
                   <td style={tdStyle}>{r.clientName}</td>
                   <td style={{ ...tdStyle, fontWeight:600, color:'#16a34a' }}>₹{r.amount.toLocaleString('en-IN')}</td>
                   <td style={tdStyle}>{r.paymentMethod || '—'}</td>
@@ -3332,16 +3502,16 @@ export default function Invoices() {
                     />
                   </th>
                 )}
-                {['Date', 'Client', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Actions'].map((h) => (
+                {['Date', 'Ref', 'Client', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Actions'].map((h) => (
                   <th key={h} style={thStyle}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {payLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
               ) : paymentExpenses.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
               ) : paymentExpenses.map((p) => (
                 <tr key={p.id} style={trStyle}>
                   {canDeleteInvoice && (
@@ -3357,6 +3527,7 @@ export default function Invoices() {
                     </td>
                   )}
                   <td style={tdStyle}>{p.txnDate}</td>
+                  <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{p.publicRef || '—'}</td>
                   <td style={tdStyle}>{p.clientName}</td>
                   <td style={{ ...tdStyle, fontWeight: 600, color: '#b91c1c' }} title="Recoverable from client (ledger debit)">₹{p.amount.toLocaleString('en-IN')}</td>
                   <td style={tdStyle}>{expensePurposeLabel(p.expensePurpose)}</td>
@@ -3863,6 +4034,156 @@ export default function Invoices() {
                 ))}
               </tbody>
             </table>
+          )}
+        </div>
+      )}
+
+      {/* ── Tab: Bill by bill settlement ─────────────────────────────────────── */}
+      {tab === 'bill_settlement' && (
+        <div style={cardStyle}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>Client:</span>
+            <div style={{ flex: '0 0 280px' }}>
+              <EntitySearchDropdown
+                value={ledgerClientId}
+                displayValue={ledgerClientName}
+                entityType={ledgerEntityType}
+                onChange={(c) => {
+                  setLedgerClientId(String(c.id));
+                  setLedgerClientName(c.displayName);
+                  setLedgerEntityType(c.entityType);
+                }}
+                placeholder="Search contact or organization…"
+              />
+            </div>
+            {ledgerClientId && (
+              <>
+                <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>Ledger type:</span>
+                <select
+                  style={{ ...inputStyle, minWidth: 116, cursor: 'pointer' }}
+                  value={ledgerLedgerClass}
+                  onChange={(e) => setLedgerLedgerClass(e.target.value)}
+                >
+                  {LEDGER_CLASS_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>View:</span>
+                <select
+                  style={{ ...inputStyle, minWidth: 144, cursor: 'pointer' }}
+                  value={ledgerLedgerView}
+                  onChange={(e) => setLedgerLedgerView(e.target.value)}
+                >
+                  {LEDGER_VIEW_OPTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                </select>
+              </>
+            )}
+            {ledgerClientId && !ledgerLoading && (
+              <>
+                <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>Financial year:</span>
+                <select
+                  style={{ ...inputStyle, minWidth: 128, cursor: 'pointer' }}
+                  value={ledgerFyStartYear ?? ledgerFyOptions[ledgerFyOptions.length - 1]}
+                  onChange={(e) => setLedgerFyStartYear(parseInt(e.target.value, 10))}
+                >
+                  {ledgerFyOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {indianFYLabel(y)}
+                    </option>
+                  ))}
+                </select>
+                <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>Date from:</span>
+                <DateInput
+                  style={{ ...inputStyle, width: 'auto' }}
+                  min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
+                  max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
+                  value={ledgerFilterDateFrom}
+                  onChange={(e) => setLedgerFilterDateFrom(e.target.value)}
+                />
+                <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>to:</span>
+                <DateInput
+                  style={{ ...inputStyle, width: 'auto' }}
+                  min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
+                  max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
+                  value={ledgerFilterDateTo}
+                  onChange={(e) => setLedgerFilterDateTo(e.target.value)}
+                />
+                {(ledgerFilterDateFrom || ledgerFilterDateTo) && (
+                  <button
+                    type="button"
+                    style={{ ...btnSecondary, fontSize: 12, padding: '6px 10px', whiteSpace: 'nowrap' }}
+                    onClick={() => {
+                      setLedgerFilterDateFrom('');
+                      setLedgerFilterDateTo('');
+                    }}
+                  >
+                    Clear dates
+                  </button>
+                )}
+              </>
+            )}
+          </div>
+          {!ledgerClientId ? (
+            <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
+              Search for a client to load the bill-by-bill settlement report.
+            </div>
+          ) : billLoading ? (
+            <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8' }}>Loading report…</div>
+          ) : (
+            <>
+              {billReport && (
+                <div style={{ padding: '12px 16px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', fontSize: 13, color: '#334155' }}>
+                  <strong>Ledger closing balance:</strong>
+                  {' '}
+                  ₹
+                  {(billReport.ledger_closing_balance ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {' · '}
+                  <strong>Report net:</strong>
+                  {' '}
+                  ₹
+                  {(billReport.report_net ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  {' · '}
+                  <strong>Reconciliation gap:</strong>
+                  {' '}
+                  ₹
+                  {(billReport.reconciliation_gap ?? 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </div>
+              )}
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    {['Kind', 'Date', 'Ref', 'Label', 'Gross', 'CN/Adj (−)', 'Applied', 'Outstanding', 'Net effect'].map((h) => (
+                      <th key={h} style={thStyle}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {!(billReport && Array.isArray(billReport.lines) && billReport.lines.length) ? (
+                    <tr>
+                      <td colSpan={9} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>
+                        No lines for this filter (or no data yet).
+                      </td>
+                    </tr>
+                  ) : (
+                    billReport.lines.map((row, i) => (
+                      <tr key={`${row.txn_id}-${row.line_kind}-${i}`} style={trStyle}>
+                        <td style={tdStyle}>{row.line_kind || '—'}</td>
+                        <td style={tdStyle}>{row.date || '—'}</td>
+                        <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{row.public_ref || (row.txn_id ? `#${row.txn_id}` : '—')}</td>
+                        <td style={{ ...tdStyle, maxWidth: 220, whiteSpace: 'normal' }}>{row.label || '—'}</td>
+                        <td style={tdStyle}>₹{parseFloat(row.gross || 0).toLocaleString('en-IN')}</td>
+                        <td style={tdStyle}>₹{parseFloat(row.credit_note_credits || 0).toLocaleString('en-IN')}</td>
+                        <td style={tdStyle}>₹{parseFloat(row.applied_receipts || 0).toLocaleString('en-IN')}</td>
+                        <td style={{ ...tdStyle, fontWeight: 600 }}>₹{parseFloat(row.outstanding || 0).toLocaleString('en-IN')}</td>
+                        <td style={tdStyle}>₹{parseFloat(row.net_balance_effect || 0).toLocaleString('en-IN')}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </>
           )}
         </div>
       )}

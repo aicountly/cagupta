@@ -117,7 +117,7 @@ class RazorpayWebhookController extends BaseController
             'organization_id'  => $oid > 0 ? $oid : null,
             'amount'             => $amountInr,
             'txn_date'           => date('Y-m-d'),
-            'linked_txn_id'      => $invoiceTxnId,
+            'linked_txn_id'      => null,
             'payment_method'     => 'razorpay',
             'reference_number'   => $paymentId !== '' ? $paymentId : $orderId,
             'narration'          => 'Razorpay payment',
@@ -140,7 +140,14 @@ class RazorpayWebhookController extends BaseController
         }
 
         try {
-            $txnModel->createReceipt($receipt);
+            $alloc = [
+                [
+                    'target_type'     => 'invoice',
+                    'target_txn_id'   => $invoiceTxnId,
+                    'amount'          => $amountInr,
+                ],
+            ];
+            $txnModel->createReceipt($receipt, $alloc);
         } catch (\Throwable $e) {
             error_log('[RazorpayWebhook] receipt: ' . $e->getMessage());
             http_response_code(500);
