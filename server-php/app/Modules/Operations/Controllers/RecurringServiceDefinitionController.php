@@ -124,19 +124,57 @@ class RecurringServiceDefinitionController extends BaseController
         }
 
         $body = $this->getJsonBody();
+
+        $body = $this->getJsonBody();
+
+        $normalizeFK = static function ($val): ?int {
+            if ($val === null || $val === '') {
+                return null;
+            }
+
+            return (int)$val > 0 ? (int)$val : null;
+        };
+
         $data = [];
 
-        $allowed = [
+        $allowedScalar = [
             'frequency', 'due_day', 'due_offset_months', 'return_type',
             'start_date', 'end_date', 'is_active', 'notes',
         ];
-        foreach ($allowed as $field) {
+        foreach ($allowedScalar as $field) {
             if (array_key_exists($field, $body)) {
                 $data[$field] = $body[$field];
             }
         }
         if (isset($data['frequency']) && !in_array($data['frequency'], ['monthly', 'quarterly', 'half_yearly', 'annual'], true)) {
             $this->error('frequency must be one of: monthly, quarterly, half_yearly, annual.', 422);
+        }
+
+        if (array_key_exists('engagement_type_id', $body)) {
+            $etId = (int)($body['engagement_type_id'] ?? 0);
+            if ($etId <= 0) {
+                $this->error('engagement_type_id must be positive.', 422);
+            }
+            if ($this->engagementTypes->find($etId) === null) {
+                $this->error('Engagement type not found.', 422);
+            }
+            $data['engagement_type_id'] = $etId;
+        }
+
+        if (array_key_exists('client_id', $body) || array_key_exists('organization_id', $body)) {
+            $clientId = array_key_exists('client_id', $body)
+                ? $normalizeFK($body['client_id'] ?? null)
+                : $normalizeFK($def['client_id'] ?? null);
+            $orgId = array_key_exists('organization_id', $body)
+                ? $normalizeFK($body['organization_id'] ?? null)
+                : $normalizeFK($def['organization_id'] ?? null);
+
+            if (($clientId === null && $orgId === null) || ($clientId !== null && $orgId !== null)) {
+                $this->error('Exactly one of client_id or organization_id must be provided.', 422);
+            }
+
+            $data['client_id']       = $clientId;
+            $data['organization_id'] = $orgId;
         }
 
         if ($data !== []) {

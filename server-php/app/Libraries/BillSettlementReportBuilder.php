@@ -202,10 +202,14 @@ final class BillSettlementReportBuilder
             if (!in_array($type, ['opening_balance', 'tds_provisional', 'tds_final', 'rebate'], true)) {
                 continue;
             }
-            if ($type === 'opening_balance' && $ledgerView !== LedgerDimensions::VIEW_CONSOLIDATED) {
-                continue;
-            }
-            if ($type !== 'opening_balance') {
+            if ($type === 'opening_balance') {
+                if ($ledgerView !== LedgerDimensions::VIEW_CONSOLIDATED) {
+                    $obKind = (string)($t['ledger_movement_kind'] ?? '');
+                    if ($obKind === '' || $obKind !== $ledgerView) {
+                        continue;
+                    }
+                }
+            } elseif ($type !== 'opening_balance') {
                 $kind = (string)($t['ledger_movement_kind'] ?? '');
                 if ($ledgerView !== LedgerDimensions::VIEW_CONSOLIDATED && $kind !== $ledgerView) {
                     continue;

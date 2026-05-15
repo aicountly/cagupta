@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Config\Database;
+use App\Models\AdminAuditLogModel;
 use App\Libraries\InvoiceLineCommission;
 use App\Libraries\LedgerDimensions;
 use App\Libraries\LedgerPresentation;
@@ -263,10 +264,14 @@ class TxnModel
                         NULLIF(TRIM(c.organization_name), ''),
                         NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
                         'Unknown'
-                    ) AS client_name
+                    ) AS client_name,
+                    creator.name AS created_by_user_name,
+                    updater.name AS updated_by_user_name
              FROM txn t
              LEFT JOIN clients c ON c.id = t.client_id
              LEFT JOIN organizations o ON o.id = t.organization_id
+             LEFT JOIN users creator ON creator.id = t.created_by
+             LEFT JOIN users updater ON updater.id = t.updated_by
              WHERE {$whereClause}
              ORDER BY t.txn_date DESC, t.id DESC
              LIMIT :limit OFFSET :offset"
@@ -477,7 +482,7 @@ class TxnModel
                 payment_method, reference_number,
                 expense_purpose, paid_from,
                 tds_status, tds_section, tds_rate,
-                linked_txn_id, notes, status, created_by, line_items, gst_breakdown,
+                linked_txn_id, notes, status, created_by, updated_by, line_items, gst_breakdown,
                 appointment_id,
                 firm_bank_account_id, counterparty_firm_bank_account_id, firm_expense_category,
                 invoice_cost_analysis_ack_user_id, invoice_cost_analysis_ack_at, invoice_cost_analysis,
@@ -490,13 +495,15 @@ class TxnModel
                 :payment_method, :reference_number,
                 :expense_purpose, :paid_from,
                 :tds_status, :tds_section, :tds_rate,
-                :linked_txn_id, :notes, :status, :created_by, CAST(:line_items AS jsonb), CAST(:gst_breakdown AS jsonb),
+                :linked_txn_id, :notes, :status, :created_by, :updated_by, CAST(:line_items AS jsonb), CAST(:gst_breakdown AS jsonb),
                 :appointment_id,
                 :firm_bank_account_id, :counterparty_firm_bank_account_id, :firm_expense_category,
                 :invoice_cost_analysis_ack_user_id, :invoice_cost_analysis_ack_at, CAST(:invoice_cost_analysis AS jsonb),
                 :ledger_class, :ledger_movement_kind, :public_ref
              ) RETURNING id'
         );
+        $createdByForRow = $data['created_by'] ?? null;
+        $updatedByInsert = $data['updated_by'] ?? $createdByForRow;
         $ica = $data['invoice_cost_analysis'] ?? [];
         if (!is_array($ica)) {
             $ica = [];
@@ -570,7 +577,8 @@ class TxnModel
             ':linked_txn_id'       => $data['linked_txn_id']       ?? null,
             ':notes'               => $data['notes']               ?? null,
             ':status'              => $data['status']              ?? 'active',
-            ':created_by'          => $data['created_by']          ?? null,
+            ':created_by'          => $createdByForRow,
+            ':updated_by'          => $updatedByInsert,
             ':line_items'          => $lineItemsJson,
             ':gst_breakdown'       => $gstBreakdownJson,
             ':appointment_id'      => isset($data['appointment_id']) ? (int)$data['appointment_id'] : null,
@@ -727,8 +735,22 @@ class TxnModel
      *
      * @return bool
      */
-    public function finalizeTds(int $txnId): bool
+    public function finalizeTds(int $txnId, ?int $updatedByUserId = null): bool
     {
+        if ($updatedByUserId !== null) {
+            $stmt = $this->db->prepare(
+                "UPDATE txn
+                 SET tds_status  = 'final',
+                     txn_type    = 'tds_final',
+                     updated_at  = NOW(),
+                     updated_by  = :ub
+                 WHERE id = :id
+                   AND tds_status = 'provisional'"
+            );
+
+            return $stmt->execute([':id' => $txnId, ':ub' => $updatedByUserId]);
+        }
+
         $stmt = $this->db->prepare(
             "UPDATE txn
              SET tds_status = 'final',
@@ -737,6 +759,7 @@ class TxnModel
              WHERE id = :id
                AND tds_status = 'provisional'"
         );
+
         return $stmt->execute([':id' => $txnId]);
     }
 
@@ -832,12 +855,30 @@ class TxnModel
         if (!empty($data['linked_txn_id'])) {
             $orig = $this->find((int)$data['linked_txn_id']);
             if ($orig && $orig['txn_type'] === 'invoice') {
+                $beforeSnap = $this->txnAuditCompactSnapshot($orig);
                 $origTotal = (float)$orig['amount'];
                 $newStatus = $amount >= $origTotal ? 'reversed' : 'active';
+                $actor = isset($merged['created_by']) ? (int)$merged['created_by'] : null;
                 $this->db->prepare(
-                    "UPDATE txn SET invoice_status = 'cancelled', status = :status, updated_at = NOW()
+                    "UPDATE txn SET invoice_status = 'cancelled', status = :status, updated_at = NOW(), updated_by = :ub
                      WHERE id = :id"
-                )->execute([':status' => $newStatus, ':id' => (int)$data['linked_txn_id']]);
+                )->execute([':status' => $newStatus, ':id' => (int)$data['linked_txn_id'], ':ub' => $actor]);
+                $afterInv = $this->find((int)$data['linked_txn_id']);
+                if ($afterInv !== null) {
+                    try {
+                        (new AdminAuditLogModel())->insert(
+                            $actor,
+                            'txn.updated',
+                            'txn',
+                            (int)$data['linked_txn_id'],
+                            ['reason' => 'credit_note', 'credit_note_id' => $newId],
+                            $beforeSnap,
+                            $this->txnAuditCompactSnapshot($afterInv)
+                        );
+                    } catch (\Throwable $e) {
+                        error_log('[TxnModel] credit_note invoice audit: ' . $e->getMessage());
+                    }
+                }
             }
         }
 
@@ -845,44 +886,80 @@ class TxnModel
     }
 
     /**
-     * Set/upsert an opening balance for a client + billing profile + ledger class.
-     * Amount zero removes the row for that class.
+     * Set/upsert an opening balance for a client or organization + billing profile + ledger class
+     * + ledger_movement_kind (fees | reimbursement). Amount zero removes that slice.
      *
      * @param array<string, mixed> $data
      * @return int|null  New row id, or null if cleared
      */
     public function setOpeningBalance(array $data): ?int
     {
-        $clientId    = (int)$data['client_id'];
+        $clientId    = (int)($data['client_id'] ?? 0);
+        $orgId       = (int)($data['organization_id'] ?? 0);
         $profileCode = (string)$data['billing_profile_code'];
         $amount      = (float)$data['amount'];
         $type        = $data['type'] ?? 'debit'; // 'debit' or 'credit'
         $ledgerClass = LedgerDimensions::normalizeLedgerClass($data['ledger_class'] ?? null);
+        $movementKind = LedgerDimensions::assertLedgerMovementKindRequired($data['ledger_movement_kind'] ?? '');
 
-        $this->db->prepare(
-            "DELETE FROM txn
-             WHERE client_id = :client_id
-               AND billing_profile_code = :profile_code
-               AND txn_type = 'opening_balance'
-               AND ledger_class = :ledger_class"
-        )->execute([
-            ':client_id'    => $clientId,
-            ':profile_code' => $profileCode,
-            ':ledger_class' => $ledgerClass,
-        ]);
+        if (($clientId <= 0 && $orgId <= 0) || ($clientId > 0 && $orgId > 0)) {
+            throw new \InvalidArgumentException('Provide exactly one of client_id or organization_id.');
+        }
+        if ($profileCode === '') {
+            throw new \InvalidArgumentException('billing_profile_code is required.');
+        }
+
+        if ($clientId > 0) {
+            $del = $this->db->prepare(
+                "DELETE FROM txn
+                 WHERE client_id = :client_id
+                   AND COALESCE(organization_id, 0) = 0
+                   AND billing_profile_code = :profile_code
+                   AND txn_type = 'opening_balance'
+                   AND ledger_class = :ledger_class
+                   AND ledger_movement_kind = :movement_kind"
+            );
+            $del->execute([
+                ':client_id'       => $clientId,
+                ':profile_code'    => $profileCode,
+                ':ledger_class'    => $ledgerClass,
+                ':movement_kind'   => $movementKind,
+            ]);
+        } else {
+            $del = $this->db->prepare(
+                "DELETE FROM txn
+                 WHERE organization_id = :org_id
+                   AND COALESCE(client_id, 0) = 0
+                   AND billing_profile_code = :profile_code
+                   AND txn_type = 'opening_balance'
+                   AND ledger_class = :ledger_class
+                   AND ledger_movement_kind = :movement_kind"
+            );
+            $del->execute([
+                ':org_id'          => $orgId,
+                ':profile_code'    => $profileCode,
+                ':ledger_class'    => $ledgerClass,
+                ':movement_kind'   => $movementKind,
+            ]);
+        }
 
         if ($amount <= 0) {
             return null;
         }
 
-        $obSuffix = $ledgerClass === LedgerDimensions::CLASS_MEMORANDUM ? '-M' : '-R';
+        $classChr = $ledgerClass === LedgerDimensions::CLASS_MEMORANDUM ? 'M' : 'R';
+        $kindChr  = $movementKind === LedgerDimensions::KIND_REIMBURSEMENT ? 'I' : 'F';
+        $entityKey = $clientId > 0 ? 'C' . $clientId : 'O' . $orgId;
+        $invoiceNumber = 'OB-' . $entityKey . '-' . $profileCode . '-' . $classChr . $kindChr;
+        $invoiceNumber = $this->clipDbText($invoiceNumber, 50);
 
         return $this->create([
-            'client_id'              => $clientId,
+            'client_id'              => $clientId > 0 ? $clientId : null,
+            'organization_id'        => $orgId > 0 ? $orgId : null,
             'txn_type'               => 'opening_balance',
             'txn_date'               => $data['txn_date'] ?? date('Y-m-d'),
             'narration'              => 'Opening Balance',
-            'invoice_number'         => 'OB-' . $clientId . '-' . $profileCode . $obSuffix,
+            'invoice_number'         => $invoiceNumber,
             'debit'                  => $type === 'debit'  ? $amount : 0,
             'credit'                 => $type === 'credit' ? $amount : 0,
             'amount'                 => $amount,
@@ -890,24 +967,41 @@ class TxnModel
             'status'                 => 'active',
             'created_by'             => $data['created_by'] ?? null,
             'ledger_class'           => $ledgerClass,
-            'ledger_movement_kind'   => null,
+            'ledger_movement_kind'   => $movementKind,
         ]);
     }
 
     /**
-     * Return opening balance entries for a client.
+     * Return opening balance entries for a client ( organization_id IS NULL/0 ) or an organization.
+     * Pass exactly one of $clientId or $organizationId (> 0).
      *
      * @return array<int, array<string, mixed>>
      */
-    public function getOpeningBalance(int $clientId): array
+    public function getOpeningBalance(int $clientId = 0, int $organizationId = 0): array
     {
-        $stmt = $this->db->prepare(
-            "SELECT * FROM txn
-             WHERE client_id = :client_id
-               AND txn_type  = 'opening_balance'
-             ORDER BY billing_profile_code ASC, ledger_class ASC"
-        );
-        $stmt->execute([':client_id' => $clientId]);
+        if (($clientId <= 0 && $organizationId <= 0) || ($clientId > 0 && $organizationId > 0)) {
+            throw new \InvalidArgumentException('Provide exactly one of client_id or organization_id.');
+        }
+        if ($clientId > 0) {
+            $stmt = $this->db->prepare(
+                "SELECT * FROM txn
+                 WHERE client_id = :client_id
+                   AND COALESCE(organization_id, 0) = 0
+                   AND txn_type  = 'opening_balance'
+                 ORDER BY billing_profile_code ASC, ledger_class ASC, ledger_movement_kind ASC"
+            );
+            $stmt->execute([':client_id' => $clientId]);
+        } else {
+            $stmt = $this->db->prepare(
+                "SELECT * FROM txn
+                 WHERE organization_id = :org_id
+                   AND COALESCE(client_id, 0) = 0
+                   AND txn_type  = 'opening_balance'
+                 ORDER BY billing_profile_code ASC, ledger_class ASC, ledger_movement_kind ASC"
+            );
+            $stmt->execute([':org_id' => $organizationId]);
+        }
+
         return $stmt->fetchAll();
     }
 
@@ -1010,10 +1104,14 @@ class TxnModel
                         NULLIF(TRIM(c.organization_name), ''),
                         NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
                         'Unknown'
-                    ) AS client_name
+                    ) AS client_name,
+                    creator.name AS created_by_user_name,
+                    updater.name AS updated_by_user_name
              FROM txn t
              LEFT JOIN clients c ON c.id = t.client_id
              LEFT JOIN organizations o ON o.id = t.organization_id
+             LEFT JOIN users creator ON creator.id = t.created_by
+             LEFT JOIN users updater ON updater.id = t.updated_by
              WHERE {$whereClause}
              ORDER BY t.txn_date DESC"
         );
@@ -1032,7 +1130,7 @@ class TxnModel
      *
      * @param array<string, mixed> $data
      */
-    public function update(int $id, array $data): bool
+    public function update(int $id, array $data, ?int $updatedByUserId = null): bool
     {
         $setClauses = [];
         $params     = [':id' => $id];
@@ -1043,6 +1141,7 @@ class TxnModel
             'subtotal', 'tax_percent', 'tax_amount', 'invoice_status',
             'payment_method', 'reference_number',
             'expense_purpose', 'paid_from',
+            'firm_bank_account_id', 'counterparty_firm_bank_account_id',
             'tds_status', 'tds_section', 'tds_rate',
             'linked_txn_id', 'notes', 'status', 'line_items', 'gst_breakdown',
             'invoice_cost_analysis_ack_user_id', 'invoice_cost_analysis_ack_at', 'invoice_cost_analysis',
@@ -1100,6 +1199,11 @@ class TxnModel
 
         if (empty($setClauses)) {
             return false;
+        }
+
+        if ($updatedByUserId !== null) {
+            $setClauses[]              = 'updated_by = :_updated_by';
+            $params[':_updated_by']    = $updatedByUserId;
         }
 
         $setClauses[] = 'updated_at = NOW()';
@@ -1507,5 +1611,33 @@ class TxnModel
         $allocModel = new TxnSettlementAllocationModel();
 
         return $allocModel->sumAllocatedToInvoice($invoiceTxnId);
+    }
+
+    /**
+     * Compact row for admin_audit_log snapshots (matches TxnController).
+     *
+     * @param array<string, mixed> $row
+     *
+     * @return array<string, mixed>
+     */
+    private function txnAuditCompactSnapshot(array $row): array
+    {
+        $keys = [
+            'txn_type', 'txn_date', 'narration', 'debit', 'credit', 'amount',
+            'billing_profile_code', 'invoice_number', 'invoice_status', 'due_date',
+            'subtotal', 'tax_percent', 'tax_amount',
+            'payment_method', 'reference_number', 'expense_purpose', 'paid_from',
+            'tds_status', 'tds_section', 'tds_rate',
+            'linked_txn_id', 'notes', 'status', 'public_ref',
+            'ledger_class', 'ledger_movement_kind',
+        ];
+        $out = [];
+        foreach ($keys as $k) {
+            if (array_key_exists($k, $row)) {
+                $out[$k] = $row[$k];
+            }
+        }
+
+        return $out;
     }
 }

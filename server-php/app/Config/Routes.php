@@ -1318,6 +1318,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/:id/audit-log',
+                'handler'    => 'Admin\TxnController@txnAuditLog',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/:id',
                 'handler'    => 'Admin\TxnController@show',
                 'middleware' => ['auth', 'permission:invoices.view'],

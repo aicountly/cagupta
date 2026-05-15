@@ -9,6 +9,7 @@ import {
   postInvoiceCostAnalysisPreview,
   getReceiptsWithUnallocated,
 } from '../services/txnService';
+import { LastUpdatedByCell, TxnAuditLogModal } from '../../../components/finance/TxnAuditActivity';
 import { useAuth } from '../../../auth/AuthContext';
 import { getContact } from '../../../services/contactService';
 import { getOrganization } from '../../../services/organizationService';
@@ -27,6 +28,7 @@ import EntitySearchDropdown from '../../../components/common/EntitySearchDropdow
 import LineItemPresetCombobox from '../../../components/common/LineItemPresetCombobox';
 import DateInput from '../../../components/common/DateInput';
 import { getBillingProfiles, getBillingProfileByCode } from '../../../constants/billingProfiles';
+import { aggregateInvoicesForOpeningRecon } from '../utils/invoiceLedgerBuckets';
 import { listFirmBankAccounts } from '../../../services/firmBankAccountService';
 import { stateCodeFromGstin } from '../../../utils/gstUtils';
 import {
@@ -36,6 +38,7 @@ import {
   indianFYBounds,
 } from '../../../utils/indianFinancialYear';
 import { ROLES } from '../../../constants/roles';
+import { INDIAN_STATES } from '../../../constants/indianStates';
 import { exportLedgerExcel, exportLedgerPdf } from '../../../utils/ledgerExport';
 import ledgerLogoUrl from '../../../assets/cropped_logo.png';
 import {
@@ -773,6 +776,7 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
   const [err, setErr] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
+  const [ledgerRegion, setLedgerRegion] = useState('');
   const [requesting, setRequesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -806,6 +810,7 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
     setErr('');
     setOtpSent(false);
     setOtp('');
+    setLedgerRegion('');
     getTxn(invoiceId)
       .then((row) => {
         if (cancelled) return;
@@ -837,9 +842,13 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
 
   async function handleRequestOtp() {
     setErr('');
+    if (!ledgerRegion.trim()) {
+      setErr('Select region (mandatory for OTP email).');
+      return;
+    }
     setRequesting(true);
     try {
-      await requestInvoiceModifyOtp(invoiceId, { intent: 'update' });
+      await requestInvoiceModifyOtp(invoiceId, { intent: 'update', region: ledgerRegion.trim() });
       setOtpSent(true);
     } catch (e) {
       setErr(e.message || 'Could not send OTP.');
@@ -960,6 +969,15 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                 </div>
               ))}
               <button type="button" style={{ ...btnSecondary, alignSelf: 'flex-start' }} onClick={addLine}>+ Line</button>
+              <label style={labelStyle}>
+                Region (mandatory for OTP) *
+                <select style={inputStyle} value={ledgerRegion} onChange={(e) => setLedgerRegion(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {INDIAN_STATES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
                 <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
                   {requesting ? 'Sending…' : 'Request superadmin OTP'}
@@ -981,6 +999,510 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
     </div>
   );
 }
+
+function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [row, setRow] = useState(null);
+  const [region, setRegion] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [requesting, setRequesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const [recTxnDate, setRecTxnDate] = useState('');
+  const [recAmount, setRecAmount] = useState('');
+  const [recMethod, setRecMethod] = useState('NEFT');
+  const [recRef, setRecRef] = useState('');
+  const [recNotes, setRecNotes] = useState('');
+  const [recNarr, setRecNarr] = useState('');
+  const [recBankId, setRecBankId] = useState('');
+  const [allocLines, setAllocLines] = useState([]);
+
+  const [payTxnDate, setPayTxnDate] = useState('');
+  const [payAmount, setPayAmount] = useState('');
+  const [payMethod, setPayMethod] = useState('NEFT');
+  const [payRef, setPayRef] = useState('');
+  const [payNotes, setPayNotes] = useState('');
+  const [payNarr, setPayNarr] = useState('');
+  const [payPurpose, setPayPurpose] = useState('misc');
+  const [payBankId, setPayBankId] = useState('');
+  const [settleLines, setSettleLines] = useState([]);
+
+  const [tdsTxnDate, setTdsTxnDate] = useState('');
+  const [tdsAmount, setTdsAmount] = useState('');
+  const [tdsNotes, setTdsNotes] = useState('');
+  const [tdsNarr, setTdsNarr] = useState('');
+  const [tdsSection, setTdsSection] = useState('');
+  const [tdsRate, setTdsRate] = useState('');
+
+  const [banks, setBanks] = useState([]);
+  const [banksLoading, setBanksLoading] = useState(false);
+
+  function patchAllocLine(idx, patch) {
+    setAllocLines((lines) => lines.map((line, i) => (i === idx ? { ...line, ...patch } : line)));
+  }
+  function addAllocLineRow() {
+    setAllocLines((lines) => [...lines, { targetType: 'invoice', targetTxnId: '', amount: '' }]);
+  }
+  function removeAllocLineRow(idx) {
+    setAllocLines((lines) => (lines.length <= 1 ? lines : lines.filter((_, i) => i !== idx)));
+  }
+
+  function patchSettleLine(idx, patch) {
+    setSettleLines((lines) => lines.map((line, i) => (i === idx ? { ...line, ...patch } : line)));
+  }
+  function addSettleLineRow() {
+    setSettleLines((lines) => [...lines, { targetType: 'receipt', targetTxnId: '', amount: '' }]);
+  }
+  function removeSettleLineRow(idx) {
+    setSettleLines((lines) => (lines.length <= 1 ? lines : lines.filter((_, i) => i !== idx)));
+  }
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setErr('');
+    setRegion('');
+    setOtpSent(false);
+    setOtp('');
+    setRow(null);
+    getTxn(txnId)
+      .then((r) => {
+        if (cancelled) return;
+        setRow(r);
+        const tt = r.txnType;
+        if (tt === 'receipt') {
+          setRecTxnDate(r.txnDate || '');
+          setRecAmount(String(r.amount ?? ''));
+          setRecMethod(r.paymentMethod || 'NEFT');
+          setRecRef(r.referenceNumber || '');
+          setRecNotes(r.notes || '');
+          setRecNarr(r.narration || '');
+          setRecBankId(r.firmBankAccountId != null ? String(r.firmBankAccountId) : '');
+          const al = (r.allocations && r.allocations.length > 0)
+            ? r.allocations.map((x) => ({
+              targetType: x.targetType || 'invoice',
+              targetTxnId: x.targetTxnId || '',
+              amount: String(x.amount ?? ''),
+            }))
+            : [{ targetType: 'unallocated_advance', targetTxnId: '', amount: String(r.amount ?? '') }];
+          setAllocLines(al);
+        } else if (tt === 'payment_expense') {
+          setPayTxnDate(r.txnDate || '');
+          setPayAmount(String(r.amount ?? ''));
+          setPayMethod(r.paymentMethod || 'NEFT');
+          setPayRef(r.referenceNumber || '');
+          setPayNotes(r.notes || '');
+          setPayNarr(r.narration || '');
+          setPayPurpose(r.expensePurpose || 'misc');
+          setPayBankId(r.firmBankAccountId != null ? String(r.firmBankAccountId) : '');
+          const sl = (r.settlementLines && r.settlementLines.length > 0)
+            ? r.settlementLines.map((x) => ({
+              targetType: x.targetType || 'receipt',
+              targetTxnId: x.targetTxnId || '',
+              amount: String(x.amount ?? ''),
+            }))
+            : [{ targetType: 'unallocated_advance', targetTxnId: '', amount: String(r.amount ?? '') }];
+          setSettleLines(sl);
+        } else if (tt === 'tds_provisional' || tt === 'tds_final') {
+          setTdsTxnDate(r.txnDate || '');
+          setTdsAmount(String(r.amount ?? ''));
+          setTdsNotes(r.notes || '');
+          setTdsNarr(r.narration || '');
+          setTdsSection(r.tdsSection || '');
+          setTdsRate(String(r.tdsRate ?? ''));
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(e.message || 'Failed to load transaction.');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [txnId]);
+
+  useEffect(() => {
+    if (!row || (row.txnType !== 'receipt' && row.txnType !== 'payment_expense')) return undefined;
+    const code = row.billingProfileCode;
+    if (!code) {
+      setBanks([]);
+      return undefined;
+    }
+    let cancelled = false;
+    setBanksLoading(true);
+    listFirmBankAccounts(code)
+      .then((rows) => {
+        if (cancelled) return;
+        const list = Array.isArray(rows) ? rows.filter((b) => b.isActive !== false) : [];
+        setBanks(list);
+      })
+      .finally(() => {
+        if (!cancelled) setBanksLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [row]);
+
+  async function handleRequestOtp() {
+    setErr('');
+    if (!region.trim()) {
+      setErr('Select region (mandatory for OTP email).');
+      return;
+    }
+    setRequesting(true);
+    try {
+      await requestInvoiceModifyOtp(txnId, { intent: 'update', region: region.trim() });
+      setOtpSent(true);
+    } catch (e) {
+      setErr(e.message || 'Could not send OTP.');
+    } finally {
+      setRequesting(false);
+    }
+  }
+
+  async function handleSave() {
+    setErr('');
+    if (!otp.trim()) {
+      setErr('Request OTP and enter the code.');
+      return;
+    }
+    if (!row) return;
+    setSaving(true);
+    try {
+      let payload;
+      const tt = row.txnType;
+      if (tt === 'receipt') {
+        const amount = parseFloat(recAmount);
+        if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a valid receipt amount.');
+        const bankId = parseInt(recBankId, 10);
+        if (!bankId) throw new Error('Select bank / cash account.');
+        const allocations = allocLines.map((line) => {
+          const amt = parseFloat(line.amount);
+          if (!Number.isFinite(amt) || amt <= 0) throw new Error('Each allocation line needs amount > 0.');
+          const o = { target_type: line.targetType, amount: amt };
+          if (line.targetType !== 'unallocated_advance') {
+            const tid = parseInt(line.targetTxnId, 10);
+            if (!tid) throw new Error('Enter target txn id for invoice / on-behalf payment lines.');
+            o.target_txn_id = tid;
+          }
+          return o;
+        });
+        payload = {
+          txn_date: recTxnDate,
+          amount,
+          payment_method: recMethod,
+          reference_number: recRef || null,
+          notes: recNotes || null,
+          narration: recNarr || null,
+          firm_bank_account_id: bankId,
+          allocations,
+        };
+      } else if (tt === 'payment_expense') {
+        const amount = parseFloat(payAmount);
+        if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a valid payment amount.');
+        const bankId = parseInt(payBankId, 10);
+        if (!bankId) throw new Error('Select bank / cash account.');
+        const settlement_lines = settleLines.map((line) => {
+          const amt = parseFloat(line.amount);
+          if (!Number.isFinite(amt) || amt <= 0) throw new Error('Each settlement line needs amount > 0.');
+          const o = { target_type: line.targetType, amount: amt };
+          if (line.targetType === 'receipt') {
+            const tid = parseInt(line.targetTxnId, 10);
+            if (!tid) throw new Error('Enter receipt txn id for receipt settlement lines.');
+            o.target_txn_id = tid;
+          }
+          return o;
+        });
+        payload = {
+          txn_date: payTxnDate,
+          amount,
+          payment_method: payMethod,
+          reference_number: payRef || null,
+          notes: payNotes || null,
+          narration: payNarr || null,
+          expense_purpose: payPurpose,
+          firm_bank_account_id: bankId,
+          settlement_lines,
+        };
+      } else if (tt === 'tds_provisional' || tt === 'tds_final') {
+        const amount = parseFloat(tdsAmount);
+        if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a valid TDS amount.');
+        const rate = parseFloat(tdsRate);
+        payload = {
+          txn_date: tdsTxnDate,
+          amount,
+          notes: tdsNotes || null,
+          narration: tdsNarr || null,
+          tds_section: tdsSection || null,
+          tds_rate: Number.isFinite(rate) ? rate : 0,
+        };
+      } else {
+        throw new Error('This transaction type cannot be edited here.');
+      }
+      const updated = await updateTxn(txnId, payload, { superadminOtp: otp.trim() });
+      onSaved(updated);
+      onClose();
+    } catch (e) {
+      setErr(e.message || 'Save failed.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const title = !row
+    ? 'Edit ledger'
+    : row.txnType === 'receipt'
+      ? '✏️ Edit receipt'
+      : row.txnType === 'payment_expense'
+        ? '✏️ Edit payment (on behalf)'
+        : '✏️ Edit TDS';
+
+  return (
+    <div style={overlayStyle}>
+      <div style={{ ...modalStyle, maxWidth: 640, maxHeight: '90vh', overflow: 'auto' }}>
+        <div style={modalHeaderStyle}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>{title}</span>
+          <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {loading && <div style={{ color: '#64748b', fontSize: 13 }}>Loading…</div>}
+          {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
+          {!loading && row && (
+            <>
+              <div style={{ fontSize: 12, color: '#64748b' }}>
+                {row.clientName || 'Unknown'} · Ref {row.publicRef || '—'} · Billing {row.billingProfileCode || '—'}
+              </div>
+              {row.txnType === 'receipt' && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <label style={labelStyle}>
+                      Receipt date *
+                      <DateInput style={inputStyle} value={recTxnDate} onChange={(e) => setRecTxnDate(e.target.value)} />
+                    </label>
+                    <label style={labelStyle}>
+                      Amount (₹) *
+                      <input type="number" style={inputStyle} min="0" step="0.01" value={recAmount} onChange={(e) => setRecAmount(e.target.value)} />
+                    </label>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <label style={labelStyle}>
+                      Payment method
+                      <select style={inputStyle} value={recMethod} onChange={(e) => setRecMethod(e.target.value)}>
+                        {PAYMENT_METHOD_OPTIONS.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={labelStyle}>
+                      Reference no.
+                      <input type="text" style={inputStyle} value={recRef} onChange={(e) => setRecRef(e.target.value)} />
+                    </label>
+                  </div>
+                  <label style={labelStyle}>
+                    Bank / cash account *
+                    <select
+                      style={inputStyle}
+                      value={recBankId}
+                      onChange={(e) => setRecBankId(e.target.value)}
+                      disabled={!row.billingProfileCode || banksLoading}
+                    >
+                      <option value="">{banksLoading ? 'Loading…' : '— Select —'}</option>
+                      {banks.map((b) => (
+                        <option key={b.id} value={String(b.id)}>{b.name} ({b.accountType})</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={labelStyle}>
+                    Narration
+                    <input type="text" style={inputStyle} value={recNarr} onChange={(e) => setRecNarr(e.target.value)} />
+                  </label>
+                  <label style={labelStyle}>
+                    Notes
+                    <input type="text" style={inputStyle} value={recNotes} onChange={(e) => setRecNotes(e.target.value)} />
+                  </label>
+                  <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontWeight: 600, fontSize: 13 }}>Allocations (must sum to amount)</span>
+                      <button type="button" onClick={addAllocLineRow} style={{ ...btnSecondary, fontSize: 12, padding: '4px 10px' }}>+ Line</button>
+                    </div>
+                    {allocLines.map((line, idx) => (
+                      <div key={`ea-${idx}`} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 90px 28px', gap: 8, marginBottom: 8, alignItems: 'start' }}>
+                        <select
+                          style={inputStyle}
+                          value={line.targetType}
+                          onChange={(e) => patchAllocLine(idx, { targetType: e.target.value, targetTxnId: '' })}
+                        >
+                          {RECEIPT_ALLOC_TARGET_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          style={inputStyle}
+                          placeholder={line.targetType === 'unallocated_advance' ? '—' : 'Target txn id'}
+                          value={line.targetTxnId}
+                          disabled={line.targetType === 'unallocated_advance'}
+                          onChange={(e) => patchAllocLine(idx, { targetTxnId: e.target.value })}
+                        />
+                        <input type="number" style={inputStyle} min="0" step="0.01" placeholder="₹" value={line.amount} onChange={(e) => patchAllocLine(idx, { amount: e.target.value })} />
+                        <button type="button" style={{ ...iconBtn, alignSelf: 'start' }} onClick={() => removeAllocLineRow(idx)} title="Remove">−</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {row.txnType === 'payment_expense' && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <label style={labelStyle}>
+                      Date *
+                      <DateInput style={inputStyle} value={payTxnDate} onChange={(e) => setPayTxnDate(e.target.value)} />
+                    </label>
+                    <label style={labelStyle}>
+                      Amount (₹) *
+                      <input type="number" style={inputStyle} min="0" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+                    </label>
+                  </div>
+                  <label style={labelStyle}>
+                    Purpose
+                    <select style={inputStyle} value={payPurpose} onChange={(e) => setPayPurpose(e.target.value)}>
+                      {EXPENSE_PURPOSE_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <label style={labelStyle}>
+                      Paid via
+                      <select style={inputStyle} value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
+                        {PAYMENT_METHOD_OPTIONS.map((m) => (
+                          <option key={m} value={m}>{m}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label style={labelStyle}>
+                      Reference no.
+                      <input type="text" style={inputStyle} value={payRef} onChange={(e) => setPayRef(e.target.value)} />
+                    </label>
+                  </div>
+                  <label style={labelStyle}>
+                    Bank / cash account *
+                    <select
+                      style={inputStyle}
+                      value={payBankId}
+                      onChange={(e) => setPayBankId(e.target.value)}
+                      disabled={!row.billingProfileCode || banksLoading}
+                    >
+                      <option value="">{banksLoading ? 'Loading…' : '— Select —'}</option>
+                      {banks.map((b) => (
+                        <option key={b.id} value={String(b.id)}>{b.name} ({b.accountType})</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={labelStyle}>
+                    Narration
+                    <input type="text" style={inputStyle} value={payNarr} onChange={(e) => setPayNarr(e.target.value)} />
+                  </label>
+                  <label style={labelStyle}>
+                    Notes
+                    <input type="text" style={inputStyle} value={payNotes} onChange={(e) => setPayNotes(e.target.value)} />
+                  </label>
+                  <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 10 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontWeight: 600, fontSize: 13 }}>Settlement (must sum to amount)</span>
+                      <button type="button" onClick={addSettleLineRow} style={{ ...btnSecondary, fontSize: 12, padding: '4px 10px' }}>+ Line</button>
+                    </div>
+                    {settleLines.map((line, idx) => (
+                      <div key={`ps-${idx}`} style={{ display: 'grid', gridTemplateColumns: '140px 1fr 90px 28px', gap: 8, marginBottom: 8, alignItems: 'start' }}>
+                        <select
+                          style={inputStyle}
+                          value={line.targetType}
+                          onChange={(e) => patchSettleLine(idx, { targetType: e.target.value, targetTxnId: '' })}
+                        >
+                          {PAYMENT_SETTLEMENT_TARGET_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="text"
+                          style={inputStyle}
+                          placeholder={line.targetType === 'unallocated_advance' ? '—' : 'Receipt txn id'}
+                          value={line.targetTxnId}
+                          disabled={line.targetType === 'unallocated_advance'}
+                          onChange={(e) => patchSettleLine(idx, { targetTxnId: e.target.value })}
+                        />
+                        <input type="number" style={inputStyle} min="0" step="0.01" placeholder="₹" value={line.amount} onChange={(e) => patchSettleLine(idx, { amount: e.target.value })} />
+                        <button type="button" style={{ ...iconBtn, alignSelf: 'start' }} onClick={() => removeSettleLineRow(idx)} title="Remove">−</button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+              {(row.txnType === 'tds_provisional' || row.txnType === 'tds_final') && (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <label style={labelStyle}>
+                      Date *
+                      <DateInput style={inputStyle} value={tdsTxnDate} onChange={(e) => setTdsTxnDate(e.target.value)} />
+                    </label>
+                    <label style={labelStyle}>
+                      Amount (₹) *
+                      <input type="number" style={inputStyle} min="0" step="0.01" value={tdsAmount} onChange={(e) => setTdsAmount(e.target.value)} />
+                    </label>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <label style={labelStyle}>
+                      Section
+                      <input type="text" style={inputStyle} value={tdsSection} onChange={(e) => setTdsSection(e.target.value)} />
+                    </label>
+                    <label style={labelStyle}>
+                      Rate %
+                      <input type="number" style={inputStyle} min="0" step="0.01" value={tdsRate} onChange={(e) => setTdsRate(e.target.value)} />
+                    </label>
+                  </div>
+                  <label style={labelStyle}>
+                    Narration
+                    <input type="text" style={inputStyle} value={tdsNarr} onChange={(e) => setTdsNarr(e.target.value)} />
+                  </label>
+                  <label style={labelStyle}>
+                    Notes
+                    <input type="text" style={inputStyle} value={tdsNotes} onChange={(e) => setTdsNotes(e.target.value)} />
+                  </label>
+                  <div style={{ fontSize: 11, color: '#64748b' }}>Status: {row.tdsStatus || '—'} (finalize unchanged)</div>
+                </>
+              )}
+              <label style={labelStyle}>
+                Region (mandatory for OTP) *
+                <select style={inputStyle} value={region} onChange={(e) => setRegion(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {INDIAN_STATES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
+                <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
+                  {requesting ? 'Sending…' : 'Request superadmin OTP'}
+                </button>
+                {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent</span>}
+              </div>
+              <label style={labelStyle}>
+                Superadmin OTP *
+                <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\s/g, ''))} />
+              </label>
+            </>
+          )}
+        </div>
+        <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button type="button" style={btnPrimary} disabled={loading || saving || !row} onClick={handleSave}>{saving ? 'Saving…' : 'Save'}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 
 /** Single or bulk ledger delete: one superadmin OTP authorizes the batch. */
 function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
@@ -1284,6 +1806,8 @@ function PaymentExpenseModal({ onClose, onSave }) {
   const [settlementLines, setSettlementLines] = useState([
     { targetType: 'unallocated_advance', targetTxnId: '', amount: '' },
   ]);
+  /** Header amount last mirrored onto the single unallocated settlement line (avoids sticking on first digit). */
+  const paymentAmountMirrorRef = useRef('');
   const [receiptOpts, setReceiptOpts] = useState([]);
   const [receiptOptsLoading, setReceiptOptsLoading] = useState(false);
   const [banks, setBanks] = useState([]);
@@ -1343,9 +1867,12 @@ function PaymentExpenseModal({ onClose, onSave }) {
   useEffect(() => {
     setSettlementLines((L) => {
       if (L.length !== 1 || L[0].targetType !== 'unallocated_advance') return L;
-      if (String(L[0].amount || '').trim() !== '') return L;
-      const amt = String(form.amount || '').trim();
-      if (!amt) return L;
+      const lineAmt = String(L[0].amount ?? '').trim();
+      const snap = String(paymentAmountMirrorRef.current ?? '').trim();
+      if (lineAmt !== '' && lineAmt !== snap) return L;
+      paymentAmountMirrorRef.current = form.amount;
+      const next = String(form.amount ?? '').trim();
+      if (!next) return [{ ...L[0], amount: '' }];
       return [{ ...L[0], amount: form.amount }];
     });
   }, [form.amount]);
@@ -1408,6 +1935,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
                   entityName: c.displayName,
                   entityType: c.entityType,
                 }));
+                paymentAmountMirrorRef.current = '';
                 setSettlementLines([{ targetType: 'unallocated_advance', targetTxnId: '', amount: '' }]);
               }}
               placeholder="Search contact or organization…"
@@ -1422,6 +1950,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
                 value={form.ledgerClass}
                 onChange={(e) => {
                   set('ledgerClass', e.target.value);
+                  paymentAmountMirrorRef.current = '';
                   setSettlementLines([{ targetType: 'unallocated_advance', targetTxnId: '', amount: '' }]);
                 }}
               >
@@ -1437,6 +1966,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
                 value={form.ledgerMovementKind}
                 onChange={(e) => {
                   set('ledgerMovementKind', e.target.value);
+                  paymentAmountMirrorRef.current = '';
                   setSettlementLines([{ targetType: 'unallocated_advance', targetTxnId: '', amount: '' }]);
                 }}
               >
@@ -1544,7 +2074,10 @@ function PaymentExpenseModal({ onClose, onSave }) {
                     };
                     if (targetType === 'unallocated_advance') {
                       const amt = String(form.amount || '').trim();
-                      if (amt) patch.amount = form.amount;
+                      if (amt) {
+                        patch.amount = form.amount;
+                        paymentAmountMirrorRef.current = form.amount;
+                      }
                     }
                     setSettleLine(idx, patch);
                   }}
@@ -1740,10 +2273,16 @@ const RECEIPT_ALLOC_TARGET_OPTIONS = [
   { value: 'unallocated_advance', label: 'Unallocated advance' },
 ];
 
+const PAYMENT_SETTLEMENT_TARGET_OPTIONS = [
+  { value: 'receipt', label: 'Receipt' },
+  { value: 'unallocated_advance', label: 'Unallocated advance' },
+];
+
 function ReceiptModal({ onClose, onSave, openInvoices }) {
   const [form, setForm] = useState({
-    clientId: '',
-    clientName: '',
+    entityId: '',
+    entityName: '',
+    entityType: 'contact',
     amount: '',
     txnDate: new Date().toISOString().slice(0, 10),
     method: 'NEFT',
@@ -1757,6 +2296,8 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
   const [allocLines, setAllocLines] = useState([
     { targetType: 'invoice', targetTxnId: '', amount: '' },
   ]);
+  /** Header amount last mirrored onto the single unallocated allocation line (avoids sticking on first digit). */
+  const receiptAmountMirrorRef = useRef('');
   const [payRows, setPayRows] = useState([]);
   const [banks, setBanks] = useState([]);
   const [banksLoading, setBanksLoading] = useState(false);
@@ -1786,17 +2327,20 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
   }, [form.billingProfileCode]);
 
   useEffect(() => {
-    if (!form.clientId) {
+    if (!form.entityId) {
       setPayRows([]);
       return;
     }
     let cancel = false;
-    getTxns({
-      clientId: form.clientId,
+    const txnParams = {
       txnType: 'payment_expense',
       perPage: 100,
       status: 'active',
-    })
+      ...(form.entityType === 'organization'
+        ? { organizationId: form.entityId }
+        : { clientId: form.entityId }),
+    };
+    getTxns(txnParams)
       .then(({ txns }) => {
         if (cancel) return;
         const f = (txns || []).filter((t) =>
@@ -1807,14 +2351,17 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
       })
       .catch(() => { if (!cancel) setPayRows([]); });
     return () => { cancel = true; };
-  }, [form.clientId, form.ledgerClass, form.ledgerMovementKind]);
+  }, [form.entityId, form.entityType, form.ledgerClass, form.ledgerMovementKind]);
 
   useEffect(() => {
     setAllocLines((L) => {
       if (L.length !== 1 || L[0].targetType !== 'unallocated_advance') return L;
-      if (String(L[0].amount || '').trim() !== '') return L;
-      const amt = String(form.amount || '').trim();
-      if (!amt) return L;
+      const lineAmt = String(L[0].amount ?? '').trim();
+      const snap = String(receiptAmountMirrorRef.current ?? '').trim();
+      if (lineAmt !== '' && lineAmt !== snap) return L;
+      receiptAmountMirrorRef.current = form.amount;
+      const next = String(form.amount ?? '').trim();
+      if (!next) return [{ ...L[0], amount: '' }];
       return [{ ...L[0], amount: form.amount }];
     });
   }, [form.amount]);
@@ -1837,7 +2384,7 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
   };
 
   const handleSave = () => {
-    if (!form.clientId || !form.amount || !form.txnDate || !form.billingProfileCode || !form.firmBankAccountId) return;
+    if (!form.entityId || !form.amount || !form.txnDate || !form.billingProfileCode || !form.firmBankAccountId) return;
     const total = parseFloat(form.amount);
     if (Number.isNaN(total) || total <= 0) return;
     const lines = allocLines.map((l) => ({
@@ -1870,19 +2417,22 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
         </div>
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <label style={labelStyle}>
-            Client
-            <ClientSearchDropdown
-              value={form.clientId}
-              displayValue={form.clientName}
+            Client (contact or organization)
+            <EntitySearchDropdown
+              value={form.entityId}
+              displayValue={form.entityName}
+              entityType={form.entityType}
               onChange={(c) => {
                 setForm((f) => ({
                   ...f,
-                  clientId: c.id,
-                  clientName: c.displayName,
+                  entityId: c.id,
+                  entityName: c.displayName,
+                  entityType: c.entityType,
                 }));
+                receiptAmountMirrorRef.current = '';
                 setAllocLines([{ targetType: 'invoice', targetTxnId: '', amount: '' }]);
               }}
-              placeholder="Search client by name…"
+              placeholder="Search contact or organization…"
             />
           </label>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -1893,6 +2443,7 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
                 value={form.ledgerClass}
                 onChange={(e) => {
                   setForm((f) => ({ ...f, ledgerClass: e.target.value }));
+                  receiptAmountMirrorRef.current = '';
                   setAllocLines([{ targetType: 'invoice', targetTxnId: '', amount: '' }]);
                 }}
               >
@@ -1986,7 +2537,10 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
                     };
                     if (targetType === 'unallocated_advance') {
                       const amt = String(form.amount || '').trim();
-                      if (amt) patch.amount = form.amount;
+                      if (amt) {
+                        patch.amount = form.amount;
+                        receiptAmountMirrorRef.current = form.amount;
+                      }
                     }
                     setLine(idx, patch);
                   }}
@@ -2380,32 +2934,86 @@ function CreditNoteModal({ onClose, onSave, openInvoices, creditNotes }) {
 
 // ── OpeningBalanceModal ───────────────────────────────────────────────────────
 
-function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBalances }) {
-  const rowGrid = { display:'grid', gridTemplateColumns:'minmax(100px,1fr) 108px 82px 108px 82px', gap:8, alignItems:'center', marginBottom:10 };
+function buildOpeningProfileRows(existingBalances, ledgerClass) {
+  const lc = ledgerClass === 'memorandum' ? 'memorandum' : 'regular';
+  return getBillingProfiles().map((p) => {
+    const feesBal = existingBalances.find(
+      (b) =>
+        b.billingProfileCode === p.code
+        && b.ledgerClass === lc
+        && b.ledgerMovementKind === 'fees',
+    );
+    const reimBal = existingBalances.find(
+      (b) =>
+        b.billingProfileCode === p.code
+        && b.ledgerClass === lc
+        && b.ledgerMovementKind === 'reimbursement',
+    );
+    return {
+      profileCode: p.code,
+      profileName: p.name,
+      feesAmount:  feesBal ? String(feesBal.amount) : '',
+      feesType:    feesBal ? feesBal.type : 'debit',
+      reimAmount:  reimBal ? String(reimBal.amount) : '',
+      reimType:    reimBal ? reimBal.type : 'debit',
+    };
+  });
+}
 
-  const [balances, setBalances] = useState(
-    getBillingProfiles().map(p => {
-      const reg = existingBalances.find(
-        b => b.billingProfileCode === p.code && (b.ledgerClass === 'regular' || !b.ledgerClass)
-      );
-      const mem = existingBalances.find(
-        b => b.billingProfileCode === p.code && b.ledgerClass === 'memorandum'
-      );
-      return {
-        profileCode:       p.code,
-        profileName:       p.name,
-        regularAmount:     reg ? String(reg.amount) : '',
-        regularType:       reg ? reg.type : 'debit',
-        memorandumAmount:  mem ? String(mem.amount) : '',
-        memorandumType:    mem ? mem.type : 'debit',
-      };
-    })
+function signedOpeningSlice(amountStr, drCr) {
+  if (amountStr === '' || amountStr == null) return 0;
+  const a = parseFloat(amountStr, 10);
+  if (Number.isNaN(a)) return NaN;
+  return drCr === 'credit' ? -a : a;
+}
+
+function formatConsolidatedNet(feesAmount, feesType, reimAmount, reimType) {
+  const f = signedOpeningSlice(feesAmount, feesType);
+  const r = signedOpeningSlice(reimAmount, reimType);
+  if (Number.isNaN(f) || Number.isNaN(r)) return '—';
+  const net = Math.round((f + r) * 100) / 100;
+  if (Math.abs(net) < 0.00001) return '₹0';
+  const abs = Math.abs(net).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return net > 0 ? `₹${abs} Dr` : `₹${abs} Cr`;
+}
+
+function OpeningBalanceModal({
+  onClose,
+  onSave,
+  entityId,
+  entityName,
+  entityType,
+  existingBalances,
+  invoices,
+}) {
+  const rowGrid = {
+    display:               'grid',
+    gridTemplateColumns:   'minmax(88px,1fr) 92px 72px 92px 72px minmax(88px,1fr)',
+    gap:                   8,
+    alignItems:            'center',
+    marginBottom:          10,
+  };
+
+  const [ledgerClassPick, setLedgerClassPick] = useState('regular');
+  const [balances, setBalances] = useState(() => buildOpeningProfileRows([], 'regular'));
+  const recon = useMemo(
+    () =>
+      aggregateInvoicesForOpeningRecon(invoices, {
+        entityType: entityType === 'organization' ? 'organization' : 'contact',
+        entityId,
+      }),
+    [invoices, entityType, entityId],
   );
+
+  useEffect(() => {
+    setBalances(buildOpeningProfileRows(existingBalances, ledgerClassPick));
+  }, [existingBalances, ledgerClassPick]);
+
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
 
   function setField(idx, key, val) {
-    setBalances(prev => prev.map((b, i) => i === idx ? { ...b, [key]: val } : b));
+    setBalances((prev) => prev.map((b, i) => (i === idx ? { ...b, [key]: val } : b)));
   }
 
   async function handleSave() {
@@ -2413,40 +3021,48 @@ function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBa
     setError('');
     try {
       const ops = [];
+      const idNum = parseInt(String(entityId), 10);
       for (const b of balances) {
-        const regAmt = b.regularAmount === '' ? 0 : parseFloat(b.regularAmount);
-        const memAmt = b.memorandumAmount === '' ? 0 : parseFloat(b.memorandumAmount);
-        if (Number.isNaN(regAmt) || Number.isNaN(memAmt)) {
+        const feesAmt = b.feesAmount === '' ? 0 : parseFloat(b.feesAmount, 10);
+        const reimAmt = b.reimAmount === '' ? 0 : parseFloat(b.reimAmount, 10);
+        if (Number.isNaN(feesAmt) || Number.isNaN(reimAmt)) {
           setError('Enter valid amounts or leave fields blank to clear.');
           return;
         }
-        if (regAmt < 0 || memAmt < 0) {
+        if (feesAmt < 0 || reimAmt < 0) {
           setError('Amounts cannot be negative.');
           return;
         }
+        const sliceBase = {
+          billing_profile_code: b.profileCode,
+          ledger_class:         ledgerClassPick,
+        };
+        if (entityType === 'organization') {
+          sliceBase.organization_id = idNum;
+        } else {
+          sliceBase.client_id = idNum;
+        }
         ops.push(
           setOpeningBalance({
-            client_id:            clientId,
-            billing_profile_code: b.profileCode,
-            amount:               regAmt,
-            type:                 b.regularType,
-            ledger_class:         'regular',
-          })
+            ...sliceBase,
+            amount:                 feesAmt,
+            type:                   b.feesType,
+            ledger_movement_kind:   'fees',
+          }),
         );
         ops.push(
           setOpeningBalance({
-            client_id:            clientId,
-            billing_profile_code: b.profileCode,
-            amount:               memAmt,
-            type:                 b.memorandumType,
-            ledger_class:         'memorandum',
-          })
+            ...sliceBase,
+            amount:                 reimAmt,
+            type:                   b.reimType,
+            ledger_movement_kind:   'reimbursement',
+          }),
         );
       }
       const results = await Promise.allSettled(ops);
-      const failures = results.filter(r => r.status === 'rejected');
+      const failures = results.filter((r) => r.status === 'rejected');
       if (failures.length > 0) {
-        setError(failures.map(f => f.reason?.message || 'Unknown error').join('; '));
+        setError(failures.map((f) => f.reason?.message || 'Unknown error').join('; '));
       } else {
         onSave();
         onClose();
@@ -2460,23 +3076,68 @@ function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBa
 
   return (
     <div style={overlayStyle}>
-      <div style={{ ...modalStyle, minWidth:640, maxWidth:720 }}>
+      <div style={{ ...modalStyle, minWidth: 700, maxWidth: 900 }}>
         <div style={modalHeaderStyle}>
-          <span style={{ fontSize:15, fontWeight:700 }}>📖 Opening Balances — {clientName}</span>
-          <button onClick={onClose} style={closeBtnStyle}>✕</button>
+          <span style={{ fontSize:15, fontWeight:700 }}>📖 Opening Balances — {entityName}</span>
+          <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
         </div>
         <div style={{ padding:'16px 24px' }}>
-          <p style={{ fontSize:12, color:'#64748b', margin:'0 0 16px 0' }}>
-            Regular balances feed the regular ledger; memorandum balances feed the memorandum ledger.
-            Debit (Dr) = client owes you; Credit (Cr) = you owe client.
-            Leave blank or use zero to clear an opening balance for that ledger type.
+          <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'center', marginBottom:12 }}>
+            <label style={{ fontSize:12, color:'#475569', display:'flex', alignItems:'center', gap:8 }}>
+              Ledger type
+              <select
+                style={{ ...inputStyle, minWidth:140 }}
+                value={ledgerClassPick}
+                onChange={(e) => setLedgerClassPick(e.target.value)}
+              >
+                {LEDGER_CLASS_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <p style={{ fontSize:12, color:'#64748b', margin:'0 0 12px 0' }}>
+            Enter professional fees and taxes / reimbursement separately. The consolidated column shows net Dr/Cr (Dr = client owes you).
+            Zero or blank clears that slice for the selected ledger type. Repeat for the other ledger type using the dropdown.
           </p>
+          <div
+            style={{
+              background:   '#f8fafc',
+              border:       '1px solid #e2e8f0',
+              borderRadius: 8,
+              padding:      '10px 12px',
+              marginBottom: 14,
+              fontSize:     12,
+              color:        '#334155',
+            }}
+          >
+            <div style={{ fontWeight:700, marginBottom:6 }}>Reference — raised invoices (this client / org)</div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', gap:8 }}>
+              <div>
+                <span style={{ color:'#64748b' }}>Invoices: </span>
+                <span style={{ fontWeight:600 }}>{recon.invoiceCount}</span>
+              </div>
+              <div>
+                <span style={{ color:'#64748b' }}>Total billed: </span>
+                <span style={{ fontWeight:600 }}>₹{recon.totalBilling.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              <div>
+                <span style={{ color:'#64748b' }}>Prof. fees (incl. GST share): </span>
+                <span style={{ fontWeight:600 }}>₹{recon.feesBucket.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+              <div>
+                <span style={{ color:'#64748b' }}>Taxes / reimb. (incl. GST share): </span>
+                <span style={{ fontWeight:600 }}>₹{recon.reimBucket.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+          </div>
           <div style={{ ...rowGrid, marginBottom:8, paddingBottom:6, borderBottom:'1px solid #e2e8f0' }}>
             <div style={{ fontSize:11, fontWeight:700, color:'#64748b' }}>Profile</div>
-            <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textAlign:'right' }}>Regular ₹</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textAlign:'right' }}>Prof. fees ₹</div>
             <div style={{ fontSize:11, fontWeight:700, color:'#64748b' }}>Dr/Cr</div>
-            <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textAlign:'right' }}>Memorandum ₹</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textAlign:'right' }}>Tax / reimb. ₹</div>
             <div style={{ fontSize:11, fontWeight:700, color:'#64748b' }}>Dr/Cr</div>
+            <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textAlign:'center' }}>Consolidated</div>
           </div>
           {balances.map((b, idx) => (
             <div key={b.profileCode} style={rowGrid}>
@@ -2489,13 +3150,13 @@ function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBa
                 min="0"
                 step="0.01"
                 placeholder="0"
-                value={b.regularAmount}
-                onChange={e => setField(idx, 'regularAmount', e.target.value)}
+                value={b.feesAmount}
+                onChange={(e) => setField(idx, 'feesAmount', e.target.value)}
                 style={{ ...inputStyle, textAlign:'right' }}
               />
               <select
-                value={b.regularType}
-                onChange={e => setField(idx, 'regularType', e.target.value)}
+                value={b.feesType}
+                onChange={(e) => setField(idx, 'feesType', e.target.value)}
                 style={inputStyle}
               >
                 <option value="debit">Dr</option>
@@ -2506,26 +3167,29 @@ function OpeningBalanceModal({ onClose, onSave, clientId, clientName, existingBa
                 min="0"
                 step="0.01"
                 placeholder="0"
-                value={b.memorandumAmount}
-                onChange={e => setField(idx, 'memorandumAmount', e.target.value)}
+                value={b.reimAmount}
+                onChange={(e) => setField(idx, 'reimAmount', e.target.value)}
                 style={{ ...inputStyle, textAlign:'right' }}
               />
               <select
-                value={b.memorandumType}
-                onChange={e => setField(idx, 'memorandumType', e.target.value)}
+                value={b.reimType}
+                onChange={(e) => setField(idx, 'reimType', e.target.value)}
                 style={inputStyle}
               >
                 <option value="debit">Dr</option>
                 <option value="credit">Cr</option>
               </select>
+              <div style={{ fontSize:12, fontWeight:600, textAlign:'center', color:'#0f172a' }}>
+                {formatConsolidatedNet(b.feesAmount, b.feesType, b.reimAmount, b.reimType)}
+              </div>
             </div>
           ))}
           {error && <div style={{ color:'#dc2626', fontSize:12, marginTop:8 }}>{error}</div>}
         </div>
         <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }}>
-          <button onClick={onClose} style={btnSecondary} disabled={saving}>Cancel</button>
-          <button onClick={handleSave} style={btnPrimary} disabled={saving}>
-            {saving ? 'Saving…' : '💾 Save Opening Balances'}
+          <button type="button" onClick={onClose} style={btnSecondary} disabled={saving}>Cancel</button>
+          <button type="button" onClick={handleSave} style={btnPrimary} disabled={saving}>
+            {saving ? 'Saving…' : '💾 Save opening balances'}
           </button>
         </div>
       </div>
@@ -2561,6 +3225,7 @@ export default function Invoices() {
   const [selectedInvoice, setSelectedInvoice]   = useState(null);
   const [viewInvoiceTxn, setViewInvoiceTxn]     = useState(null);
   const [editInvoiceId, setEditInvoiceId]       = useState(null);
+  const [editLedgerTxnId, setEditLedgerTxnId]   = useState(null);
   const [ledgerDeletePrompt, setLedgerDeletePrompt] = useState(null);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState([]);
   const [invoices, setInvoices]                 = useState([]);
@@ -2587,6 +3252,7 @@ export default function Invoices() {
   const [selectedTds, setSelectedTds]   = useState([]);
   const [selectedTdsDeleteIds, setSelectedTdsDeleteIds] = useState([]);
   const [showTdsModal, setShowTdsModal] = useState(false);
+  const [txnAuditModalTxn, setTxnAuditModalTxn] = useState(null);
 
   // ── Rebate tab state ────────────────────────────────────────────────────────
   const [rebates, setRebates]               = useState([]);
@@ -2751,7 +3417,11 @@ export default function Invoices() {
       };
     Promise.all([
       getLedger(ledgerParam).catch(() => []),
-      getOpeningBalance(ledgerClientId).catch(() => []),
+      getOpeningBalance(
+        ledgerEntityType === 'organization'
+          ? { organizationId: ledgerClientId }
+          : { clientId: ledgerClientId },
+      ).catch(() => []),
     ]).then(([entries, obs]) => {
       setLedger(entries);
       setOpeningBalances(obs);
@@ -3020,8 +3690,9 @@ export default function Invoices() {
   }
 
   function handleSaveReceipt(data) {
-    createReceipt({
-      client_id:            data.clientId,
+    const idNum = parseInt(data.entityId, 10);
+    if (!idNum) return;
+    const payload = {
       amount:               parseFloat(data.amount),
       txn_date:             data.txnDate,
       payment_method:       data.method,
@@ -3032,7 +3703,13 @@ export default function Invoices() {
       ledger_class:         data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
       ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
       allocations:          data.allocations,
-    })
+    };
+    if (data.entityType === 'organization') {
+      payload.organization_id = idNum;
+    } else {
+      payload.client_id = idNum;
+    }
+    createReceipt(payload)
       .then(rec => setReceipts(prev => [rec, ...prev]))
       .catch(() => {});
   }
@@ -3129,7 +3806,11 @@ export default function Invoices() {
         };
       Promise.all([
         getLedger(ledgerParam).catch(() => []),
-        getOpeningBalance(ledgerClientId).catch(() => []),
+        getOpeningBalance(
+          ledgerEntityType === 'organization'
+            ? { organizationId: ledgerClientId }
+            : { clientId: ledgerClientId },
+        ).catch(() => []),
       ]).then(([entries, obs]) => {
         setLedger(entries);
         setOpeningBalances(obs);
@@ -3215,7 +3896,7 @@ export default function Invoices() {
 
   function handleBillingMarkBuilt(row) {
     if (!canBillingClosure) return;
-    if (!window.confirm(`Mark engagement #${row.id} as built? It will leave the pending billing queue.`)) return;
+    if (!window.confirm(`Mark engagement #${row.id} as billed? It will leave the pending billing queue.`)) return;
     patchBillingClosure(row.id, { closure: 'built' })
       .then((res) => {
         const m = res?.billing_time_metrics;
@@ -3343,6 +4024,23 @@ export default function Invoices() {
           }}
         />
       )}
+      {editLedgerTxnId != null && (
+        <EditLedgerTxnModal
+          txnId={editLedgerTxnId}
+          onClose={() => setEditLedgerTxnId(null)}
+          onSaved={(row) => {
+            const tt = row.txnType;
+            if (tt === 'receipt') {
+              getTxns({ txnType: 'receipt' }).then(({ txns }) => setReceipts(txns));
+            } else if (tt === 'payment_expense') {
+              getTxns({ txnType: 'payment_expense', perPage: 100 }).then(({ txns }) => setPaymentExpenses(txns));
+            } else if (tt === 'tds_provisional' || tt === 'tds_final') {
+              const params = tdsFilter === 'all' ? {} : { tdsStatus: tdsFilter };
+              getTdsEntries(params).then(setTdsEntries);
+            }
+          }}
+        />
+      )}
       {ledgerDeletePrompt && (
         <LedgerDeleteModal
           title={ledgerDeletePrompt.title}
@@ -3350,6 +4048,9 @@ export default function Invoices() {
           onClose={() => setLedgerDeletePrompt(null)}
           onDeleted={handleLedgerDeleted}
         />
+      )}
+      {txnAuditModalTxn && (
+        <TxnAuditLogModal key={txnAuditModalTxn.id} txn={txnAuditModalTxn} onClose={() => setTxnAuditModalTxn(null)} />
       )}
       {showRecordPayment && (
         <RecordPaymentModal
@@ -3393,9 +4094,11 @@ export default function Invoices() {
       )}
       {showOpeningModal && ledgerClientId && (
         <OpeningBalanceModal
-          clientId={ledgerClientId}
-          clientName={ledgerClientName}
+          entityId={ledgerClientId}
+          entityName={ledgerClientName}
+          entityType={ledgerEntityType}
           existingBalances={openingBalances}
+          invoices={invoices}
           onClose={() => setShowOpeningModal(false)}
           onSave={handleOpeningBalanceSaved}
         />
@@ -3503,14 +4206,14 @@ export default function Invoices() {
                     />
                   </th>
                 )}
-                {['Invoice #','Client','Date','Due Date','Amount','Billing Profile','Status','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+                {['Invoice #','Client','Date','Due Date','Amount','Billing Profile','Status','Last updated by','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {invLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading invoices…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading invoices…</td></tr>
               ) : filteredInvoices.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices found.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices found.</td></tr>
               ) : filteredInvoices.map(i=>(
                 <tr
                   key={i.id}
@@ -3537,6 +4240,7 @@ export default function Invoices() {
                   <td style={{ ...tdStyle, fontWeight:600 }}>₹{(i.amount || i.debit || 0).toLocaleString('en-IN')}</td>
                   <td style={tdStyle}><BillingProfileBadge code={i.billingProfileCode} /></td>
                   <td style={tdStyle}><StatusBadge status={i.invoiceStatus || i.status} /></td>
+                  <LastUpdatedByCell txn={i} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
                   <td style={tdStyle} onClick={e => e.stopPropagation()}>
                     <button type="button" style={iconBtn} onClick={() => setViewInvoiceTxn(i)}>👁 View</button>
                     {canEditInvoice && (
@@ -3615,14 +4319,14 @@ export default function Invoices() {
                     />
                   </th>
                 )}
-                {['Date','Ref','Client','Amount','Method','Reference No.','Billing Profile','Linked Invoice','Notes','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+                {['Date','Ref','Client','Amount','Method','Reference No.','Billing Profile','Linked Invoice','Notes','Last updated by','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {recLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 11 : 10} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
               ) : receipts.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 11 : 10} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
               ) : receipts.map(r=>(
                 <tr key={r.id} style={trStyle}>
                   {canDeleteInvoice && (
@@ -3646,7 +4350,11 @@ export default function Invoices() {
                   <td style={tdStyle}><BillingProfileBadge code={r.billingProfileCode} /></td>
                   <td style={tdStyle}>{r.linkedTxnId ? `#${r.linkedTxnId}` : '—'}</td>
                   <td style={tdStyle}>{r.notes || '—'}</td>
+                  <LastUpdatedByCell txn={r} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
                   <td style={tdStyle}>
+                    {canEditInvoice && (
+                      <button type="button" style={iconBtn} onClick={() => setEditLedgerTxnId(r.id)}>✏️ Edit</button>
+                    )}
                     {canDeleteInvoice && (
                       <button
                         type="button"
@@ -3716,16 +4424,16 @@ export default function Invoices() {
                     />
                   </th>
                 )}
-                {['Date', 'Ref', 'Client', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Actions'].map((h) => (
+                {['Date', 'Ref', 'Client', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Last updated by', 'Actions'].map((h) => (
                   <th key={h} style={thStyle}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {payLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 14 : 13} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
               ) : paymentExpenses.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 14 : 13} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
               ) : paymentExpenses.map((p) => (
                 <tr key={p.id} style={trStyle}>
                   {canDeleteInvoice && (
@@ -3751,7 +4459,11 @@ export default function Invoices() {
                   <td style={{ ...tdStyle, maxWidth: 200, whiteSpace: 'normal' }}>{p.narration || '—'}</td>
                   <td style={tdStyle}><BillingProfileBadge code={p.billingProfileCode} /></td>
                   <td style={{ ...tdStyle, maxWidth: 160, whiteSpace: 'normal' }}>{p.notes || '—'}</td>
+                  <LastUpdatedByCell txn={p} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
                   <td style={tdStyle}>
+                    {canEditInvoice && (
+                      <button type="button" style={iconBtn} onClick={() => setEditLedgerTxnId(p.id)}>✏️ Edit</button>
+                    )}
                     {canDeleteInvoice && (
                       <button
                         type="button"
@@ -3815,15 +4527,15 @@ export default function Invoices() {
               <tr>
                 <th style={{ ...thStyle, width: 44, fontSize: 11 }} title="Mark provisional as final">Final</th>
                 {canDeleteInvoice && <th style={{ ...thStyle, width: 36, fontSize: 11 }}>Del</th>}
-                {['Date','Client','Amount','Section','Rate','Status','Billing Profile'].map(h=><th key={h} style={thStyle}>{h}</th>)}
-                {canDeleteInvoice && <th style={thStyle}>Actions</th>}
+                {['Date','Client','Amount','Section','Rate','Status','Billing Profile','Last updated by'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+                {(canEditInvoice || canDeleteInvoice) && <th style={thStyle}>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {tdsLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 10 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading TDS entries…</td></tr>
+                <tr><td colSpan={9 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading TDS entries…</td></tr>
               ) : tdsEntries.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 10 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries found. Click "+ Book TDS" to add one.</td></tr>
+                <tr><td colSpan={9 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries found. Click "+ Book TDS" to add one.</td></tr>
               ) : tdsEntries.map(t=>(
                 <tr key={t.id} style={trStyle}>
                   <td style={{ ...tdStyle, width:44 }}>
@@ -3847,21 +4559,27 @@ export default function Invoices() {
                   <td style={tdStyle}>{t.tdsRate ? `${t.tdsRate}%` : '—'}</td>
                   <td style={tdStyle}><TxnTypeBadge type={t.txnType} /></td>
                   <td style={tdStyle}><BillingProfileBadge code={t.billingProfileCode} /></td>
-                  {canDeleteInvoice && (
+                  <LastUpdatedByCell txn={t} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
+                  {(canEditInvoice || canDeleteInvoice) && (
                     <td style={tdStyle}>
-                      <button
-                        type="button"
-                        style={iconBtn}
-                        onClick={() => setLedgerDeletePrompt({
-                          title: 'Delete TDS entry',
-                          items: [{
-                            id: t.id,
-                            label: `${t.txnDate || '—'} — ${t.clientName} — ₹${(t.amount || 0).toLocaleString('en-IN')} (${t.txnType || ''})`,
-                          }],
-                        })}
-                      >
-                        🗑 Delete
-                      </button>
+                      {canEditInvoice && (
+                        <button type="button" style={iconBtn} onClick={() => setEditLedgerTxnId(t.id)}>✏️ Edit</button>
+                      )}
+                      {canDeleteInvoice && (
+                        <button
+                          type="button"
+                          style={iconBtn}
+                          onClick={() => setLedgerDeletePrompt({
+                            title: 'Delete TDS entry',
+                            items: [{
+                              id: t.id,
+                              label: `${t.txnDate || '—'} — ${t.clientName} — ₹${(t.amount || 0).toLocaleString('en-IN')} (${t.txnType || ''})`,
+                            }],
+                          })}
+                        >
+                          🗑 Delete
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -4422,7 +5140,7 @@ export default function Invoices() {
               onChange={(e) => setBillingClosureFilter(e.target.value)}
             >
               <option value="pending">Pending</option>
-              <option value="built">Built</option>
+              <option value="built">Billed</option>
               <option value="non_billable">Non-billable</option>
             </select>
             <input
@@ -4525,7 +5243,7 @@ export default function Invoices() {
                       {canBillingClosure && billingClosureFilter === 'pending' && (
                         <>
                           <button type="button" style={iconBtn} onClick={() => handleBillingMarkBuilt(row)}>
-                            Mark as built
+                            Mark as billed
                           </button>
                           <button type="button" style={iconBtn} onClick={() => handleBillingNonBillable(row)}>
                             Non-billable

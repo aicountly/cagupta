@@ -32,6 +32,7 @@ import {
   indianFYBounds,
 } from '../utils/indianFinancialYear';
 import { exportLedgerExcel, exportLedgerPdf } from '../utils/ledgerExport';
+import { INDIAN_STATES } from '../constants/indianStates';
 import ledgerLogoUrl from '../assets/cropped_logo.png';
 import {
   loadRazorpayScript,
@@ -660,6 +661,7 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
   const [err, setErr] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
+  const [ledgerRegion, setLedgerRegion] = useState('');
   const [requesting, setRequesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -693,6 +695,7 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
     setErr('');
     setOtpSent(false);
     setOtp('');
+    setLedgerRegion('');
     getTxn(invoiceId)
       .then((row) => {
         if (cancelled) return;
@@ -724,9 +727,13 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
 
   async function handleRequestOtp() {
     setErr('');
+    if (!ledgerRegion.trim()) {
+      setErr('Select region (mandatory for OTP email).');
+      return;
+    }
     setRequesting(true);
     try {
-      await requestInvoiceModifyOtp(invoiceId, { intent: 'update' });
+      await requestInvoiceModifyOtp(invoiceId, { intent: 'update', region: ledgerRegion.trim() });
       setOtpSent(true);
     } catch (e) {
       setErr(e.message || 'Could not send OTP.');
@@ -847,6 +854,15 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                 </div>
               ))}
               <button type="button" style={{ ...btnSecondary, alignSelf: 'flex-start' }} onClick={addLine}>+ Line</button>
+              <label style={labelStyle}>
+                Region (mandatory for OTP) *
+                <select style={inputStyle} value={ledgerRegion} onChange={(e) => setLedgerRegion(e.target.value)}>
+                  <option value="">— Select —</option>
+                  {INDIAN_STATES.map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
                 <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
                   {requesting ? 'Sending…' : 'Request superadmin OTP'}
@@ -874,12 +890,17 @@ function DeleteInvoiceModal({ invoice, onClose, onDeleted }) {
   const [otp, setOtp] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
+  const [ledgerRegion, setLedgerRegion] = useState('');
 
   async function sendOtp() {
     setErr('');
+    if (!ledgerRegion.trim()) {
+      setErr('Select region (mandatory for OTP email).');
+      return;
+    }
     setBusy(true);
     try {
-      await requestInvoiceModifyOtp(invoice.id, { intent: 'delete' });
+      await requestInvoiceModifyOtp(invoice.id, { intent: 'delete', region: ledgerRegion.trim() });
       setOtpSent(true);
     } catch (e) {
       setErr(e.message || 'Failed to send OTP.');
@@ -921,6 +942,15 @@ function DeleteInvoiceModal({ invoice, onClose, onDeleted }) {
             Request a superadmin OTP, then enter it to confirm.
           </p>
           {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
+          <label style={labelStyle}>
+            Region (mandatory for OTP) *
+            <select style={inputStyle} value={ledgerRegion} onChange={(e) => setLedgerRegion(e.target.value)}>
+              <option value="">— Select —</option>
+              {INDIAN_STATES.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </label>
           <button type="button" style={btnSecondary} disabled={busy} onClick={sendOtp}>
             {busy && !otpSent ? 'Sending…' : 'Request superadmin OTP'}
           </button>
@@ -1176,10 +1206,21 @@ function PaymentExpenseModal({ onClose, onSave }) {
 // ── ReceiptModal ──────────────────────────────────────────────────────────────
 
 function ReceiptModal({ onClose, onSave, openInvoices }) {
-  const [form, setForm] = useState({ clientId: '', clientName: '', amount: '', txnDate: new Date().toISOString().slice(0,10), method: 'NEFT', referenceNumber: '', billingProfileCode: '', linkedTxnId: '', notes: '' });
+  const [form, setForm] = useState({
+    entityId: '',
+    entityName: '',
+    entityType: 'contact',
+    amount: '',
+    txnDate: new Date().toISOString().slice(0, 10),
+    method: 'NEFT',
+    referenceNumber: '',
+    billingProfileCode: '',
+    linkedTxnId: '',
+    notes: '',
+  });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const handleSave = () => {
-    if (!form.clientId || !form.amount || !form.txnDate) return;
+    if (!form.entityId || !form.amount || !form.txnDate) return;
     onSave(form);
     onClose();
   };
@@ -1192,12 +1233,18 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
         </div>
         <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
           <label style={labelStyle}>
-            Client
-            <ClientSearchDropdown
-              value={form.clientId}
-              displayValue={form.clientName}
-              onChange={c => setForm(f => ({ ...f, clientId: c.id, clientName: c.displayName }))}
-              placeholder="Search client by name…"
+            Client (contact or organization)
+            <EntitySearchDropdown
+              value={form.entityId}
+              displayValue={form.entityName}
+              entityType={form.entityType}
+              onChange={(c) => setForm((f) => ({
+                ...f,
+                entityId: c.id,
+                entityName: c.displayName,
+                entityType: c.entityType,
+              }))}
+              placeholder="Search contact or organization…"
             />
           </label>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
@@ -1808,7 +1855,11 @@ export default function Invoices() {
       : { clientId: ledgerClientId };
     Promise.all([
       getLedger(ledgerParam).catch(() => []),
-      getOpeningBalance(ledgerClientId).catch(() => []),
+      getOpeningBalance(
+        ledgerEntityType === 'organization'
+          ? { organizationId: ledgerClientId }
+          : { clientId: ledgerClientId },
+      ).catch(() => []),
     ]).then(([entries, obs]) => {
       setLedger(entries);
       setOpeningBalances(obs);
@@ -2030,8 +2081,9 @@ export default function Invoices() {
   }
 
   function handleSaveReceipt(data) {
-    createReceipt({
-      client_id:            data.clientId,
+    const idNum = parseInt(data.entityId, 10);
+    if (!idNum) return;
+    const payload = {
       amount:               parseFloat(data.amount),
       txn_date:             data.txnDate,
       payment_method:       data.method,
@@ -2039,7 +2091,13 @@ export default function Invoices() {
       billing_profile_code: data.billingProfileCode,
       linked_txn_id:        data.linkedTxnId || null,
       notes:                data.notes,
-    })
+    };
+    if (data.entityType === 'organization') {
+      payload.organization_id = idNum;
+    } else {
+      payload.client_id = idNum;
+    }
+    createReceipt(payload)
       .then(rec => setReceipts(prev => [rec, ...prev]))
       .catch(() => {});
   }
@@ -2105,7 +2163,11 @@ export default function Invoices() {
         : { clientId: ledgerClientId };
       Promise.all([
         getLedger(ledgerParam).catch(() => []),
-        getOpeningBalance(ledgerClientId).catch(() => []),
+        getOpeningBalance(
+          ledgerEntityType === 'organization'
+            ? { organizationId: ledgerClientId }
+            : { clientId: ledgerClientId },
+        ).catch(() => []),
       ]).then(([entries, obs]) => {
         setLedger(entries);
         setOpeningBalances(obs);
@@ -2168,7 +2230,7 @@ export default function Invoices() {
 
   function handleBillingMarkBuilt(row) {
     if (!canBillingClosure) return;
-    if (!window.confirm(`Mark engagement #${row.id} as built? It will leave the pending billing queue.`)) return;
+    if (!window.confirm(`Mark engagement #${row.id} as billed? It will leave the pending billing queue.`)) return;
     patchBillingClosure(row.id, { closure: 'built' })
       .then((res) => {
         const m = res?.billing_time_metrics;
@@ -2795,7 +2857,7 @@ export default function Invoices() {
               onChange={(e) => setBillingClosureFilter(e.target.value)}
             >
               <option value="pending">Pending</option>
-              <option value="built">Built</option>
+              <option value="built">Billed</option>
               <option value="non_billable">Non-billable</option>
             </select>
             <input
@@ -2898,7 +2960,7 @@ export default function Invoices() {
                       {canBillingClosure && billingClosureFilter === 'pending' && (
                         <>
                           <button type="button" style={iconBtn} onClick={() => handleBillingMarkBuilt(row)}>
-                            Mark as built
+                            Mark as billed
                           </button>
                           <button type="button" style={iconBtn} onClick={() => handleBillingNonBillable(row)}>
                             Non-billable

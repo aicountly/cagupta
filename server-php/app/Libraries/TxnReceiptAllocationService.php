@@ -350,6 +350,101 @@ final class TxnReceiptAllocationService
     }
 
     /**
+     * Remove payment_expense allocation rows pointing at this payment from every linked receipt (funds return to unallocated).
+     */
+    public static function unlinkPaymentExpenseFromReceipts(int $paymentExpenseId): void
+    {
+        $allocModel = new TxnSettlementAllocationModel();
+        $ids        = $allocModel->receiptSourceIdsLinkedToPaymentExpense($paymentExpenseId);
+        $txn        = new TxnModel();
+        foreach ($ids as $rid) {
+            $rec = $txn->find($rid);
+            if ($rec === null || ($rec['txn_type'] ?? '') !== 'receipt') {
+                continue;
+            }
+            self::unlinkPaymentExpenseFromSingleReceipt($rec, $paymentExpenseId, $allocModel);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $receiptRow
+     */
+    private static function unlinkPaymentExpenseFromSingleReceipt(
+        array $receiptRow,
+        int $paymentExpenseId,
+        TxnSettlementAllocationModel $allocModel
+    ): void {
+        $receiptId  = (int)$receiptRow['id'];
+        $receiptAmt = round((float)($receiptRow['amount'] ?? 0), 2);
+        $existing   = $allocModel->listForReceipt($receiptId);
+
+        $kept       = [];
+        $freed      = 0.0;
+        $unallocSum = 0.0;
+        foreach ($existing as $e) {
+            $tt  = (string)($e['target_type'] ?? '');
+            $tid = (int)($e['target_txn_id'] ?? 0);
+            $amt = round((float)($e['amount'] ?? 0), 2);
+            if ($tt === 'payment_expense' && $tid === $paymentExpenseId) {
+                $freed += $amt;
+
+                continue;
+            }
+            if ($tt === 'unallocated_advance') {
+                $unallocSum += $amt;
+
+                continue;
+            }
+            $kept[] = [
+                'target_type'   => $tt,
+                'target_txn_id' => $tid > 0 ? $tid : null,
+                'amount'        => $amt,
+            ];
+        }
+        $totalUnalloc = round($unallocSum + $freed, 2);
+        $newRows      = $kept;
+        if ($totalUnalloc > 0.00001) {
+            $newRows[] = [
+                'target_type'   => 'unallocated_advance',
+                'target_txn_id' => null,
+                'amount'        => $totalUnalloc,
+            ];
+        }
+        $sumNew = 0.0;
+        foreach ($newRows as $r) {
+            $sumNew += round((float)($r['amount'] ?? 0), 2);
+        }
+        if ($receiptAmt > 0 && abs($sumNew - $receiptAmt) > 0.02) {
+            throw new InvalidArgumentException(
+                'Receipt allocations would not balance after unlinking payment expense (receipt #' . $receiptId . ').'
+            );
+        }
+        $allocModel->replaceForReceipt($receiptId, $newRows);
+    }
+
+    /**
+     * Replace receipt allocations and refresh invoice paid status for affected invoices.
+     *
+     * @param list<array{target_type:string, target_txn_id?:int|null, amount:float}> $allocRows
+     */
+    public static function replaceReceiptAllocationsWithInvoiceRefresh(int $receiptId, array $allocRows): void
+    {
+        $allocModel = new TxnSettlementAllocationModel();
+        $beforeInv  = $allocModel->distinctTargetsForReceipt($receiptId)['invoices'];
+        $allocModel->replaceForReceipt($receiptId, $allocRows);
+        $afterKeys = [];
+        foreach ($allocRows as $r) {
+            if (($r['target_type'] ?? '') === 'invoice' && !empty($r['target_txn_id'])) {
+                $afterKeys[(int)$r['target_txn_id']] = true;
+            }
+        }
+        $txn = new TxnModel();
+        foreach (array_unique(array_merge($beforeInv, array_keys($afterKeys))) as $iid) {
+            $txn->recomputeInvoiceReceiptStatus((int)$iid);
+        }
+    }
+
+    /**
      * Validate payment_expense settlement lines (receipt + unallocated_advance) and return per-receipt link totals.
      *
      * @return array{receipt_totals: array<int, float>}

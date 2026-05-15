@@ -90,7 +90,9 @@ class RecurringServiceDefinitionModel
         }
 
         if (!empty($filters['search'])) {
-            $where[]  = "(c.name ILIKE :search OR o.name ILIKE :search OR et.name ILIKE :search OR rsd.return_type ILIKE :search)";
+            $labelSql = static::sqlClientContactLabelSql();
+            $where[] = "(({$labelSql}) ILIKE :search OR o.name ILIKE :search OR et.name ILIKE :search "
+                . 'OR rsd.return_type ILIKE :search OR c.pan ILIKE :search)';
             $params[':search'] = '%' . $filters['search'] . '%';
         }
 
@@ -173,14 +175,25 @@ class RecurringServiceDefinitionModel
         $allowed = [
             'frequency', 'due_day', 'due_offset_months', 'return_type',
             'start_date', 'end_date', 'is_active', 'notes',
+            'client_id', 'organization_id', 'engagement_type_id',
         ];
         $sets   = [];
         $params = [':id' => $id];
 
         foreach ($allowed as $field) {
-            if (array_key_exists($field, $data)) {
-                $sets[]          = "{$field} = :{$field}";
-                $params[":{$field}"] = $data[$field];
+            if (!array_key_exists($field, $data)) {
+                continue;
+            }
+            $sets[]           = "{$field} = :{$field}";
+            $val              = $data[$field];
+            if (($field === 'client_id' || $field === 'organization_id') && ($val === null || $val === '')) {
+                $params[":{$field}"] = null;
+            } elseif ($field === 'engagement_type_id') {
+                $params[":{$field}"] = (int)$val;
+            } elseif ($field === 'client_id' || $field === 'organization_id') {
+                $params[":{$field}"] = (int)$val;
+            } else {
+                $params[":{$field}"] = $val;
             }
         }
 
@@ -559,6 +572,13 @@ class RecurringServiceDefinitionModel
         return $q . ' ' . $this->fyLabel($periodEnd);
     }
 
+    /** Same human label logic as CRM ClientModel::displayName (PostgreSQL text). */
+    private static function sqlClientContactLabelSql(): string
+    {
+        return "COALESCE(NULLIF(TRIM(c.organization_name), ''), "
+            . "NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''), '')";
+    }
+
     /** "FY 2024-25" from any date */
     private function fyLabel(\DateTimeImmutable $dt): string
     {
@@ -575,7 +595,7 @@ class RecurringServiceDefinitionModel
                 rsd.*,
                 et.name                          AS engagement_type_name,
                 et.register_category             AS register_category,
-                COALESCE(c.name, o.name)         AS client_name,
+                COALESCE(" . self::sqlClientContactLabelSql() . ', o.name)         AS client_name,
                 c.pan                            AS client_pan,
                 o.cin                            AS org_cin,
                 u.name                           AS created_by_name

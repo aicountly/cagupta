@@ -7,6 +7,7 @@ import { expensePurposeLabel } from '../../../constants/expensePurposes';
 import RegisterSubFilters from '../../../components/common/RegisterSubFilters';
 import RegisterEntryModal from '../../../components/registers/RegisterEntryModal';
 import { getTxns } from '../../../services/txnService';
+import { LastUpdatedByCell, TxnAuditLogModal } from '../../../components/finance/TxnAuditActivity';
 import { getRegisters, getRegisterCounts } from '../services/registerService';
 
 // Compliance tabs that pull from the registers API
@@ -171,7 +172,7 @@ function ComplianceTable({ tabKey, rows, onEdit }) {
 
 // ── Payments table (unchanged from existing implementation) ───────────────────
 
-function PaymentsTable({ rows }) {
+function PaymentsTable({ rows, onOpenAudit }) {
   if (!rows || rows.length === 0) {
     return (
       <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
@@ -197,6 +198,11 @@ function PaymentsTable({ rows }) {
             <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{r.reference_number || '—'}</td>
             <td style={{ ...tdStyle, maxWidth: 220, whiteSpace: 'normal' }}>{r.narration || '—'}</td>
             <td style={{ ...tdStyle, maxWidth: 200, whiteSpace: 'normal' }}>{r.notes || '—'}</td>
+            <LastUpdatedByCell
+              txn={{ id: r.id, updatedByName: r.updatedByName, createdByName: r.createdByName }}
+              onOpenAudit={onOpenAudit}
+              tdStyle={tdStyle}
+            />
           </tr>
         ))}
       </tbody>
@@ -233,6 +239,7 @@ export default function Registers() {
   const [payRegLastPage, setPayRegLastPage] = useState(1);
   const [payDateFrom, setPayDateFrom]   = useState('');
   const [payDateTo, setPayDateTo]       = useState('');
+  const [payAuditTxn, setPayAuditTxn]   = useState(null);
 
   // ── Load compliance tab data ────────────────────────────────────────────────
 
@@ -318,6 +325,8 @@ export default function Registers() {
           reference_number:t.referenceNumber|| '',
           narration:       t.narration      || '',
           notes:           t.notes          || '',
+          updatedByName:   t.updatedByName  || '',
+          createdByName:   t.createdByName  || '',
         }));
         setPaymentRows(prev => payRegPage === 1 ? mapped : [...prev, ...mapped]);
         setPayRegLastPage(pagination.last_page || 1);
@@ -464,7 +473,7 @@ export default function Registers() {
             {payRegLoading && paymentRows.length === 0 ? (
               <LoadingState label="payment" />
             ) : (
-              <PaymentsTable rows={paymentRows} />
+              <PaymentsTable rows={paymentRows} onOpenAudit={setPayAuditTxn} />
             )}
             {payRegPage < payRegLastPage && (
               <div style={{ padding: 16, textAlign: 'center', borderTop: '1px solid #f1f5f9' }}>
@@ -488,6 +497,9 @@ export default function Registers() {
         onClose={() => setEditRow(null)}
         onSaved={handleEditSaved}
       />
+      {payAuditTxn && (
+        <TxnAuditLogModal key={payAuditTxn.id} txn={payAuditTxn} onClose={() => setPayAuditTxn(null)} />
+      )}
     </div>
   );
 }

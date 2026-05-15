@@ -73,6 +73,11 @@ final class LedgerPresentation
         foreach ($rows as $t) {
             $type = (string)($t['txn_type'] ?? '');
             if ($type === 'opening_balance') {
+                $obKind = (string)($t['ledger_movement_kind'] ?? '');
+                if ($obKind === '' || $obKind !== $targetView) {
+                    continue;
+                }
+                $expanded[] = self::txnToLedgerRow($t);
                 continue;
             }
             if ($type === 'invoice') {

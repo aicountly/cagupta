@@ -156,6 +156,70 @@ final class TxnSettlementAllocationModel
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
+    /**
+     * Build settlement_lines payload for editing a payment_expense (receipt links + optional unallocated).
+     *
+     * @return list<array{target_type:string, target_txn_id?:int, amount:float}>
+     */
+    public function settlementLinesSnapshotForPaymentExpense(int $paymentTxnId, float $paymentAmount): array
+    {
+        $paymentAmount = round($paymentAmount, 2);
+        $stmt = $this->db->prepare(
+            "SELECT source_txn_id, amount FROM txn_settlement_allocation
+             WHERE target_type = 'payment_expense' AND target_txn_id = :pid
+             ORDER BY id ASC"
+        );
+        $stmt->execute([':pid' => $paymentTxnId]);
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+
+        $lines     = [];
+        $linkedSum = 0.0;
+        foreach ($rows as $r) {
+            $amt = round((float)($r['amount'] ?? 0), 2);
+            if ($amt <= 0) {
+                continue;
+            }
+            $sid = (int)($r['source_txn_id'] ?? 0);
+            if ($sid <= 0) {
+                continue;
+            }
+            $linkedSum += $amt;
+            $lines[] = [
+                'target_type'     => 'receipt',
+                'target_txn_id'   => $sid,
+                'amount'          => $amt,
+            ];
+        }
+        $unalloc = round($paymentAmount - $linkedSum, 2);
+        if ($unalloc > 0.01) {
+            $lines[] = [
+                'target_type' => 'unallocated_advance',
+                'amount'      => $unalloc,
+            ];
+        }
+
+        return $lines;
+    }
+
+    /** @return list<int> */
+    public function receiptSourceIdsLinkedToPaymentExpense(int $paymentTxnId): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT DISTINCT source_txn_id FROM txn_settlement_allocation
+             WHERE target_type = 'payment_expense' AND target_txn_id = :pid"
+        );
+        $stmt->execute([':pid' => $paymentTxnId]);
+        $ids = [];
+        foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) ?: [] as $r) {
+            $n = (int)($r['source_txn_id'] ?? 0);
+            if ($n > 0) {
+                $ids[$n] = $n;
+            }
+        }
+
+        return array_values($ids);
+    }
+
     public function insertForReceipt(int $receiptTxnId, array $rows): void
     {
         $ins = $this->db->prepare(

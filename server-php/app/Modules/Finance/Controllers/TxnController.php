@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Config\Auth as AuthConfig;
 use App\Config\Database;
+use App\Config\LedgerModifyRegions;
 use App\Libraries\BillSettlementReportBuilder;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
@@ -15,6 +16,7 @@ use App\Libraries\LedgerDimensions;
 use App\Libraries\OtpService;
 use App\Libraries\RazorpayClient;
 use App\Libraries\TxnReceiptAllocationService;
+use App\Models\AdminAuditLogModel;
 use App\Models\ClientModel;
 use App\Models\FirmBankAccountModel;
 use App\Models\OrganizationModel;
@@ -276,7 +278,11 @@ class TxnController extends BaseController
                 }
                 break;
             case 'opening_balance':
-                $id = $this->txn->setOpeningBalance($body);
+                try {
+                    $id = $this->txn->setOpeningBalance($body);
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
+                }
                 if ($id === null) {
                     $this->success(null, 'Opening balance cleared', 200);
                 }
@@ -291,6 +297,8 @@ class TxnController extends BaseController
             case 'firm_bank_transfer':
                 try {
                     $ids = $this->txn->createFirmBankTransferPair($body);
+                    $this->recordTxnCreated((int)$ids['out_id'], $createdBy);
+                    $this->recordTxnCreated((int)$ids['in_id'], $createdBy);
                     $this->success([
                         'out' => $this->txn->find($ids['out_id']),
                         'in'  => $this->txn->find($ids['in_id']),
@@ -311,6 +319,7 @@ class TxnController extends BaseController
         }
 
         $row = $this->txn->find($id);
+        $this->recordTxnCreated((int)$id, $createdBy);
         $this->success($row, 'Transaction created', 201);
     }
 
@@ -322,14 +331,97 @@ class TxnController extends BaseController
         if ($row === null) {
             $this->error('Transaction not found.', 404);
         }
+        $type = (string)($row['txn_type'] ?? '');
+        if ($type === 'receipt') {
+            $alloc = new TxnSettlementAllocationModel();
+            $lines = [];
+            foreach ($alloc->listForReceipt($id) as $e) {
+                $lines[] = [
+                    'target_type'   => $e['target_type'],
+                    'target_txn_id' => $e['target_txn_id'] !== null ? (int)$e['target_txn_id'] : null,
+                    'amount'        => round((float)($e['amount'] ?? 0), 2),
+                ];
+            }
+            $row['allocations'] = $lines;
+        }
+        if ($type === 'payment_expense') {
+            $alloc                   = new TxnSettlementAllocationModel();
+            $row['settlement_lines'] = $alloc->settlementLinesSnapshotForPaymentExpense(
+                $id,
+                (float)($row['amount'] ?? 0)
+            );
+        }
         $this->success($row);
+    }
+
+    // ── GET /api/admin/txn/:id/audit-log ─────────────────────────────────────
+
+    /**
+     * Activity log (admin_audit_log) + summary from txn row for modal display.
+     *
+     * Query: limit (default 50, max 200), offset (default 0)
+     */
+    public function txnAuditLog(int $id): never
+    {
+        $row = $this->txn->find($id);
+        if ($row === null) {
+            $this->error('Transaction not found.', 404);
+        }
+
+        $limit  = min(200, max(1, (int)$this->query('limit', 50)));
+        $offset = max(0, (int)$this->query('offset', 0));
+
+        $createdName = null;
+        $updatedName = null;
+        if (!empty($row['created_by'])) {
+            $cu = $this->users->find((int)$row['created_by']);
+            if ($cu !== null) {
+                $createdName = $cu['name'] ?? null;
+            }
+        }
+        if (!empty($row['updated_by'])) {
+            $uu = $this->users->find((int)$row['updated_by']);
+            if ($uu !== null) {
+                $updatedName = $uu['name'] ?? null;
+            }
+        }
+
+        $summary = [
+            'txn_id'          => $id,
+            'txn_type'        => $row['txn_type'] ?? null,
+            'created_at'      => $row['created_at'] ?? null,
+            'updated_at'      => $row['updated_at'] ?? null,
+            'created_by'      => $row['created_by'] ?? null,
+            'updated_by'      => $row['updated_by'] ?? null,
+            'created_by_name' => $createdName,
+            'updated_by_name' => $updatedName,
+        ];
+
+        $entries = (new AdminAuditLogModel())->listForEntity('txn', $id, $limit, $offset);
+        foreach ($entries as &$entry) {
+            foreach (['metadata', 'before_snapshot', 'after_snapshot'] as $jsonKey) {
+                if (!isset($entry[$jsonKey]) || !is_string($entry[$jsonKey]) || $entry[$jsonKey] === '') {
+                    continue;
+                }
+                $decoded = json_decode($entry[$jsonKey], true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $entry[$jsonKey] = $decoded;
+                }
+            }
+        }
+        unset($entry);
+
+        $this->success([
+            'summary' => $summary,
+            'entries' => $entries,
+        ], 'Audit log retrieved');
     }
 
     // ── POST /api/admin/txn/:id/request-invoice-modify-otp ─────────────────────
 
     /**
-     * Send a superadmin OTP to authorize ledger invoice update or delete.
-     * Query or JSON body: intent = update | delete
+     * Send a superadmin OTP to authorize ledger txn update or delete (invoice, receipt, payment_expense, TDS).
+     * Query or JSON body: intent = update | delete, region = required allowlisted region label.
      */
     public function requestInvoiceModifyOtp(int $id): never
     {
@@ -351,8 +443,15 @@ class TxnController extends BaseController
         if ($row === null) {
             $this->error('Transaction not found.', 404);
         }
-        if (($row['txn_type'] ?? '') !== 'invoice') {
-            $this->error('OTP requests are only for invoice transactions.', 422);
+        $txnType = (string)($row['txn_type'] ?? '');
+        $otpEligible = ['invoice', 'receipt', 'payment_expense', 'tds_provisional', 'tds_final'];
+        if (!in_array($txnType, $otpEligible, true)) {
+            $this->error('OTP requests are not supported for this transaction type.', 422);
+        }
+
+        $region = trim((string)($body['region'] ?? ''));
+        if ($region === '' || !LedgerModifyRegions::isValid($region)) {
+            $this->error('region must be a valid Indian state or union territory.', 422);
         }
 
         $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
@@ -367,25 +466,62 @@ class TxnController extends BaseController
 
         $otp = OtpService::generate($superId);
         $intentLabel = $intent === 'delete' ? 'delete' : 'modify';
+
+        $actorName  = trim((string)(($acting ?? [])['name'] ?? ''));
+        $actorEmail = trim((string)(($acting ?? [])['email'] ?? ''));
+        if ($actorName === '') {
+            $actorName = $actorEmail !== '' ? $actorEmail : 'Staff user';
+        }
+
+        $txnSummary = $this->ledgerTxnSummaryLine($row);
+        $typeLabel  = $this->txnTypeLabelForOtpEmail($txnType);
+        $refLine    = $txnType === 'invoice'
+            ? (string)($row['invoice_number'] ?? '—')
+            : ((string)($row['public_ref'] ?? '') !== '' ? (string)$row['public_ref'] : trim(substr((string)($row['narration'] ?? ''), 0, 80)));
+
         try {
             $htmlBody = BrevoMailer::renderTemplate('invoice-modify-otp', [
-                'userName'       => (string)($super['name'] ?? $email),
-                'otpCode'        => $otp,
-                'expiryMinutes'  => (string)OtpService::expiryMinutes(),
-                'intentLabel'    => $intentLabel,
-                'txnId'          => (string)$id,
-                'invoiceRef'     => (string)($row['invoice_number'] ?? '—'),
+                'userName'        => (string)($super['name'] ?? $email),
+                'otpCode'         => $otp,
+                'expiryMinutes'   => (string)OtpService::expiryMinutes(),
+                'intentLabel'     => $intentLabel,
+                'txnId'           => (string)$id,
+                'invoiceRef'      => $refLine,
+                'txnTypeLabel'    => $typeLabel,
+                'txnSummary'      => $txnSummary,
+                'region'          => $region,
+                'requestedByName' => $actorName,
+                'requestedByEmail'=> $actorEmail,
             ]);
             if ($htmlBody !== '') {
+                $subject = $txnType === 'invoice'
+                    ? 'Invoice change OTP - CA Rahul Gupta'
+                    : 'Ledger change OTP - CA Rahul Gupta';
                 BrevoMailer::send(
                     $email,
                     (string)($super['name'] ?? $email),
-                    'Invoice change OTP - CA Rahul Gupta',
+                    $subject,
                     $htmlBody
                 );
             }
         } catch (\Throwable $e) {
-            error_log('[TxnController] Invoice modify OTP email failed: ' . $e->getMessage());
+            error_log('[TxnController] Ledger modify OTP email failed: ' . $e->getMessage());
+        }
+
+        try {
+            (new AdminAuditLogModel())->insert(
+                $acting ? (int)$acting['id'] : null,
+                'ledger_modify_otp_requested',
+                'txn',
+                $id,
+                [
+                    'intent'    => $intent,
+                    'region'    => $region,
+                    'txn_type'  => $txnType,
+                ]
+            );
+        } catch (\Throwable $e) {
+            error_log('[TxnController] ledger_modify_otp_requested audit log failed: ' . $e->getMessage());
         }
 
         $this->success([
@@ -405,21 +541,355 @@ class TxnController extends BaseController
         }
 
         $body = $this->getJsonBody();
-        if (($row['txn_type'] ?? '') === 'invoice') {
+        $actingUser = $this->authUser();
+        $actorId    = $actingUser ? (int)$actingUser['id'] : null;
+        $type = (string)($row['txn_type'] ?? '');
+        if ($this->txnRequiresLedgerModifyOtp($type)) {
             $otp = $this->readSuperadminOtpFromRequest();
             if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
-                $this->error('Valid superadmin OTP is required to modify an invoice. Request a code first.', 403);
+                $this->error(
+                    'Valid superadmin OTP is required to modify this ledger record. Request a code first.',
+                    403
+                );
             }
-            unset($body['txn_type']);
         }
 
-        $this->txn->update($id, $body);
+        unset($body['txn_type']);
+
+        switch ($type) {
+            case 'invoice':
+                $this->txn->update($id, $body, $actorId);
+                break;
+            case 'receipt':
+                $this->applyReceiptTxnUpdate($id, $row, $body, $actorId);
+                break;
+            case 'payment_expense':
+                $this->applyPaymentExpenseTxnUpdate($id, $row, $body, $actorId);
+                break;
+            case 'tds_provisional':
+            case 'tds_final':
+                $this->applyTdsTxnUpdate($id, $row, $body, $actorId);
+                break;
+            default:
+                $this->txn->update($id, $body, $actorId);
+        }
+
         $updated = $this->txn->find($id);
-        if (($row['txn_type'] ?? '') === 'invoice') {
+        $beforeSnap = $this->txnAuditCompactSnapshot($row);
+        $afterSnap  = $this->txnAuditCompactSnapshot($updated ?? []);
+        if ($updated !== null && $beforeSnap !== $afterSnap) {
+            $this->auditTxnLog($actorId, 'txn.updated', $id, ['txn_type' => $type], $beforeSnap, $afterSnap);
+        }
+        if ($type === 'invoice') {
             (new CommissionSyncService())->syncInvoiceSafe($id);
             $this->notifyAdminsInvoiceChange('updated', $row, $updated, $this->authUser());
         }
         $this->success($updated, 'Transaction updated');
+    }
+
+    /** @return list<string> */
+    private function txnTypesRequiringLedgerModifyOtp(): array
+    {
+        return ['invoice', 'receipt', 'payment_expense', 'tds_provisional', 'tds_final'];
+    }
+
+    private function txnRequiresLedgerModifyOtp(string $txnType): bool
+    {
+        return in_array($txnType, $this->txnTypesRequiringLedgerModifyOtp(), true);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function ledgerTxnSummaryLine(array $row): string
+    {
+        $date = trim((string)($row['txn_date'] ?? ''));
+        $amt  = round((float)($row['amount'] ?? 0), 2);
+        $ref  = trim((string)($row['public_ref'] ?? ''));
+        if ($ref === '') {
+            $ref = trim((string)($row['invoice_number'] ?? ''));
+        }
+        $parts = [$date !== '' ? $date : '(no date)', '₹' . number_format($amt, 2, '.', ',')];
+        if ($ref !== '') {
+            $parts[] = $ref;
+        }
+
+        return implode(' · ', $parts);
+    }
+
+    private function txnTypeLabelForOtpEmail(string $txnType): string
+    {
+        return match ($txnType) {
+            'invoice' => 'Invoice',
+            'receipt' => 'Receipt',
+            'payment_expense' => 'On-behalf payment',
+            'tds_provisional' => 'TDS (provisional)',
+            'tds_final' => 'TDS (final)',
+            default => str_replace('_', ' ', $txnType),
+        };
+    }
+
+    /** @param list<array<string, mixed>> $dbRows */
+    private function allocationRowsFromDbForValidation(array $dbRows): array
+    {
+        $out = [];
+        foreach ($dbRows as $e) {
+            $out[] = [
+                'target_type'   => (string)($e['target_type'] ?? ''),
+                'target_txn_id' => $e['target_txn_id'] !== null ? (int)$e['target_txn_id'] : null,
+                'amount'        => round((float)($e['amount'] ?? 0), 2),
+            ];
+        }
+
+        return $out;
+    }
+
+    private function resolvePaidFromLabelForBankId(int $bankId): ?string
+    {
+        if ($bankId <= 0) {
+            return null;
+        }
+        $acc = (new FirmBankAccountModel())->find($bankId);
+        if ($acc === null) {
+            return null;
+        }
+        $name = trim((string)($acc['name'] ?? ''));
+        $typ  = trim((string)($acc['account_type'] ?? ''));
+        $paidFrom = $name !== '' && $typ !== ''
+            ? $name . ' (' . $typ . ')'
+            : ($name !== '' ? $name : $typ);
+
+        return $paidFrom !== '' ? $paidFrom : null;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $body
+     */
+    private function applyReceiptTxnUpdate(int $id, array $row, array $body, ?int $actorId): void
+    {
+        $immutable = ['client_id', 'organization_id', 'ledger_class', 'ledger_movement_kind'];
+        foreach ($immutable as $field) {
+            if (!array_key_exists($field, $body)) {
+                continue;
+            }
+            $incoming = $body[$field];
+            $existing = $row[$field] ?? null;
+            if ((string)$incoming !== (string)$existing) {
+                $this->error('Cannot change ' . $field . ' on this receipt via edit.', 422);
+            }
+        }
+
+        $metaKeys = ['txn_date', 'narration', 'notes', 'payment_method', 'reference_number', 'firm_bank_account_id'];
+        $structural = array_key_exists('amount', $body) || array_key_exists('allocations', $body);
+
+        if ($structural) {
+            $allocModel = new TxnSettlementAllocationModel();
+            $allocRaw   = $body['allocations'] ?? null;
+            if ($allocRaw === null) {
+                $allocRaw = $this->allocationRowsFromDbForValidation($allocModel->listForReceipt($id));
+            }
+            $amount = array_key_exists('amount', $body)
+                ? round((float)$body['amount'], 2)
+                : round((float)($row['amount'] ?? 0), 2);
+            if ($amount <= 0) {
+                $this->error('amount must be greater than zero.', 422);
+            }
+
+            $receiptBody = [
+                'client_id'             => (int)($row['client_id'] ?? 0),
+                'organization_id'       => (int)($row['organization_id'] ?? 0),
+                'amount'                => $amount,
+                'ledger_class'          => (string)($row['ledger_class'] ?? ''),
+                'ledger_movement_kind'  => (string)($row['ledger_movement_kind'] ?? ''),
+            ];
+            try {
+                $allocRows = TxnReceiptAllocationService::normalizeAndValidateAllocations($receiptBody, $allocRaw);
+            } catch (\InvalidArgumentException $e) {
+                $this->error($e->getMessage(), 422);
+            }
+
+            $metaPatch = array_intersect_key($body, array_flip($metaKeys));
+            if (!empty($metaPatch['firm_bank_account_id'])) {
+                $tmpBody = array_merge(
+                    $metaPatch,
+                    ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
+                );
+                $this->attachValidatedBankAccount($tmpBody);
+                $metaPatch['firm_bank_account_id'] = $tmpBody['firm_bank_account_id'];
+            }
+
+            $creditPatch = [
+                'credit' => $amount,
+                'amount' => $amount,
+                'debit'  => 0,
+            ];
+            $this->txn->update($id, array_merge($creditPatch, $metaPatch), $actorId);
+            TxnReceiptAllocationService::replaceReceiptAllocationsWithInvoiceRefresh($id, $allocRows);
+
+            return;
+        }
+
+        $patch = array_intersect_key($body, array_flip($metaKeys));
+        if ($patch === []) {
+            return;
+        }
+        if (!empty($patch['firm_bank_account_id'])) {
+            $tmpBody = array_merge(
+                $patch,
+                ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
+            );
+            $this->attachValidatedBankAccount($tmpBody);
+            $patch['firm_bank_account_id'] = $tmpBody['firm_bank_account_id'];
+        }
+        $this->txn->update($id, $patch, $actorId);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $body
+     */
+    private function applyPaymentExpenseTxnUpdate(int $id, array $row, array $body, ?int $actorId): void
+    {
+        foreach (['client_id', 'organization_id', 'ledger_class', 'ledger_movement_kind'] as $field) {
+            if (!array_key_exists($field, $body)) {
+                continue;
+            }
+            if ((string)$body[$field] !== (string)($row[$field] ?? '')) {
+                $this->error('Cannot change ' . $field . ' on this payment via edit.', 422);
+            }
+        }
+
+        $metaKeys = [
+            'txn_date', 'narration', 'notes', 'payment_method', 'reference_number',
+            'expense_purpose', 'firm_bank_account_id',
+        ];
+        $structural = array_key_exists('amount', $body) || array_key_exists('settlement_lines', $body);
+
+        if (!$structural) {
+            $patch = array_intersect_key($body, array_flip($metaKeys));
+            if ($patch === []) {
+                return;
+            }
+            if (!empty($patch['firm_bank_account_id'])) {
+                $tmpBody = array_merge(
+                    $patch,
+                    ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
+                );
+                $this->attachValidatedBankAccount($tmpBody);
+                $patch['firm_bank_account_id'] = $tmpBody['firm_bank_account_id'];
+                $patch['paid_from']            = $this->resolvePaidFromLabelForBankId((int)$patch['firm_bank_account_id']);
+            }
+            $this->txn->update($id, $patch, $actorId);
+
+            return;
+        }
+
+        $linesRaw = $body['settlement_lines'] ?? null;
+        if (!is_array($linesRaw) || $linesRaw === []) {
+            $this->error('settlement_lines is required when changing amount or settlement for this payment.', 422);
+        }
+
+        $newAmount = array_key_exists('amount', $body)
+            ? round((float)$body['amount'], 2)
+            : round((float)($row['amount'] ?? 0), 2);
+        if ($newAmount <= 0) {
+            $this->error('amount must be greater than zero.', 422);
+        }
+
+        $pcid = (int)($row['client_id'] ?? 0);
+        $poid = (int)($row['organization_id'] ?? 0);
+
+        $patch = array_intersect_key($body, array_flip($metaKeys));
+        $patch['amount'] = $newAmount;
+        $patch['debit']  = $newAmount;
+        $patch['credit'] = 0;
+        if (!empty($patch['firm_bank_account_id'])) {
+            $tmpBody = array_merge(
+                $patch,
+                ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
+            );
+            $this->attachValidatedBankAccount($tmpBody);
+            $patch['firm_bank_account_id'] = $tmpBody['firm_bank_account_id'];
+            $patch['paid_from']            = $this->resolvePaidFromLabelForBankId((int)$patch['firm_bank_account_id']);
+        } elseif ((int)($row['firm_bank_account_id'] ?? 0) > 0) {
+            $patch['paid_from'] = $this->resolvePaidFromLabelForBankId((int)$row['firm_bank_account_id']);
+        }
+
+        $dbConn = Database::getConnection();
+        $dbConn->beginTransaction();
+        try {
+            TxnReceiptAllocationService::unlinkPaymentExpenseFromReceipts($id);
+            $this->txn->update($id, $patch, $actorId);
+            $paymentRow = $this->txn->find($id);
+            if ($paymentRow === null) {
+                throw new \InvalidArgumentException('Payment expense not found after update.');
+            }
+            try {
+                $parsed = TxnReceiptAllocationService::normalizePaymentExpenseSettlementLines(
+                    $newAmount,
+                    $linesRaw,
+                    $pcid,
+                    $poid,
+                    (string)($paymentRow['ledger_class'] ?? ''),
+                    (string)($paymentRow['ledger_movement_kind'] ?? ''),
+                    $this->txn
+                );
+            } catch (\InvalidArgumentException $e) {
+                $dbConn->rollBack();
+                $this->error($e->getMessage(), 422);
+            }
+            foreach ($parsed['receipt_totals'] as $rid => $amt) {
+                $receiptRow = $this->txn->find((int)$rid);
+                if ($receiptRow === null) {
+                    throw new \InvalidArgumentException('Receipt not found.');
+                }
+                TxnReceiptAllocationService::linkPaymentExpenseToReceipt($receiptRow, $paymentRow, $amt);
+            }
+            $dbConn->commit();
+        } catch (\InvalidArgumentException $e) {
+            if ($dbConn->inTransaction()) {
+                $dbConn->rollBack();
+            }
+            $this->error($e->getMessage(), 422);
+        } catch (\Throwable $e) {
+            if ($dbConn->inTransaction()) {
+                $dbConn->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $body
+     */
+    private function applyTdsTxnUpdate(int $id, array $row, array $body, ?int $actorId): void
+    {
+        foreach (['client_id', 'organization_id', 'ledger_class', 'ledger_movement_kind', 'tds_status'] as $field) {
+            if (!array_key_exists($field, $body)) {
+                continue;
+            }
+            if ((string)$body[$field] !== (string)($row[$field] ?? '')) {
+                $this->error('Cannot change ' . $field . ' on this TDS entry via edit.', 422);
+            }
+        }
+
+        $metaKeys = ['txn_date', 'narration', 'notes', 'tds_section', 'tds_rate'];
+        $patch    = array_intersect_key($body, array_flip($metaKeys));
+        if (array_key_exists('amount', $body)) {
+            $a = round((float)$body['amount'], 2);
+            if ($a <= 0) {
+                $this->error('amount must be greater than zero.', 422);
+            }
+            $patch['amount'] = $a;
+            $patch['credit'] = $a;
+            $patch['debit']  = 0;
+        }
+        if ($patch === []) {
+            return;
+        }
+        $this->txn->update($id, $patch, $actorId);
     }
 
     // ── DELETE /api/admin/txn/:id ────────────────────────────────────────────
@@ -463,10 +933,19 @@ class TxnController extends BaseController
      *
      * @param array<string, mixed> $row
      */
-    private function performTxnDelete(array $row): void
+    private function performTxnDelete(array $row, ?int $actorId): void
     {
         $id   = (int)($row['id'] ?? 0);
         $type = (string)($row['txn_type'] ?? '');
+        $beforeSnap = $this->txnAuditCompactSnapshot($row);
+        $this->auditTxnLog(
+            $actorId,
+            'txn.deleted',
+            $id,
+            ['txn_type' => $type],
+            $beforeSnap,
+            null
+        );
         if ($type === 'credit_note') {
             $linked = (int)($row['linked_txn_id'] ?? 0);
             $this->txn->delete($id);
@@ -510,7 +989,8 @@ class TxnController extends BaseController
             if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
                 $this->error('Valid superadmin OTP is required to delete this ledger record. Request a code first.', 403);
             }
-            $this->performTxnDelete($row);
+            $delActor = $this->authUser() ? (int)$this->authUser()['id'] : null;
+            $this->performTxnDelete($row, $delActor);
             $this->success(null, 'Transaction deleted');
         }
 
@@ -518,6 +998,16 @@ class TxnController extends BaseController
             $this->error('Access denied. Required permission: invoices.edit.', 403);
         }
 
+        $actorDel = $this->authUser() ? (int)$this->authUser()['id'] : null;
+        $beforeSnap = $this->txnAuditCompactSnapshot($row);
+        $this->auditTxnLog(
+            $actorDel,
+            'txn.deleted',
+            $id,
+            ['txn_type' => $type],
+            $beforeSnap,
+            null
+        );
         $this->txn->delete($id);
         $this->success(null, 'Transaction deleted');
     }
@@ -671,8 +1161,10 @@ class TxnController extends BaseController
             return (int)($a['id'] ?? 0) <=> (int)($b['id'] ?? 0);
         });
 
+        $actorId = $acting ? (int)$acting['id'] : null;
+
         foreach ($rows as $row) {
-            $this->performTxnDelete($row);
+            $this->performTxnDelete($row, $actorId);
         }
 
         $this->success([
@@ -809,6 +1301,7 @@ class TxnController extends BaseController
 
         $id  = $this->txn->createReceipt($body, $allocRows);
         $row = $this->txn->find($id);
+        $this->recordTxnCreated((int)$id, $actingUser ? (int)$actingUser['id'] : null);
         $this->success($row, 'Receipt recorded', 201);
     }
 
@@ -839,6 +1332,7 @@ class TxnController extends BaseController
 
         $id  = $this->txn->createTds($body);
         $row = $this->txn->find($id);
+        $this->recordTxnCreated((int)$id, $actingUser ? (int)$actingUser['id'] : null);
         $this->success($row, 'TDS entry created', 201);
     }
 
@@ -857,8 +1351,21 @@ class TxnController extends BaseController
             $this->error('Only provisional TDS entries can be finalized.', 422);
         }
 
-        $this->txn->finalizeTds($id);
+        $acting = $this->authUser();
+        $actorId = $acting ? (int)$acting['id'] : null;
+        $before  = $this->txnAuditCompactSnapshot($row);
+        $this->txn->finalizeTds($id, $actorId);
         $updated = $this->txn->find($id);
+        if ($updated !== null) {
+            $this->auditTxnLog(
+                $actorId,
+                'txn.tds_finalized',
+                $id,
+                [],
+                $before,
+                $this->txnAuditCompactSnapshot($updated)
+            );
+        }
         $this->success($updated, 'TDS finalized');
     }
 
@@ -937,36 +1444,43 @@ class TxnController extends BaseController
     // ── GET /api/admin/txn/opening-balance ───────────────────────────────────
 
     /**
-     * Get opening balances for a client.
-     * Query param: client_id (required)
+     * Get opening balances for a contact client or organization.
+     * Query: exactly one of client_id or organization_id.
      */
     public function openingBalance(): never
     {
         $clientId = (int)$this->query('client_id', 0);
-        if ($clientId <= 0) {
-            $this->error('client_id is required.', 422);
+        $orgId    = (int)$this->query('organization_id', 0);
+        if (($clientId <= 0 && $orgId <= 0) || ($clientId > 0 && $orgId > 0)) {
+            $this->error('Provide exactly one of client_id or organization_id.', 422);
         }
-        $rows = $this->txn->getOpeningBalance($clientId);
+        try {
+            $rows = $this->txn->getOpeningBalance($clientId, $orgId);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
         $this->success($rows, 'Opening balances retrieved');
     }
 
     // ── POST /api/admin/txn/opening-balance ──────────────────────────────────
 
     /**
-     * Set/update an opening balance for a client + billing profile.
+     * Set/update an opening balance slice (fees or reimbursement) for a client or organization + billing profile.
      */
     public function storeOpeningBalance(): never
     {
         $body        = $this->getJsonBody();
         $clientId    = (int)($body['client_id'] ?? 0);
+        $orgId       = (int)($body['organization_id'] ?? 0);
         $profileCode = trim((string)($body['billing_profile_code'] ?? ''));
         $amount      = (float)($body['amount'] ?? 0);
         $type        = trim((string)($body['type'] ?? 'debit'));
         $ledgerClass = LedgerDimensions::normalizeLedgerClass($body['ledger_class'] ?? null);
+        $movementRaw = trim((string)($body['ledger_movement_kind'] ?? $body['ledgerMovementKind'] ?? ''));
 
         $errors = [];
-        if ($clientId <= 0) {
-            $errors['client_id'][] = 'client_id is required.';
+        if (($clientId <= 0 && $orgId <= 0) || ($clientId > 0 && $orgId > 0)) {
+            $errors['client_id'][] = 'Provide exactly one of client_id or organization_id.';
         }
         if ($profileCode === '') {
             $errors['billing_profile_code'][] = 'billing_profile_code is required.';
@@ -977,6 +1491,11 @@ class TxnController extends BaseController
         if (!in_array($type, ['debit', 'credit'], true)) {
             $errors['type'][] = 'type must be debit or credit.';
         }
+        try {
+            LedgerDimensions::assertLedgerMovementKindRequired($movementRaw);
+        } catch (\InvalidArgumentException $e) {
+            $errors['ledger_movement_kind'][] = $e->getMessage();
+        }
         if (!empty($errors)) {
             $this->error('Validation failed.', 422, $errors);
         }
@@ -984,18 +1503,22 @@ class TxnController extends BaseController
         $actingUser = $this->authUser();
         try {
             $id = $this->txn->setOpeningBalance([
-                'client_id'            => $clientId,
-                'billing_profile_code' => $profileCode,
-                'amount'               => $amount,
-                'type'                 => $type,
-                'ledger_class'         => $ledgerClass,
-                'created_by'           => $actingUser ? (int)$actingUser['id'] : null,
+                'client_id'              => $clientId,
+                'organization_id'        => $orgId,
+                'billing_profile_code'   => $profileCode,
+                'amount'                 => $amount,
+                'type'                   => $type,
+                'ledger_class'           => $ledgerClass,
+                'ledger_movement_kind'   => $movementRaw,
+                'created_by'             => $actingUser ? (int)$actingUser['id'] : null,
             ]);
             if ($id === null) {
                 $this->success(null, 'Opening balance cleared');
             }
             $row = $this->txn->find($id);
             $this->success($row, 'Opening balance saved');
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
         } catch (\Throwable $e) {
             $this->error('Failed to save opening balance: ' . $e->getMessage(), 500);
         }
@@ -1232,6 +1755,78 @@ class TxnController extends BaseController
             'currency'    => 'INR',
             'keyId'       => trim((string)(getenv('RAZORPAY_KEY_ID') ?: '')),
         ], 'Razorpay order created');
+    }
+
+    /**
+     * Compact row for admin_audit_log snapshots / compare-after-edit.
+     *
+     * @param array<string, mixed> $row
+     *
+     * @return array<string, mixed>
+     */
+    private function txnAuditCompactSnapshot(array $row): array
+    {
+        $keys = [
+            'txn_type', 'txn_date', 'narration', 'debit', 'credit', 'amount',
+            'billing_profile_code', 'invoice_number', 'invoice_status', 'due_date',
+            'subtotal', 'tax_percent', 'tax_amount',
+            'payment_method', 'reference_number', 'expense_purpose', 'paid_from',
+            'tds_status', 'tds_section', 'tds_rate',
+            'linked_txn_id', 'notes', 'status', 'public_ref',
+            'ledger_class', 'ledger_movement_kind',
+        ];
+        $out = [];
+        foreach ($keys as $k) {
+            if (array_key_exists($k, $row)) {
+                $out[$k] = $row[$k];
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array<string, mixed>|null $beforeSnapshot
+     * @param array<string, mixed>|null $afterSnapshot
+     */
+    private function auditTxnLog(
+        ?int $actorId,
+        string $action,
+        int $entityId,
+        array $metadata = [],
+        ?array $beforeSnapshot = null,
+        ?array $afterSnapshot = null
+    ): void {
+        try {
+            (new AdminAuditLogModel())->insert(
+                $actorId,
+                $action,
+                'txn',
+                $entityId,
+                $metadata,
+                $beforeSnapshot,
+                $afterSnapshot
+            );
+        } catch (\Throwable $e) {
+            error_log('[TxnController] txn audit log failed: ' . $e->getMessage());
+        }
+    }
+
+    private function recordTxnCreated(int $id, ?int $actorId): void
+    {
+        $r = $this->txn->find($id);
+        if ($r === null) {
+            return;
+        }
+        $snap = $this->txnAuditCompactSnapshot($r);
+        $this->auditTxnLog(
+            $actorId,
+            'txn.created',
+            $id,
+            ['txn_type' => (string)($r['txn_type'] ?? '')],
+            null,
+            $snap
+        );
     }
 
     /**

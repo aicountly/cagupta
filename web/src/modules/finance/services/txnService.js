@@ -63,6 +63,24 @@ function normalizeGstBreakdown(raw) {
   return typeof raw === 'object' ? raw : null;
 }
 
+function normalizeReceiptAllocations(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((a) => ({
+    targetType: String(a.target_type || ''),
+    targetTxnId: a.target_txn_id != null ? String(a.target_txn_id) : '',
+    amount: String(a.amount != null ? a.amount : ''),
+  }));
+}
+
+function normalizeSettlementLines(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((l) => ({
+    targetType: String(l.target_type || ''),
+    targetTxnId: l.target_txn_id != null ? String(l.target_txn_id) : '',
+    amount: String(l.amount != null ? l.amount : ''),
+  }));
+}
+
 /**
  * Normalize a raw txn row from the backend.
  */
@@ -99,6 +117,11 @@ function normalizeTxn(t) {
     notes:              t.notes            || '',
     status:             t.status           || 'active',
     createdAt:          t.created_at       || '',
+    createdBy:          t.created_by != null ? parseInt(t.created_by, 10) || null : null,
+    createdByName:      t.created_by_user_name || '',
+    updatedBy:          t.updated_by != null ? parseInt(t.updated_by, 10) || null : null,
+    updatedByName:      t.updated_by_user_name || '',
+    updatedAt:          t.updated_at       || '',
     lineItems:          normalizeLineItems(t.line_items),
     gstBreakdown:       normalizeGstBreakdown(t.gst_breakdown),
     firmBankAccountId:  t.firm_bank_account_id != null ? parseInt(t.firm_bank_account_id, 10) || null : null,
@@ -112,6 +135,8 @@ function normalizeTxn(t) {
     publicRef:          t.public_ref || '',
     sourceTxnId:        t.source_txn_id != null ? parseInt(t.source_txn_id, 10) || null : null,
     ledgerSlice:        t.ledger_slice || null,
+    allocations:        normalizeReceiptAllocations(t.allocations),
+    settlementLines:    normalizeSettlementLines(t.settlement_lines),
   };
 }
 
@@ -172,6 +197,20 @@ export async function createTxn(payload) {
   });
   const data = await parseResponse(res);
   return normalizeTxn(data.data);
+}
+
+/** GET /api/admin/txn/:id/audit-log */
+export async function fetchTxnAuditLog(txnId, params = {}) {
+  const query = new URLSearchParams();
+  if (params.limit)  query.set('limit', String(params.limit));
+  if (params.offset) query.set('offset', String(params.offset));
+  const qs = query.toString();
+  const res  = await fetch(
+    `${API_BASE}/admin/txn/${txnId}/audit-log${qs ? `?${qs}` : ''}`,
+    { headers: authHeaders() },
+  );
+  const data = await parseResponse(res);
+  return data.data || { summary: {}, entries: [] };
 }
 
 /** GET /api/admin/txn/:id */
@@ -237,14 +276,18 @@ export async function bulkDeleteTxns(ids, { superadminOtp } = {}) {
   return data.data || {};
 }
 
-/** POST — superadmin receives OTP email; intent is update | delete */
-export async function requestInvoiceModifyOtp(id, { intent = 'update' } = {}) {
+/** POST — superadmin receives OTP email; intent is update | delete; region required */
+export async function requestInvoiceModifyOtp(id, { intent = 'update', region } = {}) {
+  const reg = String(region || '').trim();
+  if (!reg) {
+    throw new Error('region is required');
+  }
   const res = await fetch(
     `${API_BASE}/admin/txn/${id}/request-invoice-modify-otp?intent=${encodeURIComponent(intent)}`,
     {
       method:  'POST',
       headers: authHeaders(),
-      body:    JSON.stringify({ intent }),
+      body:    JSON.stringify({ intent, region: reg }),
     }
   );
   const data = await parseResponse(res);
@@ -379,21 +422,32 @@ export async function createCreditNote(payload) {
   return normalizeTxn(data.data);
 }
 
-/** GET /api/admin/txn/opening-balance?client_id=... */
-export async function getOpeningBalance(clientId) {
-  const params = new URLSearchParams({ client_id: clientId });
+/** GET /api/admin/txn/opening-balance — pass exactly one of clientId or organizationId */
+export async function getOpeningBalance({ clientId, organizationId } = {}) {
+  const params = new URLSearchParams();
+  const oid = organizationId != null && String(organizationId) !== '' ? String(organizationId) : '';
+  const cid = clientId != null && String(clientId) !== '' ? String(clientId) : '';
+  if (oid) {
+    params.set('organization_id', oid);
+  } else if (cid) {
+    params.set('client_id', cid);
+  } else {
+    throw new Error('getOpeningBalance: provide clientId or organizationId');
+  }
   const res    = await fetch(`${API_BASE}/admin/txn/opening-balance?${params}`, { headers: authHeaders() });
   const data   = await parseResponse(res);
   return (data.data || []).map(row => ({
-    clientId:           row.client_id,
-    billingProfileCode: row.billing_profile_code,
-    amount:             parseFloat(row.amount || 0),
-    type:               row.debit > 0 ? 'debit' : 'credit',
-    ledgerClass:        row.ledger_class === 'memorandum' ? 'memorandum' : 'regular',
+    clientId:            row.client_id ?? null,
+    organizationId:      row.organization_id ?? null,
+    billingProfileCode:  row.billing_profile_code,
+    amount:              parseFloat(row.amount || 0),
+    type:                row.debit > 0 ? 'debit' : 'credit',
+    ledgerClass:         row.ledger_class === 'memorandum' ? 'memorandum' : 'regular',
+    ledgerMovementKind:  row.ledger_movement_kind || null,
   }));
 }
 
-/** POST /api/admin/txn/opening-balance */
+/** POST /api/admin/txn/opening-balance — body: client_id or organization_id, billing_profile_code, amount, type, ledger_class, ledger_movement_kind */
 export async function setOpeningBalance(payload) {
   const res  = await fetch(`${API_BASE}/admin/txn/opening-balance`, {
     method:  'POST',
