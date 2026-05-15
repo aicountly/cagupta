@@ -6,6 +6,7 @@ import {
   getOpeningBalance, setOpeningBalance,
   updateTxn, requestInvoiceModifyOtp,
   requestLedgerDeleteOtp, bulkDeleteTxns,
+  requestLedgerReversalUserOtp, reverseLedgerTxn,
   postInvoiceCostAnalysisPreview,
   getReceiptsWithUnallocated,
 } from '../services/txnService';
@@ -27,8 +28,8 @@ import ClientSearchDropdown from '../../../components/common/ClientSearchDropdow
 import EntitySearchDropdown from '../../../components/common/EntitySearchDropdown';
 import LineItemPresetCombobox from '../../../components/common/LineItemPresetCombobox';
 import DateInput from '../../../components/common/DateInput';
+import BillingProfileSelect from '../../../components/common/BillingProfileSelect';
 import { getBillingProfiles, getBillingProfileByCode } from '../../../constants/billingProfiles';
-import { aggregateInvoicesForOpeningRecon } from '../utils/invoiceLedgerBuckets';
 import { listFirmBankAccounts } from '../../../services/firmBankAccountService';
 import { stateCodeFromGstin } from '../../../utils/gstUtils';
 import {
@@ -46,6 +47,7 @@ import {
   createRazorpayOrderForTxn,
   openRazorpayCheckout,
 } from '../services/razorpayService';
+import { LEDGER_USER_REVERSAL_ENABLED } from '../../../constants/config';
 
 // ── Shared badge components ───────────────────────────────────────────────────
 
@@ -72,6 +74,9 @@ const TXN_TYPE_COLORS = {
   opening_balance: { bg:'#fffbeb', color:'#92400e', border:'#fde68a' },
   brought_forward: { bg:'#f8fafc', color:'#334155', border:'#e2e8f0' },
   payment_expense: { bg:'#f0f9ff', color:'#075985', border:'#bae6fd' },
+  receipt_reversal: { bg:'#ecfdf5', color:'#047857', border:'#6ee7b7' },
+  payment_expense_reversal: { bg:'#fff7ed', color:'#c2410c', border:'#fdba74' },
+  tds_reversal: { bg:'#f5f3ff', color:'#6d28d9', border:'#c4b5fd' },
 };
 
 function TxnTypeBadge({ type }) {
@@ -82,6 +87,9 @@ function TxnTypeBadge({ type }) {
     opening_balance: 'Opening Bal.',
     brought_forward: 'B/F',
     payment_expense: 'On-behalf payment',
+    receipt_reversal: 'Receipt reversal',
+    payment_expense_reversal: 'Payment reversal',
+    tds_reversal: 'TDS reversal',
   };
   return (
     <span style={{ background:c.bg, color:c.color, border:`1px solid ${c.border}`, padding:'2px 8px', borderRadius:99, fontSize:11, fontWeight:700, whiteSpace:'nowrap', display:'inline-block' }}>
@@ -311,7 +319,6 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
     }, 0);
   }, [form.lines]);
 
-  const billingProfiles = useMemo(() => getBillingProfiles(), [open, form.billingProfileCode]);
   const selectedProfile = getBillingProfileByCode(form.billingProfileCode);
   const roleName = String(session?.user?.role || '');
   const userEmail = String(session?.user?.email || '').toLowerCase();
@@ -541,12 +548,12 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
           </div>
           <label style={labelStyle}>
             Billing Profile
-            <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
-              <option value="">— Select Billing Profile —</option>
-              {billingProfiles.map(p=>(
-                <option key={p.id} value={p.code}>{p.code} – {p.name}{p.gstRegistered ? ' (GST)' : ''}</option>
-              ))}
-            </select>
+            <BillingProfileSelect
+              style={inputStyle}
+              value={form.billingProfileCode}
+              onChange={(code) => set('billingProfileCode', code)}
+              showGstSuffix
+            />
           </label>
           <label style={labelStyle}>
             Notes
@@ -928,12 +935,12 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
               </label>
               <label style={labelStyle}>
                 Billing profile
-                <select style={inputStyle} value={form.billingProfileCode} onChange={(e) => set('billingProfileCode', e.target.value)}>
-                  <option value="">— Select —</option>
-                  {BILLING_PROFILES.map((p) => (
-                    <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
-                  ))}
-                </select>
+                <BillingProfileSelect
+                  style={inputStyle}
+                  value={form.billingProfileCode}
+                  onChange={(code) => set('billingProfileCode', code)}
+                  placeholder="— Select —"
+                />
               </label>
               <label style={labelStyle}>
                 Narration
@@ -1010,6 +1017,13 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
   const [requesting, setRequesting] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  const [revReason, setRevReason] = useState('');
+  const [revUserOtp, setRevUserOtp] = useState('');
+  const [revSuperOtp, setRevSuperOtp] = useState('');
+  const [revUserOtpSent, setRevUserOtpSent] = useState(false);
+  const [revRequesting, setRevRequesting] = useState(false);
+  const [revReversing, setRevReversing] = useState(false);
+
   const [recTxnDate, setRecTxnDate] = useState('');
   const [recAmount, setRecAmount] = useState('');
   const [recMethod, setRecMethod] = useState('NEFT');
@@ -1066,6 +1080,10 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     setRegion('');
     setOtpSent(false);
     setOtp('');
+    setRevReason('');
+    setRevUserOtp('');
+    setRevSuperOtp('');
+    setRevUserOtpSent(false);
     setRow(null);
     getTxn(txnId)
       .then((r) => {
@@ -1143,6 +1161,53 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
       });
     return () => { cancelled = true; };
   }, [row]);
+
+  const withinUserRevWindow = row && row.createdAt
+    && Number.isFinite(new Date(row.createdAt).getTime())
+    && new Date(row.createdAt).getTime() >= Date.now() - 30 * 86400000;
+  const userRevEligible = LEDGER_USER_REVERSAL_ENABLED && withinUserRevWindow && row?.status === 'active';
+
+  async function handleRequestReversalUserOtp() {
+    setErr('');
+    setRevRequesting(true);
+    try {
+      await requestLedgerReversalUserOtp(txnId);
+      setRevUserOtpSent(true);
+    } catch (e) {
+      setErr(e.message || 'Could not send reversal OTP.');
+    } finally {
+      setRevRequesting(false);
+    }
+  }
+
+  async function handleReverseLedger() {
+    setErr('');
+    const reason = revReason.trim();
+    if (reason.length < 10) {
+      setErr('Reversal reason must be at least 10 characters.');
+      return;
+    }
+    const uo = revUserOtp.trim();
+    const so = revSuperOtp.trim();
+    if (!so && !(userRevEligible && uo)) {
+      setErr(userRevEligible ? 'Enter your reversal OTP or a superadmin OTP.' : 'Enter a superadmin OTP to reverse.');
+      return;
+    }
+    setRevReversing(true);
+    try {
+      if (so) {
+        await reverseLedgerTxn(txnId, { reason, superadminOtp: so });
+      } else {
+        await reverseLedgerTxn(txnId, { reason, otp: uo });
+      }
+      onSaved?.({});
+      onClose();
+    } catch (e) {
+      setErr(e.message || 'Reversal failed.');
+    } finally {
+      setRevReversing(false);
+    }
+  }
 
   async function handleRequestOtp() {
     setErr('');
@@ -1491,6 +1556,53 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                 Superadmin OTP *
                 <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\s/g, ''))} />
               </label>
+              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 16, paddingTop: 14 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Reverse this posting</div>
+                <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px', lineHeight: 1.45 }}>
+                  Inserts a compensating ledger row and marks the original as reversed (audit trail). Does not replace edit/delete above.
+                </p>
+                {LEDGER_USER_REVERSAL_ENABLED && row?.status === 'active' && !withinUserRevWindow && (
+                  <p style={{ fontSize: 12, color: '#b45309', margin: '0 0 10px' }}>
+                    User-email OTP reversal is only available within 30 days of posting. Use a superadmin OTP below for older entries.
+                  </p>
+                )}
+                <label style={labelStyle}>
+                  Reversal reason (min 10 characters) *
+                  <textarea style={{ ...inputStyle, minHeight: 72, resize: 'vertical' }} value={revReason} onChange={(e) => setRevReason(e.target.value)} placeholder="Document why this posting is reversed…" />
+                </label>
+                {userRevEligible && (
+                  <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                      <button type="button" style={btnSecondary} disabled={revRequesting} onClick={handleRequestReversalUserOtp}>
+                        {revRequesting ? 'Sending…' : 'Send reversal OTP to my email'}
+                      </button>
+                      {revUserOtpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Check your inbox</span>}
+                    </div>
+                    <label style={labelStyle}>
+                      Your reversal OTP
+                      <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit from your email" value={revUserOtp} onChange={(e) => setRevUserOtp(e.target.value.replace(/\s/g, ''))} />
+                    </label>
+                  </>
+                )}
+                <label style={labelStyle}>
+                  Superadmin OTP (optional if you used your email OTP; required after 30 days)
+                  <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={revSuperOtp} onChange={(e) => setRevSuperOtp(e.target.value.replace(/\s/g, ''))} />
+                </label>
+                <button
+                  type="button"
+                  style={{
+                    ...btnSecondary,
+                    marginTop: 8,
+                    background: '#7f1d1d',
+                    color: '#fff',
+                    border: '1px solid #450a0a',
+                  }}
+                  disabled={revReversing || loading || !row}
+                  onClick={handleReverseLedger}
+                >
+                  {revReversing ? 'Reversing…' : 'Reverse transaction'}
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -1745,12 +1857,11 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
           </div>
           <label style={labelStyle}>
             Billing Profile
-            <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
-              <option value="">— Select Billing Profile —</option>
-              {getBillingProfiles().map(p=>(
-                <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
-              ))}
-            </select>
+            <BillingProfileSelect
+              style={inputStyle}
+              value={form.billingProfileCode}
+              onChange={(code) => set('billingProfileCode', code)}
+            />
           </label>
           <label style={labelStyle}>
             Bank / cash account
@@ -2019,12 +2130,12 @@ function PaymentExpenseModal({ onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Billing profile
-              <select style={inputStyle} value={form.billingProfileCode} onChange={(e) => set('billingProfileCode', e.target.value)}>
-                <option value="">— Select billing profile —</option>
-                {getBillingProfiles().map((p) => (
-                  <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
-                ))}
-              </select>
+              <BillingProfileSelect
+                style={inputStyle}
+                value={form.billingProfileCode}
+                onChange={(code) => set('billingProfileCode', code)}
+                placeholder="— Select billing profile —"
+              />
             </label>
             <label style={labelStyle}>
               Bank / cash account
@@ -2486,12 +2597,11 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Billing Profile
-              <select style={inputStyle} value={form.billingProfileCode} onChange={(e) => set('billingProfileCode', e.target.value)}>
-                <option value="">— Select Billing Profile —</option>
-                {getBillingProfiles().map((p) => (
-                  <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
-                ))}
-              </select>
+              <BillingProfileSelect
+                style={inputStyle}
+                value={form.billingProfileCode}
+                onChange={(code) => set('billingProfileCode', code)}
+              />
             </label>
             <label style={labelStyle}>
               Bank / cash account
@@ -2682,12 +2792,11 @@ function TdsModal({ onClose, onSave }) {
           </div>
           <label style={labelStyle}>
             Billing Profile
-            <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
-              <option value="">— Select Billing Profile —</option>
-              {getBillingProfiles().map(p=>(
-                <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
-              ))}
-            </select>
+            <BillingProfileSelect
+              style={inputStyle}
+              value={form.billingProfileCode}
+              onChange={(code) => set('billingProfileCode', code)}
+            />
           </label>
           <label style={labelStyle}>
             Notes
@@ -2774,12 +2883,11 @@ function RebateModal({ onClose, onSave }) {
           </label>
           <label style={labelStyle}>
             Billing Profile
-            <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
-              <option value="">— Select Billing Profile —</option>
-              {getBillingProfiles().map(p=>(
-                <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
-              ))}
-            </select>
+            <BillingProfileSelect
+              style={inputStyle}
+              value={form.billingProfileCode}
+              onChange={(code) => set('billingProfileCode', code)}
+            />
           </label>
           <label style={labelStyle}>
             Notes
@@ -2911,12 +3019,11 @@ function CreditNoteModal({ onClose, onSave, openInvoices, creditNotes }) {
           </label>
           <label style={labelStyle}>
             Billing Profile
-            <select style={inputStyle} value={form.billingProfileCode} onChange={e=>set('billingProfileCode',e.target.value)}>
-              <option value="">— Select Billing Profile —</option>
-              {getBillingProfiles().map(p=>(
-                <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
-              ))}
-            </select>
+            <BillingProfileSelect
+              style={inputStyle}
+              value={form.billingProfileCode}
+              onChange={(code) => set('billingProfileCode', code)}
+            />
           </label>
           <label style={labelStyle}>
             Notes
@@ -2967,14 +3074,28 @@ function signedOpeningSlice(amountStr, drCr) {
   return drCr === 'credit' ? -a : a;
 }
 
-function formatConsolidatedNet(feesAmount, feesType, reimAmount, reimType) {
-  const f = signedOpeningSlice(feesAmount, feesType);
-  const r = signedOpeningSlice(reimAmount, reimType);
-  if (Number.isNaN(f) || Number.isNaN(r)) return '—';
-  const net = Math.round((f + r) * 100) / 100;
+function formatNetBalance(net) {
+  if (Number.isNaN(net)) return '—';
   if (Math.abs(net) < 0.00001) return '₹0';
   const abs = Math.abs(net).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return net > 0 ? `₹${abs} Dr` : `₹${abs} Cr`;
+}
+
+function rowConsolidatedNetNumber(feesAmount, feesType, reimAmount, reimType) {
+  const f = signedOpeningSlice(feesAmount, feesType);
+  const r = signedOpeningSlice(reimAmount, reimType);
+  if (Number.isNaN(f) || Number.isNaN(r)) return NaN;
+  return Math.round((f + r) * 100) / 100;
+}
+
+function formatConsolidatedNet(feesAmount, feesType, reimAmount, reimType) {
+  return formatNetBalance(rowConsolidatedNetNumber(feesAmount, feesType, reimAmount, reimType));
+}
+
+function openingEnteredAmountSum(amountStr) {
+  if (amountStr === '' || amountStr == null) return 0;
+  const a = parseFloat(amountStr, 10);
+  return Number.isNaN(a) ? 0 : a;
 }
 
 function OpeningBalanceModal({
@@ -2984,7 +3105,6 @@ function OpeningBalanceModal({
   entityName,
   entityType,
   existingBalances,
-  invoices,
 }) {
   const rowGrid = {
     display:               'grid',
@@ -2996,18 +3116,33 @@ function OpeningBalanceModal({
 
   const [ledgerClassPick, setLedgerClassPick] = useState('regular');
   const [balances, setBalances] = useState(() => buildOpeningProfileRows([], 'regular'));
-  const recon = useMemo(
-    () =>
-      aggregateInvoicesForOpeningRecon(invoices, {
-        entityType: entityType === 'organization' ? 'organization' : 'contact',
-        entityId,
-      }),
-    [invoices, entityType, entityId],
-  );
 
   useEffect(() => {
     setBalances(buildOpeningProfileRows(existingBalances, ledgerClassPick));
   }, [existingBalances, ledgerClassPick]);
+
+  const openingTotals = useMemo(() => {
+    let feesSum = 0;
+    let reimSum = 0;
+    let consolidatedSum = 0;
+    let consolidatedInvalid = false;
+    for (const b of balances) {
+      feesSum += openingEnteredAmountSum(b.feesAmount);
+      reimSum += openingEnteredAmountSum(b.reimAmount);
+      const n = rowConsolidatedNetNumber(b.feesAmount, b.feesType, b.reimAmount, b.reimType);
+      if (Number.isNaN(n)) {
+        consolidatedInvalid = true;
+      } else {
+        consolidatedSum += n;
+      }
+    }
+    const netRounded = Math.round(consolidatedSum * 100) / 100;
+    return {
+      feesSum: Math.round(feesSum * 100) / 100,
+      reimSum: Math.round(reimSum * 100) / 100,
+      consolidatedLabel: consolidatedInvalid ? '—' : formatNetBalance(netRounded),
+    };
+  }, [balances]);
 
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
@@ -3100,37 +3235,6 @@ function OpeningBalanceModal({
             Enter professional fees and taxes / reimbursement separately. The consolidated column shows net Dr/Cr (Dr = client owes you).
             Zero or blank clears that slice for the selected ledger type. Repeat for the other ledger type using the dropdown.
           </p>
-          <div
-            style={{
-              background:   '#f8fafc',
-              border:       '1px solid #e2e8f0',
-              borderRadius: 8,
-              padding:      '10px 12px',
-              marginBottom: 14,
-              fontSize:     12,
-              color:        '#334155',
-            }}
-          >
-            <div style={{ fontWeight:700, marginBottom:6 }}>Reference — raised invoices (this client / org)</div>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(160px, 1fr))', gap:8 }}>
-              <div>
-                <span style={{ color:'#64748b' }}>Invoices: </span>
-                <span style={{ fontWeight:600 }}>{recon.invoiceCount}</span>
-              </div>
-              <div>
-                <span style={{ color:'#64748b' }}>Total billed: </span>
-                <span style={{ fontWeight:600 }}>₹{recon.totalBilling.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              </div>
-              <div>
-                <span style={{ color:'#64748b' }}>Prof. fees (incl. GST share): </span>
-                <span style={{ fontWeight:600 }}>₹{recon.feesBucket.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              </div>
-              <div>
-                <span style={{ color:'#64748b' }}>Taxes / reimb. (incl. GST share): </span>
-                <span style={{ fontWeight:600 }}>₹{recon.reimBucket.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
-              </div>
-            </div>
-          </div>
           <div style={{ ...rowGrid, marginBottom:8, paddingBottom:6, borderBottom:'1px solid #e2e8f0' }}>
             <div style={{ fontSize:11, fontWeight:700, color:'#64748b' }}>Profile</div>
             <div style={{ fontSize:11, fontWeight:700, color:'#64748b', textAlign:'right' }}>Prof. fees ₹</div>
@@ -3184,6 +3288,27 @@ function OpeningBalanceModal({
               </div>
             </div>
           ))}
+          <div
+            style={{
+              ...rowGrid,
+              marginTop:   4,
+              paddingTop:  10,
+              borderTop:   '1px solid #e2e8f0',
+            }}
+          >
+            <div style={{ fontSize:12, fontWeight:700, color:'#0f172a' }}>Total</div>
+            <div style={{ fontSize:12, fontWeight:600, textAlign:'right', color:'#0f172a' }}>
+              ₹{openingTotals.feesSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <div style={{ fontSize:12, color:'#94a3b8' }}>—</div>
+            <div style={{ fontSize:12, fontWeight:600, textAlign:'right', color:'#0f172a' }}>
+              ₹{openingTotals.reimSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <div style={{ fontSize:12, color:'#94a3b8' }}>—</div>
+            <div style={{ fontSize:12, fontWeight:600, textAlign:'center', color:'#0f172a' }}>
+              {openingTotals.consolidatedLabel}
+            </div>
+          </div>
           {error && <div style={{ color:'#dc2626', fontSize:12, marginTop:8 }}>{error}</div>}
         </div>
         <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }}>
@@ -4098,7 +4223,6 @@ export default function Invoices() {
           entityName={ledgerClientName}
           entityType={ledgerEntityType}
           existingBalances={openingBalances}
-          invoices={invoices}
           onClose={() => setShowOpeningModal(false)}
           onSave={handleOpeningBalanceSaved}
         />
@@ -5294,8 +5418,8 @@ const btnPrimary = { padding:'8px 16px', background:'#2563eb', color:'#fff', bor
 const btnSecondary = { padding:'8px 16px', background:'#f8fafc', color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
 const iconBtn = { background:'none', border:'none', cursor:'pointer', fontSize:13, padding:'2px 6px', marginRight:2, color:'#2563eb' };
 const overlayStyle = { position:'fixed', inset:0, background:'rgba(15,23,42,0.35)', zIndex:1000, display:'flex', alignItems:'center', justifyContent:'center' };
-const modalStyle = { background:'#fff', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', minWidth:480, maxWidth:560, width:'100%', maxHeight:'90vh', overflowY:'auto' };
+const modalStyle = { background:'#fff', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,0.18)', minWidth:480, maxWidth:560, width:'100%', maxHeight:'90vh', overflowY:'auto', overflowX:'hidden' };
 const modalHeaderStyle = { display:'flex', justifyContent:'space-between', alignItems:'center', padding:'16px 24px', borderBottom:'1px solid #f1f5f9' };
 const closeBtnStyle = { background:'none', border:'none', cursor:'pointer', fontSize:16, color:'#64748b', padding:'2px 6px', borderRadius:4 };
-const labelStyle = { display:'flex', flexDirection:'column', gap:4, fontSize:12, fontWeight:600, color:'#475569' };
-const inputStyle = { padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, color:'#334155', outline:'none' };
+const labelStyle = { display:'flex', flexDirection:'column', gap:4, fontSize:12, fontWeight:600, color:'#475569', minWidth:0 };
+const inputStyle = { padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, color:'#334155', outline:'none', width:'100%', maxWidth:'100%', boxSizing:'border-box' };

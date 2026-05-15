@@ -815,7 +815,7 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                 Billing profile
                 <select style={inputStyle} value={form.billingProfileCode} onChange={(e) => set('billingProfileCode', e.target.value)}>
                   <option value="">— Select —</option>
-                  {BILLING_PROFILES.map((p) => (
+                  {getBillingProfiles().map((p) => (
                     <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
                   ))}
                 </select>

@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Controllers\Admin;
 
+use App\Config\App;
 use App\Config\Auth as AuthConfig;
 use App\Config\Database;
 use App\Config\LedgerModifyRegions;
@@ -625,6 +626,9 @@ class TxnController extends BaseController
             'payment_expense' => 'On-behalf payment',
             'tds_provisional' => 'TDS (provisional)',
             'tds_final' => 'TDS (final)',
+            'receipt_reversal' => 'Receipt reversal',
+            'payment_expense_reversal' => 'On-behalf payment reversal',
+            'tds_reversal' => 'TDS reversal',
             default => str_replace('_', ' ', $txnType),
         };
     }
@@ -1100,6 +1104,227 @@ class TxnController extends BaseController
             'masked_email' => $this->maskEmail($email),
             'count'        => count($ids),
         ], 'OTP sent.');
+    }
+
+    /**
+     * POST /api/admin/txn/:id/request-ledger-reversal-otp
+     * Sends a 6-digit OTP to the acting user’s email to confirm a ledger reversal (feature-flagged).
+     */
+    public function requestLedgerReversalOtp(int $id): never
+    {
+        $app = new App();
+        if (!$app->ledgerUserReversalEnabled) {
+            $this->error('User-initiated ledger reversal is not enabled.', 403);
+        }
+
+        $acting = $this->authUser();
+        if (!$this->userHasPermission($acting, 'invoices.delete')) {
+            $this->error('Access denied. Required permission: invoices.delete.', 403);
+        }
+
+        $row = $this->txn->find($id);
+        if ($row === null) {
+            $this->error('Transaction not found.', 404);
+        }
+
+        $this->assertTxnReversibleForUserFlow($row, true);
+
+        $userId = (int)(($acting ?? [])['id'] ?? 0);
+        $email  = trim((string)(($acting ?? [])['email'] ?? ''));
+        if ($userId <= 0 || $email === '') {
+            $this->error('Your user account must have an email address to receive the OTP.', 422);
+        }
+
+        $otp = OtpService::generate($userId);
+        $txnType   = (string)($row['txn_type'] ?? '');
+        $typeLabel = $this->txnTypeLabelForOtpEmail($txnType);
+        $txnSummary = $this->ledgerTxnSummaryLine($row);
+
+        try {
+            $htmlBody = BrevoMailer::renderTemplate('ledger-reversal-user-otp', [
+                'userName'      => (string)(($acting ?? [])['name'] ?? $email),
+                'otpCode'       => $otp,
+                'expiryMinutes' => (string)OtpService::expiryMinutes(),
+                'txnId'         => (string)$id,
+                'txnTypeLabel'  => $typeLabel,
+                'txnSummary'    => $txnSummary,
+            ]);
+            if ($htmlBody !== '') {
+                BrevoMailer::send(
+                    $email,
+                    (string)(($acting ?? [])['name'] ?? $email),
+                    'Ledger reversal OTP - CA Rahul Gupta',
+                    $htmlBody
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[TxnController] Ledger reversal user OTP email failed: ' . $e->getMessage());
+        }
+
+        try {
+            (new AdminAuditLogModel())->insert(
+                $acting ? (int)$acting['id'] : null,
+                'ledger_reversal_otp_requested',
+                'txn',
+                $id,
+                [
+                    'txn_type' => $txnType,
+                ]
+            );
+        } catch (\Throwable $e) {
+            error_log('[TxnController] ledger_reversal_otp_requested audit log failed: ' . $e->getMessage());
+        }
+
+        $this->success([
+            'otp_sent'     => true,
+            'masked_email' => $this->maskEmail($email),
+        ], 'OTP sent.');
+    }
+
+    /**
+     * POST /api/admin/txn/:id/reverse
+     * Body: { "reason": "...", "otp": "123456" } — user OTP when not using X-Superadmin-Otp.
+     */
+    public function reverseLedger(int $id): never
+    {
+        $acting = $this->authUser();
+        if (!$this->userHasPermission($acting, 'invoices.delete')) {
+            $this->error('Access denied. Required permission: invoices.delete.', 403);
+        }
+
+        $body   = $this->getJsonBody();
+        $reason = trim((string)($body['reason'] ?? ''));
+        if (strlen($reason) < 10) {
+            $this->error('reason must be at least 10 characters.', 422);
+        }
+        if (strlen($reason) > 4000) {
+            $this->error('reason must be at most 4000 characters.', 422);
+        }
+
+        $row = $this->txn->find($id);
+        if ($row === null) {
+            $this->error('Transaction not found.', 404);
+        }
+
+        $superOtp = $this->readSuperadminOtpFromRequest();
+        $mode     = 'user_otp';
+        if ($superOtp !== '' && $this->verifySuperadminOtp($superOtp)) {
+            $mode = 'superadmin_otp';
+        } else {
+            $app = new App();
+            if (!$app->ledgerUserReversalEnabled) {
+                $this->error(
+                    'User-initiated ledger reversal is not enabled. Provide a valid superadmin OTP in X-Superadmin-Otp, or contact an administrator.',
+                    403
+                );
+            }
+            $this->assertTxnReversibleForUserFlow($row, true);
+            $otp = trim((string)($body['otp'] ?? ''));
+            if ($otp === '') {
+                $this->error('OTP is required. Request a code to your email first.', 422);
+            }
+            $actorId = (int)(($acting ?? [])['id'] ?? 0);
+            if ($actorId <= 0 || !OtpService::verify($actorId, $otp)) {
+                $this->error('Invalid or expired OTP.', 403);
+            }
+        }
+
+        if ($mode === 'superadmin_otp') {
+            $this->assertTxnReversibleForUserFlow($row, false);
+        }
+
+        $beforeOrig = $this->txnAuditCompactSnapshot($row);
+        $actorRowId = $acting ? (int)$acting['id'] : null;
+
+        try {
+            $result = $this->txn->reverseLedgerEntry($id, $reason, $actorRowId);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
+        $newId = (int)$result['new_id'];
+        foreach ($result['affected_invoice_ids'] as $iid) {
+            (new CommissionSyncService())->syncInvoiceSafe((int)$iid);
+        }
+
+        $origAfter = $this->txn->find($id);
+        $revRow    = $this->txn->find($newId);
+        $afterPayload = [
+            'original' => $origAfter !== null ? $this->txnAuditCompactSnapshot($origAfter) : null,
+            'reversal' => $revRow !== null ? $this->txnAuditCompactSnapshot($revRow) : null,
+        ];
+        $this->auditTxnLog(
+            $actorRowId,
+            'txn.reversed',
+            $id,
+            [
+                'reversal_reason' => $reason,
+                'mode'            => $mode,
+                'reversal_txn_id' => $newId,
+                'txn_type'        => (string)($row['txn_type'] ?? ''),
+            ],
+            $beforeOrig,
+            $afterPayload
+        );
+
+        if ($revRow !== null) {
+            $this->recordTxnCreated($newId, $actorRowId);
+        }
+
+        $this->success(
+            [
+                'reversal_txn_id' => $newId,
+                'original_txn_id' => $id,
+                'original'        => $origAfter,
+                'reversal'        => $revRow,
+            ],
+            'Transaction reversed.'
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function assertTxnReversibleForUserFlow(array $row, bool $enforceCreatedAtWindow): void
+    {
+        $txnType = (string)($row['txn_type'] ?? '');
+        $allowed = ['receipt', 'payment_expense', 'tds_provisional', 'tds_final'];
+        if (!in_array($txnType, $allowed, true)) {
+            $this->error('This transaction type cannot be reversed through this flow.', 422);
+        }
+        $st = (string)($row['status'] ?? '');
+        if ($st !== 'active') {
+            $this->error('Only active transactions can be reversed.', 422);
+        }
+        if ($this->txn->findLedgerReversalIdForOriginal((int)($row['id'] ?? 0)) !== null) {
+            $this->error('This transaction has already been reversed.', 422);
+        }
+        if ($enforceCreatedAtWindow) {
+            $this->assertUserReversalWithinCreatedAtWindow($row);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function assertUserReversalWithinCreatedAtWindow(array $row): void
+    {
+        $raw = (string)($row['created_at'] ?? '');
+        if ($raw === '') {
+            $this->error('Cannot determine posting time for this transaction.', 422);
+        }
+        try {
+            $createdAt = new \DateTimeImmutable($raw);
+        } catch (\Exception) {
+            $this->error('Cannot determine posting time for this transaction.', 422);
+        }
+        $cutoff = (new \DateTimeImmutable('now'))->modify('-30 days');
+        if ($createdAt < $cutoff) {
+            $this->error(
+                'Reversal is only allowed within 30 days of the original posting. Use a superadmin OTP to reverse older entries.',
+                422
+            );
+        }
     }
 
     /**

@@ -61,7 +61,7 @@ final class TxnSettlementAllocationModel
              WHERE a.target_type = 'invoice'
                AND a.target_txn_id = :iid
                AND r.txn_type = 'receipt'
-               AND r.status IS DISTINCT FROM 'cancelled'"
+               AND r.status NOT IN ('cancelled', 'reversed')"
         );
         $stmt->execute([':iid' => $invoiceTxnId]);
 
@@ -77,7 +77,7 @@ final class TxnSettlementAllocationModel
              WHERE a.target_type = 'payment_expense'
                AND a.target_txn_id = :pid
                AND r.txn_type = 'receipt'
-               AND r.status IS DISTINCT FROM 'cancelled'"
+               AND r.status NOT IN ('cancelled', 'reversed')"
         );
         $stmt->execute([':pid' => $paymentTxnId]);
 
@@ -125,7 +125,7 @@ final class TxnSettlementAllocationModel
         $lc  = LedgerDimensions::normalizeLedgerClass($ledgerClass);
         $where = [
             "r.txn_type = 'receipt'",
-            "r.status IS DISTINCT FROM 'cancelled'",
+            "r.status NOT IN ('cancelled', 'reversed')",
             'r.ledger_class = :lc',
         ];
         $params = [':lc' => $lc];

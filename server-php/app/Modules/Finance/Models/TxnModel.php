@@ -19,7 +19,8 @@ use PDO;
  *
  * Supported txn_type values:
  *   opening_balance, invoice, payment_expense, receipt,
- *   tds_provisional, tds_final, rebate, credit_note
+ *   tds_provisional, tds_final, rebate, credit_note,
+ *   receipt_reversal, payment_expense_reversal, tds_reversal (compensating rows)
  */
 class TxnModel
 {
@@ -82,7 +83,7 @@ class TxnModel
         $where  = [
             't.public_ref = :ref',
             't.txn_type = :tt',
-            "t.status IS DISTINCT FROM 'cancelled'",
+            "t.status NOT IN ('cancelled', 'reversed')",
         ];
         $params = [':ref' => $ref, ':tt' => $tt];
         if ($clientId > 0) {
@@ -127,7 +128,7 @@ class TxnModel
         }
         $where = [
             "r.txn_type = 'receipt'",
-            "r.status IS DISTINCT FROM 'cancelled'",
+            "r.status NOT IN ('cancelled', 'reversed')",
             'r.ledger_class = :lc',
             'r.ledger_movement_kind = :mk',
         ];
@@ -303,7 +304,7 @@ class TxnModel
             "SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
-               AND t.status != 'cancelled'
+               AND t.status NOT IN ('cancelled', 'reversed')
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
         );
         $stmt->execute([':client_id' => $clientId]);
@@ -331,7 +332,7 @@ class TxnModel
             "SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
-               AND t.status != 'cancelled'
+               AND t.status NOT IN ('cancelled', 'reversed')
                AND t.ledger_class = :ledger_class
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
         );
@@ -359,7 +360,7 @@ class TxnModel
             "SELECT t.*
              FROM txn t
              WHERE t.organization_id = :org_id
-               AND t.status != 'cancelled'
+               AND t.status NOT IN ('cancelled', 'reversed')
                AND t.ledger_class = :ledger_class
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
         );
@@ -387,7 +388,7 @@ class TxnModel
             "SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
-               AND t.status != 'cancelled'
+               AND t.status NOT IN ('cancelled', 'reversed')
                AND t.ledger_class = :ledger_class
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
         );
@@ -413,7 +414,7 @@ class TxnModel
             "SELECT t.*
              FROM txn t
              WHERE t.organization_id = :org_id
-               AND t.status != 'cancelled'
+               AND t.status NOT IN ('cancelled', 'reversed')
                AND t.ledger_class = :ledger_class
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
         );
@@ -446,7 +447,7 @@ class TxnModel
              FROM (
                  SELECT SUM(t.debit - t.credit) AS balance
                  FROM txn t
-                 WHERE t.status != 'cancelled'
+                 WHERE t.status NOT IN ('cancelled', 'reversed')
                    AND (t.client_id IS NOT NULL OR t.organization_id IS NOT NULL)
                  GROUP BY (
                      CASE
@@ -791,7 +792,7 @@ class TxnModel
             "SELECT COALESCE(SUM(amount), 0) FROM txn
              WHERE linked_txn_id = :invoice_id
                AND txn_type = 'credit_note'
-               AND status != 'cancelled'"
+               AND status NOT IN ('cancelled', 'reversed')"
         );
         $stmt->execute([':invoice_id' => $invoiceTxnId]);
 
@@ -1557,6 +1558,136 @@ class TxnModel
         }
 
         return json_encode($raw, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    }
+
+    public function findLedgerReversalIdForOriginal(int $originalTxnId): ?int
+    {
+        if ($originalTxnId <= 0) {
+            return null;
+        }
+        $stmt = $this->db->prepare(
+            "SELECT id FROM txn
+             WHERE linked_txn_id = :lid
+               AND txn_type IN ('receipt_reversal', 'payment_expense_reversal', 'tds_reversal')
+             ORDER BY id ASC
+             LIMIT 1"
+        );
+        $stmt->execute([':lid' => $originalTxnId]);
+        $v = $stmt->fetchColumn();
+
+        return $v !== false ? (int)$v : null;
+    }
+
+    /**
+     * Mark the original txn as reversed, unwind settlement where needed, insert compensating row.
+     *
+     * @return array{new_id: int, affected_invoice_ids: list<int>}
+     */
+    public function reverseLedgerEntry(int $originalId, string $reason, ?int $actorId): array
+    {
+        $row = $this->find($originalId);
+        if ($row === null) {
+            throw new \InvalidArgumentException('Transaction not found.');
+        }
+        $type = (string)($row['txn_type'] ?? '');
+        if (!in_array($type, ['receipt', 'payment_expense', 'tds_provisional', 'tds_final'], true)) {
+            throw new \InvalidArgumentException('This transaction type cannot be reversed via this flow.');
+        }
+        $st = (string)($row['status'] ?? '');
+        if ($st !== 'active') {
+            throw new \InvalidArgumentException('Only active transactions can be reversed.');
+        }
+        if ($this->findLedgerReversalIdForOriginal($originalId) !== null) {
+            throw new \InvalidArgumentException('This transaction has already been reversed.');
+        }
+
+        $amount = round((float)($row['amount'] ?? 0), 2);
+        if ($amount <= 0.00001) {
+            throw new \InvalidArgumentException('Invalid transaction amount for reversal.');
+        }
+
+        $reversalType = match ($type) {
+            'receipt' => 'receipt_reversal',
+            'payment_expense' => 'payment_expense_reversal',
+            'tds_provisional', 'tds_final' => 'tds_reversal',
+            default => throw new \InvalidArgumentException('Unsupported transaction type.'),
+        };
+
+        $debit = 0.0;
+        $credit = 0.0;
+        if ($reversalType === 'receipt_reversal') {
+            $debit = $amount;
+        } elseif ($reversalType === 'payment_expense_reversal') {
+            $credit = $amount;
+        } else {
+            $debit = $amount;
+        }
+
+        $affectedInvoiceIds = [];
+        $this->db->beginTransaction();
+        try {
+            if ($type === 'receipt') {
+                $allocModel = new TxnSettlementAllocationModel();
+                $affectedInvoiceIds = $allocModel->distinctTargetsForReceipt($originalId)['invoices'];
+                $allocModel->replaceForReceipt($originalId, []);
+                $this->update($originalId, ['status' => 'reversed'], $actorId);
+                foreach ($affectedInvoiceIds as $iid) {
+                    $this->recomputeInvoiceReceiptStatus((int)$iid);
+                }
+            } elseif ($type === 'payment_expense') {
+                TxnReceiptAllocationService::unlinkPaymentExpenseFromReceipts($originalId);
+                $this->update($originalId, ['status' => 'reversed'], $actorId);
+            } else {
+                $this->update($originalId, ['status' => 'reversed'], $actorId);
+            }
+
+            $origNarr = trim((string)($row['narration'] ?? ''));
+            if ($origNarr === '') {
+                $origNarr = $type;
+            }
+            $today = (new \DateTimeImmutable('now'))->format('Y-m-d');
+
+            $newRow = [
+                'client_id'            => $row['client_id'] ?? null,
+                'organization_id'      => $row['organization_id'] ?? null,
+                'txn_type'             => $reversalType,
+                'txn_date'             => $today,
+                'narration'            => 'Reversal — ' . $origNarr,
+                'debit'                => $debit,
+                'credit'               => $credit,
+                'amount'               => $amount,
+                'billing_profile_code' => $row['billing_profile_code'] ?? null,
+                'linked_txn_id'        => $originalId,
+                'notes'                => $reason,
+                'status'               => 'active',
+                'created_by'           => $actorId,
+                'ledger_class'         => $row['ledger_class'] ?? LedgerDimensions::CLASS_REGULAR,
+                'ledger_movement_kind' => $row['ledger_movement_kind'] ?? null,
+                'payment_method'       => $row['payment_method'] ?? null,
+                'reference_number'     => $row['reference_number'] ?? null,
+                'firm_bank_account_id' => isset($row['firm_bank_account_id']) ? (int)$row['firm_bank_account_id'] : null,
+                'expense_purpose'      => $row['expense_purpose'] ?? null,
+                'paid_from'            => $row['paid_from'] ?? null,
+            ];
+            if ($reversalType === 'tds_reversal') {
+                $newRow['tds_section'] = $row['tds_section'] ?? null;
+                $newRow['tds_rate']    = isset($row['tds_rate']) ? (float)$row['tds_rate'] : null;
+                $newRow['tds_status']  = $row['tds_status'] ?? null;
+            }
+            if ($newRow['firm_bank_account_id'] !== null && $newRow['firm_bank_account_id'] <= 0) {
+                $newRow['firm_bank_account_id'] = null;
+            }
+
+            $newId = $this->create($newRow);
+            $this->db->commit();
+
+            return ['new_id' => $newId, 'affected_invoice_ids' => $affectedInvoiceIds];
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**

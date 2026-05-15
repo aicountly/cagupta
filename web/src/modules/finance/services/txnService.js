@@ -276,6 +276,40 @@ export async function bulkDeleteTxns(ids, { superadminOtp } = {}) {
   return data.data || {};
 }
 
+/** POST /api/admin/txn/:id/request-ledger-reversal-otp — OTP to acting user’s email (feature-gated server-side) */
+export async function requestLedgerReversalUserOtp(txnId) {
+  const res = await fetch(`${API_BASE}/admin/txn/${txnId}/request-ledger-reversal-otp`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify({}),
+  });
+  const data = await parseResponse(res);
+  return data.data || {};
+}
+
+/**
+ * POST /api/admin/txn/:id/reverse — compensating txn; use superadminOtp and/or user otp in body.
+ * @param {number|string} txnId
+ * @param {{ reason: string, otp?: string, superadminOtp?: string }} opts
+ */
+export async function reverseLedgerTxn(txnId, { reason, otp, superadminOtp } = {}) {
+  const headers = { ...authHeaders() };
+  if (superadminOtp) {
+    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
+  }
+  const body = { reason: String(reason || '').trim() };
+  if (otp && !superadminOtp) {
+    body.otp = String(otp).trim();
+  }
+  const res  = await fetch(`${API_BASE}/admin/txn/${txnId}/reverse`, {
+    method:  'POST',
+    headers,
+    body:    JSON.stringify(body),
+  });
+  const data = await parseResponse(res);
+  return data.data || {};
+}
+
 /** POST — superadmin receives OTP email; intent is update | delete; region required */
 export async function requestInvoiceModifyOtp(id, { intent = 'update', region } = {}) {
   const reg = String(region || '').trim();

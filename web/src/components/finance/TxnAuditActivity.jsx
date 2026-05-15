@@ -32,6 +32,8 @@ function formatTxnAuditAction(action) {
     'txn.deleted':                 'Deleted',
     'txn.tds_finalized':           'TDS marked final',
     'ledger_modify_otp_requested': 'Ledger change OTP requested',
+    'ledger_reversal_otp_requested': 'Ledger reversal OTP requested (user email)',
+    'txn.reversed':                'Transaction reversed',
   };
   if (m[action]) return m[action];
   return String(action || '').replace(/^txn\./, '').replace(/_/g, ' ');

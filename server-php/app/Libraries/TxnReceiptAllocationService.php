@@ -204,8 +204,8 @@ final class TxnReceiptAllocationService
         if (($row['txn_type'] ?? '') !== 'receipt') {
             throw new InvalidArgumentException('The referenced transaction is not a receipt.');
         }
-        if (($row['status'] ?? '') === 'cancelled') {
-            throw new InvalidArgumentException('Cannot link to a cancelled receipt.');
+        if (in_array((string)($row['status'] ?? ''), ['cancelled', 'reversed'], true)) {
+            throw new InvalidArgumentException('Cannot link to a cancelled or reversed receipt.');
         }
         $rc = (int)($row['client_id'] ?? 0);
         $ro = (int)($row['organization_id'] ?? 0);
@@ -236,8 +236,8 @@ final class TxnReceiptAllocationService
         if (($paymentExpenseRow['txn_type'] ?? '') !== 'payment_expense') {
             throw new InvalidArgumentException('Settlement target must be a payment expense.');
         }
-        if (($paymentExpenseRow['status'] ?? '') === 'cancelled') {
-            throw new InvalidArgumentException('Cannot link to a cancelled payment expense.');
+        if (in_array((string)($paymentExpenseRow['status'] ?? ''), ['cancelled', 'reversed'], true)) {
+            throw new InvalidArgumentException('Cannot link to a cancelled or reversed payment expense.');
         }
         $payAmt = round((float)($paymentExpenseRow['amount'] ?? 0), 2);
         if ($payAmt <= 0) {
@@ -517,8 +517,8 @@ final class TxnReceiptAllocationService
             if ($rec === null || ($rec['txn_type'] ?? '') !== 'receipt') {
                 throw new InvalidArgumentException('Settlement receipt not found.');
             }
-            if (($rec['status'] ?? '') === 'cancelled') {
-                throw new InvalidArgumentException('Cannot settle against a cancelled receipt.');
+            if (in_array((string)($rec['status'] ?? ''), ['cancelled', 'reversed'], true)) {
+                throw new InvalidArgumentException('Cannot settle against a cancelled or reversed receipt.');
             }
             $rc = (int)($rec['client_id'] ?? 0);
             $ro = (int)($rec['organization_id'] ?? 0);
