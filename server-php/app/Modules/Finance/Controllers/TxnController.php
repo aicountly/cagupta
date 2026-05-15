@@ -1183,7 +1183,8 @@ class TxnController extends BaseController
 
     /**
      * POST /api/admin/txn/:id/reverse
-     * Body: { "reason": "...", "otp": "123456" } — user OTP when not using X-Superadmin-Otp.
+     * Body: { "reason": "...", "otp": "123456" } — user OTP when not using X-Superadmin-Otp
+     * or session (primary super admin email only, no OTP).
      */
     public function reverseLedger(int $id): never
     {
@@ -1206,10 +1207,14 @@ class TxnController extends BaseController
             $this->error('Transaction not found.', 404);
         }
 
-        $superOtp = $this->readSuperadminOtpFromRequest();
-        $mode     = 'user_otp';
+        $superOtp    = $this->readSuperadminOtpFromRequest();
+        $actingEmail = trim((string)(($acting ?? [])['email'] ?? ''));
+        $mode        = 'user_otp';
+
         if ($superOtp !== '' && $this->verifySuperadminOtp($superOtp)) {
             $mode = 'superadmin_otp';
+        } elseif ($actingEmail !== '' && $this->isSuperAdminEmail($actingEmail)) {
+            $mode = 'super_admin_session';
         } else {
             $app = new App();
             if (!$app->ledgerUserReversalEnabled) {
@@ -1229,7 +1234,7 @@ class TxnController extends BaseController
             }
         }
 
-        if ($mode === 'superadmin_otp') {
+        if ($mode === 'superadmin_otp' || $mode === 'super_admin_session') {
             $this->assertTxnReversibleForUserFlow($row, false);
         }
 
@@ -1321,7 +1326,7 @@ class TxnController extends BaseController
         $cutoff = (new \DateTimeImmutable('now'))->modify('-30 days');
         if ($createdAt < $cutoff) {
             $this->error(
-                'Reversal is only allowed within 30 days of the original posting. Use a superadmin OTP to reverse older entries.',
+                'Reversal is only allowed within 30 days of the original posting. Please contact your super admin.',
                 422
             );
         }
