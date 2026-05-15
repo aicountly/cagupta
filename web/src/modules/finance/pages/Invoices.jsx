@@ -3162,12 +3162,6 @@ function formatConsolidatedNet(feesAmount, feesType, reimAmount, reimType) {
   return formatNetBalance(rowConsolidatedNetNumber(feesAmount, feesType, reimAmount, reimType));
 }
 
-function openingEnteredAmountSum(amountStr) {
-  if (amountStr === '' || amountStr == null) return 0;
-  const a = parseFloat(amountStr, 10);
-  return Number.isNaN(a) ? 0 : a;
-}
-
 /** Earliest txn_date among opening rows for this ledger type (profiles may share one OB date). */
 function inferOpeningTxnDate(existingBalances, ledgerClass) {
   const lc = ledgerClass === 'memorandum' ? 'memorandum' : 'regular';
@@ -3200,13 +3194,19 @@ function OpeningBalanceModal({
   }, [existingBalances, ledgerClassPick]);
 
   const openingTotals = useMemo(() => {
-    let feesSum = 0;
-    let reimSum = 0;
+    let feesSignedSum = 0;
+    let reimSignedSum = 0;
     let consolidatedSum = 0;
+    let feesInvalid = false;
+    let reimInvalid = false;
     let consolidatedInvalid = false;
     for (const b of balances) {
-      feesSum += openingEnteredAmountSum(b.feesAmount);
-      reimSum += openingEnteredAmountSum(b.reimAmount);
+      const f = signedOpeningSlice(b.feesAmount, b.feesType);
+      const r = signedOpeningSlice(b.reimAmount, b.reimType);
+      if (Number.isNaN(f)) feesInvalid = true;
+      else feesSignedSum += f;
+      if (Number.isNaN(r)) reimInvalid = true;
+      else reimSignedSum += r;
       const n = rowConsolidatedNetNumber(b.feesAmount, b.feesType, b.reimAmount, b.reimType);
       if (Number.isNaN(n)) {
         consolidatedInvalid = true;
@@ -3214,10 +3214,12 @@ function OpeningBalanceModal({
         consolidatedSum += n;
       }
     }
+    const feesNetRounded = Math.round(feesSignedSum * 100) / 100;
+    const reimNetRounded = Math.round(reimSignedSum * 100) / 100;
     const netRounded = Math.round(consolidatedSum * 100) / 100;
     return {
-      feesSum: Math.round(feesSum * 100) / 100,
-      reimSum: Math.round(reimSum * 100) / 100,
+      feesLabel:         feesInvalid ? '—' : formatNetBalance(feesNetRounded),
+      reimLabel:         reimInvalid ? '—' : formatNetBalance(reimNetRounded),
       consolidatedLabel: consolidatedInvalid ? '—' : formatNetBalance(netRounded),
     };
   }, [balances]);
@@ -3404,11 +3406,11 @@ function OpeningBalanceModal({
           >
             <div style={{ fontSize:12, fontWeight:700, color:'#0f172a' }}>Total</div>
             <div style={{ fontSize:12, fontWeight:600, textAlign:'right', color:'#0f172a' }}>
-              ₹{openingTotals.feesSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {openingTotals.feesLabel}
             </div>
             <div style={{ fontSize:12, color:'#94a3b8' }}>—</div>
             <div style={{ fontSize:12, fontWeight:600, textAlign:'right', color:'#0f172a' }}>
-              ₹{openingTotals.reimSum.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {openingTotals.reimLabel}
             </div>
             <div style={{ fontSize:12, color:'#94a3b8' }}>—</div>
             <div style={{ fontSize:12, fontWeight:600, textAlign:'center', color:'#0f172a' }}>
