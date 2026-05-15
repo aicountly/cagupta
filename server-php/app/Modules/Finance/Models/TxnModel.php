@@ -21,9 +21,19 @@ use PDO;
  *   opening_balance, invoice, payment_expense, receipt,
  *   tds_provisional, tds_final, rebate, credit_note,
  *   receipt_reversal, payment_expense_reversal, tds_reversal (compensating rows)
+ *   receipt_bank_leg, payment_expense_bank_leg (firm cash mirror; no client_id)
+ *   receipt_bank_leg_reversal, payment_expense_bank_leg_reversal (cash mirror for reversals)
  */
 class TxnModel
 {
+    public const TXN_TYPE_RECEIPT_BANK_LEG = 'receipt_bank_leg';
+
+    public const TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG = 'payment_expense_bank_leg';
+
+    public const TXN_TYPE_RECEIPT_BANK_LEG_REVERSAL = 'receipt_bank_leg_reversal';
+
+    public const TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL = 'payment_expense_bank_leg_reversal';
+
     private PDO $db;
 
     public function __construct()
@@ -670,21 +680,43 @@ class TxnModel
         $allocRows = $prevalidatedAllocations
             ?? TxnReceiptAllocationService::normalizeAndValidateAllocations($data, $data['allocations'] ?? null);
         unset($data['allocations']);
+        $bankId = (int)($data['firm_bank_account_id'] ?? 0);
+
         TxnReceiptAllocationService::assignPublicRef($data);
         $data['linked_txn_id'] = null;
 
-        $id = $this->create(array_merge($data, [
-            'txn_type'       => 'receipt',
-            'narration'      => $data['narration'] ?? 'Receipt — ' . ($data['payment_method'] ?? 'Transfer'),
-            'debit'          => 0,
-            'credit'         => $amount,
-            'amount'         => $amount,
-            'status'         => 'active',
-            'appointment_id' => $data['appointment_id'] ?? null,
-        ]));
-        TxnReceiptAllocationService::persistForNewReceipt($id, $allocRows);
+        $conn = Database::getConnection();
+        $conn->beginTransaction();
+        try {
+            $clientPayload = array_merge($data, [
+                'txn_type'               => 'receipt',
+                'narration'              => $data['narration'] ?? 'Receipt — ' . ($data['payment_method'] ?? 'Transfer'),
+                'debit'                  => 0,
+                'credit'                 => $amount,
+                'amount'                 => $amount,
+                'status'                 => 'active',
+                'appointment_id'         => $data['appointment_id'] ?? null,
+                'firm_bank_account_id'   => null,
+                'counterparty_firm_bank_account_id' => null,
+            ]);
 
-        return $id;
+            $id = $this->create($clientPayload);
+
+            if ($bankId > 0) {
+                $this->insertReceiptBankLeg($id, $bankId, $amount, $clientPayload);
+            }
+
+            TxnReceiptAllocationService::persistForNewReceipt($id, $allocRows);
+
+            $conn->commit();
+
+            return $id;
+        } catch (\Throwable $e) {
+            if ($conn->inTransaction()) {
+                $conn->rollBack();
+            }
+            throw $e;
+        }
     }
 
     /**
@@ -716,16 +748,84 @@ class TxnModel
                 isset($data['txn_date']) ? (string)$data['txn_date'] : null
             );
         }
-        // Firm paid on the client's behalf → recoverable from client (same sign as an invoice charge).
-        return $this->create(array_merge($data, [
-            'txn_type'   => 'payment_expense',
-            'narration'  => $data['narration'] ?? 'Payment — ' . ($data['payment_method'] ?? 'Transfer'),
-            'debit'      => $amount,
-            'credit'     => 0,
-            'amount'     => $amount,
-            'status'     => 'active',
-            'paid_from'  => $paidFrom,
-        ]));
+
+        $clientPayload = array_merge($data, [
+            'txn_type'             => 'payment_expense',
+            'narration'            => $data['narration'] ?? 'Payment — ' . ($data['payment_method'] ?? 'Transfer'),
+            'debit'                => $amount,
+            'credit'               => 0,
+            'amount'               => $amount,
+            'status'               => 'active',
+            'paid_from'            => $paidFrom,
+            'firm_bank_account_id' => null,
+            'counterparty_firm_bank_account_id' => null,
+        ]);
+
+        $id = $this->create($clientPayload);
+
+        if ($bankId > 0) {
+            $this->insertPaymentExpenseBankLeg($id, $bankId, $amount, $clientPayload);
+        }
+
+        return $id;
+    }
+
+    /**
+     * Firm cash-book row: money in (same credit as client receipt); no client_id.
+     *
+     * @param array<string, mixed> $src  Client receipt payload used for metadata copy
+     */
+    private function insertReceiptBankLeg(int $receiptClientLegId, int $bankId, float $amount, array $src): void
+    {
+        $this->create([
+            'client_id'              => null,
+            'organization_id'        => null,
+            'txn_type'               => self::TXN_TYPE_RECEIPT_BANK_LEG,
+            'txn_date'               => $src['txn_date']            ?? date('Y-m-d'),
+            'narration'              => 'Cash in — ' . (string)($src['narration'] ?? 'Receipt'),
+            'debit'                  => 0,
+            'credit'                 => $amount,
+            'amount'                 => $amount,
+            'billing_profile_code'   => $src['billing_profile_code'] ?? null,
+            'payment_method'         => $src['payment_method'] ?? null,
+            'reference_number'       => $src['reference_number'] ?? null,
+            'linked_txn_id'          => $receiptClientLegId,
+            'firm_bank_account_id'   => $bankId,
+            'status'                 => 'active',
+            'created_by'             => $src['created_by'] ?? null,
+            'ledger_class'           => $src['ledger_class'] ?? LedgerDimensions::CLASS_REGULAR,
+            'ledger_movement_kind'   => $src['ledger_movement_kind'] ?? null,
+            'public_ref'             => $src['public_ref'] ?? null,
+        ]);
+    }
+
+    /**
+     * Firm cash-book row: money out for on-behalf payment; no client_id.
+     *
+     * @param array<string, mixed> $src Client payment_expense payload
+     */
+    private function insertPaymentExpenseBankLeg(int $paymentClientLegId, int $bankId, float $amount, array $src): void
+    {
+        $this->create([
+            'client_id'              => null,
+            'organization_id'      => null,
+            'txn_type'               => self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
+            'txn_date'               => $src['txn_date']            ?? date('Y-m-d'),
+            'narration'              => 'Cash out — ' . (string)($src['narration'] ?? 'Payment'),
+            'debit'                  => $amount,
+            'credit'                 => 0,
+            'amount'                 => $amount,
+            'billing_profile_code'   => $src['billing_profile_code'] ?? null,
+            'payment_method'         => $src['payment_method'] ?? null,
+            'reference_number'       => $src['reference_number'] ?? null,
+            'linked_txn_id'          => $paymentClientLegId,
+            'firm_bank_account_id'   => $bankId,
+            'status'                 => 'active',
+            'created_by'             => $src['created_by'] ?? null,
+            'ledger_class'           => $src['ledger_class'] ?? LedgerDimensions::CLASS_REGULAR,
+            'ledger_movement_kind'   => $src['ledger_movement_kind'] ?? null,
+            'public_ref'             => $src['public_ref'] ?? null,
+        ]);
     }
 
     /**
@@ -1577,6 +1677,209 @@ class TxnModel
         return json_encode($raw, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
 
+    /**
+     * Reverse cash-book mirror when a receipt is reversed: mark original bank leg reversed and book offsetting cash movement.
+     */
+    private function applyReceiptCashReversalMirrors(int $originalReceiptId, int $reversalTxnId, float $amount, array $originalRow, ?int $actorId): void
+    {
+        $stmt = $this->db->prepare(
+            "SELECT * FROM txn
+             WHERE linked_txn_id = :lid AND txn_type = :tt AND status = 'active'
+             LIMIT 1"
+        );
+        $stmt->execute([':lid' => $originalReceiptId, ':tt' => self::TXN_TYPE_RECEIPT_BANK_LEG]);
+        $bankLeg = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($bankLeg === false) {
+            return;
+        }
+        $bankLegId = (int)($bankLeg['id'] ?? 0);
+        if ($bankLegId <= 0) {
+            return;
+        }
+        $this->update($bankLegId, ['status' => 'reversed'], $actorId);
+        $bankAcc = (int)($bankLeg['firm_bank_account_id'] ?? 0);
+        if ($bankAcc <= 0) {
+            return;
+        }
+        $today = (new \DateTimeImmutable('now'))->format('Y-m-d');
+        $this->create([
+            'client_id'              => null,
+            'organization_id'        => null,
+            'txn_type'               => self::TXN_TYPE_RECEIPT_BANK_LEG_REVERSAL,
+            'txn_date'               => $today,
+            'narration'              => 'Cash out (reversal) — Receipt #' . $originalReceiptId,
+            'debit'                  => $amount,
+            'credit'                 => 0,
+            'amount'                 => $amount,
+            'billing_profile_code'   => $originalRow['billing_profile_code'] ?? null,
+            'linked_txn_id'          => $reversalTxnId,
+            'firm_bank_account_id'   => $bankAcc,
+            'status'                 => 'active',
+            'created_by'             => $actorId,
+            'ledger_class'           => $originalRow['ledger_class'] ?? LedgerDimensions::CLASS_REGULAR,
+            'ledger_movement_kind'   => $originalRow['ledger_movement_kind'] ?? null,
+        ]);
+    }
+
+    /**
+     * Reverse cash-book mirror when an on-behalf payment is reversed.
+     */
+    private function applyPaymentExpenseCashReversalMirrors(int $originalPaymentId, int $reversalTxnId, float $amount, array $originalRow, ?int $actorId): void
+    {
+        $stmt = $this->db->prepare(
+            "SELECT * FROM txn
+             WHERE linked_txn_id = :lid AND txn_type = :tt AND status = 'active'
+             LIMIT 1"
+        );
+        $stmt->execute([':lid' => $originalPaymentId, ':tt' => self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG]);
+        $bankLeg = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($bankLeg === false) {
+            return;
+        }
+        $bankLegId = (int)($bankLeg['id'] ?? 0);
+        if ($bankLegId <= 0) {
+            return;
+        }
+        $this->update($bankLegId, ['status' => 'reversed'], $actorId);
+        $bankAcc = (int)($bankLeg['firm_bank_account_id'] ?? 0);
+        if ($bankAcc <= 0) {
+            return;
+        }
+        $today = (new \DateTimeImmutable('now'))->format('Y-m-d');
+        $this->create([
+            'client_id'              => null,
+            'organization_id'        => null,
+            'txn_type'               => self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL,
+            'txn_date'               => $today,
+            'narration'              => 'Cash in (reversal) — Payment #' . $originalPaymentId,
+            'debit'                  => 0,
+            'credit'                 => $amount,
+            'amount'                 => $amount,
+            'billing_profile_code'   => $originalRow['billing_profile_code'] ?? null,
+            'linked_txn_id'          => $reversalTxnId,
+            'firm_bank_account_id'   => $bankAcc,
+            'status'                 => 'active',
+            'created_by'             => $actorId,
+            'ledger_class'           => $originalRow['ledger_class'] ?? LedgerDimensions::CLASS_REGULAR,
+            'ledger_movement_kind'   => $originalRow['ledger_movement_kind'] ?? null,
+        ]);
+    }
+
+    /**
+     * Delete firm cash mirror rows linked to a client-ledger receipt or POB before deleting the client row.
+     */
+    public function deleteCashMirrorRowsForClientLeg(int $clientLegId): void
+    {
+        $types = [
+            self::TXN_TYPE_RECEIPT_BANK_LEG,
+            self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
+            self::TXN_TYPE_RECEIPT_BANK_LEG_REVERSAL,
+            self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL,
+        ];
+        $in   = implode(',', array_fill(0, count($types), '?'));
+        $sql  = "DELETE FROM txn WHERE linked_txn_id = ? AND txn_type IN ({$in})";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute(array_merge([$clientLegId], $types));
+    }
+
+    /**
+     * Upsert receipt bank leg after metadata/amount edits (controller supplies bank id from validated payload).
+     *
+     * @param array<string, mixed> $receiptRow Current receipt row from DB
+     */
+    public function syncReceiptBankLeg(int $receiptId, array $receiptRow, float $amount, int $bankId): void
+    {
+        if ($receiptId <= 0 || $bankId <= 0) {
+            return;
+        }
+        $stmt = $this->db->prepare(
+            "SELECT id FROM txn
+             WHERE linked_txn_id = :lid AND txn_type = :tt AND status = 'active'
+             LIMIT 1"
+        );
+        $stmt->execute([':lid' => $receiptId, ':tt' => self::TXN_TYPE_RECEIPT_BANK_LEG]);
+        $existingId = $stmt->fetchColumn();
+        if ($existingId !== false) {
+            $this->update((int) $existingId, [
+                'debit'                => 0,
+                'credit'               => $amount,
+                'amount'               => $amount,
+                'firm_bank_account_id' => $bankId,
+                'txn_date'             => $receiptRow['txn_date'] ?? date('Y-m-d'),
+                'payment_method'       => $receiptRow['payment_method'] ?? null,
+                'reference_number'     => $receiptRow['reference_number'] ?? null,
+            ], null);
+
+            return;
+        }
+        $this->insertReceiptBankLeg($receiptId, $bankId, $amount, $receiptRow);
+    }
+
+    /**
+     * @param array<string, mixed> $paymentRow Current payment_expense row
+     */
+    public function syncPaymentExpenseBankLeg(int $paymentId, array $paymentRow, float $amount, int $bankId): void
+    {
+        if ($paymentId <= 0 || $bankId <= 0) {
+            return;
+        }
+        $stmt = $this->db->prepare(
+            "SELECT id FROM txn
+             WHERE linked_txn_id = :lid AND txn_type = :tt AND status = 'active'
+             LIMIT 1"
+        );
+        $stmt->execute([':lid' => $paymentId, ':tt' => self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG]);
+        $existingId = $stmt->fetchColumn();
+        if ($existingId !== false) {
+            $this->update((int) $existingId, [
+                'debit'                => $amount,
+                'credit'               => 0,
+                'amount'               => $amount,
+                'firm_bank_account_id' => $bankId,
+                'txn_date'             => $paymentRow['txn_date'] ?? date('Y-m-d'),
+                'payment_method'       => $paymentRow['payment_method'] ?? null,
+                'reference_number'     => $paymentRow['reference_number'] ?? null,
+            ], null);
+
+            return;
+        }
+        $this->insertPaymentExpenseBankLeg($paymentId, $bankId, $amount, $paymentRow);
+    }
+
+    /** @return int Firm bank account id on active receipt_bank_leg, or 0 */
+    public function findReceiptBankLegAccountId(int $receiptId): int
+    {
+        if ($receiptId <= 0) {
+            return 0;
+        }
+        $stmt = $this->db->prepare(
+            "SELECT firm_bank_account_id FROM txn
+             WHERE linked_txn_id = :lid AND txn_type = :tt AND status = 'active'
+             LIMIT 1"
+        );
+        $stmt->execute([':lid' => $receiptId, ':tt' => self::TXN_TYPE_RECEIPT_BANK_LEG]);
+        $v = $stmt->fetchColumn();
+
+        return $v !== false ? (int) $v : 0;
+    }
+
+    /** @return int Firm bank account id on active payment_expense_bank_leg, or 0 */
+    public function findPaymentExpenseBankLegAccountId(int $paymentId): int
+    {
+        if ($paymentId <= 0) {
+            return 0;
+        }
+        $stmt = $this->db->prepare(
+            "SELECT firm_bank_account_id FROM txn
+             WHERE linked_txn_id = :lid AND txn_type = :tt AND status = 'active'
+             LIMIT 1"
+        );
+        $stmt->execute([':lid' => $paymentId, ':tt' => self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG]);
+        $v = $stmt->fetchColumn();
+
+        return $v !== false ? (int) $v : 0;
+    }
+
     public function findLedgerReversalIdForOriginal(int $originalTxnId): ?int
     {
         if ($originalTxnId <= 0) {
@@ -1682,7 +1985,7 @@ class TxnModel
                 'ledger_movement_kind' => $row['ledger_movement_kind'] ?? null,
                 'payment_method'       => $row['payment_method'] ?? null,
                 'reference_number'     => $row['reference_number'] ?? null,
-                'firm_bank_account_id' => isset($row['firm_bank_account_id']) ? (int)$row['firm_bank_account_id'] : null,
+                'firm_bank_account_id' => null,
                 'expense_purpose'      => $row['expense_purpose'] ?? null,
                 'paid_from'            => $row['paid_from'] ?? null,
             ];
@@ -1690,12 +1993,18 @@ class TxnModel
                 $newRow['tds_section'] = $row['tds_section'] ?? null;
                 $newRow['tds_rate']    = isset($row['tds_rate']) ? (float)$row['tds_rate'] : null;
                 $newRow['tds_status']  = $row['tds_status'] ?? null;
-            }
-            if ($newRow['firm_bank_account_id'] !== null && $newRow['firm_bank_account_id'] <= 0) {
-                $newRow['firm_bank_account_id'] = null;
+                $newRow['firm_bank_account_id'] = isset($row['firm_bank_account_id']) ? (int)$row['firm_bank_account_id'] : null;
+                if ($newRow['firm_bank_account_id'] !== null && $newRow['firm_bank_account_id'] <= 0) {
+                    $newRow['firm_bank_account_id'] = null;
+                }
             }
 
             $newId = $this->create($newRow);
+            if ($type === 'receipt') {
+                $this->applyReceiptCashReversalMirrors($originalId, $newId, $amount, $row, $actorId);
+            } elseif ($type === 'payment_expense') {
+                $this->applyPaymentExpenseCashReversalMirrors($originalId, $newId, $amount, $row, $actorId);
+            }
             $this->db->commit();
 
             return ['new_id' => $newId, 'affected_invoice_ids' => $affectedInvoiceIds];

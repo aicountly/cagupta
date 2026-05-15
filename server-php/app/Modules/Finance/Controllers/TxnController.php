@@ -693,6 +693,20 @@ class TxnController extends BaseController
         $metaKeys = ['txn_date', 'narration', 'notes', 'payment_method', 'reference_number', 'firm_bank_account_id'];
         $structural = array_key_exists('amount', $body) || array_key_exists('allocations', $body);
 
+        $resolveBankId = function (array $metaPatch) use ($row, $id): int {
+            if (!empty($metaPatch['firm_bank_account_id'])) {
+                $tmpBody = array_merge(
+                    $metaPatch,
+                    ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
+                );
+                $this->attachValidatedBankAccount($tmpBody);
+
+                return (int) $tmpBody['firm_bank_account_id'];
+            }
+
+            return $this->txn->findReceiptBankLegAccountId($id);
+        };
+
         if ($structural) {
             $allocModel = new TxnSettlementAllocationModel();
             $allocRaw   = $body['allocations'] ?? null;
@@ -700,7 +714,7 @@ class TxnController extends BaseController
                 $allocRaw = $this->allocationRowsFromDbForValidation($allocModel->listForReceipt($id));
             }
             $amount = array_key_exists('amount', $body)
-                ? round((float)$body['amount'], 2)
+                ? round((float) $body['amount'], 2)
                 : round((float)($row['amount'] ?? 0), 2);
             if ($amount <= 0) {
                 $this->error('amount must be greater than zero.', 422);
@@ -720,14 +734,8 @@ class TxnController extends BaseController
             }
 
             $metaPatch = array_intersect_key($body, array_flip($metaKeys));
-            if (!empty($metaPatch['firm_bank_account_id'])) {
-                $tmpBody = array_merge(
-                    $metaPatch,
-                    ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
-                );
-                $this->attachValidatedBankAccount($tmpBody);
-                $metaPatch['firm_bank_account_id'] = $tmpBody['firm_bank_account_id'];
-            }
+            $bankId    = $resolveBankId($metaPatch);
+            unset($metaPatch['firm_bank_account_id']);
 
             $creditPatch = [
                 'credit' => $amount,
@@ -736,6 +744,10 @@ class TxnController extends BaseController
             ];
             $this->txn->update($id, array_merge($creditPatch, $metaPatch), $actorId);
             TxnReceiptAllocationService::replaceReceiptAllocationsWithInvoiceRefresh($id, $allocRows);
+            if ($bankId > 0) {
+                $fresh = $this->txn->find($id);
+                $this->txn->syncReceiptBankLeg($id, is_array($fresh) ? $fresh : $row, $amount, $bankId);
+            }
 
             return;
         }
@@ -744,15 +756,16 @@ class TxnController extends BaseController
         if ($patch === []) {
             return;
         }
-        if (!empty($patch['firm_bank_account_id'])) {
-            $tmpBody = array_merge(
-                $patch,
-                ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
-            );
-            $this->attachValidatedBankAccount($tmpBody);
-            $patch['firm_bank_account_id'] = $tmpBody['firm_bank_account_id'];
+        $bankId = $resolveBankId($patch);
+        unset($patch['firm_bank_account_id']);
+        if ($patch !== []) {
+            $this->txn->update($id, $patch, $actorId);
         }
-        $this->txn->update($id, $patch, $actorId);
+        if ($bankId > 0) {
+            $fresh = $this->txn->find($id);
+            $amt   = round((float)(is_array($fresh) ? ($fresh['amount'] ?? 0) : ($row['amount'] ?? 0)), 2);
+            $this->txn->syncReceiptBankLeg($id, is_array($fresh) ? $fresh : $row, $amt, $bankId);
+        }
     }
 
     /**
@@ -776,21 +789,38 @@ class TxnController extends BaseController
         ];
         $structural = array_key_exists('amount', $body) || array_key_exists('settlement_lines', $body);
 
+        $resolveBankId = function (array $metaSlice) use ($row, $id): int {
+            if (!empty($metaSlice['firm_bank_account_id'])) {
+                $tmpBody = array_merge(
+                    $metaSlice,
+                    ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
+                );
+                $this->attachValidatedBankAccount($tmpBody);
+
+                return (int) $tmpBody['firm_bank_account_id'];
+            }
+
+            return $this->txn->findPaymentExpenseBankLegAccountId($id);
+        };
+
         if (!$structural) {
             $patch = array_intersect_key($body, array_flip($metaKeys));
             if ($patch === []) {
                 return;
             }
-            if (!empty($patch['firm_bank_account_id'])) {
-                $tmpBody = array_merge(
-                    $patch,
-                    ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
-                );
-                $this->attachValidatedBankAccount($tmpBody);
-                $patch['firm_bank_account_id'] = $tmpBody['firm_bank_account_id'];
-                $patch['paid_from']            = $this->resolvePaidFromLabelForBankId((int)$patch['firm_bank_account_id']);
+            $bankId = $resolveBankId($patch);
+            unset($patch['firm_bank_account_id']);
+            if ($bankId > 0) {
+                $patch['paid_from'] = $this->resolvePaidFromLabelForBankId($bankId);
             }
-            $this->txn->update($id, $patch, $actorId);
+            if ($patch !== []) {
+                $this->txn->update($id, $patch, $actorId);
+            }
+            if ($bankId > 0) {
+                $fresh = $this->txn->find($id);
+                $amt   = round((float)(is_array($fresh) ? ($fresh['amount'] ?? 0) : ($row['amount'] ?? 0)), 2);
+                $this->txn->syncPaymentExpenseBankLeg($id, is_array($fresh) ? $fresh : $row, $amt, $bankId);
+            }
 
             return;
         }
@@ -814,16 +844,10 @@ class TxnController extends BaseController
         $patch['amount'] = $newAmount;
         $patch['debit']  = $newAmount;
         $patch['credit'] = 0;
-        if (!empty($patch['firm_bank_account_id'])) {
-            $tmpBody = array_merge(
-                $patch,
-                ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
-            );
-            $this->attachValidatedBankAccount($tmpBody);
-            $patch['firm_bank_account_id'] = $tmpBody['firm_bank_account_id'];
-            $patch['paid_from']            = $this->resolvePaidFromLabelForBankId((int)$patch['firm_bank_account_id']);
-        } elseif ((int)($row['firm_bank_account_id'] ?? 0) > 0) {
-            $patch['paid_from'] = $this->resolvePaidFromLabelForBankId((int)$row['firm_bank_account_id']);
+        $bankId          = $resolveBankId($patch);
+        unset($patch['firm_bank_account_id']);
+        if ($bankId > 0) {
+            $patch['paid_from'] = $this->resolvePaidFromLabelForBankId($bankId);
         }
 
         $dbConn = Database::getConnection();
@@ -857,6 +881,15 @@ class TxnController extends BaseController
                 TxnReceiptAllocationService::linkPaymentExpenseToReceipt($receiptRow, $paymentRow, $amt);
             }
             $dbConn->commit();
+            if ($bankId > 0) {
+                $fresh = $this->txn->find($id);
+                $this->txn->syncPaymentExpenseBankLeg(
+                    $id,
+                    is_array($fresh) ? $fresh : $paymentRow,
+                    $newAmount,
+                    $bankId
+                );
+            }
         } catch (\InvalidArgumentException $e) {
             if ($dbConn->inTransaction()) {
                 $dbConn->rollBack();
@@ -975,8 +1008,16 @@ class TxnController extends BaseController
         if ($type === 'receipt') {
             $alloc = new TxnSettlementAllocationModel();
             $targets = $alloc->distinctTargetsForReceipt($id);
+            $this->txn->deleteCashMirrorRowsForClientLeg($id);
             $this->txn->delete($id);
             TxnReceiptAllocationService::afterReceiptDeleted($targets['invoices']);
+
+            return;
+        }
+        if ($type === 'payment_expense') {
+            TxnReceiptAllocationService::unlinkPaymentExpenseFromReceipts($id);
+            $this->txn->deleteCashMirrorRowsForClientLeg($id);
+            $this->txn->delete($id);
 
             return;
         }
@@ -991,6 +1032,19 @@ class TxnController extends BaseController
         }
 
         $type = (string)($row['txn_type'] ?? '');
+        $cashMirrorOnly = [
+            TxnModel::TXN_TYPE_RECEIPT_BANK_LEG,
+            TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
+            TxnModel::TXN_TYPE_RECEIPT_BANK_LEG_REVERSAL,
+            TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL,
+        ];
+        if (in_array($type, $cashMirrorOnly, true)) {
+            $this->error(
+                'This transaction is a linked firm cash-book row. Delete or reverse the client receipt or on-behalf payment instead.',
+                422
+            );
+        }
+
         if ($this->txnRequiresSuperadminDelete($type)) {
             if (!$this->userHasPermission($this->authUser(), 'invoices.delete')) {
                 $this->error('Access denied. Required permission: invoices.delete.', 403);
@@ -1381,6 +1435,18 @@ class TxnController extends BaseController
                 $this->error('Transaction not found: ' . $id, 404);
             }
             $tt = (string)($row['txn_type'] ?? '');
+            $cashMirrorOnly = [
+                TxnModel::TXN_TYPE_RECEIPT_BANK_LEG,
+                TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
+                TxnModel::TXN_TYPE_RECEIPT_BANK_LEG_REVERSAL,
+                TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL,
+            ];
+            if (in_array($tt, $cashMirrorOnly, true)) {
+                $this->error(
+                    'Bulk delete cannot include firm cash-book leg id ' . $id . '. Remove it and delete the client transaction instead.',
+                    422
+                );
+            }
             if (!$this->txnRequiresSuperadminDelete($tt)) {
                 $this->error('Bulk delete is not allowed for transaction type: ' . $tt, 422);
             }
