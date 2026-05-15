@@ -1702,6 +1702,7 @@ class TxnController extends BaseController
         $type        = trim((string)($body['type'] ?? 'debit'));
         $ledgerClass = LedgerDimensions::normalizeLedgerClass($body['ledger_class'] ?? null);
         $movementRaw = trim((string)($body['ledger_movement_kind'] ?? $body['ledgerMovementKind'] ?? ''));
+        $txnDateRaw  = trim((string)($body['txn_date'] ?? $body['txnDate'] ?? ''));
 
         $errors = [];
         if (($clientId <= 0 && $orgId <= 0) || ($clientId > 0 && $orgId > 0)) {
@@ -1721,13 +1722,23 @@ class TxnController extends BaseController
         } catch (\InvalidArgumentException $e) {
             $errors['ledger_movement_kind'][] = $e->getMessage();
         }
+        if ($amount > 0) {
+            if ($txnDateRaw === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $txnDateRaw)) {
+                $errors['txn_date'][] = 'txn_date is required as YYYY-MM-DD when saving a non-zero opening balance.';
+            } else {
+                $dtCheck = \DateTimeImmutable::createFromFormat('Y-m-d', $txnDateRaw);
+                if ($dtCheck === false || $dtCheck->format('Y-m-d') !== $txnDateRaw) {
+                    $errors['txn_date'][] = 'txn_date must be a valid calendar date.';
+                }
+            }
+        }
         if (!empty($errors)) {
             $this->error('Validation failed.', 422, $errors);
         }
 
         $actingUser = $this->authUser();
         try {
-            $id = $this->txn->setOpeningBalance([
+            $payload = [
                 'client_id'              => $clientId,
                 'organization_id'        => $orgId,
                 'billing_profile_code'   => $profileCode,
@@ -1736,7 +1747,11 @@ class TxnController extends BaseController
                 'ledger_class'           => $ledgerClass,
                 'ledger_movement_kind'   => $movementRaw,
                 'created_by'             => $actingUser ? (int)$actingUser['id'] : null,
-            ]);
+            ];
+            if ($amount > 0 && $txnDateRaw !== '') {
+                $payload['txn_date'] = $txnDateRaw;
+            }
+            $id = $this->txn->setOpeningBalance($payload);
             if ($id === null) {
                 $this->success(null, 'Opening balance cleared');
             }

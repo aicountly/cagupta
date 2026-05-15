@@ -3098,6 +3098,14 @@ function openingEnteredAmountSum(amountStr) {
   return Number.isNaN(a) ? 0 : a;
 }
 
+/** Earliest txn_date among opening rows for this ledger type (profiles may share one OB date). */
+function inferOpeningTxnDate(existingBalances, ledgerClass) {
+  const lc = ledgerClass === 'memorandum' ? 'memorandum' : 'regular';
+  const rows = existingBalances.filter((b) => b.ledgerClass === lc);
+  const dates = [...new Set(rows.map((r) => r.txnDate).filter(Boolean))].sort();
+  return dates.length ? dates[0] : '';
+}
+
 function OpeningBalanceModal({
   onClose,
   onSave,
@@ -3146,6 +3154,13 @@ function OpeningBalanceModal({
 
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
+  const [openingTxnDate, setOpeningTxnDate] = useState(() => inferOpeningTxnDate(existingBalances || [], ledgerClassPick)
+    || new Date().toISOString().slice(0, 10));
+
+  useEffect(() => {
+    const inferred = inferOpeningTxnDate(existingBalances || [], ledgerClassPick);
+    setOpeningTxnDate(inferred || new Date().toISOString().slice(0, 10));
+  }, [existingBalances, ledgerClassPick]);
 
   function setField(idx, key, val) {
     setBalances((prev) => prev.map((b, i) => (i === idx ? { ...b, [key]: val } : b)));
@@ -3157,6 +3172,15 @@ function OpeningBalanceModal({
     try {
       const ops = [];
       const idNum = parseInt(String(entityId), 10);
+      const needsTxnDate = balances.some((b) => {
+        const f = b.feesAmount === '' ? 0 : parseFloat(b.feesAmount, 10);
+        const r = b.reimAmount === '' ? 0 : parseFloat(b.reimAmount, 10);
+        return (f > 0 || r > 0);
+      });
+      if (needsTxnDate && !openingTxnDate) {
+        setError('Choose the opening balance date.');
+        return;
+      }
       for (const b of balances) {
         const feesAmt = b.feesAmount === '' ? 0 : parseFloat(b.feesAmount, 10);
         const reimAmt = b.reimAmount === '' ? 0 : parseFloat(b.reimAmount, 10);
@@ -3177,9 +3201,11 @@ function OpeningBalanceModal({
         } else {
           sliceBase.client_id = idNum;
         }
+        const datePart = openingTxnDate && needsTxnDate ? { txn_date: openingTxnDate } : {};
         ops.push(
           setOpeningBalance({
             ...sliceBase,
+            ...datePart,
             amount:                 feesAmt,
             type:                   b.feesType,
             ledger_movement_kind:   'fees',
@@ -3188,6 +3214,7 @@ function OpeningBalanceModal({
         ops.push(
           setOpeningBalance({
             ...sliceBase,
+            ...datePart,
             amount:                 reimAmt,
             type:                   b.reimType,
             ledger_movement_kind:   'reimbursement',
@@ -3229,6 +3256,15 @@ function OpeningBalanceModal({
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
+            </label>
+            <label style={{ fontSize:12, color:'#475569', display:'flex', alignItems:'center', gap:8 }}>
+              As of date
+              <input
+                type="date"
+                value={openingTxnDate}
+                onChange={(e) => setOpeningTxnDate(e.target.value)}
+                style={{ ...inputStyle, minWidth:160 }}
+              />
             </label>
           </div>
           <p style={{ fontSize:12, color:'#64748b', margin:'0 0 12px 0' }}>

@@ -478,10 +478,11 @@ export async function getOpeningBalance({ clientId, organizationId } = {}) {
     type:                row.debit > 0 ? 'debit' : 'credit',
     ledgerClass:         row.ledger_class === 'memorandum' ? 'memorandum' : 'regular',
     ledgerMovementKind:  row.ledger_movement_kind || null,
+    txnDate:             row.txn_date ? String(row.txn_date).slice(0, 10) : '',
   }));
 }
 
-/** POST /api/admin/txn/opening-balance — body: client_id or organization_id, billing_profile_code, amount, type, ledger_class, ledger_movement_kind */
+/** POST /api/admin/txn/opening-balance — body: client_id or organization_id, billing_profile_code, amount, type, ledger_class, ledger_movement_kind, txn_date */
 export async function setOpeningBalance(payload) {
   const res  = await fetch(`${API_BASE}/admin/txn/opening-balance`, {
     method:  'POST',
