@@ -31,6 +31,17 @@ class TxnModel
         $this->db = Database::getConnection();
     }
 
+    /**
+     * SQL predicate: normalized txn.ledger_class equals bound param (treat null/blank as regular).
+     *
+     * @param string $tableAlias e.g. 't' or 'r'
+     * @param string $paramName    PDO placeholder with leading colon, e.g. ':ledger_class'
+     */
+    private static function sqlLedgerClassMatch(string $tableAlias, string $paramName): string
+    {
+        return "COALESCE(NULLIF(TRIM({$tableAlias}.ledger_class), ''), 'regular') = {$paramName}";
+    }
+
     // ── Queries ───────────────────────────────────────────────────────────────
 
     /**
@@ -129,7 +140,7 @@ class TxnModel
         $where = [
             "r.txn_type = 'receipt'",
             "r.status NOT IN ('cancelled', 'reversed')",
-            'r.ledger_class = :lc',
+            self::sqlLedgerClassMatch('r', ':lc'),
             'r.ledger_movement_kind = :mk',
         ];
         $params = [':lc' => $lc, ':mk' => $mk];
@@ -206,8 +217,14 @@ class TxnModel
             $params[':search'] = "%{$search}%";
         }
         if ($txnType !== '') {
-            $where[]             = 't.txn_type = :txn_type';
-            $params[':txn_type'] = $txnType;
+            if ($txnType === 'receipt') {
+                $where[] = "t.txn_type IN ('receipt','receipt_reversal')";
+            } elseif ($txnType === 'payment_expense') {
+                $where[] = "t.txn_type IN ('payment_expense','payment_expense_reversal')";
+            } else {
+                $where[]             = 't.txn_type = :txn_type';
+                $params[':txn_type'] = $txnType;
+            }
         }
         if ($clientId > 0) {
             $where[]              = 't.client_id = :client_id';
@@ -329,12 +346,12 @@ class TxnModel
     public function getLedgerByClient(int $clientId, string $ledgerClass = LedgerDimensions::CLASS_REGULAR, string $ledgerView = LedgerDimensions::VIEW_CONSOLIDATED): array
     {
         $stmt = $this->db->prepare(
-            "SELECT t.*
+            'SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
-               AND t.status NOT IN ('cancelled', 'reversed')
-               AND t.ledger_class = :ledger_class
-             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
+               AND t.status NOT IN (\'cancelled\', \'reversed\')
+               AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
+             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
         );
         $stmt->execute([
             ':client_id'     => $clientId,
@@ -357,12 +374,12 @@ class TxnModel
     public function getLedgerByOrganization(int $orgId, string $ledgerClass = LedgerDimensions::CLASS_REGULAR, string $ledgerView = LedgerDimensions::VIEW_CONSOLIDATED): array
     {
         $stmt = $this->db->prepare(
-            "SELECT t.*
+            'SELECT t.*
              FROM txn t
              WHERE t.organization_id = :org_id
-               AND t.status NOT IN ('cancelled', 'reversed')
-               AND t.ledger_class = :ledger_class
-             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
+               AND t.status NOT IN (\'cancelled\', \'reversed\')
+               AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
+             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
         );
         $stmt->execute([
             ':org_id'        => $orgId,
@@ -385,12 +402,12 @@ class TxnModel
     public function fetchRawLedgerRowsForClient(int $clientId, string $ledgerClass): array
     {
         $stmt = $this->db->prepare(
-            "SELECT t.*
+            'SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
-               AND t.status NOT IN ('cancelled', 'reversed')
-               AND t.ledger_class = :ledger_class
-             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
+               AND t.status NOT IN (\'cancelled\', \'reversed\')
+               AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
+             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
         );
         $stmt->execute([
             ':client_id'     => $clientId,
@@ -411,12 +428,12 @@ class TxnModel
     public function fetchRawLedgerRowsForOrganization(int $orgId, string $ledgerClass): array
     {
         $stmt = $this->db->prepare(
-            "SELECT t.*
+            'SELECT t.*
              FROM txn t
              WHERE t.organization_id = :org_id
-               AND t.status NOT IN ('cancelled', 'reversed')
-               AND t.ledger_class = :ledger_class
-             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
+               AND t.status NOT IN (\'cancelled\', \'reversed\')
+               AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
+             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
         );
         $stmt->execute([
             ':org_id'        => $orgId,
@@ -1085,7 +1102,7 @@ class TxnModel
      */
     public function getTdsEntries(int $clientId = 0, ?string $tdsStatus = null): array
     {
-        $where  = ["t.txn_type IN ('tds_provisional','tds_final')"];
+        $where  = ["t.txn_type IN ('tds_provisional','tds_final','tds_reversal')"];
         $params = [];
 
         if ($clientId > 0) {
@@ -1114,7 +1131,7 @@ class TxnModel
              LEFT JOIN users creator ON creator.id = t.created_by
              LEFT JOIN users updater ON updater.id = t.updated_by
              WHERE {$whereClause}
-             ORDER BY t.txn_date DESC"
+             ORDER BY t.txn_date DESC, t.id DESC"
         );
         $stmt->execute($params);
         $rows = $stmt->fetchAll();

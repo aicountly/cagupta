@@ -445,7 +445,10 @@ class TxnController extends BaseController
             $this->error('Transaction not found.', 404);
         }
         $txnType = (string)($row['txn_type'] ?? '');
-        $otpEligible = ['invoice', 'receipt', 'payment_expense', 'tds_provisional', 'tds_final'];
+        $otpEligible = [
+            'invoice', 'receipt', 'payment_expense', 'tds_provisional', 'tds_final',
+            'receipt_reversal', 'payment_expense_reversal', 'tds_reversal',
+        ];
         if (!in_array($txnType, $otpEligible, true)) {
             $this->error('OTP requests are not supported for this transaction type.', 422);
         }
@@ -591,7 +594,10 @@ class TxnController extends BaseController
     /** @return list<string> */
     private function txnTypesRequiringLedgerModifyOtp(): array
     {
-        return ['invoice', 'receipt', 'payment_expense', 'tds_provisional', 'tds_final'];
+        return [
+            'invoice', 'receipt', 'payment_expense', 'tds_provisional', 'tds_final',
+            'receipt_reversal', 'payment_expense_reversal', 'tds_reversal',
+        ];
     }
 
     private function txnRequiresLedgerModifyOtp(string $txnType): bool

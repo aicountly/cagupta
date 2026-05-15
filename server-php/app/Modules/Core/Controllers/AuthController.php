@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers\Auth;
 
 use App\Controllers\BaseController;
+use App\Config\App;
 use App\Config\Auth as AuthConfig;
 use App\Libraries\BrevoMailer;
 use App\Libraries\JWT;
@@ -504,6 +505,7 @@ class AuthController extends BaseController
         $permissions = $permissionsOverride ?? $this->resolvePermissions($user);
 
         $pwd = $user['password_hash'] ?? null;
+        $app = new App();
 
         return [
             'id'                   => (int)$user['id'],
@@ -519,6 +521,7 @@ class AuthController extends BaseController
             'entity_id'            => $user['entity_id'] ?? null,
             'contact_id'           => $user['contact_id'] ?? null,
             'organization_id'      => $user['organization_id'] ?? null,
+            'ledger_user_reversal_enabled' => $app->ledgerUserReversalEnabled,
         ];
     }
 
