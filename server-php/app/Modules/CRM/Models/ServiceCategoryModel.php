@@ -101,9 +101,6 @@ class ServiceCategoryModel
         if ($value instanceof \DateTimeInterface) {
             return $value->format(\DateTimeInterface::ATOM);
         }
-        if ($value instanceof \BackedEnum) {
-            return $value->value;
-        }
 
         return $value;
     }
