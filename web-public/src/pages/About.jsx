@@ -42,22 +42,27 @@ export default function About() {
               <div className="about-card__row">
                 <Phone size={18} />
                 <div>
-                  <strong>Office</strong>
-                  <span>{SITE.contact.phone}</span>
+                  <strong>Phone</strong>
+                  <a href={`tel:${SITE.contact.phone.replace(/\s/g, '')}`}>{SITE.contact.phone}</a>
                 </div>
               </div>
               <div className="about-card__row">
                 <Mail size={18} />
                 <div>
                   <strong>Email</strong>
-                  <span>{SITE.contact.email}</span>
+                  <a href={`mailto:${SITE.contact.email}`}>{SITE.contact.email}</a>
+                  <a href={`mailto:${SITE.contact.email2}`}>{SITE.contact.email2}</a>
                 </div>
               </div>
               <div className="about-card__row">
                 <MapPin size={18} />
                 <div>
-                  <strong>{SITE.contact.addressLine1}</strong>
+                  <strong>Office address</strong>
+                  <span>{SITE.contact.addressLine1}</span>
                   <span>{SITE.contact.addressLine2}</span>
+                  <span style={{ marginTop: 4 }}>
+                    Also in: {SITE.contact.otherOffices.join(' · ')}
+                  </span>
                 </div>
               </div>
             </aside>

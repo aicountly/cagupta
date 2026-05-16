@@ -1,7 +1,13 @@
-import { ArrowRight, Calculator, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Building2, Calculator, FileText, Receipt, ShieldCheck } from 'lucide-react';
 import Container from '../ui/Container.jsx';
 import Button from '../ui/Button.jsx';
 import { SITE } from '../../config/site.config.js';
+
+const VISUAL_SERVICES = [
+  { Icon: FileText,  title: 'Income Tax & ITR',  sub: 'Filing, planning & notice handling' },
+  { Icon: Receipt,   title: 'GST Compliance',    sub: 'GSTR-1, 3B, 9, 9C & audits' },
+  { Icon: Building2, title: 'ROC & Advisory',    sub: 'Incorporation & MCA filings' },
+];
 
 export default function Hero() {
   return (
@@ -43,6 +49,34 @@ export default function Hero() {
           </div>
 
           <div className="hero__visual" aria-hidden="true">
+            {/* Top service strip */}
+            <div className="hero__visual-strip">
+              <Calculator size={18} /> Tax · Audit · GST · ROC · Advisory
+            </div>
+
+            {/* Middle: service cards + stats */}
+            <div className="hero__visual-mid">
+              {VISUAL_SERVICES.map(({ Icon, title, sub }, i) => (
+                <div className="hero__svc-card" key={title} style={{ animationDelay: `${i * 1.4}s` }}>
+                  <span className="hero__svc-icon"><Icon size={18} /></span>
+                  <div>
+                    <strong>{title}</strong>
+                    <span>{sub}</span>
+                  </div>
+                </div>
+              ))}
+
+              <div className="hero__stat-strip">
+                {SITE.stats.map((s) => (
+                  <div className="hero__stat-chip" key={s.label}>
+                    <strong>{s.value}</strong>
+                    <span>{s.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Bottom: ICAI badge */}
             <div className="hero__badge">
               <span className="hero__badge-dot">
                 <ShieldCheck size={22} />
@@ -51,24 +85,6 @@ export default function Hero() {
                 <strong>ICAI member firm</strong>
                 <span>Practising Chartered Accountants, India</span>
               </div>
-            </div>
-            <div
-              style={{
-                position: 'absolute',
-                top: 28,
-                left: 28,
-                right: 28,
-                color: 'rgba(255,255,255,0.92)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 10,
-                fontSize: 13,
-                fontWeight: 700,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-              }}
-            >
-              <Calculator size={18} /> Tax · Audit · GST · ROC · Advisory
             </div>
           </div>
         </div>

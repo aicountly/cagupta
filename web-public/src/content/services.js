@@ -75,3 +75,17 @@ export const SERVICES = [
     ],
   },
 ];
+
+/** Highlights shown only on `/services`, below the main catalogue. */
+export const SERVICES_BEYOND = {
+  eyebrow: 'Beyond the checklist',
+  title: 'Where we operate as stewards — and problem solvers.',
+  intro:
+    'Compliance is table stakes; we regularly step in upstream of filings — on incentives, investors, messy operations, and how technology can carry the load.',
+  bullets: [
+    'Government subsidies — mapping eligible schemes (central & state), documentation, timelines, reimbursement tracking, and clean books so benefits hold up to audit.',
+    'Investor funding — investment readiness: financial narrative, MIS, diligence rooms, valuations context, cap tables, and tax/FEMA-aware structuring conversations with founders.',
+    'Hands-on problem solving — unpacking stuck situations across tax, operations, and controls, assigning owners and turning ambiguity into executable next steps.',
+    'IT & custom applications — bridging business users and builders: documenting workflows, sizing a bespoke portal or automation, and supervising delivery so a custom app actually lifts throughput and lowers errors.',
+  ],
+};

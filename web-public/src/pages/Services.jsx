@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import Button from '../components/ui/Button.jsx';
 import Container from '../components/ui/Container.jsx';
-import { SERVICES } from '../content/services.js';
+import { SERVICES, SERVICES_BEYOND } from '../content/services.js';
 
 const ICONS = {
   FileText,
@@ -70,6 +70,29 @@ export default function Services() {
                 </article>
               );
             })}
+          </div>
+
+          <div className="services-beyond">
+            <p className="services-beyond__eyebrow">{SERVICES_BEYOND.eyebrow}</p>
+            <h2 className="services-beyond__title">{SERVICES_BEYOND.title}</h2>
+            <p className="services-beyond__intro">{SERVICES_BEYOND.intro}</p>
+            <ul className="services-beyond__list">
+              {SERVICES_BEYOND.bullets.map((b) => (
+                <li key={b}>
+                  <Check
+                    size={14}
+                    style={{
+                      display: 'inline',
+                      marginRight: 8,
+                      verticalAlign: '-2px',
+                      color: 'var(--color-orange)',
+                      flexShrink: 0,
+                    }}
+                  />
+                  {b}
+                </li>
+              ))}
+            </ul>
           </div>
 
           <div

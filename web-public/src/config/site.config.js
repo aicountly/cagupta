@@ -17,6 +17,8 @@ export const SITE = {
   firmShort: 'CA Rahul Gupta',
   tagline: 'Chartered Accountants',
   domain: 'carahulgupta.in',
+  /** Footer copyright range start (firm inception year). */
+  copyrightSince: 2016,
 
   // TODO: replace with final copy
   heroTitle: 'Your trusted partner in tax, audit & advisory.',
@@ -30,13 +32,15 @@ export const SITE = {
     { label: 'Returns filed yearly', value: '500+' },
   ],
 
-  // Office details — TODO: confirm with the firm
+  // Office details
   contact: {
-    phone: '+91 98XXXXXXXX',
-    email: 'contact@carahulgupta.in',
-    addressLine1: 'Office address line 1',
-    addressLine2: 'City, State – PIN',
-    workingHours: 'Mon – Sat · 10:00 AM – 7:00 PM',
+    phone: '+91 90414 71715',
+    email: 'office@carahulgupta.in',
+    email2: 'rahul@cagupta.in',
+    addressLine1: '3069, Third Floor, Ajanta Enclaves, Sector-51D',
+    addressLine2: 'Chandigarh – 160047',
+    otherOffices: ['Jalandhar', 'Mohali', 'Gurugram'],
+    workingHours: 'Mon – Fri · 10:00 AM – 6:00 PM',
     mapUrl: 'https://maps.google.com/?q=CA+Rahul+Gupta',
   },
 

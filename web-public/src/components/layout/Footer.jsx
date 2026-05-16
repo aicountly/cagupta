@@ -1,10 +1,13 @@
 import { Link } from 'react-router-dom';
-import { Mail, MapPin, Phone } from 'lucide-react';
+import { Clock, Mail, MapPin, Phone } from 'lucide-react';
 import Container from '../ui/Container.jsx';
 import { PORTAL_LINKS, SITE } from '../../config/site.config.js';
 
 export default function Footer() {
-  const year = new Date().getFullYear();
+  const currentYear = new Date().getFullYear();
+  const since = SITE.copyrightSince;
+  const copyrightYears =
+    since === currentYear ? `${since}` : `${since}–${currentYear}`;
   return (
     <footer className="footer">
       <Container>
@@ -44,16 +47,26 @@ export default function Footer() {
               <Mail size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} />
               {SITE.contact.email}
             </a>
+            <a href={`mailto:${SITE.contact.email2}`} style={{ paddingLeft: 22 }}>
+              {SITE.contact.email2}
+            </a>
             <span>
               <MapPin size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} />
               {SITE.contact.addressLine1}
             </span>
             <span style={{ paddingLeft: 22 }}>{SITE.contact.addressLine2}</span>
+            <span style={{ paddingLeft: 22, color: 'rgba(255,255,255,0.62)', fontSize: 13 }}>
+              Also in: {SITE.contact.otherOffices.join(' · ')}
+            </span>
+            <span>
+              <Clock size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} />
+              {SITE.contact.workingHours}
+            </span>
           </div>
         </div>
 
         <div className="footer__bottom">
-          <span>© {year} {SITE.firmName}. All rights reserved.</span>
+          <span>© {copyrightYears} {SITE.firmName}. All rights reserved.</span>
           <span>{SITE.domain}</span>
         </div>
       </Container>

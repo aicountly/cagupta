@@ -81,6 +81,7 @@ export default function Contact() {
                   <div>
                     <strong>Email</strong>
                     <a href={`mailto:${SITE.contact.email}`}>{SITE.contact.email}</a>
+                    <a href={`mailto:${SITE.contact.email2}`}>{SITE.contact.email2}</a>
                   </div>
                 </div>
                 <div className="contact-info-row">
@@ -91,6 +92,9 @@ export default function Contact() {
                     <strong>Office address</strong>
                     <span>{SITE.contact.addressLine1}</span>
                     <span>{SITE.contact.addressLine2}</span>
+                    <span style={{ marginTop: 4, color: 'var(--color-text-soft)', fontSize: '0.85em' }}>
+                      Also in: {SITE.contact.otherOffices.join(' · ')}
+                    </span>
                   </div>
                 </div>
                 <div className="contact-info-row">
