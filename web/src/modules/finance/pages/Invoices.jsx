@@ -1835,7 +1835,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
 }
 
 
-/** Single or bulk ledger delete: one superadmin OTP authorizes the batch. */
+/** Single or bulk ledger cancel (soft-delete): one superadmin OTP authorizes the batch. Rows stay for audit. */
 function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
@@ -1844,7 +1844,7 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
   const [deleting, setDeleting] = useState(false);
   const ids = useMemo(() => items.map((i) => i.id), [items]);
   const isPlural = items.length !== 1;
-  const heading = title || (isPlural ? `Delete ${items.length} records` : 'Delete ledger record');
+  const heading = title || (isPlural ? `Cancel ${items.length} ledger records` : 'Cancel ledger record');
   const otpBusy = sendingOtp || deleting;
 
   async function sendOtp() {
@@ -1873,7 +1873,7 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
       onDeleted(removed);
       onClose();
     } catch (e) {
-      setErr(e.message || 'Delete failed.');
+      setErr(e.message || 'Cancellation failed.');
     } finally {
       setDeleting(false);
     }
@@ -1908,9 +1908,14 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
         >
           <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
             {isPlural ? (
-              <>Permanently delete <strong>{items.length}</strong> selected ledger transaction(s). This cannot be undone.</>
+              <>
+                Cancel <strong>{items.length}</strong> selected ledger posting(s). They will disappear from the active ledger but{' '}
+                <strong>remain in the database for audit</strong> (RCP-/PAY- refs can be reused).
+              </>
             ) : (
-              <>Permanently delete <strong>{items[0]?.label || `#${items[0]?.id}`}</strong>? This cannot be undone.</>
+              <>
+                Cancel <strong>{items[0]?.label || `#${items[0]?.id}`}</strong>? Removed from the active ledger; row retained for audit.
+              </>
             )}
           </p>
           {isPlural && (
@@ -1959,7 +1964,7 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
             onClick={confirmDelete}
             style={{ ...btnPrimary, background: deleting ? '#cbd5e1' : '#b91c1c', cursor: deleting ? 'default' : 'pointer' }}
           >
-            {deleting ? 'Deleting…' : (isPlural ? `Delete ${items.length} records` : 'Delete')}
+            {deleting ? 'Cancelling…' : (isPlural ? `Cancel ${items.length} records` : 'Confirm cancellation')}
           </button>
         </div>
       </div>
@@ -4554,7 +4559,7 @@ export default function Invoices() {
           onDelete={(t) => {
             setViewInvoiceTxn(null);
             setLedgerDeletePrompt({
-              title: 'Delete invoice',
+              title: 'Cancel invoice',
               items: [{ id: t.id, label: `${t.invoiceNumber || `INV-${t.id}`} — ${t.clientName}` }],
             });
           }}
@@ -4864,7 +4869,7 @@ export default function Invoices() {
                 type="button"
                 style={{ ...btnPrimary, background: '#b91c1c', fontSize: 12, padding: '6px 12px' }}
                 onClick={() => setLedgerDeletePrompt({
-                  title: 'Delete invoices',
+                  title: 'Cancel invoices',
                   items: selectedInvoiceIds.map((id) => {
                     const inv = invoices.find((x) => Number(x.id) === Number(id));
                     return {
@@ -4953,7 +4958,7 @@ export default function Invoices() {
                         onClick={(e) => {
                           e.stopPropagation();
                           setLedgerDeletePrompt({
-                            title: 'Delete invoice',
+                            title: 'Cancel invoice',
                             items: [{ id: i.id, label: `${i.invoiceNumber || `INV-${i.id}`} — ${i.clientName}` }],
                           });
                         }}
@@ -4979,7 +4984,7 @@ export default function Invoices() {
                 type="button"
                 style={{ ...btnPrimary, background: '#b91c1c', fontSize: 12, padding: '6px 12px' }}
                 onClick={() => setLedgerDeletePrompt({
-                  title: 'Delete receipts',
+                  title: 'Cancel receipts',
                   items: selectedReceiptIds.map((id) => {
                     const r = receipts.find((x) => Number(x.id) === Number(id));
                     return {
@@ -5058,7 +5063,7 @@ export default function Invoices() {
                         type="button"
                         style={iconBtn}
                         onClick={() => setLedgerDeletePrompt({
-                          title: 'Delete receipt',
+                          title: 'Cancel receipt',
                           items: [{
                             id: r.id,
                             label: `${r.txnDate || '—'} — ${r.clientName} — ${formatSignedInrAmount(r.txnType, r.amount || r.credit || 0)}`,
@@ -5098,7 +5103,7 @@ export default function Invoices() {
                 type="button"
                 style={{ ...btnPrimary, background: '#b91c1c', fontSize: 12, padding: '6px 12px' }}
                 onClick={() => setLedgerDeletePrompt({
-                  title: 'Delete payments (on behalf)',
+                  title: 'Cancel payments (on behalf)',
                   items: selectedPaymentIds.map((id) => {
                     const p = paymentExpenses.find((x) => Number(x.id) === Number(id));
                     return {
@@ -5216,7 +5221,7 @@ export default function Invoices() {
                         type="button"
                         style={iconBtn}
                         onClick={() => setLedgerDeletePrompt({
-                          title: 'Delete payment (on behalf)',
+                          title: 'Cancel payment (on behalf)',
                           items: [{
                             id: p.id,
                             label: `${p.txnDate || '—'} — ${p.clientName} — ${formatSignedInrAmount(p.txnType, p.amount || 0)}`,
@@ -5253,7 +5258,7 @@ export default function Invoices() {
               <button
                 type="button"
                 onClick={() => setLedgerDeletePrompt({
-                  title: 'Delete TDS entries',
+                  title: 'Cancel TDS entries',
                   items: selectedTdsDeleteIds.map((id) => {
                     const t = tdsEntries.find((x) => Number(x.id) === Number(id));
                     return {
@@ -5320,7 +5325,7 @@ export default function Invoices() {
                           type="button"
                           style={iconBtn}
                           onClick={() => setLedgerDeletePrompt({
-                            title: 'Delete TDS entry',
+                            title: 'Cancel TDS entry',
                             items: [{
                               id: t.id,
                               label: `${t.txnDate || '—'} — ${t.clientName} — ${formatSignedInrAmount(t.txnType, t.amount || 0)} (${t.txnType || ''})`,
@@ -5349,7 +5354,7 @@ export default function Invoices() {
                 type="button"
                 style={{ ...btnPrimary, background: '#b91c1c', fontSize: 12, padding: '6px 12px' }}
                 onClick={() => setLedgerDeletePrompt({
-                  title: 'Delete rebate / discount',
+                  title: 'Cancel rebate / discount',
                   items: selectedRebateIds.map((id) => {
                     const r = rebates.find((x) => Number(x.id) === Number(id));
                     return {
@@ -5421,7 +5426,7 @@ export default function Invoices() {
                         type="button"
                         style={iconBtn}
                         onClick={() => setLedgerDeletePrompt({
-                          title: 'Delete rebate / discount',
+                          title: 'Cancel rebate / discount',
                           items: [{
                             id: r.id,
                             label: `${r.txnDate || '—'} — ${r.clientName} — ₹${(r.amount || 0).toLocaleString('en-IN')}`,
@@ -5449,7 +5454,7 @@ export default function Invoices() {
                 type="button"
                 style={{ ...btnPrimary, background: '#b91c1c', fontSize: 12, padding: '6px 12px' }}
                 onClick={() => setLedgerDeletePrompt({
-                  title: 'Delete credit notes',
+                  title: 'Cancel credit notes',
                   items: selectedCreditNoteIds.map((id) => {
                     const c = creditNotes.find((x) => Number(x.id) === Number(id));
                     return {
@@ -5521,7 +5526,7 @@ export default function Invoices() {
                         type="button"
                         style={iconBtn}
                         onClick={() => setLedgerDeletePrompt({
-                          title: 'Delete credit note',
+                          title: 'Cancel credit note',
                           items: [{
                             id: c.id,
                             label: `${c.txnDate || '—'} — ${c.clientName} — ₹${(c.amount || 0).toLocaleString('en-IN')}${c.linkedTxnId ? ` (inv #${c.linkedTxnId})` : ''}`,

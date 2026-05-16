@@ -168,7 +168,9 @@ final class TxnReceiptAllocationService
     }
 
     /**
-     * When a receipt is removed, delete is CASCADE on allocations; recompute affected invoices.
+    /**
+     * When a receipt is cancelled (soft-deleted), allocation rows should be cleared;
+     * recompute affected invoices.
      *
      * @param list<int> $invoiceIds
      */

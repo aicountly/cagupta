@@ -982,47 +982,85 @@ class TxnController extends BaseController
         $id   = (int)($row['id'] ?? 0);
         $type = (string)($row['txn_type'] ?? '');
         $beforeSnap = $this->txnAuditCompactSnapshot($row);
-        $this->auditTxnLog(
-            $actorId,
-            'txn.deleted',
-            $id,
-            ['txn_type' => $type],
-            $beforeSnap,
-            null
-        );
         if ($type === 'credit_note') {
             $linked = (int)($row['linked_txn_id'] ?? 0);
-            $this->txn->delete($id);
+            $this->txn->softCancelForAudit($id, $actorId);
             if ($linked > 0) {
                 (new CommissionSyncService())->afterCreditNote($linked);
             }
+            $after = $this->txn->find($id);
+            $this->auditTxnLog(
+                $actorId,
+                'txn.cancelled',
+                $id,
+                ['txn_type' => $type],
+                $beforeSnap,
+                $after !== null ? $this->txnAuditCompactSnapshot($after) : null
+            );
 
             return;
         }
         if ($type === 'invoice') {
             (new CommissionSyncService())->onInvoiceDeleted($id);
-            $this->txn->delete($id);
-            $this->notifyAdminsInvoiceChange('deleted', $row, null, $this->authUser());
+            $this->txn->softCancelForAudit($id, $actorId);
+            $after = $this->txn->find($id);
+            $this->auditTxnLog(
+                $actorId,
+                'txn.cancelled',
+                $id,
+                ['txn_type' => $type],
+                $beforeSnap,
+                $after !== null ? $this->txnAuditCompactSnapshot($after) : null
+            );
+            $this->notifyAdminsInvoiceChange('cancelled', $row, $after, $this->authUser());
 
             return;
         }
         if ($type === 'receipt') {
             $alloc = new TxnSettlementAllocationModel();
             $targets = $alloc->distinctTargetsForReceipt($id);
-            $this->txn->deleteCashMirrorRowsForClientLeg($id);
-            $this->txn->delete($id);
+            $alloc->replaceForReceipt($id, []);
+            $this->txn->softCancelCashMirrorsForClientLeg($id, $actorId);
+            $this->txn->softCancelForAudit($id, $actorId);
             TxnReceiptAllocationService::afterReceiptDeleted($targets['invoices']);
+            $after = $this->txn->find($id);
+            $this->auditTxnLog(
+                $actorId,
+                'txn.cancelled',
+                $id,
+                ['txn_type' => $type],
+                $beforeSnap,
+                $after !== null ? $this->txnAuditCompactSnapshot($after) : null
+            );
 
             return;
         }
         if ($type === 'payment_expense') {
             TxnReceiptAllocationService::unlinkPaymentExpenseFromReceipts($id);
-            $this->txn->deleteCashMirrorRowsForClientLeg($id);
-            $this->txn->delete($id);
+            $this->txn->softCancelCashMirrorsForClientLeg($id, $actorId);
+            $this->txn->softCancelForAudit($id, $actorId);
+            $after = $this->txn->find($id);
+            $this->auditTxnLog(
+                $actorId,
+                'txn.cancelled',
+                $id,
+                ['txn_type' => $type],
+                $beforeSnap,
+                $after !== null ? $this->txnAuditCompactSnapshot($after) : null
+            );
 
             return;
         }
-        $this->txn->delete($id);
+        $this->txn->softCancelForAudit($id, $actorId);
+        $after = $this->txn->find($id);
+        $this->auditTxnLog(
+            $actorId,
+            'txn.cancelled',
+            $id,
+            ['txn_type' => $type],
+            $beforeSnap,
+            $after !== null ? $this->txnAuditCompactSnapshot($after) : null
+        );
     }
 
     public function destroy(int $id): never
@@ -1033,6 +1071,15 @@ class TxnController extends BaseController
         }
 
         $type = (string)($row['txn_type'] ?? '');
+        if (in_array((string)($row['status'] ?? ''), ['cancelled', 'deleted'], true)) {
+            $this->error('Transaction is already cancelled.', 422);
+        }
+        if ((string)($row['status'] ?? '') === 'reversed') {
+            $this->error(
+                'Cannot cancel a reversed posting until its ledger reversal is cancelled.',
+                422
+            );
+        }
         $cashMirrorOnly = [
             TxnModel::TXN_TYPE_RECEIPT_BANK_LEG,
             TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
@@ -1063,7 +1110,7 @@ class TxnController extends BaseController
             }
             $delActor = $this->authUser() ? (int)$this->authUser()['id'] : null;
             $this->performTxnDelete($row, $delActor);
-            $this->success(null, 'Transaction deleted');
+            $this->success(null, 'Transaction cancelled.');
         }
 
         if (!$this->userHasPermission($this->authUser(), 'invoices.edit')) {
@@ -1072,16 +1119,17 @@ class TxnController extends BaseController
 
         $actorDel = $this->authUser() ? (int)$this->authUser()['id'] : null;
         $beforeSnap = $this->txnAuditCompactSnapshot($row);
+        $this->txn->softCancelForAudit($id, $actorDel);
+        $afterRow = $this->txn->find($id);
         $this->auditTxnLog(
             $actorDel,
-            'txn.deleted',
+            'txn.cancelled',
             $id,
             ['txn_type' => $type],
             $beforeSnap,
-            null
+            $afterRow !== null ? $this->txnAuditCompactSnapshot($afterRow) : null
         );
-        $this->txn->delete($id);
-        $this->success(null, 'Transaction deleted');
+        $this->success(null, 'Transaction cancelled.');
     }
 
     /**
@@ -1120,6 +1168,15 @@ class TxnController extends BaseController
             $row = $this->txn->find($id);
             if ($row === null) {
                 $this->error('Transaction not found: ' . $id, 404);
+            }
+            if (in_array((string)($row['status'] ?? ''), ['cancelled', 'deleted'], true)) {
+                $this->error('Transaction already cancelled: ' . $id, 422);
+            }
+            if ((string)($row['status'] ?? '') === 'reversed') {
+                $this->error(
+                    'Cannot cancel reversed posting id ' . $id . ' until its ledger reversal is cancelled.',
+                    422
+                );
             }
             $tt = (string)($row['txn_type'] ?? '');
             if (!$this->txnRequiresSuperadminDelete($tt)) {
@@ -1550,6 +1607,15 @@ class TxnController extends BaseController
             if ($row === null) {
                 $this->error('Transaction not found: ' . $id, 404);
             }
+            if (in_array((string)($row['status'] ?? ''), ['cancelled', 'deleted'], true)) {
+                $this->error('Transaction already cancelled: ' . $id, 422);
+            }
+            if ((string)($row['status'] ?? '') === 'reversed') {
+                $this->error(
+                    'Cannot cancel reversed posting id ' . $id . ' until its ledger reversal is cancelled.',
+                    422
+                );
+            }
             $tt = (string)($row['txn_type'] ?? '');
             $cashMirrorOnly = [
                 TxnModel::TXN_TYPE_RECEIPT_BANK_LEG,
@@ -1592,9 +1658,9 @@ class TxnController extends BaseController
         }
 
         $this->success([
-            'deleted'   => count($rows),
+            'cancelled' => count($rows),
             'txn_ids'   => array_map(static fn (array $r): int => (int)($r['id'] ?? 0), $rows),
-        ], 'Transactions deleted.');
+        ], 'Transactions cancelled.');
     }
 
     // ── GET /api/admin/txn/ledger ────────────────────────────────────────────
@@ -2056,16 +2122,22 @@ class TxnController extends BaseController
      */
     private function notifyAdminsInvoiceChange(string $verb, array $beforeRow, ?array $afterRow, ?array $acting): void
     {
-        $actionLabel = $verb === 'deleted' ? 'deleted' : 'updated';
+        $actionLabel = match ($verb) {
+            'deleted' => 'deleted',
+            'cancelled' => 'cancelled',
+            default => 'updated',
+        };
         $actorName   = (string)(($acting ?? [])['name'] ?? 'Unknown');
         $actorEmail  = (string)(($acting ?? [])['email'] ?? 'Unknown');
         $timestamp   = date('d M Y, h:i A T');
         $txnId       = (string)($beforeRow['id'] ?? '');
         $invoiceRef  = (string)($beforeRow['invoice_number'] ?? '—');
         $clientName  = (string)($beforeRow['client_name'] ?? '—');
-        $summary     = $verb === 'deleted'
-            ? 'Invoice transaction removed from the ledger.'
-            : $this->summarizeInvoiceDiff($beforeRow, $afterRow ?? []);
+        $summary     = match ($verb) {
+            'deleted' => 'Invoice transaction removed from the ledger.',
+            'cancelled' => 'Invoice transaction cancelled (removed from active ledger; row retained for audit).',
+            default => $this->summarizeInvoiceDiff($beforeRow, $afterRow ?? []),
+        };
 
         try {
             $htmlBody = BrevoMailer::renderTemplate('invoice-changed-notify', [

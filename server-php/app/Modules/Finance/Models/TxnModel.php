@@ -1432,7 +1432,61 @@ class TxnModel
     }
 
     /**
-     * Delete a txn row (or cancel it by setting status = 'cancelled').
+     * Cancel a ledger txn row for audit retention (no DELETE): status cancelled, hide from active ledger.
+     * Clears receipt/payment public_ref so the ref can be reused (unique index).
+     * Sets invoice_status cancelled for invoices.
+     */
+    public function softCancelForAudit(int $id, ?int $actorId): bool
+    {
+        $row = $this->find($id);
+        if ($row === null) {
+            return false;
+        }
+        $type = (string)($row['txn_type'] ?? '');
+        $patch = ['status' => 'cancelled'];
+        if ($type === 'invoice') {
+            $patch['invoice_status'] = 'cancelled';
+        }
+        if (in_array($type, ['receipt', 'payment_expense'], true)) {
+            $pref = trim((string)($row['public_ref'] ?? ''));
+            if ($pref !== '') {
+                $patch['public_ref'] = null;
+            }
+        }
+
+        return $this->update($id, $patch, $actorId);
+    }
+
+    /**
+     * Soft-cancel firm cash-book mirror rows for a receipt or on-behalf payment (audit retention).
+     */
+    public function softCancelCashMirrorsForClientLeg(int $clientLegId, ?int $actorId): void
+    {
+        if ($clientLegId <= 0) {
+            return;
+        }
+        if ($actorId !== null) {
+            $stmt = $this->db->prepare(
+                "UPDATE txn SET status = 'cancelled', updated_at = NOW(), updated_by = :ub
+                 WHERE linked_txn_id = :lid
+                   AND txn_type IN ('receipt_bank_leg', 'payment_expense_bank_leg')
+                   AND status = 'active'"
+            );
+            $stmt->execute([':lid' => $clientLegId, ':ub' => $actorId]);
+
+            return;
+        }
+        $stmt = $this->db->prepare(
+            "UPDATE txn SET status = 'cancelled', updated_at = NOW()
+             WHERE linked_txn_id = :lid
+               AND txn_type IN ('receipt_bank_leg', 'payment_expense_bank_leg')
+               AND status = 'active'"
+        );
+        $stmt->execute([':lid' => $clientLegId]);
+    }
+
+    /**
+     * Hard delete (internal / legacy). Admin ledger deletes use {@see softCancelForAudit()} instead.
      */
     public function delete(int $id): bool
     {

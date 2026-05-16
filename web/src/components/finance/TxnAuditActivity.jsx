@@ -30,6 +30,7 @@ function formatTxnAuditAction(action) {
     'txn.created':                 'Recorded',
     'txn.updated':                 'Updated',
     'txn.deleted':                 'Deleted',
+    'txn.cancelled':               'Cancelled (ledger)',
     'txn.tds_finalized':           'TDS marked final',
     'ledger_modify_otp_requested': 'Ledger change OTP requested',
     'ledger_reversal_otp_requested': 'Ledger reversal OTP requested (user email)',
