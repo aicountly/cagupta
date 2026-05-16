@@ -296,6 +296,25 @@ export async function reverseLedgerTxn(txnId, { reason, otp, superadminOtp } = {
   return data.data || {};
 }
 
+/** POST /api/admin/txn/:id/cancel-reversal — undo compensating reversal (`txnId` is the original posting). */
+export async function cancelLedgerReversalTxn(txnId, { otp, superadminOtp } = {}) {
+  const headers = { ...authHeaders() };
+  if (superadminOtp) {
+    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
+  }
+  const body = {};
+  if (otp && !superadminOtp) {
+    body.otp = String(otp).trim();
+  }
+  const res = await fetch(`${API_BASE}/admin/txn/${txnId}/cancel-reversal`, {
+    method:  'POST',
+    headers,
+    body:    JSON.stringify(body),
+  });
+  const data = await parseResponse(res);
+  return data.data || {};
+}
+
 /** POST — superadmin receives OTP email; intent is update | delete */
 export async function requestInvoiceModifyOtp(id, { intent = 'update' } = {}) {
   const res = await fetch(

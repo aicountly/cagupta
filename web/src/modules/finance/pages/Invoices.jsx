@@ -6,7 +6,7 @@ import {
   getOpeningBalance, setOpeningBalance,
   updateTxn, requestInvoiceModifyOtp,
   requestLedgerDeleteOtp, bulkDeleteTxns,
-  requestLedgerReversalUserOtp, reverseLedgerTxn,
+  requestLedgerReversalUserOtp, reverseLedgerTxn, cancelLedgerReversalTxn,
   postInvoiceCostAnalysisPreview,
   getReceiptsWithUnallocated,
   getLedgerReconciliation,
@@ -1075,6 +1075,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
   const [revUserOtpSent, setRevUserOtpSent] = useState(false);
   const [revRequesting, setRevRequesting] = useState(false);
   const [revReversing, setRevReversing] = useState(false);
+  const [revCancelReversing, setRevCancelReversing] = useState(false);
 
   const [recTxnDate, setRecTxnDate] = useState('');
   const [recAmount, setRecAmount] = useState('');
@@ -1225,6 +1226,11 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     ledgerUserRevFromServer && row?.status === 'active' && !withinUserRevWindow && !isPrimarySuperAdmin;
   const needsReversalSuperOtpOnly =
     !ledgerUserRevFromServer && !isPrimarySuperAdmin && row?.status === 'active';
+  const userCancelRevEligible = ledgerUserRevFromServer && withinUserRevWindow && row?.status === 'reversed';
+  const cancelRevBlockedForStaff =
+    ledgerUserRevFromServer && row?.status === 'reversed' && !withinUserRevWindow && !isPrimarySuperAdmin;
+  const needsCancelRevSuperOtpOnly =
+    !ledgerUserRevFromServer && !isPrimarySuperAdmin && row?.status === 'reversed';
   const isCompensatingReversalRow = row
     && ['receipt_reversal', 'payment_expense_reversal', 'tds_reversal'].includes(row.txnType);
 
@@ -1302,6 +1308,64 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
       return;
     }
     setErr('Reversal is not available for this posting.');
+  }
+
+  async function handleCancelLedgerReversal() {
+    setErr('');
+    if (cancelRevBlockedForStaff) {
+      setErr('The 30-day window has elapsed. You cannot cancel this reversal. Please contact super admin.');
+      return;
+    }
+    if (isPrimarySuperAdmin) {
+      setRevCancelReversing(true);
+      try {
+        await cancelLedgerReversalTxn(txnId, {});
+        onSaved?.({});
+        onClose();
+      } catch (e) {
+        setErr(e.message || 'Cancel reversal failed.');
+      } finally {
+        setRevCancelReversing(false);
+      }
+      return;
+    }
+    if (userCancelRevEligible) {
+      const uo = revUserOtp.trim();
+      if (!uo) {
+        setErr('Enter the verification code sent to your email.');
+        return;
+      }
+      setRevCancelReversing(true);
+      try {
+        await cancelLedgerReversalTxn(txnId, { otp: uo });
+        onSaved?.({});
+        onClose();
+      } catch (e) {
+        setErr(e.message || 'Cancel reversal failed.');
+      } finally {
+        setRevCancelReversing(false);
+      }
+      return;
+    }
+    if (needsCancelRevSuperOtpOnly) {
+      const so = revSuperOtp.trim();
+      if (!so) {
+        setErr('Enter the superadmin OTP to authorize cancel reversal. Request a code using the button above if needed.');
+        return;
+      }
+      setRevCancelReversing(true);
+      try {
+        await cancelLedgerReversalTxn(txnId, { superadminOtp: so });
+        onSaved?.({});
+        onClose();
+      } catch (e) {
+        setErr(e.message || 'Cancel reversal failed.');
+      } finally {
+        setRevCancelReversing(false);
+      }
+      return;
+    }
+    setErr('Cancel reversal is not available for this posting.');
   }
 
   async function handleRequestOtp() {
@@ -1702,6 +1766,60 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                 >
                   {revReversing ? 'Reversing…' : 'Reverse transaction'}
                 </button>
+                {row.status === 'reversed' && (
+                  <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px dashed #cbd5e1' }}>
+                    <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Cancel ledger reversal</div>
+                    <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px', lineHeight: 1.45 }}>
+                      Restores this posting to <strong>active</strong> and drops the compensating reversal from the ledger.
+                      On-behalf payments: settlement links are <strong>not</strong> restored automatically — re-link from receipts if needed.
+                      Receipt reversals cannot be cancelled here (invoice allocations were cleared).
+                    </p>
+                    {cancelRevBlockedForStaff && (
+                      <p style={{ fontSize: 12, color: '#b45309', margin: '0 0 10px', lineHeight: 1.45 }}>
+                        The 30-day window has elapsed. You cannot cancel this reversal. Please contact super admin.
+                      </p>
+                    )}
+                    {userCancelRevEligible && (
+                      <>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                          <button type="button" style={btnSecondary} disabled={revRequesting} onClick={handleRequestReversalUserOtp}>
+                            {revRequesting ? 'Sending…' : 'Send verification code to my email'}
+                          </button>
+                          {revUserOtpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Check your inbox</span>}
+                        </div>
+                        <label style={labelStyle}>
+                          Verification code (from your email) *
+                          <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code from your email" value={revUserOtp} onChange={(e) => setRevUserOtp(e.target.value.replace(/\s/g, ''))} />
+                        </label>
+                      </>
+                    )}
+                    {needsCancelRevSuperOtpOnly && (
+                      <label style={labelStyle}>
+                        Superadmin OTP (cancel reversal) *
+                        <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={revSuperOtp} onChange={(e) => setRevSuperOtp(e.target.value.replace(/\s/g, ''))} />
+                        <span style={{ display: 'block', fontSize: 11, color: '#64748b', fontWeight: 400, marginTop: 4 }}>
+                          Request a code with the button above if you do not have one yet.
+                        </span>
+                      </label>
+                    )}
+                    <button
+                      type="button"
+                      style={{
+                        ...btnSecondary,
+                        marginTop: 10,
+                        background: '#14532d',
+                        color: '#fff',
+                        border: '1px solid #052e16',
+                      }}
+                      disabled={
+                        revCancelReversing || loading || !row || row.status !== 'reversed' || cancelRevBlockedForStaff
+                      }
+                      onClick={handleCancelLedgerReversal}
+                    >
+                      {revCancelReversing ? 'Updating…' : 'Cancel reversal'}
+                    </button>
+                  </div>
+                )}
               </div>
               )}
             </>

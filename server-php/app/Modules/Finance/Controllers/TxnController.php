@@ -48,7 +48,7 @@ class TxnController extends BaseController
      * Query params: page, per_page, search, txn_type, client_id, organization_id,
      *               expense_purpose, tds_status, status, date_from, date_to,
      *               ledger_class (optional; matches ledger sqlLedgerClassMatch when set),
-     *               omit_cancelled_reversed (optional; when true, same status filter as ledger/reconciliation)
+     *               omit_cancelled_reversed or omit_cancelled_deleted (optional; when true, exclude cancelled/deleted only — aligned with ledger; reversed rows remain visible)
      */
     public function index(): never
     {
@@ -67,7 +67,9 @@ class TxnController extends BaseController
         $dateTo    = trim((string)$this->query('date_to', ''));
         $ledgerClassFilter = trim((string)$this->query('ledger_class', ''));
         $omitRaw             = strtolower(trim((string)$this->query('omit_cancelled_reversed', '')));
-        $omitCancelledReversed = in_array($omitRaw, ['1', 'true', 'yes'], true);
+        $omitDelRaw          = strtolower(trim((string)$this->query('omit_cancelled_deleted', '')));
+        $omitCancelledReversed = in_array($omitRaw, ['1', 'true', 'yes'], true)
+            || in_array($omitDelRaw, ['1', 'true', 'yes'], true);
 
         $result = $this->txn->paginate(
             $page, $perPage, $search, $txnType,
@@ -951,10 +953,6 @@ class TxnController extends BaseController
             'tds_final',
             'rebate',
             'credit_note',
-            // Compensating ledger rows (same OTP/delete flow as primary rows)
-            'receipt_reversal',
-            'payment_expense_reversal',
-            'tds_reversal',
         ];
     }
 
@@ -967,7 +965,6 @@ class TxnController extends BaseController
     private function txnDeleteSortPriority(string $txnType): int
     {
         return match ($txnType) {
-            'receipt_reversal', 'payment_expense_reversal', 'tds_reversal' => 5,
             'receipt', 'payment_expense', 'tds_provisional', 'tds_final', 'rebate' => 10,
             'credit_note' => 20,
             'invoice' => 30,
@@ -1025,12 +1022,6 @@ class TxnController extends BaseController
 
             return;
         }
-        if ($type === 'receipt_reversal' || $type === 'payment_expense_reversal') {
-            $this->txn->deleteCashMirrorRowsForClientLeg($id);
-            $this->txn->delete($id);
-
-            return;
-        }
         $this->txn->delete($id);
     }
 
@@ -1051,6 +1042,13 @@ class TxnController extends BaseController
         if (in_array($type, $cashMirrorOnly, true)) {
             $this->error(
                 'This transaction is a linked firm cash-book row. Delete or reverse the client receipt or on-behalf payment instead.',
+                422
+            );
+        }
+
+        if (in_array($type, ['receipt_reversal', 'payment_expense_reversal', 'tds_reversal'], true)) {
+            $this->error(
+                'Ledger reversal rows cannot be deleted. Use cancel reversal on the original posting instead.',
                 422
             );
         }
@@ -1358,6 +1356,114 @@ class TxnController extends BaseController
     }
 
     /**
+     * POST /api/admin/txn/:id/cancel-reversal
+     * Restores the original txn to active and cancels the compensating reversal row (same auth modes as reverse).
+     */
+    public function cancelLedgerReversal(int $id): never
+    {
+        $acting = $this->authUser();
+        if (!$this->userHasPermission($acting, 'invoices.delete')) {
+            $this->error('Access denied. Required permission: invoices.delete.', 403);
+        }
+
+        $row = $this->txn->find($id);
+        if ($row === null) {
+            $this->error('Transaction not found.', 404);
+        }
+
+        $body        = $this->getJsonBody();
+        $superOtp    = $this->readSuperadminOtpFromRequest();
+        $actingEmail = trim((string)(($acting ?? [])['email'] ?? ''));
+        $mode        = 'user_otp';
+
+        if ($superOtp !== '' && $this->verifySuperadminOtp($superOtp)) {
+            $mode = 'superadmin_otp';
+        } elseif ($actingEmail !== '' && $this->isSuperAdminEmail($actingEmail)) {
+            $mode = 'super_admin_session';
+        } else {
+            $app = new App();
+            if (!$app->ledgerUserReversalEnabled) {
+                $this->error(
+                    'User-initiated ledger reversal is not enabled. Provide a valid superadmin OTP in X-Superadmin-Otp, or contact an administrator.',
+                    403
+                );
+            }
+            $this->assertTxnCancelReversalForUserFlow($row, true);
+            $otp = trim((string)($body['otp'] ?? ''));
+            if ($otp === '') {
+                $this->error('OTP is required. Request a code to your email first.', 422);
+            }
+            $actorIdForOtp = (int)(($acting ?? [])['id'] ?? 0);
+            if ($actorIdForOtp <= 0 || !OtpService::verify($actorIdForOtp, $otp)) {
+                $this->error('Invalid or expired OTP.', 403);
+            }
+        }
+
+        if ($mode === 'superadmin_otp' || $mode === 'super_admin_session') {
+            $this->assertTxnCancelReversalForUserFlow($row, false);
+        }
+
+        $beforeOrig = $this->txnAuditCompactSnapshot($row);
+        $actorRowId = $acting ? (int)$acting['id'] : null;
+
+        try {
+            $result = $this->txn->cancelLedgerReversalForOriginal($id, $actorRowId);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
+        $origAfter = $this->txn->find($id);
+        $revAfter  = $this->txn->find((int)$result['reversal_txn_id']);
+        $afterPayload = [
+            'original' => $origAfter !== null ? $this->txnAuditCompactSnapshot($origAfter) : null,
+            'reversal' => $revAfter !== null ? $this->txnAuditCompactSnapshot($revAfter) : null,
+        ];
+        $this->auditTxnLog(
+            $actorRowId,
+            'txn.reversal_cancelled',
+            $id,
+            [
+                'mode'            => $mode,
+                'reversal_txn_id' => $result['reversal_txn_id'],
+                'txn_type'        => (string)($row['txn_type'] ?? ''),
+            ],
+            $beforeOrig,
+            $afterPayload
+        );
+
+        $this->success(
+            [
+                'original_txn_id' => $id,
+                'reversal_txn_id' => $result['reversal_txn_id'],
+                'original'        => $origAfter,
+                'reversal'        => $revAfter,
+            ],
+            'Ledger reversal cancelled.'
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function assertTxnCancelReversalForUserFlow(array $row, bool $enforceCreatedAtWindow): void
+    {
+        $txnType = (string)($row['txn_type'] ?? '');
+        $allowed = ['receipt', 'payment_expense', 'tds_provisional', 'tds_final'];
+        if (!in_array($txnType, $allowed, true)) {
+            $this->error('This transaction type cannot cancel a ledger reversal through this flow.', 422);
+        }
+        if ((string)($row['status'] ?? '') !== 'reversed') {
+            $this->error('Only reversed transactions can cancel their ledger reversal.', 422);
+        }
+        if ($this->txn->findLedgerReversalIdForOriginal((int)($row['id'] ?? 0)) === null) {
+            $this->error('No active compensating reversal row is linked to this transaction.', 422);
+        }
+        if ($enforceCreatedAtWindow) {
+            $this->assertUserReversalWithinCreatedAtWindow($row);
+        }
+    }
+
+    /**
      * @param array<string, mixed> $row
      */
     private function assertTxnReversibleForUserFlow(array $row, bool $enforceCreatedAtWindow): void
@@ -1454,6 +1560,12 @@ class TxnController extends BaseController
             if (in_array($tt, $cashMirrorOnly, true)) {
                 $this->error(
                     'Bulk delete cannot include firm cash-book leg id ' . $id . '. Remove it and delete the client transaction instead.',
+                    422
+                );
+            }
+            if (in_array($tt, ['receipt_reversal', 'payment_expense_reversal', 'tds_reversal'], true)) {
+                $this->error(
+                    'Bulk delete cannot include ledger reversal id ' . $id . '. Cancel the reversal on the original posting instead.',
                     422
                 );
             }

@@ -1330,6 +1330,12 @@ class Routes
             ],
             [
                 'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/:id/cancel-reversal',
+                'handler'    => 'Admin\TxnController@cancelLedgerReversal',
+                'middleware' => ['auth', 'permission:invoices.delete'],
+            ],
+            [
+                'method'     => 'POST',
                 'pattern'    => '/api/admin/txn/:id/request-invoice-modify-otp',
                 'handler'    => 'Admin\TxnController@requestInvoiceModifyOtp',
                 'middleware' => ['auth', 'permission_any:invoices.edit,invoices.delete'],

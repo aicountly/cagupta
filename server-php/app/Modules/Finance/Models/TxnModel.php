@@ -34,6 +34,15 @@ class TxnModel
 
     public const TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL = 'payment_expense_bank_leg_reversal';
 
+    /**
+     * Entity ledger / reconciliation include reversed originals together with compensating *_reversal rows.
+     * Only cancelled or deleted rows are hidden from those views (soft-delete audit uses the same bucket as cancelled).
+     */
+    public static function sqlTxnVisibleOnEntityLedger(string $alias = 't'): string
+    {
+        return "{$alias}.status NOT IN ('cancelled', 'deleted')";
+    }
+
     private PDO $db;
 
     public function __construct()
@@ -104,7 +113,7 @@ class TxnModel
         $where  = [
             't.public_ref = :ref',
             't.txn_type = :tt',
-            "t.status NOT IN ('cancelled', 'reversed')",
+            self::sqlTxnVisibleOnEntityLedger('t'),
         ];
         $params = [':ref' => $ref, ':tt' => $tt];
         if ($clientId > 0) {
@@ -194,6 +203,8 @@ class TxnModel
     /**
      * Return a paginated list of transactions, optionally filtered.
      *
+     * @param bool $omitCancelledReversed When true, exclude only cancelled/deleted rows (entity ledger visibility; reversed rows remain). Legacy API flag name.
+     *
      * @return array{total: int, txns: array<int, array<string, mixed>>}
      */
     public function paginate(
@@ -217,7 +228,7 @@ class TxnModel
         $params = [];
 
         if ($omitCancelledReversed) {
-            $where[] = "t.status NOT IN ('cancelled', 'reversed')";
+            $where[] = self::sqlTxnVisibleOnEntityLedger('t');
         }
 
         if ($search !== '') {
@@ -342,7 +353,7 @@ class TxnModel
             "SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
-               AND t.status NOT IN ('cancelled', 'reversed')
+               AND " . self::sqlTxnVisibleOnEntityLedger('t') . "
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC"
         );
         $stmt->execute([':client_id' => $clientId]);
@@ -370,7 +381,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
-               AND t.status NOT IN (\'cancelled\', \'reversed\')
+               AND ' . self::sqlTxnVisibleOnEntityLedger('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
         );
@@ -398,7 +409,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.organization_id = :org_id
-               AND t.status NOT IN (\'cancelled\', \'reversed\')
+               AND ' . self::sqlTxnVisibleOnEntityLedger('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
         );
@@ -426,7 +437,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
-               AND t.status NOT IN (\'cancelled\', \'reversed\')
+               AND ' . self::sqlTxnVisibleOnEntityLedger('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
         );
@@ -452,7 +463,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.organization_id = :org_id
-               AND t.status NOT IN (\'cancelled\', \'reversed\')
+               AND ' . self::sqlTxnVisibleOnEntityLedger('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
         );
@@ -540,7 +551,7 @@ class TxnModel
                 'Fees-only view hides rows with ledger_movement_kind=reimbursement (including on-behalf reimbursement payments).',
                 'Reimbursement-only view hides fees movement rows; invoices may appear as split synthetic lines per slice.',
                 'Ledger queries filter ledger_class (Regular/Memorandum/Optional). A txn list filtered only by contact/org may show payments absent here unless ledger_class matches.',
-                'Ledger and reconciliation omit txn rows with status cancelled or reversed; the admin txn list does not unless omit_cancelled_reversed is used.',
+                'Ledger and reconciliation omit txn rows with status cancelled or deleted only (reversed originals stay with their compensating row). Match Ledger on lists uses omit_cancelled_reversed / omit_cancelled_deleted for the same rule.',
             ],
         ];
     }
@@ -548,8 +559,8 @@ class TxnModel
     /**
      * Total receivable across all contact and organization ledgers.
      *
-     * For each ledger entity, closing balance is SUM(debit − credit) on non-cancelled
-     * rows, same as {@see getLedgerByClient()} / {@see getLedgerByOrganization()}.
+     * For each ledger entity, closing balance is SUM(debit − credit) on rows visible on the entity ledger
+     * (excludes cancelled/deleted only), same as {@see getLedgerByClient()} / {@see getLedgerByOrganization()}.
      * Only positive balances (client owes the firm) are summed. Each txn row is
      * attributed to a single bucket: client_id when set, otherwise organization_id,
      * so rows with both IDs are not double-counted.
@@ -561,7 +572,7 @@ class TxnModel
              FROM (
                  SELECT SUM(t.debit - t.credit) AS balance
                  FROM txn t
-                 WHERE t.status NOT IN ('cancelled', 'reversed')
+                 WHERE " . self::sqlTxnVisibleOnEntityLedger('t') . "
                    AND (t.client_id IS NOT NULL OR t.organization_id IS NOT NULL)
                  GROUP BY (
                      CASE
@@ -994,7 +1005,7 @@ class TxnModel
             "SELECT COALESCE(SUM(amount), 0) FROM txn
              WHERE linked_txn_id = :invoice_id
                AND txn_type = 'credit_note'
-               AND status NOT IN ('cancelled', 'reversed')"
+               AND status NOT IN ('cancelled', 'deleted', 'reversed')"
         );
         $stmt->execute([':invoice_id' => $invoiceTxnId]);
 
@@ -1978,13 +1989,94 @@ class TxnModel
             "SELECT id FROM txn
              WHERE linked_txn_id = :lid
                AND txn_type IN ('receipt_reversal', 'payment_expense_reversal', 'tds_reversal')
+               AND " . self::sqlTxnVisibleOnEntityLedger('txn') . '
              ORDER BY id ASC
-             LIMIT 1"
+             LIMIT 1'
         );
         $stmt->execute([':lid' => $originalTxnId]);
         $v = $stmt->fetchColumn();
 
         return $v !== false ? (int)$v : null;
+    }
+
+    /**
+     * Undo an active ledger reversal: cancel the compensating row, restore the original to active,
+     * and restore firm cash-book legs where applicable. Does not restore receipt→invoice allocations
+     * (receipt reversals are rejected).
+     *
+     * @return array{original_txn_id: int, reversal_txn_id: int}
+     */
+    public function cancelLedgerReversalForOriginal(int $originalTxnId, ?int $actorId): array
+    {
+        $orig = $this->find($originalTxnId);
+        if ($orig === null) {
+            throw new \InvalidArgumentException('Transaction not found.');
+        }
+        if ((string)($orig['status'] ?? '') !== 'reversed') {
+            throw new \InvalidArgumentException('Transaction is not reversed.');
+        }
+        $reversalId = $this->findLedgerReversalIdForOriginal($originalTxnId);
+        if ($reversalId === null) {
+            throw new \InvalidArgumentException('No active compensating reversal row is linked to this transaction.');
+        }
+        $revRow = $this->find($reversalId);
+        if ($revRow === null || (string)($revRow['status'] ?? '') !== 'active') {
+            throw new \InvalidArgumentException('Compensating reversal row is missing or inactive.');
+        }
+        $revType = (string)($revRow['txn_type'] ?? '');
+        if ($revType === 'receipt_reversal') {
+            throw new \InvalidArgumentException(
+                'Cancelling a receipt reversal is not supported because invoice allocations were cleared. Contact support if this must be corrected.'
+            );
+        }
+        $origType = (string)($orig['txn_type'] ?? '');
+        $pairOk   = match ($revType) {
+            'payment_expense_reversal' => $origType === 'payment_expense',
+            'tds_reversal' => in_array($origType, ['tds_provisional', 'tds_final'], true),
+            default => false,
+        };
+        if (!$pairOk) {
+            throw new \InvalidArgumentException('Original transaction type does not match the linked reversal row.');
+        }
+
+        $this->db->beginTransaction();
+        try {
+            $this->deleteCashMirrorRowsForClientLeg($reversalId);
+            if ($revType === 'payment_expense_reversal') {
+                $this->restorePrimaryBankLegMarkedReversed($originalTxnId, self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG, $actorId);
+            }
+            $this->update($reversalId, ['status' => 'cancelled'], $actorId);
+            $this->update($originalTxnId, ['status' => 'active'], $actorId);
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+
+        return ['original_txn_id' => $originalTxnId, 'reversal_txn_id' => $reversalId];
+    }
+
+    /**
+     * Firm cash-book row for a reversed receipt/payment: flip status back to active after cancelling the reversal.
+     */
+    private function restorePrimaryBankLegMarkedReversed(int $originalClientLegId, string $bankLegTxnType, ?int $actorId): void
+    {
+        if ($originalClientLegId <= 0) {
+            return;
+        }
+        $stmt = $this->db->prepare(
+            'SELECT id FROM txn
+             WHERE linked_txn_id = :lid AND txn_type = :tt AND status = \'reversed\'
+             LIMIT 1'
+        );
+        $stmt->execute([':lid' => $originalClientLegId, ':tt' => $bankLegTxnType]);
+        $bid = $stmt->fetchColumn();
+        if ($bid === false) {
+            return;
+        }
+        $this->update((int) $bid, ['status' => 'active'], $actorId);
     }
 
     /**
