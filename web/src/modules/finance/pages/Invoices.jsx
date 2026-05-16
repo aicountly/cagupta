@@ -3562,6 +3562,7 @@ export default function Invoices() {
         params.clientId = ledgerClientId;
       }
       params.ledgerClass = normalizeLedgerClassForApi(ledgerLedgerClass);
+      params.omitCancelledReversed = true;
     }
     return params;
   }, [paymentsFilterByLedger, ledgerClientId, ledgerEntityType, ledgerLedgerClass]);
@@ -3888,6 +3889,7 @@ export default function Invoices() {
       expensePurposeLabel(p.expensePurpose),
       ledgerClassLabel(p.ledgerClass),
       p.ledgerMovementKind,
+      p.status,
       formatSignedInrAmount(p.txnType, p.amount || 0),
     ]));
   }, [paymentExpenses, txnListSearchQuery]);
@@ -5014,18 +5016,18 @@ export default function Invoices() {
                     />
                   </th>
                 )}
-                {['Date', 'Ref', 'Client', 'Booked on', 'Ledger type', 'Movement', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Last updated by', 'Actions'].map((h) => (
+                {['Date', 'Ref', 'Client', 'Booked on', 'Ledger type', 'Status', 'Movement', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Last updated by', 'Actions'].map((h) => (
                   <th key={h} style={thStyle}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {payLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 17 : 16} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
               ) : paymentExpenses.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 17 : 16} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
               ) : visiblePaymentExpenses.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 17 : 16} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
               ) : visiblePaymentExpenses.map((p) => {
                 const ledgerMismatch = ledgerClientId && !paymentsFilterByLedger && (
                   !paymentExpenseMatchesLedgerSelection(p, ledgerClientId, ledgerEntityType)
@@ -5054,6 +5056,15 @@ export default function Invoices() {
                   <td style={tdStyle}>{p.clientName}</td>
                   <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }} title="Which contact or organization ledger this payment debits">{paymentExpenseBookedOnLabel(p) || '—'}</td>
                   <td style={tdStyle}>{ledgerClassLabel(p.ledgerClass)}</td>
+                  <td style={{
+                    ...tdStyle,
+                    fontSize: 11,
+                    fontWeight: (p.status && p.status !== 'active') ? 600 : 400,
+                    color: (p.status === 'cancelled' || p.status === 'reversed') ? '#b91c1c' : '#334155',
+                  }}
+                  >
+                    {p.status || '—'}
+                  </td>
                   <td style={tdStyle}>
                     {p.ledgerMovementKind === 'reimbursement'
                       ? 'Reimbursement'

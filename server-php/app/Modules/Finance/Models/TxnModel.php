@@ -210,10 +210,15 @@ class TxnModel
         string $expensePurpose = '',
         string $paymentMethod = '',
         string $paidFrom = '',
-        string $ledgerClassFilter = ''
+        string $ledgerClassFilter = '',
+        bool $omitCancelledReversed = false
     ): array {
         $where  = ['1=1'];
         $params = [];
+
+        if ($omitCancelledReversed) {
+            $where[] = "t.status NOT IN ('cancelled', 'reversed')";
+        }
 
         if ($search !== '') {
             $where[]           = "(t.narration ILIKE :search
@@ -535,6 +540,7 @@ class TxnModel
                 'Fees-only view hides rows with ledger_movement_kind=reimbursement (including on-behalf reimbursement payments).',
                 'Reimbursement-only view hides fees movement rows; invoices may appear as split synthetic lines per slice.',
                 'Ledger queries filter ledger_class (Regular/Memorandum/Optional). A txn list filtered only by contact/org may show payments absent here unless ledger_class matches.',
+                'Ledger and reconciliation omit txn rows with status cancelled or reversed; the admin txn list does not unless omit_cancelled_reversed is used.',
             ],
         ];
     }

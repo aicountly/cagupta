@@ -47,7 +47,8 @@ class TxnController extends BaseController
      *
      * Query params: page, per_page, search, txn_type, client_id, organization_id,
      *               expense_purpose, tds_status, status, date_from, date_to,
-     *               ledger_class (optional; matches ledger sqlLedgerClassMatch when set)
+     *               ledger_class (optional; matches ledger sqlLedgerClassMatch when set),
+     *               omit_cancelled_reversed (optional; when true, same status filter as ledger/reconciliation)
      */
     public function index(): never
     {
@@ -65,11 +66,14 @@ class TxnController extends BaseController
         $dateFrom  = trim((string)$this->query('date_from', ''));
         $dateTo    = trim((string)$this->query('date_to', ''));
         $ledgerClassFilter = trim((string)$this->query('ledger_class', ''));
+        $omitRaw             = strtolower(trim((string)$this->query('omit_cancelled_reversed', '')));
+        $omitCancelledReversed = in_array($omitRaw, ['1', 'true', 'yes'], true);
 
         $result = $this->txn->paginate(
             $page, $perPage, $search, $txnType,
             $clientId, $orgId, $tdsStatus, $status, $dateFrom, $dateTo, $expensePurpose, $paymentMethodFilter, $paidFromFilter,
-            $ledgerClassFilter
+            $ledgerClassFilter,
+            $omitCancelledReversed
         );
 
         $this->success($result['txns'], 'Transactions retrieved', 200, [
