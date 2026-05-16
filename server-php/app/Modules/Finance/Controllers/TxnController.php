@@ -944,6 +944,10 @@ class TxnController extends BaseController
             'tds_final',
             'rebate',
             'credit_note',
+            // Compensating ledger rows (same OTP/delete flow as primary rows)
+            'receipt_reversal',
+            'payment_expense_reversal',
+            'tds_reversal',
         ];
     }
 
@@ -956,6 +960,7 @@ class TxnController extends BaseController
     private function txnDeleteSortPriority(string $txnType): int
     {
         return match ($txnType) {
+            'receipt_reversal', 'payment_expense_reversal', 'tds_reversal' => 5,
             'receipt', 'payment_expense', 'tds_provisional', 'tds_final', 'rebate' => 10,
             'credit_note' => 20,
             'invoice' => 30,
@@ -1008,6 +1013,12 @@ class TxnController extends BaseController
         }
         if ($type === 'payment_expense') {
             TxnReceiptAllocationService::unlinkPaymentExpenseFromReceipts($id);
+            $this->txn->deleteCashMirrorRowsForClientLeg($id);
+            $this->txn->delete($id);
+
+            return;
+        }
+        if ($type === 'receipt_reversal' || $type === 'payment_expense_reversal') {
             $this->txn->deleteCashMirrorRowsForClientLeg($id);
             $this->txn->delete($id);
 
