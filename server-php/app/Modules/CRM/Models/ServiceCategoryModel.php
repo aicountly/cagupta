@@ -71,7 +71,41 @@ class ServiceCategoryModel
         }
         unset($cat);
 
-        return $categories;
+        return self::sanitizeCatalogTree($categories);
+    }
+
+    /**
+     * Normalise catalog rows for JSON encoding (api_success uses JSON_THROW_ON_ERROR).
+     * Handles PDO/pg edge cases: NaN/INF floats, resources, DateTime-like objects.
+     *
+     * @param mixed $value
+     * @return mixed
+     */
+    private static function sanitizeCatalogTree(mixed $value): mixed
+    {
+        if (is_array($value)) {
+            $out = [];
+            foreach ($value as $k => $item) {
+                $out[$k] = self::sanitizeCatalogTree($item);
+            }
+            return $out;
+        }
+        if (is_float($value) && (is_nan($value) || is_infinite($value))) {
+            return null;
+        }
+        if (is_resource($value)) {
+            $contents = @stream_get_contents($value);
+
+            return ($contents !== false && $contents !== '') ? $contents : '';
+        }
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format(\DateTimeInterface::ATOM);
+        }
+        if ($value instanceof \BackedEnum) {
+            return $value->value;
+        }
+
+        return $value;
     }
 
     /**

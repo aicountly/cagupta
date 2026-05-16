@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Config\Database;
 use App\Controllers\BaseController;
+use JsonException;
 use App\Models\ServiceCategoryModel;
 use App\Models\ServiceSubcategoryModel;
 use App\Models\EngagementTypeModel;
@@ -47,8 +48,19 @@ class ServiceCategoryController extends BaseController
      */
     public function index(): never
     {
-        $data = $this->categories->allWithChildren();
-        $this->success($data, 'Service categories retrieved');
+        try {
+            $data = $this->categories->allWithChildren();
+            $this->success($data, 'Service categories retrieved');
+        } catch (\PDOException $e) {
+            error_log('[ServiceCategoryController::index] PDO: ' . $e->getMessage());
+            $this->error(
+                'The service catalog could not be loaded from the database. Verify migrations ran and the DB user may SELECT service_categories, service_subcategories, and engagement_types.',
+                500
+            );
+        } catch (JsonException $e) {
+            error_log('[ServiceCategoryController::index] JSON: ' . $e->getMessage());
+            $this->error('The service catalog could not be encoded for the API. Check server logs.', 500);
+        }
     }
 
     // ── POST /api/admin/service-categories ───────────────────────────────────
