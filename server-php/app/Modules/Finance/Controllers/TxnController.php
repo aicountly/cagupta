@@ -6,7 +6,6 @@ namespace App\Controllers\Admin;
 use App\Config\App;
 use App\Config\Auth as AuthConfig;
 use App\Config\Database;
-use App\Config\LedgerModifyRegions;
 use App\Libraries\BillSettlementReportBuilder;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
@@ -422,7 +421,7 @@ class TxnController extends BaseController
 
     /**
      * Send a superadmin OTP to authorize ledger txn update or delete (invoice, receipt, payment_expense, TDS).
-     * Query or JSON body: intent = update | delete, region = required allowlisted region label.
+     * Query or JSON body: intent = update | delete.
      */
     public function requestInvoiceModifyOtp(int $id): never
     {
@@ -451,11 +450,6 @@ class TxnController extends BaseController
         ];
         if (!in_array($txnType, $otpEligible, true)) {
             $this->error('OTP requests are not supported for this transaction type.', 422);
-        }
-
-        $region = trim((string)($body['region'] ?? ''));
-        if ($region === '' || !LedgerModifyRegions::isValid($region)) {
-            $this->error('region must be a valid Indian state or union territory.', 422);
         }
 
         $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
@@ -493,7 +487,6 @@ class TxnController extends BaseController
                 'invoiceRef'      => $refLine,
                 'txnTypeLabel'    => $typeLabel,
                 'txnSummary'      => $txnSummary,
-                'region'          => $region,
                 'requestedByName' => $actorName,
                 'requestedByEmail'=> $actorEmail,
             ]);
@@ -520,7 +513,6 @@ class TxnController extends BaseController
                 $id,
                 [
                     'intent'    => $intent,
-                    'region'    => $region,
                     'txn_type'  => $txnType,
                 ]
             );

@@ -1,5 +1,5 @@
 /**
- * Indian states / UTs for forms (aligned with CRM org/contact pages and ledger OTP region allowlist).
+ * Indian states / UTs for forms (aligned with CRM org/contact pages).
  */
 export const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh',

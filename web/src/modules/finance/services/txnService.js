@@ -310,18 +310,14 @@ export async function reverseLedgerTxn(txnId, { reason, otp, superadminOtp } = {
   return data.data || {};
 }
 
-/** POST — superadmin receives OTP email; intent is update | delete; region required */
-export async function requestInvoiceModifyOtp(id, { intent = 'update', region } = {}) {
-  const reg = String(region || '').trim();
-  if (!reg) {
-    throw new Error('region is required');
-  }
+/** POST — superadmin receives OTP email; intent is update | delete */
+export async function requestInvoiceModifyOtp(id, { intent = 'update' } = {}) {
   const res = await fetch(
     `${API_BASE}/admin/txn/${id}/request-invoice-modify-otp?intent=${encodeURIComponent(intent)}`,
     {
       method:  'POST',
       headers: authHeaders(),
-      body:    JSON.stringify({ intent, region: reg }),
+      body:    JSON.stringify({ intent }),
     }
   );
   const data = await parseResponse(res);

@@ -39,8 +39,6 @@ import {
   indianFYBounds,
 } from '../../../utils/indianFinancialYear';
 import { ROLES } from '../../../constants/roles';
-import { INDIAN_STATES } from '../../../constants/indianStates';
-import { exportLedgerExcel, exportLedgerPdf } from '../../../utils/ledgerExport';
 import ledgerLogoUrl from '../../../assets/cropped_logo.png';
 import {
   loadRazorpayScript,
@@ -96,6 +94,26 @@ function TxnTypeBadge({ type }) {
       {labels[type] || type}
     </span>
   );
+}
+
+/** Ledger reversals store a positive `amount`; UI shows the economic sign. */
+const COMPENSATING_REVERSAL_TXN_TYPES = new Set([
+  'receipt_reversal',
+  'payment_expense_reversal',
+  'tds_reversal',
+]);
+
+function formatSignedInrAmount(txnType, rawAmount) {
+  const n = typeof rawAmount === 'number' ? rawAmount : parseFloat(rawAmount, 10);
+  const abs = Number.isFinite(n) ? Math.abs(n) : 0;
+  const formatted = abs.toLocaleString('en-IN');
+  return COMPENSATING_REVERSAL_TXN_TYPES.has(txnType) ? `-₹${formatted}` : `₹${formatted}`;
+}
+
+function signedLedgerTxnAmount(txnType, rawAmount) {
+  const n = typeof rawAmount === 'number' ? rawAmount : parseFloat(rawAmount, 10);
+  const abs = Number.isFinite(n) ? Math.abs(n) : 0;
+  return COMPENSATING_REVERSAL_TXN_TYPES.has(txnType) ? -abs : abs;
 }
 
 const TDS_SECTIONS = ['194J','194C','194H','194I','194A','194Q','Other'];
@@ -783,7 +801,6 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
   const [err, setErr] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
-  const [ledgerRegion, setLedgerRegion] = useState('');
   const [requesting, setRequesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -817,7 +834,6 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
     setErr('');
     setOtpSent(false);
     setOtp('');
-    setLedgerRegion('');
     getTxn(invoiceId)
       .then((row) => {
         if (cancelled) return;
@@ -849,13 +865,9 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
 
   async function handleRequestOtp() {
     setErr('');
-    if (!ledgerRegion.trim()) {
-      setErr('Select region (mandatory for OTP email).');
-      return;
-    }
     setRequesting(true);
     try {
-      await requestInvoiceModifyOtp(invoiceId, { intent: 'update', region: ledgerRegion.trim() });
+      await requestInvoiceModifyOtp(invoiceId, { intent: 'update' });
       setOtpSent(true);
     } catch (e) {
       setErr(e.message || 'Could not send OTP.');
@@ -976,15 +988,6 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                 </div>
               ))}
               <button type="button" style={{ ...btnSecondary, alignSelf: 'flex-start' }} onClick={addLine}>+ Line</button>
-              <label style={labelStyle}>
-                Region (mandatory for OTP) *
-                <select style={inputStyle} value={ledgerRegion} onChange={(e) => setLedgerRegion(e.target.value)}>
-                  <option value="">— Select —</option>
-                  {INDIAN_STATES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
                 <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
                   {requesting ? 'Sending…' : 'Request superadmin OTP'}
@@ -1018,7 +1021,6 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [row, setRow] = useState(null);
-  const [region, setRegion] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [requesting, setRequesting] = useState(false);
@@ -1084,7 +1086,6 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     let cancelled = false;
     setLoading(true);
     setErr('');
-    setRegion('');
     setOtpSent(false);
     setOtp('');
     setRevReason('');
@@ -1262,13 +1263,9 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
 
   async function handleRequestOtp() {
     setErr('');
-    if (!region.trim()) {
-      setErr('Select region (mandatory for OTP email).');
-      return;
-    }
     setRequesting(true);
     try {
-      await requestInvoiceModifyOtp(txnId, { intent: 'update', region: region.trim() });
+      await requestInvoiceModifyOtp(txnId, { intent: 'update' });
       setOtpSent(true);
     } catch (e) {
       setErr(e.message || 'Could not send OTP.');
@@ -1594,15 +1591,6 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                   <div style={{ fontSize: 11, color: '#64748b' }}>Status: {row.tdsStatus || '—'} (finalize unchanged)</div>
                 </>
               )}
-              <label style={labelStyle}>
-                Region (mandatory for OTP) *
-                <select style={inputStyle} value={region} onChange={(e) => setRegion(e.target.value)}>
-                  <option value="">— Select —</option>
-                  {INDIAN_STATES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
                 <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
                   {requesting ? 'Sending…' : 'Request superadmin OTP'}
@@ -3769,7 +3757,10 @@ export default function Invoices() {
 
   // ── Summary cards ───────────────────────────────────────────────────────────
   const totalBilled    = invoices.reduce((a, i) => a + (i.amount || i.debit || 0), 0);
-  const totalCollected = receipts.reduce((a, r) => a + (r.amount || r.credit || 0), 0);
+  const totalCollected = receipts.reduce(
+    (a, r) => a + signedLedgerTxnAmount(r.txnType, r.amount || r.credit || 0),
+    0,
+  );
   const outstanding    = totalBilled - totalCollected;
   const tdsPending     = tdsEntries.filter(t => t.tdsStatus === 'provisional').reduce((a, t) => a + t.amount, 0);
 
@@ -4282,11 +4273,11 @@ export default function Invoices() {
           onClose={() => setEditLedgerTxnId(null)}
           onSaved={(row) => {
             const tt = row.txnType;
-            if (tt === 'receipt') {
+            if (tt === 'receipt' || tt === 'receipt_reversal') {
               getTxns({ txnType: 'receipt' }).then(({ txns }) => setReceipts(txns));
-            } else if (tt === 'payment_expense') {
+            } else if (tt === 'payment_expense' || tt === 'payment_expense_reversal') {
               getTxns({ txnType: 'payment_expense', perPage: 100 }).then(({ txns }) => setPaymentExpenses(txns));
-            } else if (tt === 'tds_provisional' || tt === 'tds_final') {
+            } else if (tt === 'tds_provisional' || tt === 'tds_final' || tt === 'tds_reversal') {
               const params = tdsFilter === 'all' ? {} : { tdsStatus: tdsFilter };
               getTdsEntries(params).then(setTdsEntries);
             }
@@ -4540,7 +4531,7 @@ export default function Invoices() {
                     return {
                       id,
                       label: r
-                        ? `${r.txnDate || '—'} — ${r.clientName} — ₹${(r.amount || 0).toLocaleString('en-IN')}`
+                        ? `${r.txnDate || '—'} — ${r.clientName} — ${formatSignedInrAmount(r.txnType, r.amount || r.credit || 0)}`
                         : `Receipt #${id}`,
                     };
                   }),
@@ -4595,7 +4586,7 @@ export default function Invoices() {
                   <td style={tdStyle}>{r.txnDate}</td>
                   <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{r.publicRef || '—'}</td>
                   <td style={tdStyle}>{r.clientName}</td>
-                  <td style={{ ...tdStyle, fontWeight:600, color:'#16a34a' }}>₹{r.amount.toLocaleString('en-IN')}</td>
+                  <td style={{ ...tdStyle, fontWeight:600, color:'#16a34a' }}>{formatSignedInrAmount(r.txnType, r.amount || r.credit || 0)}</td>
                   <td style={tdStyle}>{r.paymentMethod || '—'}</td>
                   <td style={{ ...tdStyle, fontFamily:'monospace', fontSize:12 }}>{r.referenceNumber || '—'}</td>
                   <td style={tdStyle}><BillingProfileBadge code={r.billingProfileCode} /></td>
@@ -4614,7 +4605,7 @@ export default function Invoices() {
                           title: 'Delete receipt',
                           items: [{
                             id: r.id,
-                            label: `${r.txnDate || '—'} — ${r.clientName} — ₹${(r.amount || 0).toLocaleString('en-IN')}`,
+                            label: `${r.txnDate || '—'} — ${r.clientName} — ${formatSignedInrAmount(r.txnType, r.amount || r.credit || 0)}`,
                           }],
                         })}
                       >
@@ -4645,7 +4636,7 @@ export default function Invoices() {
                     return {
                       id,
                       label: p
-                        ? `${p.txnDate || '—'} — ${p.clientName} — ₹${(p.amount || 0).toLocaleString('en-IN')}`
+                        ? `${p.txnDate || '—'} — ${p.clientName} — ${formatSignedInrAmount(p.txnType, p.amount || 0)}`
                         : `Payment #${id}`,
                     };
                   }),
@@ -4710,7 +4701,7 @@ export default function Invoices() {
                         ? 'Fees'
                         : '—'}
                   </td>
-                  <td style={{ ...tdStyle, fontWeight: 600, color: '#b91c1c' }} title="Recoverable from client (ledger debit)">₹{p.amount.toLocaleString('en-IN')}</td>
+                  <td style={{ ...tdStyle, fontWeight: 600, color: '#b91c1c' }} title="Recoverable from client (ledger debit)">{formatSignedInrAmount(p.txnType, p.amount || 0)}</td>
                   <td style={tdStyle}>{expensePurposeLabel(p.expensePurpose)}</td>
                   <td style={tdStyle}>{p.paymentMethod || '—'}</td>
                   <td style={{ ...tdStyle, maxWidth: 140, whiteSpace: 'normal' }}>{p.paidFrom || '—'}</td>
@@ -4739,7 +4730,7 @@ export default function Invoices() {
                           title: 'Delete payment (on behalf)',
                           items: [{
                             id: p.id,
-                            label: `${p.txnDate || '—'} — ${p.clientName} — ₹${(p.amount || 0).toLocaleString('en-IN')}`,
+                            label: `${p.txnDate || '—'} — ${p.clientName} — ${formatSignedInrAmount(p.txnType, p.amount || 0)}`,
                           }],
                         })}
                       >
@@ -4778,7 +4769,7 @@ export default function Invoices() {
                     return {
                       id,
                       label: t
-                        ? `${t.txnDate || '—'} — ${t.clientName} — ₹${(t.amount || 0).toLocaleString('en-IN')} (${t.txnType || ''})`
+                        ? `${t.txnDate || '—'} — ${t.clientName} — ${formatSignedInrAmount(t.txnType, t.amount || 0)} (${t.txnType || ''})`
                         : `TDS #${id}`,
                     };
                   }),
@@ -4821,7 +4812,7 @@ export default function Invoices() {
                   )}
                   <td style={tdStyle}>{t.txnDate}</td>
                   <td style={tdStyle}>{t.clientName}</td>
-                  <td style={{ ...tdStyle, fontWeight:600 }}>₹{t.amount.toLocaleString('en-IN')}</td>
+                  <td style={{ ...tdStyle, fontWeight:600 }}>{formatSignedInrAmount(t.txnType, t.amount || 0)}</td>
                   <td style={{ ...tdStyle, fontFamily:'monospace', fontSize:12 }}>{t.tdsSection || '—'}</td>
                   <td style={tdStyle}>{t.tdsRate ? `${t.tdsRate}%` : '—'}</td>
                   <td style={tdStyle}><TxnTypeBadge type={t.txnType} /></td>
@@ -4840,7 +4831,7 @@ export default function Invoices() {
                             title: 'Delete TDS entry',
                             items: [{
                               id: t.id,
-                              label: `${t.txnDate || '—'} — ${t.clientName} — ₹${(t.amount || 0).toLocaleString('en-IN')} (${t.txnType || ''})`,
+                              label: `${t.txnDate || '—'} — ${t.clientName} — ${formatSignedInrAmount(t.txnType, t.amount || 0)} (${t.txnType || ''})`,
                             }],
                           })}
                         >

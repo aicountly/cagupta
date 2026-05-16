@@ -32,7 +32,6 @@ import {
   indianFYBounds,
 } from '../utils/indianFinancialYear';
 import { exportLedgerExcel, exportLedgerPdf } from '../utils/ledgerExport';
-import { INDIAN_STATES } from '../constants/indianStates';
 import ledgerLogoUrl from '../assets/cropped_logo.png';
 import {
   loadRazorpayScript,
@@ -661,7 +660,6 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
   const [err, setErr] = useState('');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
-  const [ledgerRegion, setLedgerRegion] = useState('');
   const [requesting, setRequesting] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
@@ -695,7 +693,6 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
     setErr('');
     setOtpSent(false);
     setOtp('');
-    setLedgerRegion('');
     getTxn(invoiceId)
       .then((row) => {
         if (cancelled) return;
@@ -727,13 +724,9 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
 
   async function handleRequestOtp() {
     setErr('');
-    if (!ledgerRegion.trim()) {
-      setErr('Select region (mandatory for OTP email).');
-      return;
-    }
     setRequesting(true);
     try {
-      await requestInvoiceModifyOtp(invoiceId, { intent: 'update', region: ledgerRegion.trim() });
+      await requestInvoiceModifyOtp(invoiceId, { intent: 'update' });
       setOtpSent(true);
     } catch (e) {
       setErr(e.message || 'Could not send OTP.');
@@ -854,15 +847,6 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                 </div>
               ))}
               <button type="button" style={{ ...btnSecondary, alignSelf: 'flex-start' }} onClick={addLine}>+ Line</button>
-              <label style={labelStyle}>
-                Region (mandatory for OTP) *
-                <select style={inputStyle} value={ledgerRegion} onChange={(e) => setLedgerRegion(e.target.value)}>
-                  <option value="">— Select —</option>
-                  {INDIAN_STATES.map((s) => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
                 <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
                   {requesting ? 'Sending…' : 'Request superadmin OTP'}
@@ -890,17 +874,12 @@ function DeleteInvoiceModal({ invoice, onClose, onDeleted }) {
   const [otp, setOtp] = useState('');
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(false);
-  const [ledgerRegion, setLedgerRegion] = useState('');
 
   async function sendOtp() {
     setErr('');
-    if (!ledgerRegion.trim()) {
-      setErr('Select region (mandatory for OTP email).');
-      return;
-    }
     setBusy(true);
     try {
-      await requestInvoiceModifyOtp(invoice.id, { intent: 'delete', region: ledgerRegion.trim() });
+      await requestInvoiceModifyOtp(invoice.id, { intent: 'delete' });
       setOtpSent(true);
     } catch (e) {
       setErr(e.message || 'Failed to send OTP.');
@@ -942,15 +921,6 @@ function DeleteInvoiceModal({ invoice, onClose, onDeleted }) {
             Request a superadmin OTP, then enter it to confirm.
           </p>
           {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
-          <label style={labelStyle}>
-            Region (mandatory for OTP) *
-            <select style={inputStyle} value={ledgerRegion} onChange={(e) => setLedgerRegion(e.target.value)}>
-              <option value="">— Select —</option>
-              {INDIAN_STATES.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </label>
           <button type="button" style={btnSecondary} disabled={busy} onClick={sendOtp}>
             {busy && !otpSent ? 'Sending…' : 'Request superadmin OTP'}
           </button>
