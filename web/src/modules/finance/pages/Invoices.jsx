@@ -5230,91 +5230,103 @@ export default function Invoices() {
       {/* ── Tab: Ledger ───────────────────────────────────────────────────── */}
       {tab==='ledger' && (
         <div style={cardStyle}>
-          <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
-            <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Client:</span>
-            <div style={{ flex:'0 0 280px' }}>
-              <EntitySearchDropdown
-                value={ledgerClientId}
-                displayValue={ledgerClientName}
-                entityType={ledgerEntityType}
-                onChange={c => {
-                  setLedgerClientId(String(c.id));
-                  setLedgerClientName(c.displayName);
-                  setLedgerEntityType(c.entityType);
-                }}
-                placeholder="Search contact or organization…"
-              />
+          <div style={ledgerToolbarBarStyle}>
+            <div style={ledgerToolbarGroupStyle}>
+              <span style={ledgerToolbarLabelStyle}>Client:</span>
+              <div style={{ flex: '0 0 clamp(200px, 26vw, 300px)', minWidth: 0 }}>
+                <EntitySearchDropdown
+                  value={ledgerClientId}
+                  displayValue={ledgerClientName}
+                  entityType={ledgerEntityType}
+                  onChange={c => {
+                    setLedgerClientId(String(c.id));
+                    setLedgerClientName(c.displayName);
+                    setLedgerEntityType(c.entityType);
+                  }}
+                  placeholder="Search contact or organization…"
+                />
+              </div>
             </div>
             {ledgerClientId && (
               <>
-                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Ledger type:</span>
-                <select
-                  style={{ ...inputStyle, minWidth: 116, cursor:'pointer' }}
-                  value={ledgerLedgerClass}
-                  onChange={(e) => setLedgerLedgerClass(e.target.value)}
-                >
-                  {LEDGER_CLASS_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>View:</span>
-                <select
-                  style={{ ...inputStyle, minWidth: 144, cursor:'pointer' }}
-                  value={ledgerLedgerView}
-                  onChange={(e) => setLedgerLedgerView(e.target.value)}
-                >
-                  {LEDGER_VIEW_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
+                <div style={ledgerToolbarGroupStyle}>
+                  <span style={ledgerToolbarLabelStyle}>Ledger type:</span>
+                  <select
+                    style={{ ...ledgerToolbarSelectStyle, minWidth: 116 }}
+                    value={ledgerLedgerClass}
+                    onChange={(e) => setLedgerLedgerClass(e.target.value)}
+                  >
+                    {LEDGER_CLASS_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={ledgerToolbarGroupStyle}>
+                  <span style={ledgerToolbarLabelStyle}>View:</span>
+                  <select
+                    style={{ ...ledgerToolbarSelectStyle, minWidth: 144 }}
+                    value={ledgerLedgerView}
+                    onChange={(e) => setLedgerLedgerView(e.target.value)}
+                  >
+                    {LEDGER_VIEW_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
               </>
             )}
             {ledgerClientId && !ledgerLoading && (
               <>
-                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Financial year:</span>
-                <select
-                  style={{ ...inputStyle, minWidth: 128, cursor:'pointer' }}
-                  value={ledgerFyStartYear ?? ledgerFyOptions[ledgerFyOptions.length - 1]}
-                  onChange={(e) => setLedgerFyStartYear(parseInt(e.target.value, 10))}
-                >
-                  {ledgerFyOptions.map((y) => (
-                    <option key={y} value={y}>
-                      {indianFYLabel(y)}
-                    </option>
-                  ))}
-                </select>
-                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Date from:</span>
-                <DateInput
-                  style={{ ...inputStyle, width: 'auto' }}
-                  min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
-                  max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
-                  value={ledgerFilterDateFrom}
-                  onChange={(e) => setLedgerFilterDateFrom(e.target.value)}
-                />
-                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>to:</span>
-                <DateInput
-                  style={{ ...inputStyle, width: 'auto' }}
-                  min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
-                  max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
-                  value={ledgerFilterDateTo}
-                  onChange={(e) => setLedgerFilterDateTo(e.target.value)}
-                />
-                {(ledgerFilterDateFrom || ledgerFilterDateTo) && (
-                  <button
-                    type="button"
-                    style={{ ...btnSecondary, fontSize:12, padding:'6px 10px', whiteSpace:'nowrap' }}
-                    onClick={() => {
-                      setLedgerFilterDateFrom('');
-                      setLedgerFilterDateTo('');
-                    }}
+                <div style={ledgerToolbarGroupStyle}>
+                  <span style={ledgerToolbarLabelStyle}>Financial year:</span>
+                  <select
+                    style={{ ...ledgerToolbarSelectStyle, minWidth: 128, maxWidth: 168 }}
+                    value={ledgerFyStartYear ?? ledgerFyOptions[ledgerFyOptions.length - 1]}
+                    onChange={(e) => setLedgerFyStartYear(parseInt(e.target.value, 10))}
                   >
-                    Clear dates
-                  </button>
+                    {ledgerFyOptions.map((y) => (
+                      <option key={y} value={y}>
+                        {indianFYLabel(y)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={ledgerToolbarGroupStyle}>
+                  <span style={ledgerToolbarLabelStyle}>Date from:</span>
+                  <DateInput
+                    style={ledgerToolbarDateStyle}
+                    min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
+                    max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
+                    value={ledgerFilterDateFrom}
+                    onChange={(e) => setLedgerFilterDateFrom(e.target.value)}
+                  />
+                  <span style={ledgerToolbarLabelStyle}>to</span>
+                  <DateInput
+                    style={ledgerToolbarDateStyle}
+                    min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
+                    max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
+                    value={ledgerFilterDateTo}
+                    onChange={(e) => setLedgerFilterDateTo(e.target.value)}
+                  />
+                </div>
+                {(ledgerFilterDateFrom || ledgerFilterDateTo) && (
+                  <div style={ledgerToolbarGroupStyle}>
+                    <button
+                      type="button"
+                      style={{ ...btnSecondary, fontSize:12, padding:'6px 10px', whiteSpace:'nowrap' }}
+                      onClick={() => {
+                        setLedgerFilterDateFrom('');
+                        setLedgerFilterDateTo('');
+                      }}
+                    >
+                      Clear dates
+                    </button>
+                  </div>
                 )}
               </>
             )}
             {ledgerClientId && !ledgerLoading && ledgerDisplayRows.length > 0 && (
-              <>
+              <div style={ledgerToolbarGroupStyle}>
                 <button
                   type="button"
                   style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap' }}
@@ -5358,15 +5370,17 @@ export default function Invoices() {
                 >
                   ⬇ PDF
                 </button>
-              </>
+              </div>
             )}
             {ledgerClientId && (
-              <button
-                style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap' }}
-                onClick={() => setShowOpeningModal(true)}
-              >
-                📖 Opening Balances
-              </button>
+              <div style={ledgerToolbarGroupStyle}>
+                <button
+                  style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap' }}
+                  onClick={() => setShowOpeningModal(true)}
+                >
+                  📖 Opening Balances
+                </button>
+              </div>
             )}
           </div>
           {!ledgerClientId ? (
@@ -5415,86 +5429,98 @@ export default function Invoices() {
       {/* ── Tab: Bill by bill settlement ─────────────────────────────────────── */}
       {tab === 'bill_settlement' && (
         <div style={cardStyle}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>Client:</span>
-            <div style={{ flex: '0 0 280px' }}>
-              <EntitySearchDropdown
-                value={ledgerClientId}
-                displayValue={ledgerClientName}
-                entityType={ledgerEntityType}
-                onChange={(c) => {
-                  setLedgerClientId(String(c.id));
-                  setLedgerClientName(c.displayName);
-                  setLedgerEntityType(c.entityType);
-                }}
-                placeholder="Search contact or organization…"
-              />
+          <div style={ledgerToolbarBarStyle}>
+            <div style={ledgerToolbarGroupStyle}>
+              <span style={ledgerToolbarLabelStyle}>Client:</span>
+              <div style={{ flex: '0 0 clamp(200px, 26vw, 300px)', minWidth: 0 }}>
+                <EntitySearchDropdown
+                  value={ledgerClientId}
+                  displayValue={ledgerClientName}
+                  entityType={ledgerEntityType}
+                  onChange={(c) => {
+                    setLedgerClientId(String(c.id));
+                    setLedgerClientName(c.displayName);
+                    setLedgerEntityType(c.entityType);
+                  }}
+                  placeholder="Search contact or organization…"
+                />
+              </div>
             </div>
             {ledgerClientId && (
               <>
-                <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>Ledger type:</span>
-                <select
-                  style={{ ...inputStyle, minWidth: 116, cursor: 'pointer' }}
-                  value={ledgerLedgerClass}
-                  onChange={(e) => setLedgerLedgerClass(e.target.value)}
-                >
-                  {LEDGER_CLASS_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
-                <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>View:</span>
-                <select
-                  style={{ ...inputStyle, minWidth: 144, cursor: 'pointer' }}
-                  value={ledgerLedgerView}
-                  onChange={(e) => setLedgerLedgerView(e.target.value)}
-                >
-                  {LEDGER_VIEW_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
-                  ))}
-                </select>
+                <div style={ledgerToolbarGroupStyle}>
+                  <span style={ledgerToolbarLabelStyle}>Ledger type:</span>
+                  <select
+                    style={{ ...ledgerToolbarSelectStyle, minWidth: 116 }}
+                    value={ledgerLedgerClass}
+                    onChange={(e) => setLedgerLedgerClass(e.target.value)}
+                  >
+                    {LEDGER_CLASS_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={ledgerToolbarGroupStyle}>
+                  <span style={ledgerToolbarLabelStyle}>View:</span>
+                  <select
+                    style={{ ...ledgerToolbarSelectStyle, minWidth: 144 }}
+                    value={ledgerLedgerView}
+                    onChange={(e) => setLedgerLedgerView(e.target.value)}
+                  >
+                    {LEDGER_VIEW_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
               </>
             )}
             {ledgerClientId && !ledgerLoading && (
               <>
-                <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>Financial year:</span>
-                <select
-                  style={{ ...inputStyle, minWidth: 128, cursor: 'pointer' }}
-                  value={ledgerFyStartYear ?? ledgerFyOptions[ledgerFyOptions.length - 1]}
-                  onChange={(e) => setLedgerFyStartYear(parseInt(e.target.value, 10))}
-                >
-                  {ledgerFyOptions.map((y) => (
-                    <option key={y} value={y}>
-                      {indianFYLabel(y)}
-                    </option>
-                  ))}
-                </select>
-                <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>Date from:</span>
-                <DateInput
-                  style={{ ...inputStyle, width: 'auto' }}
-                  min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
-                  max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
-                  value={ledgerFilterDateFrom}
-                  onChange={(e) => setLedgerFilterDateFrom(e.target.value)}
-                />
-                <span style={{ fontSize: 13, color: '#64748b', whiteSpace: 'nowrap' }}>to:</span>
-                <DateInput
-                  style={{ ...inputStyle, width: 'auto' }}
-                  min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
-                  max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
-                  value={ledgerFilterDateTo}
-                  onChange={(e) => setLedgerFilterDateTo(e.target.value)}
-                />
-                {(ledgerFilterDateFrom || ledgerFilterDateTo) && (
-                  <button
-                    type="button"
-                    style={{ ...btnSecondary, fontSize: 12, padding: '6px 10px', whiteSpace: 'nowrap' }}
-                    onClick={() => {
-                      setLedgerFilterDateFrom('');
-                      setLedgerFilterDateTo('');
-                    }}
+                <div style={ledgerToolbarGroupStyle}>
+                  <span style={ledgerToolbarLabelStyle}>Financial year:</span>
+                  <select
+                    style={{ ...ledgerToolbarSelectStyle, minWidth: 128, maxWidth: 168 }}
+                    value={ledgerFyStartYear ?? ledgerFyOptions[ledgerFyOptions.length - 1]}
+                    onChange={(e) => setLedgerFyStartYear(parseInt(e.target.value, 10))}
                   >
-                    Clear dates
-                  </button>
+                    {ledgerFyOptions.map((y) => (
+                      <option key={y} value={y}>
+                        {indianFYLabel(y)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={ledgerToolbarGroupStyle}>
+                  <span style={ledgerToolbarLabelStyle}>Date from:</span>
+                  <DateInput
+                    style={ledgerToolbarDateStyle}
+                    min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
+                    max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
+                    value={ledgerFilterDateFrom}
+                    onChange={(e) => setLedgerFilterDateFrom(e.target.value)}
+                  />
+                  <span style={ledgerToolbarLabelStyle}>to</span>
+                  <DateInput
+                    style={ledgerToolbarDateStyle}
+                    min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
+                    max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
+                    value={ledgerFilterDateTo}
+                    onChange={(e) => setLedgerFilterDateTo(e.target.value)}
+                  />
+                </div>
+                {(ledgerFilterDateFrom || ledgerFilterDateTo) && (
+                  <div style={ledgerToolbarGroupStyle}>
+                    <button
+                      type="button"
+                      style={{ ...btnSecondary, fontSize: 12, padding: '6px 10px', whiteSpace: 'nowrap' }}
+                      onClick={() => {
+                        setLedgerFilterDateFrom('');
+                        setLedgerFilterDateTo('');
+                      }}
+                    >
+                      Clear dates
+                    </button>
+                  </div>
                 )}
               </>
             )}
@@ -5761,3 +5787,9 @@ const modalHeaderStyle = { display:'flex', justifyContent:'space-between', align
 const closeBtnStyle = { background:'none', border:'none', cursor:'pointer', fontSize:16, color:'#64748b', padding:'2px 6px', borderRadius:4 };
 const labelStyle = { display:'flex', flexDirection:'column', gap:4, fontSize:12, fontWeight:600, color:'#475569', minWidth:0 };
 const inputStyle = { padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, color:'#334155', outline:'none', width:'100%', maxWidth:'100%', boxSizing:'border-box' };
+/** Horizontal ledger toolbars: form `inputStyle` uses width:100% which forces full-width selects and stacked rows. */
+const ledgerToolbarBarStyle = { padding:'8px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', flexWrap:'nowrap', gap:10, alignItems:'center', overflowX:'auto' };
+const ledgerToolbarGroupStyle = { display:'flex', alignItems:'center', gap:6, flexShrink:0 };
+const ledgerToolbarLabelStyle = { fontSize:12, color:'#64748b', fontWeight:600, whiteSpace:'nowrap' };
+const ledgerToolbarSelectStyle = { ...inputStyle, width:'auto', maxWidth:200, flexShrink:0, cursor:'pointer' };
+const ledgerToolbarDateStyle = { ...inputStyle, width:'auto', minWidth:130, maxWidth:150, flexShrink:0 };
