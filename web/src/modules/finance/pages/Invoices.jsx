@@ -3561,9 +3561,10 @@ export default function Invoices() {
       } else {
         params.clientId = ledgerClientId;
       }
+      params.ledgerClass = normalizeLedgerClassForApi(ledgerLedgerClass);
     }
     return params;
-  }, [paymentsFilterByLedger, ledgerClientId, ledgerEntityType]);
+  }, [paymentsFilterByLedger, ledgerClientId, ledgerEntityType, ledgerLedgerClass]);
 
   function openLedgerFromPaymentExpense(p) {
     const orgRaw = p.organizationId != null && p.organizationId !== '' ? parseInt(String(p.organizationId), 10) : 0;
@@ -4700,7 +4701,7 @@ export default function Invoices() {
                   gap: 6,
                   whiteSpace: 'nowrap',
                 }}
-                title="Uses the client or organization selected on the Ledger tab"
+                title="Same contact/org AND ledger type (Regular / Memorandum / Optional) as the Ledger tab"
               >
                 <input
                   type="checkbox"
@@ -4708,7 +4709,7 @@ export default function Invoices() {
                   disabled={!ledgerClientId}
                   onChange={(e) => setPaymentsFilterByLedger(e.target.checked)}
                 />
-                Match Ledger tab entity
+                Match Ledger tab (entity + ledger type)
               </label>
               {paymentsFilterByLedger && ledgerClientId && (
                 <span style={{ fontSize: 12, color: '#0369a1' }}>
@@ -4967,8 +4968,7 @@ export default function Invoices() {
               color: '#92400e',
             }}
             >
-              Amber-highlighted rows are booked on a different ledger entity than the one selected on the Ledger tab.
-              Enable &quot;Match Ledger tab entity&quot; next to the search bar to show only matching payments, or click &quot;Ledger&quot; on a row to open that booking&apos;s ledger.
+              Amber-highlighted rows do not match the Ledger tab <strong>entity</strong> or <strong>ledger type</strong>. Enable &quot;Match Ledger tab (entity + ledger type)&quot; next to the search bar to narrow the list, or click &quot;Ledger&quot; on a row to open that booking&apos;s ledger.
             </div>
           )}
           {canDeleteInvoice && selectedPaymentIds.length > 0 && (
@@ -5027,8 +5027,10 @@ export default function Invoices() {
               ) : visiblePaymentExpenses.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 17 : 16} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
               ) : visiblePaymentExpenses.map((p) => {
-                const ledgerMismatch = ledgerClientId && !paymentsFilterByLedger
-                  && !paymentExpenseMatchesLedgerSelection(p, ledgerClientId, ledgerEntityType);
+                const ledgerMismatch = ledgerClientId && !paymentsFilterByLedger && (
+                  !paymentExpenseMatchesLedgerSelection(p, ledgerClientId, ledgerEntityType)
+                  || normalizeLedgerClassForApi(p.ledgerClass) !== normalizeLedgerClassForApi(ledgerLedgerClass)
+                );
                 return (
                 <tr key={p.id} style={{
                   ...trStyle,

@@ -209,7 +209,8 @@ class TxnModel
         string $dateTo    = '',
         string $expensePurpose = '',
         string $paymentMethod = '',
-        string $paidFrom = ''
+        string $paidFrom = '',
+        string $ledgerClassFilter = ''
     ): array {
         $where  = ['1=1'];
         $params = [];
@@ -271,6 +272,11 @@ class TxnModel
         if ($dateTo !== '') {
             $where[]            = 't.txn_date <= :date_to';
             $params[':date_to'] = $dateTo;
+        }
+        $lcTrim = trim($ledgerClassFilter);
+        if ($lcTrim !== '') {
+            $where[]                       = self::sqlLedgerClassMatch('t', ':ledger_class_list_filter');
+            $params[':ledger_class_list_filter'] = LedgerDimensions::normalizeLedgerClass($lcTrim);
         }
 
         $whereClause = implode(' AND ', $where);
@@ -528,6 +534,7 @@ class TxnModel
                 'Raw row count should equal consolidated presented rows (one ledger line per txn row).',
                 'Fees-only view hides rows with ledger_movement_kind=reimbursement (including on-behalf reimbursement payments).',
                 'Reimbursement-only view hides fees movement rows; invoices may appear as split synthetic lines per slice.',
+                'Ledger queries filter ledger_class (Regular/Memorandum/Optional). A txn list filtered only by contact/org may show payments absent here unless ledger_class matches.',
             ],
         ];
     }

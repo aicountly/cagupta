@@ -164,6 +164,9 @@ export async function getTxns(params = {}) {
   if (params.status)    query.set('status', params.status);
   if (params.dateFrom)  query.set('date_from', params.dateFrom);
   if (params.dateTo)    query.set('date_to', params.dateTo);
+  if (params.ledgerClass != null && String(params.ledgerClass).trim() !== '') {
+    query.set('ledger_class', normalizeLedgerClassForApi(params.ledgerClass));
+  }
 
   const res  = await fetch(`${API_BASE}/admin/txn?${query}`, { headers: authHeaders() });
   const data = await parseResponse(res);

@@ -46,7 +46,8 @@ class TxnController extends BaseController
      * List/paginate transactions with optional filters.
      *
      * Query params: page, per_page, search, txn_type, client_id, organization_id,
-     *               expense_purpose, tds_status, status, date_from, date_to
+     *               expense_purpose, tds_status, status, date_from, date_to,
+     *               ledger_class (optional; matches ledger sqlLedgerClassMatch when set)
      */
     public function index(): never
     {
@@ -63,10 +64,12 @@ class TxnController extends BaseController
         $status    = trim((string)$this->query('status', ''));
         $dateFrom  = trim((string)$this->query('date_from', ''));
         $dateTo    = trim((string)$this->query('date_to', ''));
+        $ledgerClassFilter = trim((string)$this->query('ledger_class', ''));
 
         $result = $this->txn->paginate(
             $page, $perPage, $search, $txnType,
-            $clientId, $orgId, $tdsStatus, $status, $dateFrom, $dateTo, $expensePurpose, $paymentMethodFilter, $paidFromFilter
+            $clientId, $orgId, $tdsStatus, $status, $dateFrom, $dateTo, $expensePurpose, $paymentMethodFilter, $paidFromFilter,
+            $ledgerClassFilter
         );
 
         $this->success($result['txns'], 'Transactions retrieved', 200, [
