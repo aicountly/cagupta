@@ -55,7 +55,7 @@ SELECT
     '{}'::jsonb,
     COALESCE(NULLIF(TRIM(t.ledger_class), ''), 'regular'),
     t.ledger_movement_kind,
-    t.public_ref
+    NULL::varchar(40) AS public_ref
 FROM txn t
 WHERE t.txn_type = 'receipt'
   AND t.status NOT IN ('cancelled', 'reversed')
@@ -123,7 +123,7 @@ SELECT
     '{}'::jsonb,
     COALESCE(NULLIF(TRIM(t.ledger_class), ''), 'regular'),
     t.ledger_movement_kind,
-    t.public_ref
+    NULL::varchar(40) AS public_ref
 FROM txn t
 WHERE t.txn_type = 'payment_expense'
   AND t.status NOT IN ('cancelled', 'reversed')

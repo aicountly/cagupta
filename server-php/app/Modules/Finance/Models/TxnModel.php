@@ -795,7 +795,6 @@ class TxnModel
             'created_by'             => $src['created_by'] ?? null,
             'ledger_class'           => $src['ledger_class'] ?? LedgerDimensions::CLASS_REGULAR,
             'ledger_movement_kind'   => $src['ledger_movement_kind'] ?? null,
-            'public_ref'             => $src['public_ref'] ?? null,
         ]);
     }
 
@@ -824,7 +823,6 @@ class TxnModel
             'created_by'             => $src['created_by'] ?? null,
             'ledger_class'           => $src['ledger_class'] ?? LedgerDimensions::CLASS_REGULAR,
             'ledger_movement_kind'   => $src['ledger_movement_kind'] ?? null,
-            'public_ref'             => $src['public_ref'] ?? null,
         ]);
     }
 
