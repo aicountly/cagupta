@@ -2809,33 +2809,53 @@ export default function Invoices() {
 
       {tab === 'service_billing' && (
         <div style={cardStyle}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Completion</span>
-            <select
-              style={{ ...inputStyle, minWidth: 160 }}
-              value={billingCompletion}
-              onChange={(e) => setBillingCompletion(e.target.value)}
-            >
-              <option value="engagement">Engagement completed</option>
-              <option value="tasks">All tasks done</option>
-              <option value="any">Any (union)</option>
-            </select>
-            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Queue</span>
-            <select
-              style={{ ...inputStyle, minWidth: 120 }}
-              value={billingClosureFilter}
-              onChange={(e) => setBillingClosureFilter(e.target.value)}
-            >
-              <option value="pending">Pending</option>
-              <option value="built">Billed</option>
-              <option value="non_billable">Non-billable</option>
-            </select>
+          <div
+            style={{
+              padding: '8px 16px',
+              borderBottom: '1px solid #f1f5f9',
+              display: 'flex',
+              flexWrap: 'nowrap',
+              gap: 12,
+              alignItems: 'center',
+              overflowX: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>Completion</span>
+              <select
+                style={{ ...inputStyle, minWidth: 140, width: 160 }}
+                value={billingCompletion}
+                onChange={(e) => setBillingCompletion(e.target.value)}
+              >
+                <option value="engagement">Engagement completed</option>
+                <option value="tasks">All tasks done</option>
+                <option value="any">Any (union)</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>Queue</span>
+              <select
+                style={{ ...inputStyle, minWidth: 112, width: 120 }}
+                value={billingClosureFilter}
+                onChange={(e) => setBillingClosureFilter(e.target.value)}
+              >
+                <option value="pending">Pending</option>
+                <option value="built">Billed</option>
+                <option value="non_billable">Non-billable</option>
+              </select>
+            </div>
             <input
               type="search"
               placeholder="Search client or service…"
               value={billingSearch}
               onChange={(e) => setBillingSearch(e.target.value)}
-              style={{ ...inputStyle, minWidth: 200, flex: '1 1 180px' }}
+              style={{
+                ...inputStyle,
+                flex: '1 1 160px',
+                minWidth: 120,
+                width: 'auto',
+                maxWidth: '100%',
+              }}
             />
           </div>
           <table style={tableStyle}>

@@ -1063,7 +1063,11 @@ class TxnModel
             return null;
         }
 
-        $classChr = $ledgerClass === LedgerDimensions::CLASS_MEMORANDUM ? 'M' : 'R';
+        $classChr = match ($ledgerClass) {
+            LedgerDimensions::CLASS_MEMORANDUM => 'M',
+            LedgerDimensions::CLASS_OPTIONAL   => 'O',
+            default                            => 'R',
+        };
         $kindChr  = $movementKind === LedgerDimensions::KIND_REIMBURSEMENT ? 'I' : 'F';
         $entityKey = $clientId > 0 ? 'C' . $clientId : 'O' . $orgId;
         $invoiceNumber = 'OB-' . $entityKey . '-' . $profileCode . '-' . $classChr . $kindChr;

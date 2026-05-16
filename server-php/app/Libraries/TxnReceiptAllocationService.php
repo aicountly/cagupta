@@ -254,7 +254,7 @@ final class TxnReceiptAllocationService
         $recvLc = LedgerDimensions::normalizeLedgerClass($receiptRow['ledger_class'] ?? null);
         $payLc  = LedgerDimensions::normalizeLedgerClass($paymentExpenseRow['ledger_class'] ?? null);
         if ($recvLc !== $payLc) {
-            throw new InvalidArgumentException('Receipt ledger type (regular / memorandum) must match the payment expense.');
+            throw new InvalidArgumentException('Receipt ledger_class must match the payment expense (regular, memorandum, or optional).');
         }
         $rKind = (string)($receiptRow['ledger_movement_kind'] ?? '');
         $pKind = (string)($paymentExpenseRow['ledger_movement_kind'] ?? '');
@@ -533,7 +533,7 @@ final class TxnReceiptAllocationService
             }
             $rlc = LedgerDimensions::normalizeLedgerClass($rec['ledger_class'] ?? null);
             if ($rlc !== $payLc) {
-                throw new InvalidArgumentException('Receipt ledger type must match the payment expense.');
+                throw new InvalidArgumentException('Receipt ledger_class must match the payment expense (regular, memorandum, or optional).');
             }
             $rMk = (string)($rec['ledger_movement_kind'] ?? '');
             if ($rMk !== $payMk) {

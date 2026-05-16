@@ -26,6 +26,14 @@ async function parseResponse(res) {
   return json;
 }
 
+/** Must match LedgerDimensions ledger_class strings. */
+const LEDGER_CLASSES = ['regular', 'memorandum', 'optional'];
+
+export function normalizeLedgerClassForApi(lc) {
+  const s = String(lc || '').trim();
+  return LEDGER_CLASSES.includes(s) ? s : 'regular';
+}
+
 function normalizeLineItems(raw) {
   let arr = raw;
   if (raw == null) return [];
@@ -323,7 +331,7 @@ export async function getReceiptsWithUnallocated({
   const query = new URLSearchParams();
   if (clientId) query.set('client_id', String(clientId));
   if (organizationId) query.set('organization_id', String(organizationId));
-  query.set('ledger_class', ledgerClass === 'memorandum' ? 'memorandum' : 'regular');
+  query.set('ledger_class', normalizeLedgerClassForApi(ledgerClass));
   query.set('ledger_movement_kind', ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees');
   const res = await fetch(`${API_BASE}/admin/txn/receipts-with-unallocated?${query}`, { headers: authHeaders() });
   const data = await parseResponse(res);
@@ -421,7 +429,7 @@ export async function getOpeningBalance({ clientId, organizationId } = {}) {
     billingProfileCode:  row.billing_profile_code,
     amount:              parseFloat(row.amount || 0),
     type:                row.debit > 0 ? 'debit' : 'credit',
-    ledgerClass:         row.ledger_class === 'memorandum' ? 'memorandum' : 'regular',
+    ledgerClass:         normalizeLedgerClassForApi(row.ledger_class),
     ledgerMovementKind:  row.ledger_movement_kind || null,
     txnDate:             row.txn_date ? String(row.txn_date).slice(0, 10) : '',
   }));

@@ -9,6 +9,7 @@ import {
   requestLedgerReversalUserOtp, reverseLedgerTxn,
   postInvoiceCostAnalysisPreview,
   getReceiptsWithUnallocated,
+  normalizeLedgerClassForApi,
 } from '../services/txnService';
 import { LastUpdatedByCell, TxnAuditLogModal } from '../../../components/finance/TxnAuditActivity';
 import { useAuth } from '../../../auth/AuthContext';
@@ -116,6 +117,20 @@ function signedLedgerTxnAmount(txnType, rawAmount) {
   return COMPENSATING_REVERSAL_TXN_TYPES.has(txnType) ? -abs : abs;
 }
 
+/** Case-insensitive substring match against arbitrary row fields (client-side table search). */
+function txnFieldsIncludeQuery(query, fields) {
+  const q = String(query || '').trim().toLowerCase();
+  if (!q) return true;
+  const hay = fields
+    .map((f) => (f === null || f === undefined ? '' : String(f)))
+    .join(' ')
+    .toLowerCase();
+  return hay.includes(q);
+}
+
+/** Tabs under Invoices & Ledger that share the client-side list search bar. */
+const TXN_LIST_SEARCH_TABS = new Set(['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note']);
+
 const TDS_SECTIONS = ['194J','194C','194H','194I','194A','194Q','Other'];
 
 const PAYMENT_METHOD_OPTIONS = ['NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'IMPS', 'Payment Gateway'];
@@ -161,7 +176,13 @@ const emptyInvoiceLine = () => ({
 const LEDGER_CLASS_OPTIONS = [
   { value: 'regular', label: 'Regular' },
   { value: 'memorandum', label: 'Memorandum' },
+  { value: 'optional', label: 'Optional' },
 ];
+
+function ledgerClassLabel(value) {
+  const v = normalizeLedgerClassForApi(value);
+  return LEDGER_CLASS_OPTIONS.find((o) => o.value === v)?.label || v;
+}
 
 const LEDGER_MOVEMENT_OPTIONS = [
   { value: 'fees', label: 'Fees (professional)' },
@@ -2015,7 +2036,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
     let cancel = false;
     setReceiptOptsLoading(true);
     const params = {
-      ledgerClass: form.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledgerClass: normalizeLedgerClassForApi(form.ledgerClass),
       ledgerMovementKind: form.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
     };
     if (form.entityType === 'organization') {
@@ -3058,7 +3079,7 @@ function CreditNoteModal({ onClose, onSave, openInvoices, creditNotes }) {
           </label>
           {form.linkedTxnId ? (
             <div style={{ fontSize: 12, color: '#64748b' }}>
-              Ledger type for this credit note is taken from the selected invoice ({ledgerClassFilter === 'memorandum' ? 'Memorandum' : 'Regular'}).
+              Ledger type for this credit note is taken from the selected invoice ({ledgerClassLabel(ledgerClassFilter)}).
             </div>
           ) : null}
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
@@ -3100,7 +3121,7 @@ function CreditNoteModal({ onClose, onSave, openInvoices, creditNotes }) {
 // ── OpeningBalanceModal ───────────────────────────────────────────────────────
 
 function buildOpeningProfileRows(existingBalances, ledgerClass) {
-  const lc = ledgerClass === 'memorandum' ? 'memorandum' : 'regular';
+  const lc = normalizeLedgerClassForApi(ledgerClass);
   return getBillingProfiles().map((p) => {
     const feesBal = existingBalances.find(
       (b) =>
@@ -3152,7 +3173,7 @@ function formatConsolidatedNet(feesAmount, feesType, reimAmount, reimType) {
 
 /** Earliest txn_date among opening rows for this ledger type (profiles may share one OB date). */
 function inferOpeningTxnDate(existingBalances, ledgerClass) {
-  const lc = ledgerClass === 'memorandum' ? 'memorandum' : 'regular';
+  const lc = normalizeLedgerClassForApi(ledgerClass);
   const rows = existingBalances.filter((b) => b.ledgerClass === lc);
   const dates = [...new Set(rows.map((r) => r.txnDate).filter(Boolean))].sort();
   return dates.length ? dates[0] : '';
@@ -3254,7 +3275,7 @@ function OpeningBalanceModal({
         }
         const sliceBase = {
           billing_profile_code: b.profileCode,
-          ledger_class:         ledgerClassPick,
+          ledger_class:         normalizeLedgerClassForApi(ledgerClassPick),
         };
         if (entityType === 'organization') {
           sliceBase.organization_id = idNum;
@@ -3329,7 +3350,7 @@ function OpeningBalanceModal({
           </div>
           <p style={{ fontSize:12, color:'#64748b', margin:'0 0 12px 0' }}>
             Enter professional fees and taxes / reimbursement separately. The consolidated column shows net Dr/Cr (Dr = client owes you).
-            Zero or blank clears that slice for the selected ledger type. Repeat for the other ledger type using the dropdown.
+            Zero or blank clears that slice for the selected ledger type. Switch ledger type above to edit Regular, Memorandum, or Optional opening balances separately.
           </p>
           <div style={{ ...rowGrid, marginBottom:8, paddingBottom:6, borderBottom:'1px solid #e2e8f0' }}>
             <div style={{ fontSize:11, fontWeight:700, color:'#64748b' }}>Profile</div>
@@ -3488,6 +3509,7 @@ export default function Invoices() {
   const [cnLoaded, setCnLoaded]           = useState(false);
   const [showCnModal, setShowCnModal]     = useState(false);
   const [selectedCreditNoteIds, setSelectedCreditNoteIds] = useState([]);
+  const [txnListSearchQuery, setTxnListSearchQuery] = useState('');
 
   // ── Ledger tab state ────────────────────────────────────────────────────────
   const [ledgerClientId, setLedgerClientId]       = useState('');
@@ -3516,7 +3538,7 @@ export default function Invoices() {
       setLedgerClientId(String(cidRaw));
     }
     setLedgerClientName(p.clientName || '');
-    setLedgerLedgerClass(p.ledgerClass === 'memorandum' ? 'memorandum' : 'regular');
+    setLedgerLedgerClass(normalizeLedgerClassForApi(p.ledgerClass));
     const mk = p.ledgerMovementKind;
     if (mk === 'reimbursement') setLedgerLedgerView('reimbursement');
     else if (mk === 'fees') setLedgerLedgerView('fees');
@@ -3570,6 +3592,10 @@ export default function Invoices() {
       window.alert(e.message || 'Could not start Razorpay checkout');
     }
   }
+
+  useEffect(() => {
+    setTxnListSearchQuery('');
+  }, [tab]);
 
   useEffect(() => {
     const raw = searchParams.get('openTxn');
@@ -3768,6 +3794,108 @@ export default function Invoices() {
     statusFilter === 'all' || i.invoiceStatus === statusFilter || i.status === statusFilter
   );
 
+  const visibleInvoices = useMemo(() => {
+    if (!txnListSearchQuery.trim()) return filteredInvoices;
+    const q = txnListSearchQuery;
+    return filteredInvoices.filter((i) => txnFieldsIncludeQuery(q, [
+      i.invoiceNumber,
+      i.id,
+      i.clientName,
+      i.txnDate,
+      i.invoiceDate,
+      i.dueDate,
+      i.invoiceStatus,
+      i.status,
+      i.billingProfileCode,
+      i.notes,
+      i.amount,
+      i.debit,
+    ]));
+  }, [filteredInvoices, txnListSearchQuery]);
+
+  const visibleReceipts = useMemo(() => {
+    if (!txnListSearchQuery.trim()) return receipts;
+    const q = txnListSearchQuery;
+    return receipts.filter((r) => txnFieldsIncludeQuery(q, [
+      r.publicRef,
+      r.id,
+      r.clientName,
+      r.txnDate,
+      r.paymentMethod,
+      r.referenceNumber,
+      r.billingProfileCode,
+      r.linkedTxnId,
+      r.notes,
+      formatSignedInrAmount(r.txnType, r.amount || r.credit || 0),
+    ]));
+  }, [receipts, txnListSearchQuery]);
+
+  const visiblePaymentExpenses = useMemo(() => {
+    if (!txnListSearchQuery.trim()) return paymentExpenses;
+    const q = txnListSearchQuery;
+    return paymentExpenses.filter((p) => txnFieldsIncludeQuery(q, [
+      p.publicRef,
+      p.id,
+      p.clientName,
+      p.txnDate,
+      p.paymentMethod,
+      p.referenceNumber,
+      p.narration,
+      p.notes,
+      p.billingProfileCode,
+      p.paidFrom,
+      p.expensePurpose,
+      expensePurposeLabel(p.expensePurpose),
+      ledgerClassLabel(p.ledgerClass),
+      p.ledgerMovementKind,
+      formatSignedInrAmount(p.txnType, p.amount || 0),
+    ]));
+  }, [paymentExpenses, txnListSearchQuery]);
+
+  const visibleTdsEntries = useMemo(() => {
+    if (!txnListSearchQuery.trim()) return tdsEntries;
+    const q = txnListSearchQuery;
+    return tdsEntries.filter((t) => txnFieldsIncludeQuery(q, [
+      t.id,
+      t.clientName,
+      t.txnDate,
+      t.tdsSection,
+      t.tdsRate,
+      t.tdsStatus,
+      t.txnType,
+      t.billingProfileCode,
+      formatSignedInrAmount(t.txnType, t.amount || 0),
+    ]));
+  }, [tdsEntries, txnListSearchQuery]);
+
+  const visibleRebates = useMemo(() => {
+    if (!txnListSearchQuery.trim()) return rebates;
+    const q = txnListSearchQuery;
+    return rebates.filter((r) => txnFieldsIncludeQuery(q, [
+      r.id,
+      r.clientName,
+      r.txnDate,
+      r.narration,
+      r.notes,
+      r.billingProfileCode,
+      r.amount,
+    ]));
+  }, [rebates, txnListSearchQuery]);
+
+  const visibleCreditNotes = useMemo(() => {
+    if (!txnListSearchQuery.trim()) return creditNotes;
+    const q = txnListSearchQuery;
+    return creditNotes.filter((c) => txnFieldsIncludeQuery(q, [
+      c.id,
+      c.clientName,
+      c.txnDate,
+      c.linkedTxnId,
+      c.narration,
+      c.billingProfileCode,
+      c.amount,
+    ]));
+  }, [creditNotes, txnListSearchQuery]);
+
   // ── Invoice handlers ────────────────────────────────────────────────────────
   function handleRaiseInvoice(data) {
     const idNum = parseInt(data.entityId, 10);
@@ -3806,7 +3934,7 @@ export default function Invoices() {
     } else {
       payload.client_id = idNum;
     }
-    payload.ledger_class = data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular';
+    payload.ledger_class = normalizeLedgerClassForApi(data.ledgerClass);
     payload.invoice_cost_analysis_confirm = Boolean(data.invoiceCostAnalysisConfirm);
     createTxn(payload)
       .then((newInv) => {
@@ -3848,7 +3976,7 @@ export default function Invoices() {
       reference_number:     data.reference,
       billing_profile_code: data.billingProfileCode,
       firm_bank_account_id: parseInt(data.firmBankAccountId, 10),
-      ledger_class:         data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledger_class:         normalizeLedgerClassForApi(data.ledgerClass),
       ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
       allocations: [{
         target_type:     'invoice',
@@ -3916,7 +4044,7 @@ export default function Invoices() {
       expense_purpose: data.expensePurpose || null,
       narration,
       notes: data.notes || null,
-      ledger_class: data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledger_class: normalizeLedgerClassForApi(data.ledgerClass),
       ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
       settlement_lines,
     };
@@ -3943,7 +4071,7 @@ export default function Invoices() {
       billing_profile_code: data.billingProfileCode,
       firm_bank_account_id: parseInt(data.firmBankAccountId, 10),
       notes:                data.notes,
-      ledger_class:         data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledger_class:         normalizeLedgerClassForApi(data.ledgerClass),
       ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
       allocations:          data.allocations,
     };
@@ -3966,7 +4094,7 @@ export default function Invoices() {
       tds_rate:             parseFloat(data.tdsRate) || 0,
       billing_profile_code: data.billingProfileCode,
       notes:                data.notes,
-      ledger_class:         data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledger_class:         normalizeLedgerClassForApi(data.ledgerClass),
       ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
     })
       .then(entry => setTdsEntries(prev => [entry, ...prev]))
@@ -3994,7 +4122,7 @@ export default function Invoices() {
       narration:            data.narration,
       billing_profile_code: data.billingProfileCode,
       notes:                data.notes,
-      ledger_class:         data.ledgerClass === 'memorandum' ? 'memorandum' : 'regular',
+      ledger_class:         normalizeLedgerClassForApi(data.ledgerClass),
       ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
     })
       .then(reb => setRebates(prev => [reb, ...prev]))
@@ -4397,6 +4525,48 @@ export default function Invoices() {
         )}
       </div>
 
+      {TXN_LIST_SEARCH_TABS.has(tab) && (
+        <div
+          style={{
+            marginBottom: 16,
+            padding: '10px 14px',
+            background: '#f8fafc',
+            borderRadius: 10,
+            border: '1px solid #e2e8f0',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <label htmlFor="txn-list-search" style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>
+            Search table
+          </label>
+          <input
+            id="txn-list-search"
+            type="search"
+            value={txnListSearchQuery}
+            onChange={(e) => setTxnListSearchQuery(e.target.value)}
+            placeholder={
+              tab === 'invoices'
+                ? 'Invoice #, client, date, status, billing profile…'
+                : tab === 'receipts'
+                  ? 'Ref, client, method, notes…'
+                  : tab === 'payments'
+                    ? 'Ref, client, purpose, narration, notes…'
+                    : tab === 'tds'
+                      ? 'Client, section, billing profile…'
+                      : tab === 'rebate'
+                        ? 'Client, narration, notes…'
+                        : tab === 'credit_note'
+                          ? 'Client, linked invoice, narration…'
+                          : 'Search…'
+            }
+            style={{ ...inputStyle, flex: 1, minWidth: 200, maxWidth: 520 }}
+            autoComplete="off"
+          />
+        </div>
+      )}
+
       {/* ── Tab: Invoices ─────────────────────────────────────────────────── */}
       {tab==='invoices' && (
         <div style={cardStyle}>
@@ -4437,10 +4607,10 @@ export default function Invoices() {
                     <input
                       type="checkbox"
                       title="Select all"
-                      checked={filteredInvoices.length > 0 && filteredInvoices.every((i) => selectedInvoiceIds.some((x) => Number(x) === Number(i.id)))}
+                      checked={visibleInvoices.length > 0 && visibleInvoices.every((i) => selectedInvoiceIds.some((x) => Number(x) === Number(i.id)))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedInvoiceIds(filteredInvoices.map((x) => x.id));
+                          setSelectedInvoiceIds(visibleInvoices.map((x) => x.id));
                         } else {
                           setSelectedInvoiceIds([]);
                         }
@@ -4454,9 +4624,13 @@ export default function Invoices() {
             <tbody>
               {invLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading invoices…</td></tr>
+              ) : invoices.length === 0 ? (
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices yet. Raise one to begin.</td></tr>
               ) : filteredInvoices.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices found.</td></tr>
-              ) : filteredInvoices.map(i=>(
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices match the status filters.</td></tr>
+              ) : visibleInvoices.length === 0 ? (
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices match your search.</td></tr>
+              ) : visibleInvoices.map(i=>(
                 <tr
                   key={i.id}
                   id={`txn-row-${i.id}`}
@@ -4550,10 +4724,10 @@ export default function Invoices() {
                     <input
                       type="checkbox"
                       title="Select all"
-                      checked={receipts.length > 0 && receipts.every((r) => selectedReceiptIds.some((x) => Number(x) === Number(r.id)))}
+                      checked={visibleReceipts.length > 0 && visibleReceipts.every((r) => selectedReceiptIds.some((x) => Number(x) === Number(r.id)))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedReceiptIds(receipts.map((x) => x.id));
+                          setSelectedReceiptIds(visibleReceipts.map((x) => x.id));
                         } else {
                           setSelectedReceiptIds([]);
                         }
@@ -4569,7 +4743,9 @@ export default function Invoices() {
                 <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
               ) : receipts.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
-              ) : receipts.map(r=>(
+              ) : visibleReceipts.length === 0 ? (
+                <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts match your search.</td></tr>
+              ) : visibleReceipts.map(r=>(
                 <tr key={r.id} style={trStyle}>
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }}>
@@ -4655,10 +4831,10 @@ export default function Invoices() {
                     <input
                       type="checkbox"
                       title="Select all"
-                      checked={paymentExpenses.length > 0 && paymentExpenses.every((p) => selectedPaymentIds.some((x) => Number(x) === Number(p.id)))}
+                      checked={visiblePaymentExpenses.length > 0 && visiblePaymentExpenses.every((p) => selectedPaymentIds.some((x) => Number(x) === Number(p.id)))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedPaymentIds(paymentExpenses.map((x) => x.id));
+                          setSelectedPaymentIds(visiblePaymentExpenses.map((x) => x.id));
                         } else {
                           setSelectedPaymentIds([]);
                         }
@@ -4676,7 +4852,9 @@ export default function Invoices() {
                 <tr><td colSpan={canDeleteInvoice ? 16 : 15} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
               ) : paymentExpenses.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 16 : 15} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
-              ) : paymentExpenses.map((p) => (
+              ) : visiblePaymentExpenses.length === 0 ? (
+                <tr><td colSpan={canDeleteInvoice ? 16 : 15} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
+              ) : visiblePaymentExpenses.map((p) => (
                 <tr key={p.id} style={trStyle}>
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }}>
@@ -4693,7 +4871,7 @@ export default function Invoices() {
                   <td style={tdStyle}>{p.txnDate}</td>
                   <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{p.publicRef || '—'}</td>
                   <td style={tdStyle}>{p.clientName}</td>
-                  <td style={tdStyle}>{p.ledgerClass === 'memorandum' ? 'Memorandum' : 'Regular'}</td>
+                  <td style={tdStyle}>{ledgerClassLabel(p.ledgerClass)}</td>
                   <td style={tdStyle}>
                     {p.ledgerMovementKind === 'reimbursement'
                       ? 'Reimbursement'
@@ -4794,7 +4972,9 @@ export default function Invoices() {
                 <tr><td colSpan={9 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading TDS entries…</td></tr>
               ) : tdsEntries.length === 0 ? (
                 <tr><td colSpan={9 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries found. Click "+ Book TDS" to add one.</td></tr>
-              ) : tdsEntries.map(t=>(
+              ) : visibleTdsEntries.length === 0 ? (
+                <tr><td colSpan={9 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries match your search.</td></tr>
+              ) : visibleTdsEntries.map(t=>(
                 <tr key={t.id} style={trStyle}>
                   <td style={{ ...tdStyle, width:44 }}>
                     {t.tdsStatus === 'provisional' && (
@@ -4882,10 +5062,10 @@ export default function Invoices() {
                     <input
                       type="checkbox"
                       title="Select all"
-                      checked={rebates.length > 0 && rebates.every((r) => selectedRebateIds.some((x) => Number(x) === Number(r.id)))}
+                      checked={visibleRebates.length > 0 && visibleRebates.every((r) => selectedRebateIds.some((x) => Number(x) === Number(r.id)))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedRebateIds(rebates.map((x) => x.id));
+                          setSelectedRebateIds(visibleRebates.map((x) => x.id));
                         } else {
                           setSelectedRebateIds([]);
                         }
@@ -4898,10 +5078,12 @@ export default function Invoices() {
             </thead>
             <tbody>
               {rebLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 8 : 6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading rebate entries…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading rebate entries…</td></tr>
               ) : rebates.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 8 : 6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No rebate/discount entries found. Click "+ Rebate/Discount" to add one.</td></tr>
-              ) : rebates.map(r=>(
+                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No rebate/discount entries found. Click "+ Rebate/Discount" to add one.</td></tr>
+              ) : visibleRebates.length === 0 ? (
+                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No entries match your search.</td></tr>
+              ) : visibleRebates.map(r=>(
                 <tr key={r.id} style={trStyle}>
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }}>
@@ -4980,10 +5162,10 @@ export default function Invoices() {
                     <input
                       type="checkbox"
                       title="Select all"
-                      checked={creditNotes.length > 0 && creditNotes.every((c) => selectedCreditNoteIds.some((x) => Number(x) === Number(c.id)))}
+                      checked={visibleCreditNotes.length > 0 && visibleCreditNotes.every((c) => selectedCreditNoteIds.some((x) => Number(x) === Number(c.id)))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedCreditNoteIds(creditNotes.map((x) => x.id));
+                          setSelectedCreditNoteIds(visibleCreditNotes.map((x) => x.id));
                         } else {
                           setSelectedCreditNoteIds([]);
                         }
@@ -4996,10 +5178,12 @@ export default function Invoices() {
             </thead>
             <tbody>
               {cnLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 8 : 6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading credit notes…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading credit notes…</td></tr>
               ) : creditNotes.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 8 : 6} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes found. Click "+ Credit Note" to add one.</td></tr>
-              ) : creditNotes.map(c=>(
+                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes found. Click "+ Credit Note" to add one.</td></tr>
+              ) : visibleCreditNotes.length === 0 ? (
+                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes match your search.</td></tr>
+              ) : visibleCreditNotes.map(c=>(
                 <tr key={c.id} style={trStyle}>
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }}>
@@ -5380,33 +5564,53 @@ export default function Invoices() {
 
       {tab === 'service_billing' && (
         <div style={cardStyle}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Completion</span>
-            <select
-              style={{ ...inputStyle, minWidth: 160 }}
-              value={billingCompletion}
-              onChange={(e) => setBillingCompletion(e.target.value)}
-            >
-              <option value="engagement">Engagement completed</option>
-              <option value="tasks">All tasks done</option>
-              <option value="any">Any (union)</option>
-            </select>
-            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Queue</span>
-            <select
-              style={{ ...inputStyle, minWidth: 120 }}
-              value={billingClosureFilter}
-              onChange={(e) => setBillingClosureFilter(e.target.value)}
-            >
-              <option value="pending">Pending</option>
-              <option value="built">Billed</option>
-              <option value="non_billable">Non-billable</option>
-            </select>
+          <div
+            style={{
+              padding: '8px 16px',
+              borderBottom: '1px solid #f1f5f9',
+              display: 'flex',
+              flexWrap: 'nowrap',
+              gap: 12,
+              alignItems: 'center',
+              overflowX: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>Completion</span>
+              <select
+                style={{ ...inputStyle, minWidth: 140, width: 160 }}
+                value={billingCompletion}
+                onChange={(e) => setBillingCompletion(e.target.value)}
+              >
+                <option value="engagement">Engagement completed</option>
+                <option value="tasks">All tasks done</option>
+                <option value="any">Any (union)</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>Queue</span>
+              <select
+                style={{ ...inputStyle, minWidth: 112, width: 120 }}
+                value={billingClosureFilter}
+                onChange={(e) => setBillingClosureFilter(e.target.value)}
+              >
+                <option value="pending">Pending</option>
+                <option value="built">Billed</option>
+                <option value="non_billable">Non-billable</option>
+              </select>
+            </div>
             <input
               type="search"
               placeholder="Search client or service…"
               value={billingSearch}
               onChange={(e) => setBillingSearch(e.target.value)}
-              style={{ ...inputStyle, minWidth: 200, flex: '1 1 180px' }}
+              style={{
+                ...inputStyle,
+                flex: '1 1 160px',
+                minWidth: 120,
+                width: 'auto',
+                maxWidth: '100%',
+              }}
             />
           </div>
           <table style={tableStyle}>

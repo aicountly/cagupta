@@ -1,4 +1,5 @@
 import { API_BASE_URL } from '../../../constants/config';
+import { normalizeLedgerClassForApi } from '../../../services/txnService';
 
 const API_BASE = API_BASE_URL;
 
@@ -46,7 +47,7 @@ export async function getClientLedger({
 } = {}) {
   const q = new URLSearchParams();
   if (organizationId) q.set('organization_id', String(organizationId));
-  q.set('ledger_class', ledgerClass === 'memorandum' ? 'memorandum' : 'regular');
+  q.set('ledger_class', normalizeLedgerClassForApi(ledgerClass));
   const view = ['fees', 'reimbursement', 'consolidated'].includes(ledgerView) ? ledgerView : 'consolidated';
   q.set('ledger_view', view);
   const res = await fetch(`${API_BASE}/client/ledger?${q}`, { headers: authHeaders() });
