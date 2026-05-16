@@ -5247,6 +5247,7 @@ export default function Invoices() {
                 />
               </div>
             </div>
+            <div style={ledgerToolbarScrollTailStyle}>
             {ledgerClientId && (
               <>
                 <div style={ledgerToolbarGroupStyle}>
@@ -5382,6 +5383,7 @@ export default function Invoices() {
                 </button>
               </div>
             )}
+            </div>
           </div>
           {!ledgerClientId ? (
             <div style={{ padding:32, textAlign:'center', color:'#94a3b8', fontSize:13 }}>
@@ -5446,6 +5448,7 @@ export default function Invoices() {
                 />
               </div>
             </div>
+            <div style={ledgerToolbarScrollTailStyle}>
             {ledgerClientId && (
               <>
                 <div style={ledgerToolbarGroupStyle}>
@@ -5524,6 +5527,7 @@ export default function Invoices() {
                 )}
               </>
             )}
+            </div>
           </div>
           {!ledgerClientId ? (
             <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
@@ -5787,8 +5791,20 @@ const modalHeaderStyle = { display:'flex', justifyContent:'space-between', align
 const closeBtnStyle = { background:'none', border:'none', cursor:'pointer', fontSize:16, color:'#64748b', padding:'2px 6px', borderRadius:4 };
 const labelStyle = { display:'flex', flexDirection:'column', gap:4, fontSize:12, fontWeight:600, color:'#475569', minWidth:0 };
 const inputStyle = { padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, color:'#334155', outline:'none', width:'100%', maxWidth:'100%', boxSizing:'border-box' };
-/** Horizontal ledger toolbars: form `inputStyle` uses width:100% which forces full-width selects and stacked rows. */
-const ledgerToolbarBarStyle = { padding:'8px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', flexWrap:'nowrap', gap:10, alignItems:'center', overflowX:'auto' };
+/** Horizontal ledger toolbars: client search stays left (overflow visible) so dropdowns aren't clipped behind the row below. */
+const ledgerToolbarBarStyle = {
+  padding:'8px 16px',
+  borderBottom:'1px solid #f1f5f9',
+  display:'flex',
+  flexWrap:'nowrap',
+  gap:10,
+  alignItems:'center',
+  position:'relative',
+  zIndex: 12,
+  overflow:'visible',
+};
+/** Overflow-x-scroll lives here only so `overflow-x: auto` does not clip autocomplete menus in the sibling client cell. */
+const ledgerToolbarScrollTailStyle = { flex:'1 1 auto', minWidth:0, display:'flex', flexWrap:'nowrap', gap:10, alignItems:'center', overflowX:'auto' };
 const ledgerToolbarGroupStyle = { display:'flex', alignItems:'center', gap:6, flexShrink:0 };
 const ledgerToolbarLabelStyle = { fontSize:12, color:'#64748b', fontWeight:600, whiteSpace:'nowrap' };
 const ledgerToolbarSelectStyle = { ...inputStyle, width:'auto', maxWidth:200, flexShrink:0, cursor:'pointer' };
