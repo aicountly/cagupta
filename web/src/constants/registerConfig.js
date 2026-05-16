@@ -188,7 +188,7 @@ export const REGISTER_CONFIG = {
   payments: {
     label: 'Payment Register',
     icon: '💳',
-    columns: ['Date', 'Client', 'Amount (₹)', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Notes'],
+    columns: ['Date', 'Client', 'Amount (₹)', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Notes', 'Last updated by'],
     subFilters: [
       {
         key: 'expense_purpose',

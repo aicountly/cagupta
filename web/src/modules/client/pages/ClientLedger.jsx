@@ -39,6 +39,7 @@ export default function ClientLedger() {
           >
             <option value="regular">Regular</option>
             <option value="memorandum">Memorandum</option>
+            <option value="optional">Optional</option>
           </select>
         </div>
         <div>

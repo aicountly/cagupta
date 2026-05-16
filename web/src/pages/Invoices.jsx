@@ -808,7 +808,7 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                 Billing profile
                 <select style={inputStyle} value={form.billingProfileCode} onChange={(e) => set('billingProfileCode', e.target.value)}>
                   <option value="">— Select —</option>
-                  {BILLING_PROFILES.map((p) => (
+                  {getBillingProfiles().map((p) => (
                     <option key={p.id} value={p.code}>{p.code} – {p.name}</option>
                   ))}
                 </select>
@@ -1176,10 +1176,21 @@ function PaymentExpenseModal({ onClose, onSave }) {
 // ── ReceiptModal ──────────────────────────────────────────────────────────────
 
 function ReceiptModal({ onClose, onSave, openInvoices }) {
-  const [form, setForm] = useState({ clientId: '', clientName: '', amount: '', txnDate: new Date().toISOString().slice(0,10), method: 'NEFT', referenceNumber: '', billingProfileCode: '', linkedTxnId: '', notes: '' });
+  const [form, setForm] = useState({
+    entityId: '',
+    entityName: '',
+    entityType: 'contact',
+    amount: '',
+    txnDate: new Date().toISOString().slice(0, 10),
+    method: 'NEFT',
+    referenceNumber: '',
+    billingProfileCode: '',
+    linkedTxnId: '',
+    notes: '',
+  });
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const handleSave = () => {
-    if (!form.clientId || !form.amount || !form.txnDate) return;
+    if (!form.entityId || !form.amount || !form.txnDate) return;
     onSave(form);
     onClose();
   };
@@ -1192,12 +1203,18 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
         </div>
         <div style={{ padding:'20px 24px', display:'flex', flexDirection:'column', gap:14 }}>
           <label style={labelStyle}>
-            Client
-            <ClientSearchDropdown
-              value={form.clientId}
-              displayValue={form.clientName}
-              onChange={c => setForm(f => ({ ...f, clientId: c.id, clientName: c.displayName }))}
-              placeholder="Search client by name…"
+            Client (contact or organization)
+            <EntitySearchDropdown
+              value={form.entityId}
+              displayValue={form.entityName}
+              entityType={form.entityType}
+              onChange={(c) => setForm((f) => ({
+                ...f,
+                entityId: c.id,
+                entityName: c.displayName,
+                entityType: c.entityType,
+              }))}
+              placeholder="Search contact or organization…"
             />
           </label>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
@@ -1808,7 +1825,11 @@ export default function Invoices() {
       : { clientId: ledgerClientId };
     Promise.all([
       getLedger(ledgerParam).catch(() => []),
-      getOpeningBalance(ledgerClientId).catch(() => []),
+      getOpeningBalance(
+        ledgerEntityType === 'organization'
+          ? { organizationId: ledgerClientId }
+          : { clientId: ledgerClientId },
+      ).catch(() => []),
     ]).then(([entries, obs]) => {
       setLedger(entries);
       setOpeningBalances(obs);
@@ -2030,8 +2051,9 @@ export default function Invoices() {
   }
 
   function handleSaveReceipt(data) {
-    createReceipt({
-      client_id:            data.clientId,
+    const idNum = parseInt(data.entityId, 10);
+    if (!idNum) return;
+    const payload = {
       amount:               parseFloat(data.amount),
       txn_date:             data.txnDate,
       payment_method:       data.method,
@@ -2039,7 +2061,13 @@ export default function Invoices() {
       billing_profile_code: data.billingProfileCode,
       linked_txn_id:        data.linkedTxnId || null,
       notes:                data.notes,
-    })
+    };
+    if (data.entityType === 'organization') {
+      payload.organization_id = idNum;
+    } else {
+      payload.client_id = idNum;
+    }
+    createReceipt(payload)
       .then(rec => setReceipts(prev => [rec, ...prev]))
       .catch(() => {});
   }
@@ -2105,7 +2133,11 @@ export default function Invoices() {
         : { clientId: ledgerClientId };
       Promise.all([
         getLedger(ledgerParam).catch(() => []),
-        getOpeningBalance(ledgerClientId).catch(() => []),
+        getOpeningBalance(
+          ledgerEntityType === 'organization'
+            ? { organizationId: ledgerClientId }
+            : { clientId: ledgerClientId },
+        ).catch(() => []),
       ]).then(([entries, obs]) => {
         setLedger(entries);
         setOpeningBalances(obs);
@@ -2168,7 +2200,7 @@ export default function Invoices() {
 
   function handleBillingMarkBuilt(row) {
     if (!canBillingClosure) return;
-    if (!window.confirm(`Mark engagement #${row.id} as built? It will leave the pending billing queue.`)) return;
+    if (!window.confirm(`Mark engagement #${row.id} as billed? It will leave the pending billing queue.`)) return;
     patchBillingClosure(row.id, { closure: 'built' })
       .then((res) => {
         const m = res?.billing_time_metrics;
@@ -2617,67 +2649,75 @@ export default function Invoices() {
       {/* ── Tab: Ledger ───────────────────────────────────────────────────── */}
       {tab==='ledger' && (
         <div style={cardStyle}>
-          <div style={{ padding:'12px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', gap:12, alignItems:'center', flexWrap:'wrap' }}>
-            <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Client:</span>
-            <div style={{ flex:'0 0 280px' }}>
-              <EntitySearchDropdown
-                value={ledgerClientId}
-                displayValue={ledgerClientName}
-                entityType={ledgerEntityType}
-                onChange={c => {
-                  setLedgerClientId(String(c.id));
-                  setLedgerClientName(c.displayName);
-                  setLedgerEntityType(c.entityType);
-                }}
-                placeholder="Search contact or organization…"
-              />
+          <div style={ledgerToolbarBarStyle}>
+            <div style={ledgerToolbarGroupStyle}>
+              <span style={ledgerToolbarLabelStyle}>Client:</span>
+              <div style={{ flex: '0 0 clamp(200px, 26vw, 300px)', minWidth: 0 }}>
+                <EntitySearchDropdown
+                  value={ledgerClientId}
+                  displayValue={ledgerClientName}
+                  entityType={ledgerEntityType}
+                  onChange={c => {
+                    setLedgerClientId(String(c.id));
+                    setLedgerClientName(c.displayName);
+                    setLedgerEntityType(c.entityType);
+                  }}
+                  placeholder="Search contact or organization…"
+                />
+              </div>
             </div>
             {ledgerClientId && !ledgerLoading && (
               <>
-                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Financial year:</span>
-                <select
-                  style={{ ...inputStyle, minWidth: 128, cursor:'pointer' }}
-                  value={ledgerFyStartYear ?? ledgerFyOptions[ledgerFyOptions.length - 1]}
-                  onChange={(e) => setLedgerFyStartYear(parseInt(e.target.value, 10))}
-                >
-                  {ledgerFyOptions.map((y) => (
-                    <option key={y} value={y}>
-                      {indianFYLabel(y)}
-                    </option>
-                  ))}
-                </select>
-                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>Date from:</span>
-                <DateInput
-                  style={{ ...inputStyle, width: 'auto' }}
-                  min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
-                  max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
-                  value={ledgerFilterDateFrom}
-                  onChange={(e) => setLedgerFilterDateFrom(e.target.value)}
-                />
-                <span style={{ fontSize:13, color:'#64748b', whiteSpace:'nowrap' }}>to:</span>
-                <DateInput
-                  style={{ ...inputStyle, width: 'auto' }}
-                  min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
-                  max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
-                  value={ledgerFilterDateTo}
-                  onChange={(e) => setLedgerFilterDateTo(e.target.value)}
-                />
-                {(ledgerFilterDateFrom || ledgerFilterDateTo) && (
-                  <button
-                    type="button"
-                    style={{ ...btnSecondary, fontSize:12, padding:'6px 10px', whiteSpace:'nowrap' }}
-                    onClick={() => {
-                      setLedgerFilterDateFrom('');
-                      setLedgerFilterDateTo('');
-                    }}
+                <div style={ledgerToolbarGroupStyle}>
+                  <span style={ledgerToolbarLabelStyle}>Financial year:</span>
+                  <select
+                    style={{ ...ledgerToolbarSelectStyle, minWidth: 128, maxWidth: 168 }}
+                    value={ledgerFyStartYear ?? ledgerFyOptions[ledgerFyOptions.length - 1]}
+                    onChange={(e) => setLedgerFyStartYear(parseInt(e.target.value, 10))}
                   >
-                    Clear dates
-                  </button>
+                    {ledgerFyOptions.map((y) => (
+                      <option key={y} value={y}>
+                        {indianFYLabel(y)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={ledgerToolbarGroupStyle}>
+                  <span style={ledgerToolbarLabelStyle}>Date from:</span>
+                  <DateInput
+                    style={ledgerToolbarDateStyle}
+                    min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
+                    max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
+                    value={ledgerFilterDateFrom}
+                    onChange={(e) => setLedgerFilterDateFrom(e.target.value)}
+                  />
+                  <span style={ledgerToolbarLabelStyle}>to</span>
+                  <DateInput
+                    style={ledgerToolbarDateStyle}
+                    min={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).start : undefined}
+                    max={ledgerFyStartYear != null ? indianFYBounds(ledgerFyStartYear).end : undefined}
+                    value={ledgerFilterDateTo}
+                    onChange={(e) => setLedgerFilterDateTo(e.target.value)}
+                  />
+                </div>
+                {(ledgerFilterDateFrom || ledgerFilterDateTo) && (
+                  <div style={ledgerToolbarGroupStyle}>
+                    <button
+                      type="button"
+                      style={{ ...btnSecondary, fontSize:12, padding:'6px 10px', whiteSpace:'nowrap' }}
+                      onClick={() => {
+                        setLedgerFilterDateFrom('');
+                        setLedgerFilterDateTo('');
+                      }}
+                    >
+                      Clear dates
+                    </button>
+                  </div>
                 )}
               </>
             )}
             {ledgerClientId && !ledgerLoading && ledgerDisplayRows.length > 0 && (
-              <>
+              <div style={ledgerToolbarGroupStyle}>
                 <button
                   type="button"
                   style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap' }}
@@ -2721,15 +2761,17 @@ export default function Invoices() {
                 >
                   ⬇ PDF
                 </button>
-              </>
+              </div>
             )}
             {ledgerClientId && (
-              <button
-                style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap' }}
-                onClick={() => setShowOpeningModal(true)}
-              >
-                📖 Opening Balances
-              </button>
+              <div style={ledgerToolbarGroupStyle}>
+                <button
+                  style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap' }}
+                  onClick={() => setShowOpeningModal(true)}
+                >
+                  📖 Opening Balances
+                </button>
+              </div>
             )}
           </div>
           {!ledgerClientId ? (
@@ -2777,33 +2819,53 @@ export default function Invoices() {
 
       {tab === 'service_billing' && (
         <div style={cardStyle}>
-          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Completion</span>
-            <select
-              style={{ ...inputStyle, minWidth: 160 }}
-              value={billingCompletion}
-              onChange={(e) => setBillingCompletion(e.target.value)}
-            >
-              <option value="engagement">Engagement completed</option>
-              <option value="tasks">All tasks done</option>
-              <option value="any">Any (union)</option>
-            </select>
-            <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600 }}>Queue</span>
-            <select
-              style={{ ...inputStyle, minWidth: 120 }}
-              value={billingClosureFilter}
-              onChange={(e) => setBillingClosureFilter(e.target.value)}
-            >
-              <option value="pending">Pending</option>
-              <option value="built">Built</option>
-              <option value="non_billable">Non-billable</option>
-            </select>
+          <div
+            style={{
+              padding: '8px 16px',
+              borderBottom: '1px solid #f1f5f9',
+              display: 'flex',
+              flexWrap: 'nowrap',
+              gap: 12,
+              alignItems: 'center',
+              overflowX: 'auto',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>Completion</span>
+              <select
+                style={{ ...inputStyle, minWidth: 140, width: 160 }}
+                value={billingCompletion}
+                onChange={(e) => setBillingCompletion(e.target.value)}
+              >
+                <option value="engagement">Engagement completed</option>
+                <option value="tasks">All tasks done</option>
+                <option value="any">Any (union)</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>Queue</span>
+              <select
+                style={{ ...inputStyle, minWidth: 112, width: 120 }}
+                value={billingClosureFilter}
+                onChange={(e) => setBillingClosureFilter(e.target.value)}
+              >
+                <option value="pending">Pending</option>
+                <option value="built">Billed</option>
+                <option value="non_billable">Non-billable</option>
+              </select>
+            </div>
             <input
               type="search"
               placeholder="Search client or service…"
               value={billingSearch}
               onChange={(e) => setBillingSearch(e.target.value)}
-              style={{ ...inputStyle, minWidth: 200, flex: '1 1 180px' }}
+              style={{
+                ...inputStyle,
+                flex: '1 1 160px',
+                minWidth: 120,
+                width: 'auto',
+                maxWidth: '100%',
+              }}
             />
           </div>
           <table style={tableStyle}>
@@ -2898,7 +2960,7 @@ export default function Invoices() {
                       {canBillingClosure && billingClosureFilter === 'pending' && (
                         <>
                           <button type="button" style={iconBtn} onClick={() => handleBillingMarkBuilt(row)}>
-                            Mark as built
+                            Mark as billed
                           </button>
                           <button type="button" style={iconBtn} onClick={() => handleBillingNonBillable(row)}>
                             Non-billable
@@ -2954,3 +3016,9 @@ const modalHeaderStyle = { display:'flex', justifyContent:'space-between', align
 const closeBtnStyle = { background:'none', border:'none', cursor:'pointer', fontSize:16, color:'#64748b', padding:'2px 6px', borderRadius:4 };
 const labelStyle = { display:'flex', flexDirection:'column', gap:4, fontSize:12, fontWeight:600, color:'#475569' };
 const inputStyle = { padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, color:'#334155', outline:'none' };
+/** Single-row ledger toolbar (finance module parity). */
+const ledgerToolbarBarStyle = { padding:'8px 16px', borderBottom:'1px solid #f1f5f9', display:'flex', flexWrap:'nowrap', gap:10, alignItems:'center', overflowX:'auto' };
+const ledgerToolbarGroupStyle = { display:'flex', alignItems:'center', gap:6, flexShrink:0 };
+const ledgerToolbarLabelStyle = { fontSize:12, color:'#64748b', fontWeight:600, whiteSpace:'nowrap' };
+const ledgerToolbarSelectStyle = { ...inputStyle, width:'auto', maxWidth:200, flexShrink:0, cursor:'pointer', boxSizing:'border-box' };
+const ledgerToolbarDateStyle = { ...inputStyle, width:'auto', minWidth:130, maxWidth:150, flexShrink:0, boxSizing:'border-box' };

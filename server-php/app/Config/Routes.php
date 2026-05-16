@@ -1210,6 +1210,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/ledger-reconciliation',
+                'handler'    => 'Admin\TxnController@ledgerReconciliation',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/bill-settlement-report',
                 'handler'    => 'Admin\TxnController@billSettlementReport',
                 'middleware' => ['auth', 'permission:invoices.view'],
@@ -1312,9 +1318,33 @@ class Routes
             ],
             [
                 'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/:id/request-ledger-reversal-otp',
+                'handler'    => 'Admin\TxnController@requestLedgerReversalOtp',
+                'middleware' => ['auth', 'permission:invoices.delete'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/:id/reverse',
+                'handler'    => 'Admin\TxnController@reverseLedger',
+                'middleware' => ['auth', 'permission:invoices.delete'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/:id/cancel-reversal',
+                'handler'    => 'Admin\TxnController@cancelLedgerReversal',
+                'middleware' => ['auth', 'permission:invoices.delete'],
+            ],
+            [
+                'method'     => 'POST',
                 'pattern'    => '/api/admin/txn/:id/request-invoice-modify-otp',
                 'handler'    => 'Admin\TxnController@requestInvoiceModifyOtp',
                 'middleware' => ['auth', 'permission_any:invoices.edit,invoices.delete'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/:id/audit-log',
+                'handler'    => 'Admin\TxnController@txnAuditLog',
+                'middleware' => ['auth', 'permission:invoices.view'],
             ],
             [
                 'method'     => 'GET',

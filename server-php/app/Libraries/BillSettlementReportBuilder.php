@@ -96,7 +96,7 @@ final class BillSettlementReportBuilder
 
         /** Invoice / slice rows */
         foreach ($invoiceById as $iid => $inv) {
-            if (($inv['status'] ?? '') === 'cancelled') {
+            if (in_array((string)($inv['status'] ?? ''), ['cancelled', 'reversed'], true)) {
                 continue;
             }
             if (in_array((string)($inv['invoice_status'] ?? ''), ['cancelled', 'reversed'], true)) {
@@ -147,7 +147,7 @@ final class BillSettlementReportBuilder
             if (($t['txn_type'] ?? '') !== 'payment_expense') {
                 continue;
             }
-            if (($t['status'] ?? '') === 'cancelled') {
+            if (in_array((string)($t['status'] ?? ''), ['cancelled', 'reversed'], true)) {
                 continue;
             }
             $kind = (string)($t['ledger_movement_kind'] ?? '');
@@ -196,16 +196,24 @@ final class BillSettlementReportBuilder
             ];
         }
 
-        /** Other movements: opening_balance, TDS, rebate (same visibility rules as buildSliced) */
+        /** Other movements: opening_balance, TDS, rebate, ledger reversals (same visibility rules as buildSliced) */
         foreach ($rows as $t) {
             $type = (string)($t['txn_type'] ?? '');
-            if (!in_array($type, ['opening_balance', 'tds_provisional', 'tds_final', 'rebate'], true)) {
+            if (!in_array($type, [
+                'opening_balance',
+                'tds_provisional', 'tds_final', 'rebate',
+                'receipt_reversal', 'payment_expense_reversal', 'tds_reversal',
+            ], true)) {
                 continue;
             }
-            if ($type === 'opening_balance' && $ledgerView !== LedgerDimensions::VIEW_CONSOLIDATED) {
-                continue;
-            }
-            if ($type !== 'opening_balance') {
+            if ($type === 'opening_balance') {
+                if ($ledgerView !== LedgerDimensions::VIEW_CONSOLIDATED) {
+                    $obKind = (string)($t['ledger_movement_kind'] ?? '');
+                    if ($obKind === '' || $obKind !== $ledgerView) {
+                        continue;
+                    }
+                }
+            } elseif ($type !== 'opening_balance') {
                 $kind = (string)($t['ledger_movement_kind'] ?? '');
                 if ($ledgerView !== LedgerDimensions::VIEW_CONSOLIDATED && $kind !== $ledgerView) {
                     continue;

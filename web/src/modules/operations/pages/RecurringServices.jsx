@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import {
   getRecurringServices,
   createRecurringService,
@@ -48,12 +49,32 @@ const EMPTY_FORM = {
   notes:               '',
 };
 
+function pickSearchLabel(item) {
+  if (!item || typeof item !== 'object') return 'Unknown';
+  const n = item.displayName ?? item.name;
+  const s = n != null ? String(n).trim() : '';
+  return s || 'Unknown';
+}
+
+function formatLinkedOrgsSubtitle(names) {
+  if (!Array.isArray(names) || names.length === 0) return '';
+  const max = 3;
+  const cleaned = names.map((x) => (x == null ? '' : String(x).trim())).filter(Boolean);
+  if (cleaned.length === 0) return '';
+  const part = cleaned.slice(0, max).join(', ');
+  const tail = cleaned.length > max ? ', …' : '';
+  return `Organizations: ${part}${tail}`;
+}
+
 // ── Client / Org search ───────────────────────────────────────────────────────
 
-function ClientOrgSearch({ clientType, clientId, orgId, onChange }) {
-  const [q, setQ]             = useState('');
+/** `presetLabel` + key remount: hydrate edit/create and client/org toggle cleanly. */
+function ClientOrgSearch({ clientType, clientId, orgId, onChange, presetLabel = '' }) {
+  const [q, setQ]             = useState(presetLabel || '');
   const [results, setResults] = useState([]);
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelected] = useState(() =>
+    Boolean(presetLabel && (Number(clientId) > 0 || Number(orgId) > 0)),
+  );
   const [open, setOpen]       = useState(false);
   const [searching, setSearching] = useState(false);
 
@@ -72,8 +93,8 @@ function ClientOrgSearch({ clientType, clientId, orgId, onChange }) {
   }, [q, clientType]);
 
   function handleSelect(item) {
-    setSelected(item);
-    setQ(item.name);
+    setSelected(true);
+    setQ(pickSearchLabel(item));
     setOpen(false);
     if (clientType === 'contact') {
       onChange({ client_id: item.id, organization_id: '' });
@@ -83,7 +104,7 @@ function ClientOrgSearch({ clientType, clientId, orgId, onChange }) {
   }
 
   function handleClear() {
-    setSelected(null);
+    setSelected(false);
     setQ('');
     onChange({ client_id: '', organization_id: '' });
   }
@@ -109,17 +130,24 @@ function ClientOrgSearch({ clientType, clientId, orgId, onChange }) {
       )}
       {open && results.length > 0 && (
         <div style={dropdownStyle}>
-          {results.map(r => (
-            <div
-              key={r.id}
-              onMouseDown={() => handleSelect(r)}
-              style={dropdownItemStyle}
-            >
-              <span style={{ fontWeight: 600 }}>{r.name}</span>
-              {r.pan && <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 6 }}>{r.pan}</span>}
-              {r.gstin && <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 6 }}>{r.gstin}</span>}
-            </div>
-          ))}
+          {results.map((r) => {
+            const orgLine =
+              clientType === 'contact' ? formatLinkedOrgsSubtitle(r.linkedOrgNames) : '';
+            return (
+              <div
+                key={r.id}
+                onMouseDown={() => handleSelect(r)}
+                style={dropdownItemStyle}
+              >
+                <span style={{ fontWeight: 600 }}>{pickSearchLabel(r)}</span>
+                {r.pan ? <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 6 }}>{r.pan}</span> : null}
+                {r.gstin ? <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 6 }}>{r.gstin}</span> : null}
+                {orgLine ? (
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 4, fontWeight: 400 }}>{orgLine}</div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -302,14 +330,19 @@ function RecurringServiceModal({ editDef, onClose, onSaved }) {
           {/* Client / Org search */}
           <Field label={form.client_type === 'contact' ? 'Contact / Client' : 'Organisation'}>
             <ClientOrgSearch
+              key={`${editDef?.id ?? 'create'}-${form.client_type}`}
               clientType={form.client_type}
               clientId={form.client_id}
               orgId={form.organization_id}
               onChange={handleClientOrgChange}
+              presetLabel={
+                editDef &&
+                ((form.client_type === 'contact' && editDef.client_id) ||
+                  (form.client_type === 'organization' && editDef.organization_id))
+                  ? (editDef.client_name || '')
+                  : ''
+              }
             />
-            {(editDef?.client_name) && (
-              <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Current: {editDef.client_name}</div>
-            )}
           </Field>
 
           {/* Category filter for engagement type */}
@@ -698,7 +731,25 @@ export default function RecurringServices() {
             <tbody>
               {rows.map(r => (
                 <tr key={r.id} style={{ ...trStyle, opacity: r.is_active ? 1 : 0.55 }}>
-                  <td style={{ ...tdStyle, fontWeight: 600 }}>{r.client_name || '—'}</td>
+                  <td style={tdStyle}>
+                    {Number(r.client_id) > 0 ? (
+                      <Link
+                        to={`/clients/contacts/${Number(r.client_id)}/edit`}
+                        style={{ fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}
+                      >
+                        {r.client_name || '—'}
+                      </Link>
+                    ) : Number(r.organization_id) > 0 ? (
+                      <Link
+                        to={`/clients/organizations/${Number(r.organization_id)}/edit`}
+                        style={{ fontWeight: 600, color: '#2563eb', textDecoration: 'none' }}
+                      >
+                        {r.client_name || '—'}
+                      </Link>
+                    ) : (
+                      <span style={{ fontWeight: 600 }}>{r.client_name || '—'}</span>
+                    )}
+                  </td>
                   <td style={tdStyle}>{r.engagement_type_name || '—'}</td>
                   <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{r.return_type || '—'}</td>
                   <td style={tdStyle}>

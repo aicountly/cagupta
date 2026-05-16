@@ -221,7 +221,7 @@ export async function searchContactsQuick(q, limit = 20) {
  * Merge paginated list search + quick search, deduped by id (for large directories).
  * @param {string} q
  * @param {number} perPage
- * @returns {Promise<{ id: number, displayName: string, pan?: string, email?: string, mobile?: string }[]>}
+ * @returns {Promise<{ id: number, displayName: string, pan?: string, email?: string, mobile?: string, linkedOrgNames?: string[] }[]>}
  */
 export async function getContactsForSearch(q, perPage = 50) {
   const trimmed = (q || '').trim();
@@ -243,6 +243,7 @@ export async function getContactsForSearch(q, perPage = 50) {
           pan: c.pan != null ? String(c.pan) : '',
           email: c.email != null ? String(c.email) : '',
           mobile: c.mobile != null ? String(c.mobile) : '',
+          linkedOrgNames: Array.isArray(c.linkedOrgNames) ? [...c.linkedOrgNames.filter(Boolean)] : [],
         });
       }
     }
@@ -259,6 +260,9 @@ export async function getContactsForSearch(q, perPage = 50) {
           pan: prev.pan || c.pan || '',
           email: prev.email || c.email || '',
           mobile: prev.mobile || c.mobile || '',
+          linkedOrgNames: prev.linkedOrgNames?.length
+            ? prev.linkedOrgNames
+            : [],
         });
       } else {
         map.set(id, {
@@ -267,6 +271,7 @@ export async function getContactsForSearch(q, perPage = 50) {
           pan: c.pan || '',
           email: c.email || '',
           mobile: c.mobile || '',
+          linkedOrgNames: [],
         });
       }
     }

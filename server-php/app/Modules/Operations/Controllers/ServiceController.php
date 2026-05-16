@@ -473,7 +473,7 @@ class ServiceController extends BaseController
         $actor     = $this->authUser();
         $actorId   = $actor ? (int)$actor['id'] : null;
         $actorName = $actor ? (string)($actor['name'] ?? 'System') : 'System';
-        $closureLabel = $closure === 'built' ? 'Invoiced (built)' : 'Non-billable';
+        $closureLabel = $closure === 'built' ? 'Invoiced (billed)' : 'Non-billable';
         $reasonNote   = ($reason !== null && $reason !== '') ? " Reason: {$reason}" : '';
         try {
             $this->serviceLogs->insert([

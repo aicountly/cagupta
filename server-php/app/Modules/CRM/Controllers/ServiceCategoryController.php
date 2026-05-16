@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Config\Database;
 use App\Controllers\BaseController;
+use JsonException;
 use App\Models\ServiceCategoryModel;
 use App\Models\ServiceSubcategoryModel;
 use App\Models\EngagementTypeModel;
@@ -21,23 +22,55 @@ use App\Models\RegisterModel;
  */
 class ServiceCategoryController extends BaseController
 {
-    private ServiceCategoryModel    $categories;
-    private ServiceSubcategoryModel $subcategories;
-    private EngagementTypeModel     $engagementTypes;
-    private ServiceModel            $services;
-    private LeadModel               $leads;
-    private RecurringServiceDefinitionModel $recurringDefs;
-    private RegisterModel           $registers;
+    /** Loaded on every request (catalog index needs only this). */
+    private ServiceCategoryModel $categories;
+
+    /** Lazily constructed so GET /service-categories does not touch unrelated models/tables. */
+    private ?ServiceSubcategoryModel $lazySubcategories = null;
+
+    private ?EngagementTypeModel $lazyEngagementTypes = null;
+
+    private ?ServiceModel $lazyServices = null;
+
+    private ?LeadModel $lazyLeads = null;
+
+    private ?RecurringServiceDefinitionModel $lazyRecurringDefs = null;
+
+    private ?RegisterModel $lazyRegisters = null;
 
     public function __construct()
     {
-        $this->categories      = new ServiceCategoryModel();
-        $this->subcategories   = new ServiceSubcategoryModel();
-        $this->engagementTypes = new EngagementTypeModel();
-        $this->services        = new ServiceModel();
-        $this->leads           = new LeadModel();
-        $this->recurringDefs   = new RecurringServiceDefinitionModel();
-        $this->registers       = new RegisterModel();
+        $this->categories = new ServiceCategoryModel();
+    }
+
+    private function subcategories(): ServiceSubcategoryModel
+    {
+        return $this->lazySubcategories ??= new ServiceSubcategoryModel();
+    }
+
+    private function engagementTypes(): EngagementTypeModel
+    {
+        return $this->lazyEngagementTypes ??= new EngagementTypeModel();
+    }
+
+    private function services(): ServiceModel
+    {
+        return $this->lazyServices ??= new ServiceModel();
+    }
+
+    private function leads(): LeadModel
+    {
+        return $this->lazyLeads ??= new LeadModel();
+    }
+
+    private function recurringDefs(): RecurringServiceDefinitionModel
+    {
+        return $this->lazyRecurringDefs ??= new RecurringServiceDefinitionModel();
+    }
+
+    private function registers(): RegisterModel
+    {
+        return $this->lazyRegisters ??= new RegisterModel();
     }
 
     // ── GET /api/admin/service-categories ────────────────────────────────────
@@ -47,8 +80,29 @@ class ServiceCategoryController extends BaseController
      */
     public function index(): never
     {
-        $data = $this->categories->allWithChildren();
-        $this->success($data, 'Service categories retrieved');
+        try {
+            $data = $this->categories->allWithChildren();
+            $this->success($data, 'Service categories retrieved');
+        } catch (\PDOException $e) {
+            error_log('[ServiceCategoryController::index] PDO: ' . $e->getMessage());
+            $this->error(
+                'The service catalog could not be loaded from the database. Verify migrations ran and the DB user may SELECT service_categories, service_subcategories, and engagement_types.',
+                500
+            );
+        } catch (JsonException $e) {
+            error_log('[ServiceCategoryController::index] JSON: ' . $e->getMessage());
+            $this->error('The service catalog could not be encoded for the API. Check server logs.', 500);
+        } catch (\Throwable $e) {
+            error_log('[ServiceCategoryController::index] ' . $e::class . ': ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            $env = strtolower((string)(getenv('APP_ENV') ?: ''));
+            if (in_array($env, ['development', 'local', 'dev'], true)) {
+                $this->error($e->getMessage() . ' @ ' . basename($e->getFile()) . ':' . $e->getLine(), 500);
+            }
+            $this->error(
+                'Service catalog could not be loaded. See server error log line prefixed with [ServiceCategoryController::index].',
+                500
+            );
+        }
     }
 
     // ── POST /api/admin/service-categories ───────────────────────────────────
@@ -96,7 +150,7 @@ class ServiceCategoryController extends BaseController
         $db->beginTransaction();
         try {
             $this->categories->updateName($id, $name);
-            $this->services->syncDenormalizedCategoryName($id, $name);
+            $this->services()->syncDenormalizedCategoryName($id, $name);
             $db->commit();
         } catch (\Throwable $e) {
             $db->rollBack();
@@ -118,7 +172,7 @@ class ServiceCategoryController extends BaseController
             $this->error('Category not found.', 404);
         }
 
-        if ($this->services->countReferencingCategoryTree($id) > 0) {
+        if ($this->services()->countReferencingCategoryTree($id) > 0) {
             $this->error(
                 'This category cannot be deleted because one or more service engagements still reference it, its subcategories, or its engagement types.',
                 409
@@ -136,7 +190,7 @@ class ServiceCategoryController extends BaseController
      */
     public function subcategoryIndex(int $categoryId): never
     {
-        $data = $this->subcategories->forCategory($categoryId);
+        $data = $this->subcategories()->forCategory($categoryId);
         $this->success($data, 'Subcategories retrieved');
     }
 
@@ -161,8 +215,8 @@ class ServiceCategoryController extends BaseController
             $this->error('Subcategory name is required.', 422);
         }
 
-        $newId = $this->subcategories->create($categoryId, $name);
-        $sub   = $this->subcategories->find($newId);
+        $newId = $this->subcategories()->create($categoryId, $name);
+        $sub   = $this->subcategories()->find($newId);
         $this->success($sub, 'Subcategory created', 201);
     }
 
@@ -175,7 +229,7 @@ class ServiceCategoryController extends BaseController
      */
     public function subcategoryUpdate(int $id): never
     {
-        $sub = $this->subcategories->find($id);
+        $sub = $this->subcategories()->find($id);
         if ($sub === null) {
             $this->error('Subcategory not found.', 404);
         }
@@ -189,15 +243,15 @@ class ServiceCategoryController extends BaseController
         $db = Database::getConnection();
         $db->beginTransaction();
         try {
-            $this->subcategories->updateName($id, $name);
-            $this->services->syncDenormalizedSubcategoryName($id, $name);
+            $this->subcategories()->updateName($id, $name);
+            $this->services()->syncDenormalizedSubcategoryName($id, $name);
             $db->commit();
         } catch (\Throwable $e) {
             $db->rollBack();
             throw $e;
         }
 
-        $this->success($this->subcategories->find($id), 'Subcategory updated');
+        $this->success($this->subcategories()->find($id), 'Subcategory updated');
     }
 
     // ── DELETE /api/admin/service-subcategories/:id ───────────────────────────
@@ -207,26 +261,26 @@ class ServiceCategoryController extends BaseController
      */
     public function subcategoryDestroy(int $id): never
     {
-        $sub = $this->subcategories->find($id);
+        $sub = $this->subcategories()->find($id);
         if ($sub === null) {
             $this->error('Subcategory not found.', 404);
         }
 
-        if ($this->engagementTypes->countBySubcategoryId($id) > 0) {
+        if ($this->engagementTypes()->countBySubcategoryId($id) > 0) {
             $this->error(
                 'This subcategory cannot be deleted while it has engagement types. Remove those engagement types first.',
                 409
             );
         }
 
-        if ($this->services->countBySubcategoryId($id) > 0) {
+        if ($this->services()->countBySubcategoryId($id) > 0) {
             $this->error(
                 'This subcategory cannot be deleted because one or more service engagements still reference it.',
                 409
             );
         }
 
-        $this->subcategories->delete($id);
+        $this->subcategories()->delete($id);
         $this->success(null, 'Subcategory deleted');
     }
 
@@ -237,7 +291,7 @@ class ServiceCategoryController extends BaseController
      */
     public function engagementTypeIndex(int $categoryId): never
     {
-        $data = $this->engagementTypes->forCategory($categoryId);
+        $data = $this->engagementTypes()->forCategory($categoryId);
         $this->success($data, 'Engagement types retrieved');
     }
 
@@ -269,14 +323,14 @@ class ServiceCategoryController extends BaseController
 
         // Validate subcategory belongs to this category
         if ($subcategoryId !== null) {
-            $sub = $this->subcategories->find($subcategoryId);
+            $sub = $this->subcategories()->find($subcategoryId);
             if ($sub === null || (int)$sub['category_id'] !== $categoryId) {
                 $this->error('Subcategory not found or does not belong to this category.', 422);
             }
         }
 
-        $newId = $this->engagementTypes->create($categoryId, $name, $subcategoryId);
-        $et    = $this->engagementTypes->find($newId);
+        $newId = $this->engagementTypes()->create($categoryId, $name, $subcategoryId);
+        $et    = $this->engagementTypes()->find($newId);
         $this->success($et, 'Engagement type created', 201);
     }
 
@@ -289,7 +343,7 @@ class ServiceCategoryController extends BaseController
      */
     public function engagementTypeStoreForSubcategory(int $subcategoryId): never
     {
-        $sub = $this->subcategories->find($subcategoryId);
+        $sub = $this->subcategories()->find($subcategoryId);
         if ($sub === null) {
             $this->error('Subcategory not found.', 404);
         }
@@ -302,8 +356,8 @@ class ServiceCategoryController extends BaseController
         }
 
         $categoryId = (int)$sub['category_id'];
-        $newId      = $this->engagementTypes->create($categoryId, $name, $subcategoryId);
-        $et         = $this->engagementTypes->find($newId);
+        $newId      = $this->engagementTypes()->create($categoryId, $name, $subcategoryId);
+        $et         = $this->engagementTypes()->find($newId);
         $this->success($et, 'Engagement type created', 201);
     }
 
@@ -316,7 +370,7 @@ class ServiceCategoryController extends BaseController
      */
     public function engagementTypeUpdate(int $id): never
     {
-        $et = $this->engagementTypes->find($id);
+        $et = $this->engagementTypes()->find($id);
         if ($et === null) {
             $this->error('Engagement type not found.', 404);
         }
@@ -363,19 +417,19 @@ class ServiceCategoryController extends BaseController
         }
 
         if ($data === []) {
-            $this->success($this->engagementTypes->find($id), 'No changes.');
+            $this->success($this->engagementTypes()->find($id), 'No changes.');
         }
 
-        $this->engagementTypes->update($id, $data);
-        $updated = $this->engagementTypes->find($id);
+        $this->engagementTypes()->update($id, $data);
+        $updated = $this->engagementTypes()->find($id);
 
         if (isset($data['name'])) {
             $newName = trim((string)$data['name']);
             if ($newName !== $oldName) {
-                $this->services->syncDenormalizedEngagementTypeName($id, $newName);
-                $this->leads->syncEngagementTypeName($id, $newName);
-                $this->recurringDefs->syncReturnTypeAfterEngagementTypeRename($id, $oldName, $newName);
-                $this->registers->syncReturnTypeAfterEngagementTypeRename($id, $oldName, $newName);
+                $this->services()->syncDenormalizedEngagementTypeName($id, $newName);
+                $this->leads()->syncEngagementTypeName($id, $newName);
+                $this->recurringDefs()->syncReturnTypeAfterEngagementTypeRename($id, $oldName, $newName);
+                $this->registers()->syncReturnTypeAfterEngagementTypeRename($id, $oldName, $newName);
             }
         }
 
@@ -389,19 +443,19 @@ class ServiceCategoryController extends BaseController
      */
     public function engagementTypeDestroy(int $id): never
     {
-        $et = $this->engagementTypes->find($id);
+        $et = $this->engagementTypes()->find($id);
         if ($et === null) {
             $this->error('Engagement type not found.', 404);
         }
 
-        if ($this->services->countByEngagementTypeId($id) > 0) {
+        if ($this->services()->countByEngagementTypeId($id) > 0) {
             $this->error(
                 'This engagement type cannot be deleted because one or more service engagements still use it.',
                 409
             );
         }
 
-        $this->engagementTypes->delete($id);
+        $this->engagementTypes()->delete($id);
         $this->success(null, 'Engagement type deleted');
     }
 }

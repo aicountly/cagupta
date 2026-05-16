@@ -14,7 +14,7 @@
  */
 
 import { getInitials } from '../utils/getInitials';
-import { SUPER_ADMIN_EMAIL, API_BASE_URL } from '../constants/config';
+import { SUPER_ADMIN_EMAIL, API_BASE_URL, LEDGER_USER_REVERSAL_ENABLED } from '../constants/config';
 import { PERMISSIONS } from '../constants/roles';
 
 const API_BASE = API_BASE_URL;
@@ -54,6 +54,7 @@ function buildMockUser(name, email, role = null) {
     initials:             getInitials(name),
     is_active:            true,
     can_change_password:  true,
+    ledger_user_reversal_enabled: LEDGER_USER_REVERSAL_ENABLED,
   };
 }
 

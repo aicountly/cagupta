@@ -25,10 +25,22 @@ class App
     /** Allowed CORS origin (React dev server or production domain). */
     public string $corsOrigin = 'http://localhost:5173';
 
+    /**
+     * When true: staff may request a ledger reversal OTP on their own email and
+     * confirm with that OTP (30-day window). Superadmin OTP path is unaffected.
+     * Env: LEDGER_USER_REVERSAL_ENABLED=true|false
+     */
+    public bool $ledgerUserReversalEnabled = false;
+
     public function __construct()
     {
         $this->baseURL     = getenv('BASE_URL')     ?: $this->baseURL;
         $this->environment = getenv('APP_ENV')      ?: $this->environment;
         $this->corsOrigin  = getenv('CORS_ORIGIN')  ?: $this->corsOrigin;
+
+        $rev = getenv('LEDGER_USER_REVERSAL_ENABLED');
+        if ($rev !== false && $rev !== '') {
+            $this->ledgerUserReversalEnabled = filter_var($rev, FILTER_VALIDATE_BOOLEAN);
+        }
     }
 }

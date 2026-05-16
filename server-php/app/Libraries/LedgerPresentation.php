@@ -39,6 +39,19 @@ final class LedgerPresentation
     }
 
     /**
+     * Fees / reimbursement slice: non-invoice rows use ledger_movement_kind; empty matches migration 061 default (fees).
+     */
+    private static function movementKindForSlicedNonInvoiceRow(array $t): string
+    {
+        $kind = trim((string)($t['ledger_movement_kind'] ?? ''));
+        if ($kind !== '') {
+            return $kind;
+        }
+
+        return LedgerDimensions::KIND_FEES;
+    }
+
+    /**
      * @param array<int, array<string, mixed>> $rows sorted
      * @return array<int, array<string, mixed>>
      */
@@ -73,6 +86,11 @@ final class LedgerPresentation
         foreach ($rows as $t) {
             $type = (string)($t['txn_type'] ?? '');
             if ($type === 'opening_balance') {
+                $obKind = (string)($t['ledger_movement_kind'] ?? '');
+                if ($obKind === '' || $obKind !== $targetView) {
+                    continue;
+                }
+                $expanded[] = self::txnToLedgerRow($t);
                 continue;
             }
             if ($type === 'invoice') {
@@ -92,7 +110,7 @@ final class LedgerPresentation
                 }
                 continue;
             }
-            $kind = (string)($t['ledger_movement_kind'] ?? '');
+            $kind = self::movementKindForSlicedNonInvoiceRow($t);
             if ($kind !== $targetView) {
                 continue;
             }

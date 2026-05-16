@@ -5,12 +5,13 @@ namespace App\Libraries;
 
 /**
  * Validation and helpers for client ledger classification:
- * ledger_class (regular | memorandum) and ledger_movement_kind (fees | reimbursement).
+ * ledger_class (regular | memorandum | optional) and ledger_movement_kind (fees | reimbursement).
  */
 final class LedgerDimensions
 {
     public const CLASS_REGULAR     = 'regular';
     public const CLASS_MEMORANDUM  = 'memorandum';
+    public const CLASS_OPTIONAL    = 'optional';
     public const VIEW_CONSOLIDATED = 'consolidated';
     public const VIEW_FEES         = 'fees';
     public const VIEW_REIMBURSEMENT = 'reimbursement';
@@ -21,7 +22,11 @@ final class LedgerDimensions
     /** @return array<string, true> */
     private static function validClasses(): array
     {
-        return [self::CLASS_REGULAR => true, self::CLASS_MEMORANDUM => true];
+        return [
+            self::CLASS_REGULAR    => true,
+            self::CLASS_MEMORANDUM => true,
+            self::CLASS_OPTIONAL   => true,
+        ];
     }
 
     /** @return array<string, true> */
@@ -34,7 +39,7 @@ final class LedgerDimensions
     {
         $s = is_string($v) ? trim($v) : '';
         if ($s === '' || !isset(self::validClasses()[$s])) {
-            throw new \InvalidArgumentException('ledger_class must be regular or memorandum.');
+            throw new \InvalidArgumentException('ledger_class must be regular, memorandum, or optional.');
         }
 
         return $s;

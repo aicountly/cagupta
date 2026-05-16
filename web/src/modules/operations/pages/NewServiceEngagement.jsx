@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ChevronRight, User, Building2, Search, X, CheckSquare, Square } from 'lucide-react';
+import { ChevronRight, User, Building2, Search, X, CheckSquare, Square, Loader2 } from 'lucide-react';
 import { getCategories } from '../../../services/serviceCategoryService';
 import { createEngagement, ApiError } from '../../../services/engagementService';
 import OpenEngagementConflictModal from '../../../components/services/OpenEngagementConflictModal';
@@ -204,14 +204,29 @@ export default function NewServiceEngagement() {
 
   // Catalog loaded from API
   const [categories, setCategories] = useState([]);
-  const [dataError, setDataError] = useState('');
+  /** loading | ready | error — avoids showing “configure Settings” when the request failed */
+  const [catalogStatus, setCatalogStatus] = useState('loading');
+  const [catalogErrorMessage, setCatalogErrorMessage] = useState('');
   const hasCatalog = categories.length > 0;
 
-  useEffect(() => {
-    getCategories().catch(() => null).then((cats) => {
-      if (cats) setCategories(cats); else setDataError(e => e || 'Failed to load service catalog.');
-    });
+  const loadCatalog = useCallback(() => {
+    setCatalogStatus('loading');
+    setCatalogErrorMessage('');
+    getCategories()
+      .then((cats) => {
+        setCategories(Array.isArray(cats) ? cats : []);
+        setCatalogStatus('ready');
+      })
+      .catch((err) => {
+        setCategories([]);
+        setCatalogErrorMessage(err?.message || 'Failed to load service catalog.');
+        setCatalogStatus('error');
+      });
   }, []);
+
+  useEffect(() => {
+    loadCatalog();
+  }, [loadCatalog]);
 
   // Client selection (search-backed; no bulk list — API is paginated at 100/page)
   const [clientType, setClientType] = useState('contact'); // 'contact' | 'organization'
@@ -416,7 +431,6 @@ export default function NewServiceEngagement() {
         onClose={() => setOpenEngagementConflict(null)}
       />
       {toast && <Toast message={toast} onClose={() => setToast('')} />}
-      {dataError && <div style={{ background:'#fef2f2', color:'#dc2626', padding:'8px 14px', borderRadius:8, fontSize:13, marginBottom:12 }}>{dataError}</div>}
 
       {/* Breadcrumb */}
       <div style={breadcrumbRow}>
@@ -429,18 +443,39 @@ export default function NewServiceEngagement() {
 
       <div style={pageTitle}>New Service Engagement</div>
 
-      {/* Empty catalog guard */}
-      {!hasCatalog && (
-        <div style={emptyCatalogCard}>
-          <div style={{ fontSize: 22, marginBottom: 8 }}>⚙️</div>
-          <div style={{ fontWeight: 700, fontSize: 15, color: '#0B1F3B', marginBottom: 4 }}>No Service Catalog configured yet.</div>
-          <div style={{ fontSize: 13, color: '#64748b' }}>
-            Please configure your Service Catalog in Settings before creating an engagement.
+      {catalogStatus === 'loading' && (
+        <div style={{ ...emptyCatalogCard, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <Loader2 size={28} color="#F37920" style={{ animation: 'spin 0.8s linear infinite' }} />
+          <div style={{ fontSize: 14, color: '#64748b' }}>Loading service catalog…</div>
+        </div>
+      )}
+
+      {catalogStatus === 'error' && (
+        <div style={{ ...emptyCatalogCard, borderColor: '#fecaca', background: '#fef2f2' }}>
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#991b1b', marginBottom: 8 }}>Could not load service catalog</div>
+          <div style={{ fontSize: 13, color: '#7f1d1d', marginBottom: 14 }}>{catalogErrorMessage}</div>
+          <div style={{ fontSize: 12, color: '#64748b', marginBottom: 18, lineHeight: 1.5 }}>
+            Check your connection or sign in again if your session expired. If this persists, confirm the deployed <code style={{ fontSize: 11 }}>VITE_API_BASE_URL</code> matches the same API root your browser already uses for other working requests (compare any successful request under <code style={{ fontSize: 11 }}>/admin/</code> in DevTools → Network).
+          </div>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button type="button" style={btnPrimary} onClick={loadCatalog}>Retry</button>
+            <button type="button" style={btnSecondary} onClick={() => navigate('/settings')}>Open Settings</button>
           </div>
         </div>
       )}
 
-      {hasCatalog && (
+      {catalogStatus === 'ready' && !hasCatalog && (
+        <div style={emptyCatalogCard}>
+          <div style={{ fontSize: 22, marginBottom: 8 }}>⚙️</div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: '#0B1F3B', marginBottom: 4 }}>No Service Catalog configured yet.</div>
+          <div style={{ fontSize: 13, color: '#64748b', marginBottom: 18 }}>
+            Add categories, subcategories, and engagement types under Settings → Service Configuration before creating an engagement.
+          </div>
+          <button type="button" style={btnPrimary} onClick={() => navigate('/settings')}>Open Settings</button>
+        </div>
+      )}
+
+      {catalogStatus === 'ready' && hasCatalog && (
         <div style={formGrid}>
           {/* ── Section: Client ─────────────────────────────────────────── */}
           <FormSection title="Client Selection">
@@ -654,7 +689,7 @@ export default function NewServiceEngagement() {
       {/* Action buttons */}
       <div style={actionRow}>
         <button style={btnSecondary} onClick={handleCancel}>Cancel</button>
-        {hasCatalog && (
+        {catalogStatus === 'ready' && hasCatalog && (
           <button style={btnPrimary} disabled={saving} onClick={handleCreate}>{saving ? 'Saving…' : 'Create Engagement'}</button>
         )}
       </div>
