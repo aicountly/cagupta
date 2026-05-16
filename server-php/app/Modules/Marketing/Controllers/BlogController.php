@@ -1,0 +1,578 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Controllers\Admin;
+
+use App\Controllers\BaseController;
+use App\Libraries\BrevoMailer;
+
+/**
+ * BlogController — Blog Posts & AI Draft Management
+ *
+ * Routes prefix: /api/marketing/blog  (authenticated)
+ *                /api/public/blogs    (unauthenticated, for marketing site)
+ *
+ * Blog posts:
+ *   GET    /api/marketing/blog/posts              — list all posts
+ *   POST   /api/marketing/blog/posts              — create manual post
+ *   PUT    /api/marketing/blog/posts/:id          — update post
+ *   DELETE /api/marketing/blog/posts/:id          — delete post
+ *   POST   /api/marketing/blog/posts/:id/publish  — publish + email blast
+ *
+ * AI drafts:
+ *   GET    /api/marketing/blog/drafts             — list drafts (pending)
+ *   PUT    /api/marketing/blog/drafts/:id         — edit draft
+ *   POST   /api/marketing/blog/drafts/:id/approve — approve → publishes post
+ *   POST   /api/marketing/blog/drafts/:id/reject  — reject draft
+ *
+ * Uploads:
+ *   POST   /api/marketing/blog/upload-image       — upload cover image
+ *
+ * Public (no auth):
+ *   GET    /api/public/blogs                      — published posts (for marketing site)
+ *   GET    /api/public/blogs/:slug                — single published post
+ */
+class BlogController extends BaseController
+{
+    private \PDO $db;
+
+    public function __construct()
+    {
+        $this->db = \App\Config\Database::getConnection();
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private function slugify(string $text): string
+    {
+        $slug = strtolower(trim($text));
+        $slug = preg_replace('/[^a-z0-9\s-]/', '', $slug) ?? $slug;
+        $slug = preg_replace('/[\s-]+/', '-', $slug) ?? $slug;
+        return trim($slug, '-');
+    }
+
+    private function uniqueSlug(string $base, ?int $excludeId = null): string
+    {
+        $slug = $this->slugify($base);
+        $original = $slug;
+        $i = 2;
+        while (true) {
+            $sql = 'SELECT id FROM blog_posts WHERE slug = :slug';
+            $params = [':slug' => $slug];
+            if ($excludeId !== null) {
+                $sql .= ' AND id != :eid';
+                $params[':eid'] = $excludeId;
+            }
+            $exists = $this->db->prepare($sql);
+            $exists->execute($params);
+            if ($exists->fetch() === false) {
+                break;
+            }
+            $slug = "{$original}-{$i}";
+            $i++;
+        }
+        return $slug;
+    }
+
+    private function coverImageUrl(string $path): string
+    {
+        if ($path === '') return '';
+        $baseUrl = rtrim((string)($_ENV['BASE_URL'] ?? 'http://localhost:8080'), '/');
+        return "{$baseUrl}/{$path}";
+    }
+
+    private function formatPost(array $row): array
+    {
+        $row['cover_image_url'] = $this->coverImageUrl((string)($row['cover_image_path'] ?? ''));
+        return $row;
+    }
+
+    // ── Blog Posts — CRUD ────────────────────────────────────────────────────
+
+    public function blogIndex(): never
+    {
+        $category = $this->query('category', '');
+        $status   = $this->query('status', '');
+        $page     = max(1, (int)$this->query('page', 1));
+        $limit    = 20;
+        $offset   = ($page - 1) * $limit;
+
+        $where = [];
+        $params = [];
+
+        if ($category !== '') {
+            $where[] = 'category = :cat';
+            $params[':cat'] = $category;
+        }
+        if ($status !== '') {
+            $where[] = 'status = :status';
+            $params[':status'] = $status;
+        }
+
+        $whereClause = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
+
+        $countStmt = $this->db->prepare("SELECT COUNT(*) FROM blog_posts {$whereClause}");
+        $countStmt->execute($params);
+        $total = (int)$countStmt->fetchColumn();
+
+        $stmt = $this->db->prepare("
+            SELECT p.*, u.name AS author_name
+            FROM   blog_posts p
+            LEFT JOIN users u ON u.id = p.created_by
+            {$whereClause}
+            ORDER  BY p.created_at DESC
+            LIMIT  :lim OFFSET :off
+        ");
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
+        $stmt->bindValue(':lim', $limit, \PDO::PARAM_INT);
+        $stmt->bindValue(':off', $offset, \PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $rows = array_map(fn($r) => $this->formatPost($r), $rows);
+
+        $this->success($rows, 'OK', 200, ['total' => $total, 'page' => $page, 'limit' => $limit]);
+    }
+
+    public function blogStore(): never
+    {
+        $user = $this->authUser();
+        $body = $this->getJsonBody();
+
+        $title    = trim((string)($body['title'] ?? ''));
+        $content  = trim((string)($body['content'] ?? ''));
+        $category = (string)($body['category'] ?? 'laws');
+        $excerpt  = trim((string)($body['excerpt'] ?? ''));
+        $coverImg = trim((string)($body['cover_image_path'] ?? ''));
+
+        if ($title === '')   $this->error('title is required.', 422);
+        if ($content === '') $this->error('content is required.', 422);
+        if (!in_array($category, ['laws', 'tax_saving'], true)) {
+            $this->error('category must be laws or tax_saving.', 422);
+        }
+
+        $slug = $this->uniqueSlug($title);
+
+        $stmt = $this->db->prepare('
+            INSERT INTO blog_posts
+                (title, slug, excerpt, content, cover_image_path, category, status, source, created_by)
+            VALUES
+                (:title, :slug, :excerpt, :content, :cover, :cat, :status, :source, :uid)
+            RETURNING id, created_at
+        ');
+        $stmt->execute([
+            ':title'   => $title,
+            ':slug'    => $slug,
+            ':excerpt' => $excerpt,
+            ':content' => $content,
+            ':cover'   => $coverImg,
+            ':cat'     => $category,
+            ':status'  => 'draft',
+            ':source'  => 'manual',
+            ':uid'     => $user['id'],
+        ]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        $this->success(['id' => (int)$row['id'], 'slug' => $slug], 'Blog post created', 201);
+    }
+
+    public function blogUpdate(int $id): never
+    {
+        $user = $this->authUser();
+        $body = $this->getJsonBody();
+
+        $existing = $this->db->prepare('SELECT * FROM blog_posts WHERE id = :id');
+        $existing->execute([':id' => $id]);
+        $post = $existing->fetch(\PDO::FETCH_ASSOC);
+        if (!$post) $this->error('Post not found.', 404);
+
+        $title    = trim((string)($body['title'] ?? $post['title']));
+        $content  = trim((string)($body['content'] ?? $post['content']));
+        $excerpt  = trim((string)($body['excerpt'] ?? $post['excerpt']));
+        $category = (string)($body['category'] ?? $post['category']);
+        $coverImg = isset($body['cover_image_path']) ? trim((string)$body['cover_image_path']) : $post['cover_image_path'];
+
+        if (!in_array($category, ['laws', 'tax_saving'], true)) {
+            $this->error('category must be laws or tax_saving.', 422);
+        }
+
+        $slug = $title !== $post['title'] ? $this->uniqueSlug($title, $id) : $post['slug'];
+
+        $stmt = $this->db->prepare('
+            UPDATE blog_posts
+            SET title = :title, slug = :slug, excerpt = :excerpt, content = :content,
+                cover_image_path = :cover, category = :cat, updated_at = NOW()
+            WHERE id = :id
+        ');
+        $stmt->execute([
+            ':title'   => $title,
+            ':slug'    => $slug,
+            ':excerpt' => $excerpt,
+            ':content' => $content,
+            ':cover'   => $coverImg,
+            ':cat'     => $category,
+            ':id'      => $id,
+        ]);
+
+        $this->success(['id' => $id, 'slug' => $slug], 'Post updated');
+    }
+
+    public function blogDelete(int $id): never
+    {
+        $stmt = $this->db->prepare('DELETE FROM blog_posts WHERE id = :id RETURNING id');
+        $stmt->execute([':id' => $id]);
+        if (!$stmt->fetch()) $this->error('Post not found.', 404);
+
+        $this->success(null, 'Post deleted');
+    }
+
+    public function blogPublish(int $id): never
+    {
+        $user = $this->authUser();
+
+        $existing = $this->db->prepare('SELECT * FROM blog_posts WHERE id = :id');
+        $existing->execute([':id' => $id]);
+        $post = $existing->fetch(\PDO::FETCH_ASSOC);
+        if (!$post) $this->error('Post not found.', 404);
+
+        if ($post['status'] === 'published') $this->error('Post is already published.', 409);
+
+        $this->db->prepare('
+            UPDATE blog_posts
+            SET status = :status, approved_by = :uid, published_at = NOW(), updated_at = NOW()
+            WHERE id = :id
+        ')->execute([':status' => 'published', ':uid' => $user['id'], ':id' => $id]);
+
+        $this->dispatchBlogEmail((int)$post['id'], (string)$post['title'], (string)$post['excerpt'], (string)$post['slug']);
+
+        $this->success(null, 'Post published and email blast triggered');
+    }
+
+    // ── AI Drafts ────────────────────────────────────────────────────────────
+
+    public function draftIndex(): never
+    {
+        $status   = $this->query('status', 'pending');
+        $category = $this->query('category', '');
+
+        $where = ['status = :status'];
+        $params = [':status' => $status];
+
+        if ($category !== '') {
+            $where[] = 'category = :cat';
+            $params[':cat'] = $category;
+        }
+
+        $stmt = $this->db->prepare('
+            SELECT * FROM blog_ai_drafts
+            WHERE ' . implode(' AND ', $where) . '
+            ORDER BY created_at DESC
+        ');
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+        $rows = array_map(fn($r) => $this->formatPost($r), $rows);
+
+        $this->success($rows);
+    }
+
+    public function draftUpdate(int $id): never
+    {
+        $body = $this->getJsonBody();
+
+        $existing = $this->db->prepare('SELECT * FROM blog_ai_drafts WHERE id = :id');
+        $existing->execute([':id' => $id]);
+        $draft = $existing->fetch(\PDO::FETCH_ASSOC);
+        if (!$draft) $this->error('Draft not found.', 404);
+
+        $title    = trim((string)($body['title'] ?? $draft['title']));
+        $excerpt  = trim((string)($body['excerpt'] ?? $draft['excerpt']));
+        $content  = trim((string)($body['content'] ?? $draft['content']));
+        $coverImg = isset($body['cover_image_path']) ? trim((string)$body['cover_image_path']) : $draft['cover_image_path'];
+
+        $this->db->prepare('
+            UPDATE blog_ai_drafts
+            SET title = :title, excerpt = :excerpt, content = :content,
+                cover_image_path = :cover, updated_at = NOW()
+            WHERE id = :id
+        ')->execute([
+            ':title'   => $title,
+            ':excerpt' => $excerpt,
+            ':content' => $content,
+            ':cover'   => $coverImg,
+            ':id'      => $id,
+        ]);
+
+        $this->success(null, 'Draft updated');
+    }
+
+    public function draftApprove(int $id): never
+    {
+        $user = $this->authUser();
+
+        $existing = $this->db->prepare('SELECT * FROM blog_ai_drafts WHERE id = :id');
+        $existing->execute([':id' => $id]);
+        $draft = $existing->fetch(\PDO::FETCH_ASSOC);
+        if (!$draft) $this->error('Draft not found.', 404);
+        if ($draft['status'] !== 'pending') $this->error('Draft is not pending.', 409);
+
+        $slug = $this->uniqueSlug((string)$draft['title']);
+
+        $this->db->beginTransaction();
+        try {
+            $ins = $this->db->prepare('
+                INSERT INTO blog_posts
+                    (title, slug, excerpt, content, cover_image_path, category,
+                     status, source, created_by, approved_by, published_at)
+                VALUES
+                    (:title, :slug, :excerpt, :content, :cover, :cat,
+                     :status, :source, :uid, :uid, NOW())
+                RETURNING id
+            ');
+            $ins->execute([
+                ':title'   => $draft['title'],
+                ':slug'    => $slug,
+                ':excerpt' => $draft['excerpt'],
+                ':content' => $draft['content'],
+                ':cover'   => $draft['cover_image_path'],
+                ':cat'     => $draft['category'],
+                ':status'  => 'published',
+                ':source'  => 'ai',
+                ':uid'     => $user['id'],
+            ]);
+            $postRow = $ins->fetch(\PDO::FETCH_ASSOC);
+            $postId  = (int)$postRow['id'];
+
+            $this->db->prepare('
+                UPDATE blog_ai_drafts
+                SET status = :status, blog_post_id = :pid, updated_at = NOW()
+                WHERE id = :id
+            ')->execute([':status' => 'approved', ':pid' => $postId, ':id' => $id]);
+
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            $this->db->rollBack();
+            $this->error('Failed to approve draft: ' . $e->getMessage(), 500);
+        }
+
+        $this->dispatchBlogEmail($postId, (string)$draft['title'], (string)$draft['excerpt'], $slug);
+
+        $this->success(['blog_post_id' => $postId, 'slug' => $slug], 'Draft approved and published');
+    }
+
+    public function draftReject(int $id): never
+    {
+        $existing = $this->db->prepare('SELECT id FROM blog_ai_drafts WHERE id = :id');
+        $existing->execute([':id' => $id]);
+        if (!$existing->fetch()) $this->error('Draft not found.', 404);
+
+        $this->db->prepare('
+            UPDATE blog_ai_drafts SET status = :status, updated_at = NOW() WHERE id = :id
+        ')->execute([':status' => 'rejected', ':id' => $id]);
+
+        $this->success(null, 'Draft rejected');
+    }
+
+    // ── Image Upload ─────────────────────────────────────────────────────────
+
+    public function imageUpload(): never
+    {
+        if (empty($_FILES['image'])) {
+            $this->error('No image file uploaded.', 422);
+        }
+
+        $file = $_FILES['image'];
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            $this->error('Upload error code: ' . $file['error'], 422);
+        }
+
+        $allowedMime = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+        $mime        = mime_content_type($file['tmp_name']);
+        if (!in_array($mime, $allowedMime, true)) {
+            $this->error('Only JPEG, PNG, WebP and GIF images are allowed.', 422);
+        }
+
+        if ($file['size'] > 5 * 1024 * 1024) {
+            $this->error('Image must be under 5 MB.', 422);
+        }
+
+        $uploadDir  = dirname(__DIR__, 4) . '/public/uploads/blog/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+
+        $ext      = match ($mime) {
+            'image/jpeg' => 'jpg',
+            'image/png'  => 'png',
+            'image/webp' => 'webp',
+            'image/gif'  => 'gif',
+            default      => 'jpg',
+        };
+        $filename = 'cover_' . uniqid('', true) . '.' . $ext;
+        $destPath = $uploadDir . $filename;
+
+        if (!move_uploaded_file($file['tmp_name'], $destPath)) {
+            $this->error('Failed to save uploaded image.', 500);
+        }
+
+        $relativePath = 'uploads/blog/' . $filename;
+        $this->success([
+            'path' => $relativePath,
+            'url'  => $this->coverImageUrl($relativePath),
+        ], 'Image uploaded', 201);
+    }
+
+    // ── Public API (no auth — for marketing site) ────────────────────────────
+
+    public function publicBlogs(): never
+    {
+        $category = $this->query('category', '');
+        $page     = max(1, (int)$this->query('page', 1));
+        $limit    = 20;
+        $offset   = ($page - 1) * $limit;
+
+        $where  = ['status = :status'];
+        $params = [':status' => 'published'];
+
+        if ($category !== '') {
+            $where[] = 'category = :cat';
+            $params[':cat'] = $category;
+        }
+
+        $whereClause = 'WHERE ' . implode(' AND ', $where);
+
+        $stmt = $this->db->prepare("
+            SELECT p.id, p.title, p.slug, p.excerpt, p.cover_image_path,
+                   p.category, p.published_at, p.created_at,
+                   u.name AS author_name
+            FROM   blog_posts p
+            LEFT JOIN users u ON u.id = p.created_by
+            {$whereClause}
+            ORDER  BY p.published_at DESC
+            LIMIT  :lim OFFSET :off
+        ");
+        foreach ($params as $k => $v) {
+            $stmt->bindValue($k, $v);
+        }
+        $stmt->bindValue(':lim', $limit, \PDO::PARAM_INT);
+        $stmt->bindValue(':off', $offset, \PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
+
+        $rows = array_map(fn($r) => $this->formatPost($r), $rows);
+
+        header('Access-Control-Allow-Origin: *');
+        $this->success($rows, 'OK', 200, ['page' => $page, 'limit' => $limit]);
+    }
+
+    public function publicBlogPost(string $slug): never
+    {
+        $stmt = $this->db->prepare("
+            SELECT p.*, u.name AS author_name
+            FROM   blog_posts p
+            LEFT JOIN users u ON u.id = p.created_by
+            WHERE  p.status = 'published'
+              AND  (p.slug = :slug OR p.id::text = :iid)
+            LIMIT 1
+        ");
+        $stmt->execute([':slug' => $slug, ':iid' => $slug]);
+        $post = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        if (!$post) $this->error('Post not found.', 404);
+
+        header('Access-Control-Allow-Origin: *');
+        $this->success($this->formatPost($post));
+    }
+
+    // ── Email blast helpers ──────────────────────────────────────────────────
+
+    private function dispatchBlogEmail(int $postId, string $title, string $excerpt, string $slug): void
+    {
+        $baseUrl = rtrim((string)($_ENV['MARKETING_SITE_URL'] ?? $_ENV['BASE_URL'] ?? ''), '/');
+        $blogUrl = "{$baseUrl}/blog/{$slug}";
+
+        // Fetch all active clients with email
+        $clients = $this->db->query("
+            SELECT c.id, c.name, c.email
+            FROM   clients c
+            WHERE  c.status = 'active'
+              AND  c.email IS NOT NULL
+              AND  c.email != ''
+        ")->fetchAll(\PDO::FETCH_ASSOC);
+
+        if (empty($clients)) {
+            return;
+        }
+
+        $categoryLabel = 'Tax & Finance Insights';
+        $htmlBody = $this->buildBlogEmailHtml($title, $excerpt, $blogUrl, $categoryLabel);
+
+        $subject      = "New Article: {$title}";
+        $successCount = 0;
+
+        foreach ($clients as $client) {
+            $sent = BrevoMailer::send(
+                (string)$client['email'],
+                (string)$client['name'],
+                $subject,
+                $htmlBody
+            );
+            if ($sent) $successCount++;
+        }
+
+        $total = count($clients);
+        $status = $successCount === 0 ? 'failed' : ($successCount < $total ? 'partial' : 'sent');
+
+        $this->db->prepare('
+            INSERT INTO blog_email_logs (blog_post_id, recipients_count, success_count, status)
+            VALUES (:pid, :total, :success, :status)
+        ')->execute([
+            ':pid'     => $postId,
+            ':total'   => $total,
+            ':success' => $successCount,
+            ':status'  => $status,
+        ]);
+    }
+
+    private function buildBlogEmailHtml(string $title, string $excerpt, string $url, string $category): string
+    {
+        $safeTitle    = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
+        $safeExcerpt  = htmlspecialchars($excerpt, ENT_QUOTES, 'UTF-8');
+        $safeCategory = htmlspecialchars($category, ENT_QUOTES, 'UTF-8');
+        $safeUrl      = htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
+
+        return <<<HTML
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f8fafc;font-family:Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;padding:32px 0;">
+    <tr><td align="center">
+      <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+        <tr>
+          <td style="background:#F37920;padding:24px 32px;">
+            <p style="margin:0;color:#fff;font-size:13px;font-weight:600;letter-spacing:1px;">{$safeCategory}</p>
+            <h1 style="margin:8px 0 0;color:#fff;font-size:22px;line-height:1.3;">{$safeTitle}</h1>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px 32px;">
+            <p style="margin:0 0 20px;color:#475569;font-size:15px;line-height:1.6;">{$safeExcerpt}</p>
+            <a href="{$safeUrl}" style="display:inline-block;background:#F37920;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-size:14px;font-weight:600;">Read Full Article &rarr;</a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:16px 32px 24px;border-top:1px solid #f1f5f9;">
+            <p style="margin:0;color:#94a3b8;font-size:12px;">CA Rahul Gupta &bull; You received this because you are a valued client.<br>
+            <a href="{$safeUrl}" style="color:#F37920;">View in browser</a></p>
+          </td>
+        </tr>
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>
+HTML;
+    }
+}

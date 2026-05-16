@@ -39,6 +39,7 @@ SQL;
 
     /**
      * Find a service by primary key.
+     * When the service is a master, also attaches linked_services_summary { total, completed, pending }.
      *
      * @return array<string, mixed>|null
      */
@@ -69,7 +70,67 @@ SQL;
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch();
 
-        return $row ? $this->attachAssigneeFields($row) : null;
+        if (!$row) {
+            return null;
+        }
+
+        $row = $this->attachAssigneeFields($row);
+        $row['is_master_service']  = (bool)($row['is_master_service'] ?? false);
+        $row['master_service_id']  = isset($row['master_service_id']) && $row['master_service_id'] !== null
+            ? (int)$row['master_service_id'] : null;
+
+        if ($row['is_master_service']) {
+            $row['linked_services_summary'] = $this->buildLinkedServicesSummary((int)$row['id']);
+        } else {
+            $row['linked_services_summary'] = null;
+        }
+
+        if ($row['master_service_id'] !== null) {
+            $masterStmt = $this->db->prepare(
+                "SELECT service_type,
+                        COALESCE(c.organization_name,
+                                 NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                                 o.name,
+                                 s.client_name,
+                                 'Unknown') AS client_name
+                 FROM services s
+                 LEFT JOIN clients c       ON c.id = s.client_id
+                 LEFT JOIN organizations o ON o.id = s.organization_id
+                 WHERE s.id = :mid LIMIT 1"
+            );
+            $masterStmt->execute([':mid' => $row['master_service_id']]);
+            $masterRow = $masterStmt->fetch();
+            $row['master_service_name'] = $masterRow ? (string)$masterRow['service_type'] : null;
+        } else {
+            $row['master_service_name'] = null;
+        }
+
+        return $row;
+    }
+
+    /**
+     * Build { total, completed, pending } summary for a master service's linked children.
+     *
+     * @return array{total: int, completed: int, pending: int}
+     */
+    private function buildLinkedServicesSummary(int $masterId): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT COUNT(*) AS total,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
+             FROM services
+             WHERE master_service_id = :mid"
+        );
+        $stmt->execute([':mid' => $masterId]);
+        $row  = $stmt->fetch();
+        $total     = (int)($row['total'] ?? 0);
+        $completed = (int)($row['completed'] ?? 0);
+
+        return [
+            'total'     => $total,
+            'completed' => $completed,
+            'pending'   => $total - $completed,
+        ];
     }
 
     /**
@@ -741,7 +802,9 @@ SQL;
             default => "s.billing_closure = 'open'",
         };
 
-        $where  = ['1=1', '(' . $completionSql . ')', '(' . $closureSql . ')'];
+        // Child services (linked to a master) are excluded from the billing queue;
+        // only master services and standalone services appear here.
+        $where  = ['1=1', '(' . $completionSql . ')', '(' . $closureSql . ')', 's.master_service_id IS NULL'];
         $params = [];
 
         if ($search !== '') {
@@ -789,7 +852,9 @@ SQL;
                     NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
                     o.name,
                     s.client_name,
-                    'Unknown') AS display_client_name
+                    'Unknown') AS display_client_name,
+                (SELECT COUNT(*) FROM services cs WHERE cs.master_service_id = s.id) AS linked_total,
+                (SELECT COUNT(*) FROM services cs WHERE cs.master_service_id = s.id AND cs.status = 'completed') AS linked_completed
             {$from}
             ORDER BY s.updated_at DESC NULLS LAST, s.id DESC
             LIMIT :limit OFFSET :offset";
@@ -1005,6 +1070,161 @@ SQL;
             ],
         ];
     }
+
+    // ── Master Service methods ────────────────────────────────────────────────
+
+    /**
+     * Return all child services linked to a master, with key fields.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getLinkedServices(int $masterId): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT s.id, s.service_type, s.status, s.due_date, s.billing_closure,
+                    COALESCE(c.organization_name,
+                             NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                             o.name,
+                             s.client_name,
+                             'Unknown') AS client_name
+             FROM services s
+             LEFT JOIN clients c       ON c.id = s.client_id
+             LEFT JOIN organizations o ON o.id = s.organization_id
+             WHERE s.master_service_id = :mid
+             ORDER BY s.created_at ASC"
+        );
+        $stmt->execute([':mid' => $masterId]);
+
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Return only the IDs of child services linked to a master.
+     * Used by InvoiceCostAnalysis for time-entry roll-up.
+     *
+     * @return int[]
+     */
+    public function getLinkedServiceIds(int $masterId): array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT id FROM services WHERE master_service_id = :mid ORDER BY id'
+        );
+        $stmt->execute([':mid' => $masterId]);
+
+        return array_map('intval', $stmt->fetchAll(\PDO::FETCH_COLUMN));
+    }
+
+    /**
+     * Return services of the same client that can be linked as children:
+     * - not already a master service
+     * - not already linked to another master (or linked to $masterServiceId, i.e. already its child — still returned so UI can show current links)
+     * - status not in completed / cancelled
+     * - not the master service itself
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getLinkableServices(int $clientId, int $masterServiceId): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT s.id, s.service_type, s.status, s.financial_year
+             FROM services s
+             WHERE (s.client_id = :cid OR s.organization_id = (
+                       SELECT organization_id FROM services WHERE id = :mid LIMIT 1
+                   ))
+               AND s.is_master_service = FALSE
+               AND (s.master_service_id IS NULL OR s.master_service_id = :mid)
+               AND s.status NOT IN ('completed', 'cancelled')
+               AND s.id <> :mid
+             ORDER BY s.created_at DESC"
+        );
+        $stmt->execute([':cid' => $clientId, ':mid' => $masterServiceId]);
+
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Link a child service to a master service.
+     * Validates: same client, active status, child is not itself a master, not already linked elsewhere.
+     *
+     * @throws \RuntimeException on business rule violation.
+     */
+    public function linkService(int $masterId, int $childId): void
+    {
+        if ($masterId === $childId) {
+            throw new \RuntimeException('A service cannot be linked to itself.');
+        }
+
+        $master = $this->db->prepare('SELECT client_id, organization_id, is_master_service FROM services WHERE id = :id LIMIT 1');
+        $master->execute([':id' => $masterId]);
+        $masterRow = $master->fetch();
+        if (!$masterRow) {
+            throw new \RuntimeException('Master service not found.');
+        }
+        if (!(bool)$masterRow['is_master_service']) {
+            throw new \RuntimeException('The target service is not marked as a master service.');
+        }
+
+        $child = $this->db->prepare('SELECT client_id, organization_id, status, is_master_service, master_service_id FROM services WHERE id = :id LIMIT 1');
+        $child->execute([':id' => $childId]);
+        $childRow = $child->fetch();
+        if (!$childRow) {
+            throw new \RuntimeException('Child service not found.');
+        }
+        if ((bool)$childRow['is_master_service']) {
+            throw new \RuntimeException('A master service cannot itself be linked as a child.');
+        }
+        if ($childRow['master_service_id'] !== null && (int)$childRow['master_service_id'] !== $masterId) {
+            throw new \RuntimeException('This service is already linked to a different master service. Unlink it first.');
+        }
+        if (in_array((string)$childRow['status'], ['completed', 'cancelled'], true)) {
+            throw new \RuntimeException('Only active services can be linked to a master service.');
+        }
+
+        // Same-client validation: match on client_id or organization_id
+        $sameClient = ($masterRow['client_id'] !== null && $masterRow['client_id'] === $childRow['client_id'])
+                   || ($masterRow['organization_id'] !== null && $masterRow['organization_id'] === $childRow['organization_id']);
+        if (!$sameClient) {
+            throw new \RuntimeException('The linked service must belong to the same client as the master service.');
+        }
+
+        $stmt = $this->db->prepare('UPDATE services SET master_service_id = :mid, updated_at = NOW() WHERE id = :id');
+        $stmt->execute([':mid' => $masterId, ':id' => $childId]);
+    }
+
+    /**
+     * Remove the link between a child service and its master (make it standalone again).
+     */
+    public function unlinkService(int $childId): void
+    {
+        $stmt = $this->db->prepare('UPDATE services SET master_service_id = NULL, updated_at = NOW() WHERE id = :id');
+        $stmt->execute([':id' => $childId]);
+    }
+
+    /**
+     * Toggle is_master_service on a service.
+     * Turning OFF is blocked when the service still has linked children (user must unlink them first).
+     *
+     * @throws \RuntimeException when turning off while children exist.
+     */
+    public function toggleMasterService(int $id, bool $value): void
+    {
+        if (!$value) {
+            // Block if children are still linked
+            $countStmt = $this->db->prepare('SELECT COUNT(*) FROM services WHERE master_service_id = :id');
+            $countStmt->execute([':id' => $id]);
+            $count = (int)$countStmt->fetchColumn();
+            if ($count > 0) {
+                throw new \RuntimeException(
+                    "Cannot remove master status: {$count} service(s) are still linked. Unlink all child services first."
+                );
+            }
+        }
+
+        $stmt = $this->db->prepare('UPDATE services SET is_master_service = :val, updated_at = NOW() WHERE id = :id');
+        $stmt->execute([':val' => $value ? 'true' : 'false', ':id' => $id]);
+    }
+
+    // ── end Master Service methods ────────────────────────────────────────────
 
     private function scalarCount(string $sql, array $params): int
     {

@@ -1,7 +1,10 @@
+import { useState, useEffect } from 'react';
 import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Container from '../components/ui/Container.jsx';
 import { BLOG_POSTS } from '../content/blogPosts.js';
+
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 function formatDate(iso) {
   try {
@@ -15,8 +18,52 @@ function formatDate(iso) {
   }
 }
 
+function normalizePost(p) {
+  return {
+    slug:      p.slug,
+    title:     p.title,
+    excerpt:   p.excerpt ?? p.body?.[0]?.text ?? '',
+    date:      p.published_at ?? p.date ?? p.created_at,
+    author:    p.author_name ?? p.author ?? 'CA Rahul Gupta',
+    coverUrl:  p.cover_image_url ?? null,
+    category:  p.category ?? null,
+  };
+}
+
 export default function Blog() {
-  const posts = [...BLOG_POSTS].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const [posts, setPosts]     = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!API_BASE) {
+      // No API configured — use static fallback
+      setPosts([...BLOG_POSTS].sort((a, b) => (a.date < b.date ? 1 : -1)).map(normalizePost));
+      setLoading(false);
+      return;
+    }
+
+    fetch(`${API_BASE}/api/public/blogs`)
+      .then(r => r.json())
+      .then(json => {
+        const items = Array.isArray(json.data) ? json.data : [];
+        if (items.length > 0) {
+          setPosts(items.map(normalizePost));
+        } else {
+          // API returned empty — show static fallback
+          setPosts([...BLOG_POSTS].sort((a, b) => (a.date < b.date ? 1 : -1)).map(normalizePost));
+        }
+      })
+      .catch(() => {
+        // API unavailable — use static fallback
+        setPosts([...BLOG_POSTS].sort((a, b) => (a.date < b.date ? 1 : -1)).map(normalizePost));
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  const CATEGORY_LABELS = {
+    laws:       'Laws & Provisions',
+    tax_saving: 'Tax Planning',
+  };
 
   return (
     <>
@@ -35,7 +82,9 @@ export default function Blog() {
 
       <section className="section">
         <Container>
-          {posts.length === 0 ? (
+          {loading ? (
+            <p style={{ color: 'var(--color-text-muted)' }}>Loading articles…</p>
+          ) : !posts || posts.length === 0 ? (
             <p style={{ color: 'var(--color-text-muted)' }}>
               We are working on our first articles. Check back soon!
             </p>
@@ -43,8 +92,20 @@ export default function Blog() {
             <div className="blog-grid">
               {posts.map((p) => (
                 <article className="blog-card" key={p.slug}>
+                  {p.coverUrl && (
+                    <img
+                      src={p.coverUrl}
+                      alt={p.title}
+                      style={{ width: '100%', height: 180, objectFit: 'cover', borderRadius: 8, marginBottom: 12 }}
+                    />
+                  )}
                   <div className="blog-card__meta">
                     {formatDate(p.date)} · {p.author}
+                    {p.category && CATEGORY_LABELS[p.category] && (
+                      <span style={{ marginLeft: 8, padding: '1px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: p.category === 'laws' ? '#eff6ff' : '#fef3c7', color: p.category === 'laws' ? '#2563eb' : '#d97706' }}>
+                        {CATEGORY_LABELS[p.category]}
+                      </span>
+                    )}
                   </div>
                   <h2 className="blog-card__title">{p.title}</h2>
                   <p className="blog-card__excerpt">{p.excerpt}</p>

@@ -121,6 +121,11 @@ function normalizeEngagement(s) {
     notes:              s.notes               || '',
     tasks:              parseTasks(s.tasks),
     createdAt:          s.created_at          || '',
+    // Master Service fields
+    isMasterService:    Boolean(s.is_master_service),
+    masterServiceId:    s.master_service_id != null ? Number(s.master_service_id) : null,
+    masterServiceName:  s.master_service_name ?? null,
+    linkedServicesSummary: s.linked_services_summary ?? null,
   };
 }
 
@@ -427,12 +432,14 @@ export async function createTask(engagementId, taskData) {
 /** @param {object} r Raw API row from billing-report */
 function normalizeBillingReportRow(r) {
   const flags = r.completion_flags || {};
+  const linkedTotal     = Number(r.linked_total) || 0;
+  const linkedCompleted = Number(r.linked_completed) || 0;
   return {
     id: r.id,
     clientType: r.client_type || 'contact',
     clientId: r.client_id || null,
     organizationId: r.organization_id || null,
-    clientName: r.client_name || 'Unknown',
+    clientName: r.client_name || r.display_client_name || 'Unknown',
     serviceType: r.service_type || '',
     status: r.status || '',
     billingClosure: r.billing_closure || null,
@@ -444,9 +451,15 @@ function normalizeBillingReportRow(r) {
     amountBilled: Number(r.amount_billed) || 0,
     hasInvoice: Boolean(r.has_invoice),
     completionFlags: {
-      engagementCompleted: Boolean(flags.engagement_completed),
-      allTasksDone: Boolean(flags.all_tasks_done),
+      engagementCompleted: Boolean(flags.engagement_completed ?? r.engagement_completed),
+      allTasksDone: Boolean(flags.all_tasks_done ?? r.all_tasks_done),
     },
+    // Master Service fields
+    isMasterService: Boolean(r.is_master_service),
+    masterServiceId: r.master_service_id != null ? Number(r.master_service_id) : null,
+    linkedServicesSummary: r.is_master_service
+      ? { total: linkedTotal, completed: linkedCompleted, pending: linkedTotal - linkedCompleted }
+      : null,
   };
 }
 
@@ -510,3 +523,80 @@ export async function patchBillingClosure(serviceId, { closure, reason }) {
   });
   return parseResponse(res);
 }
+
+// ── Master Service API helpers ────────────────────────────────────────────────
+
+/**
+ * Toggle is_master_service on a service engagement.
+ * @param {number|string} id
+ * @param {boolean} isMaster
+ * @returns {Promise<object>} Updated engagement.
+ */
+export async function toggleMasterService(id, isMaster) {
+  const res = await fetch(`${API_BASE}/admin/services/${id}/toggle-master`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ is_master: Boolean(isMaster) }),
+  });
+  const data = await parseResponse(res);
+  return normalizeEngagement(data.data);
+}
+
+/**
+ * Get all child services linked to a master service.
+ * @param {number|string} masterId
+ * @returns {Promise<{ linked_services: object[], linked_services_summary: object }>}
+ */
+export async function getLinkedServices(masterId) {
+  const res = await fetch(`${API_BASE}/admin/services/${masterId}/linked-services`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return data.data || { linked_services: [], linked_services_summary: { total: 0, completed: 0, pending: 0 } };
+}
+
+/**
+ * Link a child service to a master service.
+ * @param {number|string} masterId
+ * @param {number|string} childServiceId
+ * @returns {Promise<object>} Updated child engagement.
+ */
+export async function linkService(masterId, childServiceId) {
+  const res = await fetch(`${API_BASE}/admin/services/${masterId}/link-service`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ child_service_id: Number(childServiceId) }),
+  });
+  const data = await parseResponse(res);
+  return normalizeEngagement(data.data);
+}
+
+/**
+ * Unlink a child service from its master service.
+ * @param {number|string} masterId
+ * @param {number|string} childServiceId
+ * @returns {Promise<void>}
+ */
+export async function unlinkService(masterId, childServiceId) {
+  const res = await fetch(`${API_BASE}/admin/services/${masterId}/unlink-service/${childServiceId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  await parseResponse(res);
+}
+
+/**
+ * Get services of the same client that can be linked as children to a master service.
+ * @param {number|string} clientId
+ * @param {number|string} masterId
+ * @returns {Promise<object[]>}
+ */
+export async function getLinkableServices(clientId, masterId) {
+  const params = new URLSearchParams({ client_id: String(clientId), master_id: String(masterId) });
+  const res = await fetch(`${API_BASE}/admin/services/linkable?${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return data.data || [];
+}
+

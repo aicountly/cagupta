@@ -441,6 +441,19 @@ class ServiceController extends BaseController
             $this->error('closure must be "built" or "non_billable".', 422);
         }
 
+        // Master service gate: all linked children must be completed before billing can be closed.
+        if ($closure === 'built' && !empty($service['is_master_service'])) {
+            $linked     = $this->services->getLinkedServices($id);
+            $incomplete = array_filter($linked, fn($s) => ($s['status'] ?? '') !== 'completed');
+            if (count($incomplete) > 0) {
+                $names = implode(', ', array_map(fn($s) => $s['service_type'], array_values($incomplete)));
+                $this->error(
+                    'All linked services must be completed before billing can be closed. Incomplete: ' . $names,
+                    422
+                );
+            }
+        }
+
         $updated = $this->services->applyBillingClosure($id, $closure, $reason);
         if ($updated === null) {
             $this->error('Billing closure can only be changed when billing_closure is "open".', 422);
@@ -846,6 +859,142 @@ class ServiceController extends BaseController
         $this->sendServiceDeletedEmails($service, $this->authUser());
         $this->success(null, 'Service deleted');
     }
+
+    // ── Master Service endpoints ──────────────────────────────────────────────
+
+    /**
+     * PATCH /api/admin/services/:id/toggle-master
+     * Body: { is_master: bool }
+     *
+     * Mark or un-mark a service as a master service.
+     * Un-marking is blocked if linked children still exist.
+     */
+    public function toggleMaster(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $body     = $this->getJsonBody();
+        $isMaster = (bool)($body['is_master'] ?? false);
+
+        // A child service (has master_service_id) cannot be made a master.
+        if ($isMaster && !empty($service['master_service_id'])) {
+            $this->error('This service is linked to a master service. Unlink it before marking it as a master.', 422);
+        }
+
+        try {
+            $this->services->toggleMasterService($id, $isMaster);
+        } catch (\RuntimeException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
+        $updated = $this->services->find($id);
+        $this->success($updated, $isMaster ? 'Service marked as master.' : 'Master status removed.');
+    }
+
+    /**
+     * GET /api/admin/services/:id/linked-services
+     *
+     * Return all child services linked to this master.
+     */
+    public function linkedServices(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $linked  = $this->services->getLinkedServices($id);
+        $summary = [
+            'total'     => count($linked),
+            'completed' => count(array_filter($linked, fn($s) => ($s['status'] ?? '') === 'completed')),
+        ];
+        $summary['pending'] = $summary['total'] - $summary['completed'];
+
+        $this->success([
+            'linked_services'         => $linked,
+            'linked_services_summary' => $summary,
+        ]);
+    }
+
+    /**
+     * POST /api/admin/services/:id/link-service
+     * Body: { child_service_id: int }
+     *
+     * Link a child service to this master. The master must have is_master_service = true.
+     */
+    public function linkService(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+        if (empty($service['is_master_service'])) {
+            $this->error('This service is not marked as a master service.', 422);
+        }
+
+        $body    = $this->getJsonBody();
+        $childId = isset($body['child_service_id']) ? (int)$body['child_service_id'] : 0;
+        if ($childId <= 0) {
+            $this->error('child_service_id is required.', 422);
+        }
+
+        try {
+            $this->services->linkService($id, $childId);
+        } catch (\RuntimeException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
+        $child = $this->services->find($childId);
+        $this->success($child, 'Service linked successfully.');
+    }
+
+    /**
+     * DELETE /api/admin/services/:id/unlink-service/:childId
+     *
+     * Remove the link between a child service and this master.
+     */
+    public function unlinkService(int $id, int $childId): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $child = $this->services->find($childId);
+        if ($child === null) {
+            $this->error('Child service not found.', 404);
+        }
+        if ((int)($child['master_service_id'] ?? 0) !== $id) {
+            $this->error('This service is not linked to the specified master.', 422);
+        }
+
+        $this->services->unlinkService($childId);
+        $this->success(null, 'Service unlinked successfully.');
+    }
+
+    /**
+     * GET /api/admin/services/linkable?client_id=&master_id=
+     *
+     * Return active, unlinked, non-master services of the same client that can be linked
+     * to the given master service.
+     */
+    public function linkableServices(): never
+    {
+        $clientId = (int)$this->query('client_id', 0);
+        $masterId = (int)$this->query('master_id', 0);
+
+        if ($clientId <= 0 || $masterId <= 0) {
+            $this->error('client_id and master_id query parameters are required.', 422);
+        }
+
+        $services = $this->services->getLinkableServices($clientId, $masterId);
+        $this->success($services);
+    }
+
+    // ── end Master Service endpoints ──────────────────────────────────────────
 
     // ── POST /api/admin/services/:id/tasks ───────────────────────────────────
 

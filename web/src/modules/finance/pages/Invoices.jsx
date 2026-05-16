@@ -6053,8 +6053,28 @@ export default function Invoices() {
                   <tr key={row.id} style={trStyle}>
                     <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{row.id}</td>
                     <td style={{ ...tdStyle, maxWidth: 200, whiteSpace: 'normal' }}>{row.clientName}</td>
-                    <td style={{ ...tdStyle, maxWidth: 220, whiteSpace: 'normal' }}>{row.serviceType || '—'}</td>
+                    <td style={{ ...tdStyle, maxWidth: 220, whiteSpace: 'normal' }}>
+                      {row.serviceType || '—'}
+                      {row.isMasterService && row.linkedServicesSummary && row.linkedServicesSummary.total > 0 && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 11, color: '#64748b', marginBottom: 3 }}>
+                            Linked: {row.linkedServicesSummary.completed}/{row.linkedServicesSummary.total} completed
+                          </div>
+                          <div style={{ height: 4, background: '#e2e8f0', borderRadius: 2, overflow: 'hidden', maxWidth: 120 }}>
+                            <div style={{
+                              height: '100%',
+                              borderRadius: 2,
+                              background: row.linkedServicesSummary.completed === row.linkedServicesSummary.total ? '#16a34a' : '#F37920',
+                              width: `${Math.round((row.linkedServicesSummary.completed / row.linkedServicesSummary.total) * 100)}%`,
+                            }} />
+                          </div>
+                        </div>
+                      )}
+                    </td>
                     <td style={{ ...tdStyle, fontSize: 11 }}>
+                      {row.isMasterService && (
+                        <span style={{ background: '#F37920', color: '#fff', padding: '2px 6px', borderRadius: 4, marginRight: 4, fontWeight: 700, letterSpacing: '0.03em' }}>Master</span>
+                      )}
                       {row.completionFlags?.engagementCompleted && (
                         <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: 4, marginRight: 4 }}>Engagement</span>
                       )}

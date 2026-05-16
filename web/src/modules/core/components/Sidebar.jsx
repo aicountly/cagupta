@@ -59,6 +59,8 @@ const navSections = [
       { to: '/marketing/sms', label: 'SMS Marketing', icon: Smartphone },
       { to: '/marketing/social', label: 'Social Posting', icon: Share2 },
       { to: '/marketing/campaigns', label: 'Campaigns', icon: Megaphone },
+      { to: '/marketing/blog', label: 'Blog Management', icon: BookOpen },
+      { to: '/marketing/blog/approvals', label: 'AI Approvals', icon: CheckSquare },
     ],
   },
   {

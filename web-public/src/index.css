@@ -144,11 +144,11 @@ button, input, select, textarea { font-family: inherit; }
   display: flex; align-items: center; justify-content: space-between;
   height: 76px;
 }
-.navbar__brand { display: flex; align-items: center; gap: 10px; }
-.navbar__brand img { height: 38px; width: auto; object-fit: contain; }
+.navbar__brand { display: flex; align-items: center; gap: 15px; }
+.navbar__brand img { height: 57px; width: auto; object-fit: contain; }
 .navbar__brand-text { display: flex; flex-direction: column; line-height: 1.1; }
-.navbar__brand-text strong { color: var(--color-navy); font-size: 16px; font-weight: 800; letter-spacing: -0.01em; }
-.navbar__brand-text span { color: var(--color-text-soft); font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
+.navbar__brand-text strong { color: var(--color-navy); font-size: 24px; font-weight: 800; letter-spacing: -0.01em; }
+.navbar__brand-text span { color: var(--color-text-soft); font-size: 16.5px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; }
 
 .navbar__links { display: flex; align-items: center; gap: 6px; }
 .navbar__link {
@@ -568,6 +568,52 @@ button, input, select, textarea { font-family: inherit; }
 .footer__col h4 { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.7); margin: 0 0 14px; }
 .footer__col a, .footer__col span { display: block; color: rgba(255,255,255,0.85); font-size: 14px; padding: 5px 0; }
 .footer__col a:hover { color: var(--color-orange); }
+
+.footer__reach { display: flex; flex-direction: column; }
+.footer__contact-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 5px 0;
+  font-size: 14px;
+  color: rgba(255,255,255,0.85);
+}
+.footer__contact-icon {
+  flex-shrink: 0;
+  margin-top: 3px;
+  opacity: 0.92;
+}
+.footer__contact-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.footer .footer__reach .footer__contact-row > a {
+  flex: 1;
+  min-width: 0;
+}
+.footer .footer__reach .footer__contact-row a,
+.footer .footer__reach .footer__contact-row > span:not(.footer__contact-note),
+.footer .footer__reach .footer__contact-text > span:not(.footer__contact-note),
+.footer .footer__reach .footer__contact-text a {
+  display: block;
+  padding-block: 0;
+  padding-inline: 0;
+  color: rgba(255,255,255,0.85);
+  font-size: 14px;
+}
+.footer .footer__reach .footer__contact-row a:hover {
+  color: var(--color-orange);
+}
+.footer .footer__reach .footer__contact-text .footer__contact-note {
+  display: block;
+  padding-block: 0;
+  margin-top: 2px;
+  color: rgba(255,255,255,0.62);
+  font-size: 13px;
+}
 .footer__bottom {
   display: flex; justify-content: space-between; align-items: center; padding-top: 22px;
   font-size: 12px; color: rgba(255,255,255,0.6);

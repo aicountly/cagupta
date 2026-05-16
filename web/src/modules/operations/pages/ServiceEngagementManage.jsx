@@ -16,6 +16,12 @@ import {
   requestServiceDeleteOtp,
   getServiceAuditLog,
   ApiError,
+  toggleMasterService,
+  getLinkedServices,
+  linkService,
+  unlinkService,
+  getLinkableServices,
+  getAllEngagements,
 } from '../../../services/engagementService';
 import OpenEngagementConflictModal from '../../../components/services/OpenEngagementConflictModal';
 import AddTaskModal from '../../../components/services/AddTaskModal';
@@ -103,6 +109,22 @@ export default function ServiceEngagementManage() {
   const [notes, setNotes] = useState('');
   const [tasks, setTasks] = useState([]);
   const [billingClosure, setBillingClosure] = useState(null);
+  // Master Service state
+  const [isMasterService, setIsMasterService] = useState(false);
+  const [masterServiceId, setMasterServiceId] = useState(null);
+  const [masterServiceName, setMasterServiceName] = useState('');
+  const [linkedServices, setLinkedServices] = useState([]);
+  const [linkedServicesSummary, setLinkedServicesSummary] = useState(null);
+  const [linkedServicesLoading, setLinkedServicesLoading] = useState(false);
+  const [linkableServices, setLinkableServices] = useState([]);
+  const [linkTarget, setLinkTarget] = useState('');
+  const [masterToggleSaving, setMasterToggleSaving] = useState(false);
+  const [linkSaving, setLinkSaving] = useState(false);
+  const [masterError, setMasterError] = useState('');
+  const [masterClientId, setMasterClientId] = useState(null);
+  const [masterOrgId, setMasterOrgId] = useState(null);
+  const [masterServicesList, setMasterServicesList] = useState([]);
+  const [linkToMasterTarget, setLinkToMasterTarget] = useState('');
   const [timeEntries, setTimeEntries] = useState([]);
   const [timeLoading, setTimeLoading] = useState(false);
   const [timeError, setTimeError] = useState('');
@@ -249,6 +271,15 @@ export default function ServiceEngagementManage() {
         setClientFacingRestricted(cfr);
         setInitialClientFacing(cfr);
         setCfOtp('');
+        // Master Service fields
+        setIsMasterService(Boolean(eng.isMasterService));
+        setMasterServiceId(eng.masterServiceId ?? null);
+        setMasterServiceName(eng.masterServiceName ?? '');
+        setMasterClientId(eng.clientId ?? null);
+        setMasterOrgId(eng.clientType === 'organization' ? eng.clientId : null);
+        if (eng.linkedServicesSummary) {
+          setLinkedServicesSummary(eng.linkedServicesSummary);
+        }
       })
       .catch(e => setError(e.message || 'Could not load engagement.'))
       .finally(() => setLoading(false));
@@ -264,6 +295,49 @@ export default function ServiceEngagementManage() {
       .then(setApprovedAffiliates)
       .catch(() => setApprovedAffiliates([]));
   }, []);
+
+  // Load linked services when this is a master service
+  useEffect(() => {
+    if (!id || !isMasterService) {
+      setLinkedServices([]);
+      return;
+    }
+    setLinkedServicesLoading(true);
+    getLinkedServices(id)
+      .then((data) => {
+        setLinkedServices(data.linked_services || []);
+        setLinkedServicesSummary(data.linked_services_summary || null);
+      })
+      .catch(() => {})
+      .finally(() => setLinkedServicesLoading(false));
+  }, [id, isMasterService]);
+
+  // Load linkable services for "Link to Master" dropdown (non-master, non-child services)
+  // and master services list for "Link this service to a master" dropdown
+  useEffect(() => {
+    if (!id || !masterClientId) return;
+    if (isMasterService) {
+      // Load services that can be linked as children
+      getLinkableServices(masterClientId, id)
+        .then(setLinkableServices)
+        .catch(() => setLinkableServices([]));
+    } else if (!masterServiceId) {
+      // Load master services of the same client for the "link to master" dropdown
+      // We reuse getLinkableServices with a dummy masterId = 0 is not valid, so we
+      // instead get all services and filter for masters on the client side.
+      // A simpler approach: call getLinkableServices with id as the placeholder;
+      // the API returns services that are linkable to the given master_id.
+      // For finding master services, we use a different approach: fetch all services for the client
+      // and filter. Since we don't have a dedicated endpoint for listing masters,
+      // we call getLinkableServices with master_id = id but that won't return masters.
+      // Instead, we'll do a GET /api/admin/services?client_id=X and filter.
+      getAllEngagements({ clientId: masterClientId })
+        .then((svcs) => {
+          setMasterServicesList(svcs.filter((s) => s.isMasterService && String(s.id) !== String(id)));
+        })
+        .catch(() => setMasterServicesList([]));
+    }
+  }, [id, isMasterService, masterServiceId, masterClientId]);
 
   const affiliateReadonlyLabel = useMemo(() => {
     if (!referringAffiliateUserId) return 'None';
@@ -415,6 +489,90 @@ export default function ServiceEngagementManage() {
     if (!taskId) return;
     setTasks(prev => prev.filter(t => t.id !== taskId));
   }
+
+  // ── Master Service handlers ─────────────────────────────────────────────────
+
+  async function handleToggleMaster(newValue) {
+    if (!id || !canEditService) return;
+    setMasterError('');
+    setMasterToggleSaving(true);
+    try {
+      const updated = await toggleMasterService(id, newValue);
+      setIsMasterService(updated.isMasterService);
+      setMasterServiceId(updated.masterServiceId ?? null);
+      if (newValue) {
+        setLinkedServices([]);
+        setLinkedServicesSummary({ total: 0, completed: 0, pending: 0 });
+      }
+    } catch (e) {
+      setMasterError(e.message || 'Failed to update master status.');
+    } finally {
+      setMasterToggleSaving(false);
+    }
+  }
+
+  async function handleLinkChild() {
+    if (!id || !linkTarget) return;
+    setMasterError('');
+    setLinkSaving(true);
+    try {
+      await linkService(id, linkTarget);
+      setLinkTarget('');
+      const data = await getLinkedServices(id);
+      setLinkedServices(data.linked_services || []);
+      setLinkedServicesSummary(data.linked_services_summary || null);
+      getLinkableServices(masterClientId, id).then(setLinkableServices).catch(() => {});
+    } catch (e) {
+      setMasterError(e.message || 'Failed to link service.');
+    } finally {
+      setLinkSaving(false);
+    }
+  }
+
+  async function handleUnlinkChild(childId) {
+    if (!id) return;
+    setMasterError('');
+    try {
+      await unlinkService(id, childId);
+      const data = await getLinkedServices(id);
+      setLinkedServices(data.linked_services || []);
+      setLinkedServicesSummary(data.linked_services_summary || null);
+      getLinkableServices(masterClientId, id).then(setLinkableServices).catch(() => {});
+    } catch (e) {
+      setMasterError(e.message || 'Failed to unlink service.');
+    }
+  }
+
+  async function handleLinkToMaster() {
+    if (!linkToMasterTarget || !id) return;
+    setMasterError('');
+    setLinkSaving(true);
+    try {
+      await linkService(linkToMasterTarget, id);
+      setMasterServiceId(Number(linkToMasterTarget));
+      const master = masterServicesList.find((s) => String(s.id) === String(linkToMasterTarget));
+      setMasterServiceName(master ? master.type : '');
+      setLinkToMasterTarget('');
+    } catch (e) {
+      setMasterError(e.message || 'Failed to link to master.');
+    } finally {
+      setLinkSaving(false);
+    }
+  }
+
+  async function handleUnlinkFromMaster() {
+    if (!masterServiceId || !id) return;
+    setMasterError('');
+    try {
+      await unlinkService(masterServiceId, id);
+      setMasterServiceId(null);
+      setMasterServiceName('');
+    } catch (e) {
+      setMasterError(e.message || 'Failed to unlink from master.');
+    }
+  }
+
+  // ── end Master Service handlers ─────────────────────────────────────────────
 
   async function handleSaveTimeEntry(e) {
     e.preventDefault();
@@ -1049,6 +1207,187 @@ export default function ServiceEngagementManage() {
             <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} placeholder="Optional notes…" style={textareaStyle} />
           </label>
         </section>
+
+        {/* ── Master Service Section ── */}
+        {canEditService && (
+        <section style={sectionCard}>
+          <div style={sectionTitle}>Master Service</div>
+
+          {masterError && (
+            <div style={{ color: '#dc2626', fontSize: 13, marginBottom: 10, padding: '8px 12px', background: '#fef2f2', borderRadius: 6 }}>
+              {masterError}
+            </div>
+          )}
+
+          {/* Case C: this service is a child (linked to a master) */}
+          {masterServiceId && !isMasterService && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 13, color: '#475569' }}>
+                Linked to master service:&nbsp;
+                <strong style={{ color: '#0B1F3B' }}>{masterServiceName || `#${masterServiceId}`}</strong>
+              </div>
+              <button
+                type="button"
+                style={{ ...btnSecondary, fontSize: 12, padding: '4px 10px' }}
+                onClick={handleUnlinkFromMaster}
+                disabled={linkSaving}
+              >
+                Unlink
+              </button>
+            </div>
+          )}
+
+          {/* Case A: not master, not a child — show toggle + link-to-master dropdown */}
+          {!masterServiceId && !isMasterService && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: '#475569' }}>
+                  <input
+                    type="checkbox"
+                    checked={false}
+                    onChange={() => handleToggleMaster(true)}
+                    disabled={masterToggleSaving}
+                    style={{ width: 16, height: 16 }}
+                  />
+                  {masterToggleSaving ? 'Saving…' : 'Mark as Master Service'}
+                </label>
+              </div>
+              {masterServicesList.length > 0 && (
+                <div>
+                  <p style={{ ...hint, marginBottom: 8 }}>Or link this service to an existing master service of the same client:</p>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <select
+                      value={linkToMasterTarget}
+                      onChange={(e) => setLinkToMasterTarget(e.target.value)}
+                      style={{ ...selectStyle, flex: '1 1 200px', minWidth: 160, maxWidth: 320 }}
+                    >
+                      <option value="">Select master service…</option>
+                      {masterServicesList.map((s) => (
+                        <option key={s.id} value={s.id}>{s.type} {s.financialYear ? `(${s.financialYear})` : ''}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      style={btnPrimary}
+                      onClick={handleLinkToMaster}
+                      disabled={!linkToMasterTarget || linkSaving}
+                    >
+                      {linkSaving ? 'Linking…' : 'Link to Master'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              {masterServicesList.length === 0 && (
+                <p style={hint}>No master services found for this client. Mark a service as Master first to enable linking.</p>
+              )}
+            </>
+          )}
+
+          {/* Case B: this service IS the master */}
+          {isMasterService && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, color: '#0B1F3B', fontWeight: 600 }}>
+                  <input
+                    type="checkbox"
+                    checked={true}
+                    onChange={() => handleToggleMaster(false)}
+                    disabled={masterToggleSaving}
+                    style={{ width: 16, height: 16, accentColor: '#F37920' }}
+                  />
+                  {masterToggleSaving ? 'Saving…' : 'This is a Master Service'}
+                </label>
+                {linkedServicesSummary && linkedServicesSummary.total > 0 && (
+                  <span style={{ fontSize: 12, color: '#64748b' }}>
+                    {linkedServicesSummary.completed}/{linkedServicesSummary.total} linked services completed
+                  </span>
+                )}
+              </div>
+
+              {/* Billing warning */}
+              {billingClosure === 'open' && linkedServicesSummary && linkedServicesSummary.pending > 0 && (
+                <div style={{ background: '#fefce8', border: '1px solid #fde047', borderRadius: 6, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#854d0e' }}>
+                  <strong>Billing cannot be closed yet.</strong> {linkedServicesSummary.pending} linked service(s) are not yet completed.
+                </div>
+              )}
+
+              {/* Linked services table */}
+              {linkedServicesLoading ? (
+                <div style={{ color: '#94a3b8', fontSize: 13, marginBottom: 12 }}>Loading linked services…</div>
+              ) : linkedServices.length > 0 ? (
+                <div style={{ overflowX: 'auto', marginBottom: 14 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', color: '#64748b', borderBottom: '1px solid #e2e8f0' }}>
+                        {['Service', 'Status', ''].map((h) => (
+                          <th key={h} style={{ padding: '6px 8px', fontWeight: 600, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {linkedServices.map((ls) => (
+                        <tr key={ls.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                          <td style={{ padding: '7px 8px', color: '#0B1F3B', fontWeight: 500 }}>{ls.service_type}</td>
+                          <td style={{ padding: '7px 8px' }}>
+                            <span style={{
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              fontSize: 11,
+                              fontWeight: 600,
+                              background: ls.status === 'completed' ? '#dcfce7' : ls.status === 'cancelled' ? '#fee2e2' : '#f1f5f9',
+                              color: ls.status === 'completed' ? '#166534' : ls.status === 'cancelled' ? '#dc2626' : '#475569',
+                            }}>
+                              {ls.status.replace(/_/g, ' ')}
+                            </span>
+                          </td>
+                          <td style={{ padding: '7px 8px', textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              style={{ ...btnSecondary, fontSize: 11, padding: '2px 8px' }}
+                              onClick={() => handleUnlinkChild(ls.id)}
+                            >
+                              Unlink
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p style={{ ...hint, marginBottom: 12 }}>No services linked yet. Use the form below to link services from this client.</p>
+              )}
+
+              {/* Add linked service */}
+              {linkableServices.length > 0 && (
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <select
+                    value={linkTarget}
+                    onChange={(e) => setLinkTarget(e.target.value)}
+                    style={{ ...selectStyle, flex: '1 1 200px', minWidth: 160, maxWidth: 320 }}
+                  >
+                    <option value="">Add linked service…</option>
+                    {linkableServices.map((s) => (
+                      <option key={s.id} value={s.id}>{s.service_type} {s.financial_year ? `(${s.financial_year})` : ''}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    style={btnPrimary}
+                    onClick={handleLinkChild}
+                    disabled={!linkTarget || linkSaving}
+                  >
+                    {linkSaving ? 'Linking…' : '+ Link Service'}
+                  </button>
+                </div>
+              )}
+              {linkableServices.length === 0 && !linkedServicesLoading && (
+                <p style={hint}>No additional active services of this client are available to link.</p>
+              )}
+            </>
+          )}
+        </section>
+        )}
           </div>
         )}
 

@@ -39,29 +39,38 @@ export default function Footer() {
 
           <div className="footer__col">
             <h4>Reach us</h4>
-            <a href={`tel:${SITE.contact.phone.replace(/\s/g, '')}`}>
-              <Phone size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} />
-              {SITE.contact.phone}
-            </a>
-            <a href={`mailto:${SITE.contact.email}`}>
-              <Mail size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} />
-              {SITE.contact.email}
-            </a>
-            <a href={`mailto:${SITE.contact.email2}`} style={{ paddingLeft: 22 }}>
-              {SITE.contact.email2}
-            </a>
-            <span>
-              <MapPin size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} />
-              {SITE.contact.addressLine1}
-            </span>
-            <span style={{ paddingLeft: 22 }}>{SITE.contact.addressLine2}</span>
-            <span style={{ paddingLeft: 22, color: 'rgba(255,255,255,0.62)', fontSize: 13 }}>
-              Also in: {SITE.contact.otherOffices.join(' · ')}
-            </span>
-            <span>
-              <Clock size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: '-2px' }} />
-              {SITE.contact.workingHours}
-            </span>
+            <div className="footer__reach">
+              <div className="footer__contact-row">
+                <Phone className="footer__contact-icon" size={14} aria-hidden />
+                <a href={`tel:${SITE.contact.phone.replace(/\s/g, '')}`}>
+                  {SITE.contact.phone}
+                </a>
+              </div>
+
+              <div className="footer__contact-row">
+                <Mail className="footer__contact-icon" size={14} aria-hidden />
+                <div className="footer__contact-text">
+                  <a href={`mailto:${SITE.contact.email}`}>{SITE.contact.email}</a>
+                  <a href={`mailto:${SITE.contact.email2}`}>{SITE.contact.email2}</a>
+                </div>
+              </div>
+
+              <div className="footer__contact-row">
+                <MapPin className="footer__contact-icon" size={14} aria-hidden />
+                <div className="footer__contact-text">
+                  <span>{SITE.contact.addressLine1}</span>
+                  <span>{SITE.contact.addressLine2}</span>
+                  <span className="footer__contact-note">
+                    Also in: {SITE.contact.otherOffices.join(' · ')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="footer__contact-row">
+                <Clock className="footer__contact-icon" size={14} aria-hidden />
+                <span>{SITE.contact.workingHours}</span>
+              </div>
+            </div>
           </div>
         </div>
 

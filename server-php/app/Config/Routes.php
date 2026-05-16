@@ -407,6 +407,13 @@ class Routes
                 'handler'    => 'Admin\ServiceController@kpiSnapshot',
                 'middleware' => ['auth', 'permission:services.view'],
             ],
+            // static sub-path: must be before /:id catch-all
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/services/linkable',
+                'handler'    => 'Admin\ServiceController@linkableServices',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
             [
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/services/:id/audit-log',
@@ -556,6 +563,30 @@ class Routes
                 'pattern'    => '/api/admin/services/:id/billing-closure',
                 'handler'    => 'Admin\ServiceController@patchBillingClosure',
                 'middleware' => ['auth', 'permission_any:services.edit,invoices.edit'],
+            ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/services/:id/toggle-master',
+                'handler'    => 'Admin\ServiceController@toggleMaster',
+                'middleware' => ['auth', 'permission:services.edit'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/services/:id/linked-services',
+                'handler'    => 'Admin\ServiceController@linkedServices',
+                'middleware' => ['auth', 'permission:services.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/services/:id/link-service',
+                'handler'    => 'Admin\ServiceController@linkService',
+                'middleware' => ['auth', 'permission:services.edit'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/services/:id/unlink-service/:childId',
+                'handler'    => 'Admin\ServiceController@unlinkService',
+                'middleware' => ['auth', 'permission:services.edit'],
             ],
             [
                 'method'     => 'PUT',
@@ -2090,6 +2121,86 @@ class Routes
                 'pattern'    => '/api/marketing/logs',
                 'handler'    => 'Admin\MarketingController@marketingLogs',
                 'middleware' => ['auth'],
+            ],
+
+            // ── Marketing — Blog Posts ────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/blog/posts',
+                'handler'    => 'Admin\BlogController@blogIndex',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/blog/posts',
+                'handler'    => 'Admin\BlogController@blogStore',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/marketing/blog/posts/:id',
+                'handler'    => 'Admin\BlogController@blogUpdate',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/marketing/blog/posts/:id',
+                'handler'    => 'Admin\BlogController@blogDelete',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/blog/posts/:id/publish',
+                'handler'    => 'Admin\BlogController@blogPublish',
+                'middleware' => ['auth'],
+            ],
+
+            // ── Marketing — Blog AI Drafts ────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/blog/drafts',
+                'handler'    => 'Admin\BlogController@draftIndex',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/marketing/blog/drafts/:id',
+                'handler'    => 'Admin\BlogController@draftUpdate',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/blog/drafts/:id/approve',
+                'handler'    => 'Admin\BlogController@draftApprove',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/blog/drafts/:id/reject',
+                'handler'    => 'Admin\BlogController@draftReject',
+                'middleware' => ['auth'],
+            ],
+
+            // ── Marketing — Blog Image Upload ─────────────────────────────────
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/blog/upload-image',
+                'handler'    => 'Admin\BlogController@imageUpload',
+                'middleware' => ['auth'],
+            ],
+
+            // ── Public Blog API (no auth — for marketing site) ────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/public/blogs',
+                'handler'    => 'Admin\BlogController@publicBlogs',
+                'middleware' => [],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/public/blogs/:slug',
+                'handler'    => 'Admin\BlogController@publicBlogPost',
+                'middleware' => [],
             ],
 
             // ── Contact Verification ──────────────────────────────────────────

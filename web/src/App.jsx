@@ -68,6 +68,8 @@ import WANativeMarketing from './modules/marketing/pages/WANativeMarketing';
 import SMSMarketing from './modules/marketing/pages/SMSMarketing';
 import SocialPosting from './modules/marketing/pages/SocialPosting';
 import MarketingCampaigns from './modules/marketing/pages/MarketingCampaigns';
+import BlogManagement from './modules/marketing/pages/BlogManagement';
+import BlogAIApprovals from './modules/marketing/pages/BlogAIApprovals';
 
 // ── Affiliate module ─────────────────────────────────────────────────────────
 import AdminAffiliates from './modules/affiliate/pages/AdminAffiliates';
@@ -148,6 +150,8 @@ const pageTitles = {
   '/marketing/sms':             '📲 SMS Marketing',
   '/marketing/social':          '🌐 Social Posting',
   '/marketing/campaigns':       '📣 Marketing Campaigns',
+  '/marketing/blog':            '📝 Blog Management',
+  '/marketing/blog/approvals':  '✅ AI Draft Approvals',
   '/search':                    '🔍 Search',
   '/desk/inbox':                '📥 Inbox & Tickets',
   '/profile':                   '👤 My Profile',
@@ -343,6 +347,8 @@ export default function App() {
           <Route path="/marketing/sms" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/sms"><SMSMarketing /></Layout></ProtectedRoute>} />
           <Route path="/marketing/social" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/social"><SocialPosting /></Layout></ProtectedRoute>} />
           <Route path="/marketing/campaigns" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/campaigns"><MarketingCampaigns /></Layout></ProtectedRoute>} />
+          <Route path="/marketing/blog" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/blog"><BlogManagement /></Layout></ProtectedRoute>} />
+          <Route path="/marketing/blog/approvals" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/blog/approvals"><BlogAIApprovals /></Layout></ProtectedRoute>} />
           <Route path="/marketing" element={<ProtectedRoute staffOnly><Navigate to="/marketing/campaigns" replace /></ProtectedRoute>} />
           {/* Legacy redirects for removed marketing pages */}
           <Route path="/marketing/affiliate" element={<Navigate to="/admin/affiliates" replace />} />

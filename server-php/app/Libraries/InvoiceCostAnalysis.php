@@ -87,13 +87,46 @@ final class InvoiceCostAnalysis
             $etRow    = (new EngagementTypeModel())->find($svcEt);
             $standard = self::resolveStandardFeeAmount($etRow, $service);
         }
+        // For master services, also sum standard fees from linked children.
+        if ($service !== null && !empty($service['is_master_service'])) {
+            $linkedIds = (new ServiceModel())->getLinkedServiceIds($serviceId);
+            if (!empty($linkedIds)) {
+                $servicesModel = new ServiceModel();
+                $etModel       = new EngagementTypeModel();
+                foreach ($linkedIds as $sid) {
+                    $linkedSvc = $servicesModel->find($sid);
+                    if ($linkedSvc === null) {
+                        continue;
+                    }
+                    $linkedEtId  = (int)($linkedSvc['engagement_type_id'] ?? 0);
+                    $linkedEtRow = $linkedEtId > 0 ? $etModel->find($linkedEtId) : null;
+                    $childFee    = self::resolveStandardFeeAmount($linkedEtRow, $linkedSvc);
+                    if ($childFee !== null) {
+                        $standard = ($standard ?? 0.0) + $childFee;
+                    }
+                }
+                if ($standard !== null) {
+                    $standard = round($standard, 2);
+                }
+            }
+        }
 
         $billedHoursFees   = 0.0;
         $unbilledHoursFees = 0.0;
         if ($serviceId > 0) {
-            $sum = (new TimeEntryModel())->sumPlannedRatesForService($serviceId);
-            $billedHoursFees   = round((float)($sum['billed_hours_fees'] ?? 0), 2);
-            $unbilledHoursFees = round((float)($sum['unbilled_hours_fees'] ?? 0), 2);
+            // For master services, aggregate time entries from all linked children as well.
+            if ($service !== null && !empty($service['is_master_service'])) {
+                $linkedIds = (new ServiceModel())->getLinkedServiceIds($serviceId);
+                $allIds    = array_merge([$serviceId], $linkedIds);
+            } else {
+                $allIds = [$serviceId];
+            }
+            $te = new TimeEntryModel();
+            foreach ($allIds as $sid) {
+                $sum = $te->sumPlannedRatesForService($sid);
+                $billedHoursFees   += round((float)($sum['billed_hours_fees'] ?? 0), 2);
+                $unbilledHoursFees += round((float)($sum['unbilled_hours_fees'] ?? 0), 2);
+            }
         }
 
         $calcHoursTotal = round($billedHoursFees + $unbilledHoursFees, 2);
@@ -112,6 +145,9 @@ final class InvoiceCostAnalysis
             'matching_professional_subtotal' => $matchingSubtotal,
             'engagement_type_id'             => $svcEt > 0 ? $svcEt : null,
             'service_id'                     => $serviceId > 0 ? $serviceId : null,
+            'linked_services_count'          => ($service !== null && !empty($service['is_master_service']))
+                ? count((new ServiceModel())->getLinkedServiceIds($serviceId))
+                : 0,
         ];
     }
 

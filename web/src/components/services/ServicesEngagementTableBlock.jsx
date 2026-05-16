@@ -445,6 +445,39 @@ export default function ServicesEngagementTableBlock({
                           onClick={(e) => engagementCellLinkClick(e, toggleRowSelection)}
                         >
                           <span style={serviceTag}>{s.type}</span>
+                          {s.isMasterService && (
+                            <span style={{
+                              display: 'inline-block',
+                              marginLeft: 6,
+                              padding: '1px 7px',
+                              fontSize: 10,
+                              fontWeight: 700,
+                              letterSpacing: '0.04em',
+                              borderRadius: 4,
+                              background: '#F37920',
+                              color: '#fff',
+                              verticalAlign: 'middle',
+                              lineHeight: '16px',
+                            }}>MASTER</span>
+                          )}
+                          {!s.isMasterService && s.masterServiceId && (
+                            <span
+                              title={s.masterServiceName ? `Linked to: ${s.masterServiceName}` : 'Linked to a master service'}
+                              style={{
+                                display: 'inline-block',
+                                marginLeft: 6,
+                                padding: '1px 7px',
+                                fontSize: 10,
+                                fontWeight: 600,
+                                letterSpacing: '0.04em',
+                                borderRadius: 4,
+                                background: '#E2E8F0',
+                                color: '#475569',
+                                verticalAlign: 'middle',
+                                lineHeight: '16px',
+                                cursor: 'default',
+                              }}>LINKED</span>
+                          )}
                         </Link>
                       </td>
                       <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12, color: '#64748b' }}>
