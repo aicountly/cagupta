@@ -1510,6 +1510,32 @@ class TxnController extends BaseController
     }
 
     /**
+     * GET /api/admin/txn/ledger-reconciliation
+     * Query: client_id or organization_id (one required), ledger_class?
+     */
+    public function ledgerReconciliation(): never
+    {
+        $clientId = (int)$this->query('client_id', 0);
+        $orgId    = (int)$this->query('organization_id', 0);
+        if ($clientId <= 0 && $orgId <= 0) {
+            $this->error('client_id or organization_id is required.', 422);
+        }
+        if ($clientId > 0 && $orgId > 0) {
+            $this->error('Provide only one of client_id or organization_id.', 422);
+        }
+
+        $ledgerClass = LedgerDimensions::normalizeLedgerClass($this->query('ledger_class', ''));
+
+        try {
+            $payload = $this->txn->getLedgerReconciliation($clientId, $orgId, $ledgerClass);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
+        $this->success($payload, 'Ledger reconciliation');
+    }
+
+    /**
      * GET /api/admin/txn/bill-settlement-report
      * Query: client_id or organization_id, ledger_class, ledger_view, date_from?, date_to?
      */

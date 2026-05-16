@@ -27,9 +27,23 @@ const StatCard = ({ icon, label, value, sub, color, bg, to, onNavigate }) => (
   >
     <div style={{ width: 48, height: 48, borderRadius: 12, background: bg || '#F6F7FB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{icon}</div>
     <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
-      <div style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 700, color: '#1e293b', lineHeight: 1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: color, marginTop: 4, fontWeight: 600 }}>{sub}</div>}
+      <div style={{ fontSize: 13, color: '#64748b', marginBottom: 4, overflowWrap: 'break-word' }}>{label}</div>
+      <div
+        style={{
+          fontSize: 26,
+          fontWeight: 700,
+          color: '#1e293b',
+          lineHeight: 1.15,
+          minWidth: 0,
+          overflowWrap: 'anywhere',
+          wordBreak: 'break-word',
+        }}
+      >
+        {value}
+      </div>
+      {sub && (
+        <div style={{ fontSize: 11, color: color, marginTop: 4, fontWeight: 600, overflowWrap: 'break-word' }}>{sub}</div>
+      )}
     </div>
   </button>
 );
@@ -210,6 +224,9 @@ export default function Dashboard() {
 const cardStyle = { background: '#fff', borderRadius: 14, padding: 20, boxShadow: '0 1px 4px rgba(0,0,0,.06)', border: '1px solid #E6E8F0' };
 const statCardStyle = {
   width: '100%',
+  minWidth: 0,
+  maxWidth: '100%',
+  boxSizing: 'border-box',
   background: '#fff',
   borderRadius: 14,
   padding: '20px',

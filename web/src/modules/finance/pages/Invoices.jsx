@@ -9,6 +9,7 @@ import {
   requestLedgerReversalUserOtp, reverseLedgerTxn,
   postInvoiceCostAnalysisPreview,
   getReceiptsWithUnallocated,
+  getLedgerReconciliation,
   normalizeLedgerClassForApi,
 } from '../services/txnService';
 import { LastUpdatedByCell, TxnAuditLogModal } from '../../../components/finance/TxnAuditActivity';
@@ -194,6 +195,27 @@ const LEDGER_VIEW_OPTIONS = [
   { value: 'fees', label: 'Fees only' },
   { value: 'reimbursement', label: 'Reimbursement only' },
 ];
+
+function paymentExpenseBookedOnLabel(p) {
+  const oid = p.organizationId != null && p.organizationId !== ''
+    ? parseInt(String(p.organizationId), 10)
+    : 0;
+  const cid = p.clientId != null && p.clientId !== ''
+    ? parseInt(String(p.clientId), 10)
+    : 0;
+  if (oid > 0) return `Organization #${oid}`;
+  if (cid > 0) return `Contact #${cid}`;
+  return '';
+}
+
+function paymentExpenseMatchesLedgerSelection(p, ledgerClientId, ledgerEntityType) {
+  if (!ledgerClientId) return true;
+  const id = String(ledgerClientId);
+  if (ledgerEntityType === 'organization') {
+    return String(p.organizationId ?? '') === id;
+  }
+  return String(p.clientId ?? '') === id;
+}
 
 function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
   const { session } = useAuth();
@@ -3483,7 +3505,7 @@ export default function Invoices() {
   // ── Payments (on behalf) tab state ─────────────────────────────────────────
   const [paymentExpenses, setPaymentExpenses] = useState([]);
   const [payLoading, setPayLoading] = useState(false);
-  const [payLoaded, setPayLoaded] = useState(false);
+  const [paymentsFilterByLedger, setPaymentsFilterByLedger] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPaymentIds, setSelectedPaymentIds] = useState([]);
 
@@ -3526,6 +3548,22 @@ export default function Invoices() {
   const [ledgerFilterDateTo, setLedgerFilterDateTo]     = useState('');
   const [ledgerLedgerClass, setLedgerLedgerClass] = useState('regular');
   const [ledgerLedgerView, setLedgerLedgerView] = useState('consolidated');
+  const [ledgerReconcileModalOpen, setLedgerReconcileModalOpen] = useState(false);
+  const [ledgerReconcileLoading, setLedgerReconcileLoading] = useState(false);
+  const [ledgerReconcilePayload, setLedgerReconcilePayload] = useState(null);
+  const [ledgerReconcileError, setLedgerReconcileError] = useState('');
+
+  const paymentExpenseFetchParams = useMemo(() => {
+    const params = { txnType: 'payment_expense', perPage: 100 };
+    if (paymentsFilterByLedger && ledgerClientId) {
+      if (ledgerEntityType === 'organization') {
+        params.organizationId = ledgerClientId;
+      } else {
+        params.clientId = ledgerClientId;
+      }
+    }
+    return params;
+  }, [paymentsFilterByLedger, ledgerClientId, ledgerEntityType]);
 
   function openLedgerFromPaymentExpense(p) {
     const orgRaw = p.organizationId != null && p.organizationId !== '' ? parseInt(String(p.organizationId), 10) : 0;
@@ -3625,15 +3663,15 @@ export default function Invoices() {
       .finally(() => setRecLoading(false));
   }, [tab, recLoaded]);
 
-  // ── Load payment expenses when payments tab first opened ───────────────────
+  // ── Load payment expenses when Payments tab is active (optionally scoped to Ledger entity) ──
   useEffect(() => {
-    if (tab !== 'payments' || payLoaded) return;
+    if (tab !== 'payments') return;
     setPayLoading(true);
-    getTxns({ txnType: 'payment_expense', perPage: 100 })
-      .then(({ txns }) => { setPaymentExpenses(txns); setPayLoaded(true); })
+    getTxns(paymentExpenseFetchParams)
+      .then(({ txns }) => setPaymentExpenses(txns))
       .catch(() => {})
       .finally(() => setPayLoading(false));
-  }, [tab, payLoaded]);
+  }, [tab, paymentExpenseFetchParams]);
 
   // ── Load TDS when tds tab opened or filter changes ──────────────────────────
   useEffect(() => {
@@ -3837,6 +3875,7 @@ export default function Invoices() {
       p.publicRef,
       p.id,
       p.clientName,
+      paymentExpenseBookedOnLabel(p),
       p.txnDate,
       p.paymentMethod,
       p.referenceNumber,
@@ -4054,7 +4093,7 @@ export default function Invoices() {
       payload.client_id = idNum;
     }
     createPaymentExpense(payload)
-      .then((row) => setPaymentExpenses((prev) => [row, ...prev]))
+      .then(() => getTxns(paymentExpenseFetchParams).then(({ txns }) => setPaymentExpenses(txns)))
       .catch((err) => {
         window.alert(err?.message || 'Could not save payment on behalf.');
       });
@@ -4160,6 +4199,20 @@ export default function Invoices() {
     createCreditNote(payload)
       .then(cn => setCreditNotes(prev => [cn, ...prev]))
       .catch((err) => { window.alert(err?.message || 'Could not create credit note.'); });
+  }
+
+  function loadLedgerReconciliation() {
+    if (!ledgerClientId) return;
+    setLedgerReconcileLoading(true);
+    setLedgerReconcileError('');
+    setLedgerReconcilePayload(null);
+    const req = ledgerEntityType === 'organization'
+      ? { organizationId: ledgerClientId, ledgerClass: ledgerLedgerClass }
+      : { clientId: ledgerClientId, ledgerClass: ledgerLedgerClass };
+    getLedgerReconciliation(req)
+      .then((data) => setLedgerReconcilePayload(data))
+      .catch((e) => setLedgerReconcileError(e?.message || 'Could not load reconciliation.'))
+      .finally(() => setLedgerReconcileLoading(false));
   }
 
   function handleOpeningBalanceSaved() {
@@ -4404,7 +4457,7 @@ export default function Invoices() {
             if (tt === 'receipt' || tt === 'receipt_reversal') {
               getTxns({ txnType: 'receipt' }).then(({ txns }) => setReceipts(txns));
             } else if (tt === 'payment_expense' || tt === 'payment_expense_reversal') {
-              getTxns({ txnType: 'payment_expense', perPage: 100 }).then(({ txns }) => setPaymentExpenses(txns));
+              getTxns(paymentExpenseFetchParams).then(({ txns }) => setPaymentExpenses(txns));
             } else if (tt === 'tds_provisional' || tt === 'tds_final' || tt === 'tds_reversal') {
               const params = tdsFilter === 'all' ? {} : { tdsStatus: tdsFilter };
               getTdsEntries(params).then(setTdsEntries);
@@ -4422,6 +4475,78 @@ export default function Invoices() {
       )}
       {txnAuditModalTxn && (
         <TxnAuditLogModal key={txnAuditModalTxn.id} txn={txnAuditModalTxn} onClose={() => setTxnAuditModalTxn(null)} />
+      )}
+      {ledgerReconcileModalOpen && (
+        <div
+          style={{ ...overlayStyle, zIndex: 1100 }}
+          role="presentation"
+          onClick={() => !ledgerReconcileLoading && setLedgerReconcileModalOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ledger-reconcile-title"
+            style={{
+              background: '#fff',
+              borderRadius: 12,
+              maxWidth: 720,
+              width: '92vw',
+              maxHeight: '85vh',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,.25)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ ...modalHeaderStyle, flexShrink: 0 }}>
+              <span id="ledger-reconcile-title" style={{ fontWeight: 700, fontSize: 16 }}>Ledger reconciliation</span>
+              <button
+                type="button"
+                style={closeBtnStyle}
+                disabled={ledgerReconcileLoading}
+                onClick={() => setLedgerReconcileModalOpen(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <div style={{ padding: 16, overflow: 'auto', fontSize: 12 }}>
+              <p style={{ margin: '0 0 12px', color: '#64748b' }}>
+                Raw <code style={{ fontSize: 11 }}>txn</code> counts for this entity and ledger class versus row counts after the same presentation logic as GET{' '}
+                <code style={{ fontSize: 11 }}>/api/admin/txn/ledger</code>.
+                Use this to verify types such as <code style={{ fontSize: 11 }}>payment_expense</code>, receipts, and rebates are present before FY/date UI folding.
+              </p>
+              <button
+                type="button"
+                style={{ ...btnSecondary, marginBottom: 12, fontSize: 12 }}
+                disabled={ledgerReconcileLoading || !ledgerClientId}
+                onClick={loadLedgerReconciliation}
+              >
+                Refresh
+              </button>
+              {ledgerReconcileLoading && <div style={{ color: '#64748b' }}>Loading…</div>}
+              {ledgerReconcileError && <div style={{ color: '#dc2626', marginBottom: 8 }}>{ledgerReconcileError}</div>}
+              {ledgerReconcilePayload && (
+                <pre
+                  style={{
+                    margin: 0,
+                    padding: 12,
+                    background: '#f8fafc',
+                    borderRadius: 8,
+                    border: '1px solid #e2e8f0',
+                    fontSize: 11,
+                    lineHeight: 1.45,
+                    overflow: 'auto',
+                    maxHeight: '55vh',
+                  }}
+                >
+                  {JSON.stringify(ledgerReconcilePayload, null, 2)}
+                </pre>
+              )}
+            </div>
+          </div>
+        </div>
       )}
       {showRecordPayment && (
         <RecordPaymentModal
@@ -4564,6 +4689,40 @@ export default function Invoices() {
             style={{ ...inputStyle, flex: 1, minWidth: 200, maxWidth: 520 }}
             autoComplete="off"
           />
+          {tab === 'payments' && (
+            <>
+              <label
+                style={{
+                  fontSize: 12,
+                  color: '#475569',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  whiteSpace: 'nowrap',
+                }}
+                title="Uses the client or organization selected on the Ledger tab"
+              >
+                <input
+                  type="checkbox"
+                  checked={paymentsFilterByLedger}
+                  disabled={!ledgerClientId}
+                  onChange={(e) => setPaymentsFilterByLedger(e.target.checked)}
+                />
+                Match Ledger tab entity
+              </label>
+              {paymentsFilterByLedger && ledgerClientId && (
+                <span style={{ fontSize: 12, color: '#0369a1' }}>
+                  Payments for {ledgerClientName || 'selected entity'} (
+                  {ledgerEntityType === 'organization' ? 'Organization' : 'Contact'} #{ledgerClientId})
+                </span>
+              )}
+              {paymentsFilterByLedger && !ledgerClientId && (
+                <span style={{ fontSize: 12, color: '#b45309' }}>
+                  Select a client or organization on the Ledger tab first.
+                </span>
+              )}
+            </>
+          )}
         </div>
       )}
 
@@ -4799,6 +4958,19 @@ export default function Invoices() {
       {/* ── Tab: Payments (on behalf) ───────────────────────────────────────── */}
       {tab === 'payments' && (
         <div style={cardStyle}>
+          {ledgerClientId && !paymentsFilterByLedger && (
+            <div style={{
+              padding: '10px 14px',
+              background: '#fffbeb',
+              borderBottom: '1px solid #fde68a',
+              fontSize: 12,
+              color: '#92400e',
+            }}
+            >
+              Amber-highlighted rows are booked on a different ledger entity than the one selected on the Ledger tab.
+              Enable &quot;Match Ledger tab entity&quot; next to the search bar to show only matching payments, or click &quot;Ledger&quot; on a row to open that booking&apos;s ledger.
+            </div>
+          )}
           {canDeleteInvoice && selectedPaymentIds.length > 0 && (
             <div style={{ padding: '10px 16px', background: '#fef2f2', borderBottom: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 13, color: '#991b1b', fontWeight: 600 }}>{selectedPaymentIds.length} selected</span>
@@ -4842,20 +5014,27 @@ export default function Invoices() {
                     />
                   </th>
                 )}
-                {['Date', 'Ref', 'Client', 'Ledger type', 'Movement', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Last updated by', 'Actions'].map((h) => (
+                {['Date', 'Ref', 'Client', 'Booked on', 'Ledger type', 'Movement', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Last updated by', 'Actions'].map((h) => (
                   <th key={h} style={thStyle}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {payLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 16 : 15} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 17 : 16} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
               ) : paymentExpenses.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 16 : 15} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 17 : 16} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
               ) : visiblePaymentExpenses.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 16 : 15} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
-              ) : visiblePaymentExpenses.map((p) => (
-                <tr key={p.id} style={trStyle}>
+                <tr><td colSpan={canDeleteInvoice ? 17 : 16} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
+              ) : visiblePaymentExpenses.map((p) => {
+                const ledgerMismatch = ledgerClientId && !paymentsFilterByLedger
+                  && !paymentExpenseMatchesLedgerSelection(p, ledgerClientId, ledgerEntityType);
+                return (
+                <tr key={p.id} style={{
+                  ...trStyle,
+                  ...(ledgerMismatch ? { background: '#fffbeb' } : {}),
+                }}
+                >
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }}>
                       <input
@@ -4871,6 +5050,7 @@ export default function Invoices() {
                   <td style={tdStyle}>{p.txnDate}</td>
                   <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{p.publicRef || '—'}</td>
                   <td style={tdStyle}>{p.clientName}</td>
+                  <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }} title="Which contact or organization ledger this payment debits">{paymentExpenseBookedOnLabel(p) || '—'}</td>
                   <td style={tdStyle}>{ledgerClassLabel(p.ledgerClass)}</td>
                   <td style={tdStyle}>
                     {p.ledgerMovementKind === 'reimbursement'
@@ -4917,7 +5097,8 @@ export default function Invoices() {
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -5374,17 +5555,55 @@ export default function Invoices() {
               </div>
             )}
             {ledgerClientId && (
-              <div style={ledgerToolbarGroupStyle}>
+              <div style={{ ...ledgerToolbarGroupStyle, gap: 8, flexWrap: 'wrap' }}>
                 <button
+                  type="button"
                   style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap' }}
                   onClick={() => setShowOpeningModal(true)}
                 >
                   📖 Opening Balances
                 </button>
+                <button
+                  type="button"
+                  style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap' }}
+                  disabled={ledgerLoading}
+                  onClick={() => { setLedgerReconcileModalOpen(true); loadLedgerReconciliation(); }}
+                >
+                  Ledger reconciliation
+                </button>
               </div>
             )}
             </div>
           </div>
+          {ledgerClientId && (
+            <div style={{
+              padding: '8px 16px',
+              borderBottom: '1px solid #f1f5f9',
+              fontSize: 12,
+              color: '#64748b',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '12px 16px',
+              alignItems: 'center',
+            }}
+            >
+              {ledgerLedgerView === 'fees' && (
+                <span style={{ color: '#b45309' }}>
+                  Fees only hides reimbursement movement rows (including reimbursement payments on behalf). Use Consolidated or Reimbursement only to see those lines.
+                </span>
+              )}
+              {ledgerLedgerView === 'reimbursement' && (
+                <span style={{ color: '#b45309' }}>
+                  Reimbursement only hides professional fees movement rows. Use Consolidated or Fees only as needed.
+                </span>
+              )}
+              {(ledgerFilterDateFrom || ledgerFilterDateTo) && (
+                <span>
+                  Rows outside the selected date range are folded into <strong>Balance b/f</strong> for this FY window (not omitted from the underlying ledger).
+                </span>
+              )}
+            </div>
+          )}
           {!ledgerClientId ? (
             <div style={{ padding:32, textAlign:'center', color:'#94a3b8', fontSize:13 }}>
               Search for a client above to view their ledger.
@@ -5529,6 +5748,35 @@ export default function Invoices() {
             )}
             </div>
           </div>
+          {ledgerClientId && (
+            <div style={{
+              padding: '8px 16px',
+              borderBottom: '1px solid #f1f5f9',
+              fontSize: 12,
+              color: '#64748b',
+              display: 'flex',
+              flexWrap: 'wrap',
+              gap: '12px 16px',
+              alignItems: 'center',
+            }}
+            >
+              {ledgerLedgerView === 'fees' && (
+                <span style={{ color: '#b45309' }}>
+                  Fees only excludes reimbursement movement activity from sliced ledger logic underlying this report.
+                </span>
+              )}
+              {ledgerLedgerView === 'reimbursement' && (
+                <span style={{ color: '#b45309' }}>
+                  Reimbursement only excludes fees movement activity from sliced ledger logic underlying this report.
+                </span>
+              )}
+              {(ledgerFilterDateFrom || ledgerFilterDateTo) && (
+                <span>
+                  Date filters apply to this settlement report window; broader ledger rows may sit outside the range.
+                </span>
+              )}
+            </div>
+          )}
           {!ledgerClientId ? (
             <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>
               Search for a client to load the bill-by-bill settlement report.

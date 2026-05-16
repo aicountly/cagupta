@@ -459,6 +459,80 @@ class TxnModel
     }
 
     /**
+     * Admin reconciliation: aggregate txn rows vs presented ledger row counts per view.
+     *
+     * @return array<string, mixed>
+     */
+    public function getLedgerReconciliation(int $clientId, int $orgId, string $ledgerClass): array
+    {
+        if ($clientId > 0 && $orgId > 0) {
+            throw new \InvalidArgumentException('Provide only one of client_id or organization_id.');
+        }
+        if ($clientId <= 0 && $orgId <= 0) {
+            throw new \InvalidArgumentException('client_id or organization_id is required.');
+        }
+
+        $lc = LedgerDimensions::normalizeLedgerClass($ledgerClass);
+        $rows = $clientId > 0
+            ? $this->fetchRawLedgerRowsForClient($clientId, $lc)
+            : $this->fetchRawLedgerRowsForOrganization($orgId, $lc);
+
+        $byType = [];
+        foreach ($rows as $t) {
+            $tt = (string)($t['txn_type'] ?? 'unknown');
+            if (!isset($byType[$tt])) {
+                $byType[$tt] = ['count' => 0, 'net_dr_minus_cr' => 0.0];
+            }
+            $byType[$tt]['count']++;
+            $byType[$tt]['net_dr_minus_cr'] = round(
+                $byType[$tt]['net_dr_minus_cr'] + (float)($t['debit'] ?? 0) - (float)($t['credit'] ?? 0),
+                2
+            );
+        }
+
+        $consolidated = LedgerPresentation::buildLedger($rows, LedgerDimensions::VIEW_CONSOLIDATED);
+        $fees         = LedgerPresentation::buildLedger($rows, LedgerDimensions::VIEW_FEES);
+        $reim         = LedgerPresentation::buildLedger($rows, LedgerDimensions::VIEW_REIMBURSEMENT);
+
+        $payFees = 0;
+        $payReim = 0;
+        foreach ($rows as $t) {
+            if (($t['txn_type'] ?? '') !== 'payment_expense') {
+                continue;
+            }
+            $mk = trim((string)($t['ledger_movement_kind'] ?? ''));
+            if ($mk === LedgerDimensions::KIND_REIMBURSEMENT) {
+                $payReim++;
+            } else {
+                $payFees++;
+            }
+        }
+
+        return [
+            'entity' => $clientId > 0
+                ? ['type' => 'client', 'id' => $clientId]
+                : ['type' => 'organization', 'id' => $orgId],
+            'ledger_class'               => $lc,
+            'raw_txn_row_count'          => count($rows),
+            'by_txn_type'                => $byType,
+            'payment_expense_by_movement'=> [
+                'fees'            => $payFees,
+                'reimbursement'   => $payReim,
+            ],
+            'presented_ledger_row_counts' => [
+                'consolidated'       => count($consolidated),
+                'fees_only'          => count($fees),
+                'reimbursement_only' => count($reim),
+            ],
+            'hints' => [
+                'Raw row count should equal consolidated presented rows (one ledger line per txn row).',
+                'Fees-only view hides rows with ledger_movement_kind=reimbursement (including on-behalf reimbursement payments).',
+                'Reimbursement-only view hides fees movement rows; invoices may appear as split synthetic lines per slice.',
+            ],
+        ];
+    }
+
+    /**
      * Total receivable across all contact and organization ledgers.
      *
      * For each ledger entity, closing balance is SUM(debit − credit) on non-cancelled

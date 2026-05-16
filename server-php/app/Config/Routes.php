@@ -1210,6 +1210,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/ledger-reconciliation',
+                'handler'    => 'Admin\TxnController@ledgerReconciliation',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/bill-settlement-report',
                 'handler'    => 'Admin\TxnController@billSettlementReport',
                 'middleware' => ['auth', 'permission:invoices.view'],

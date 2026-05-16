@@ -349,6 +349,23 @@ export async function getLedger(clientIdOrObj) {
   return (data.data || []).map(normalizeTxn);
 }
 
+/** GET /api/admin/txn/ledger-reconciliation — txn counts vs presented ledger rows per view */
+export async function getLedgerReconciliation({
+  clientId,
+  organizationId,
+  ledgerClass = 'regular',
+} = {}) {
+  const params = new URLSearchParams();
+  if (clientId) params.set('client_id', String(clientId));
+  if (organizationId) params.set('organization_id', String(organizationId));
+  params.set('ledger_class', normalizeLedgerClassForApi(ledgerClass));
+  const res = await fetch(`${API_BASE}/admin/txn/ledger-reconciliation?${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return data.data || {};
+}
+
 /** GET /api/admin/txn/bill-settlement-report */
 export async function getBillSettlementReport({
   clientId,

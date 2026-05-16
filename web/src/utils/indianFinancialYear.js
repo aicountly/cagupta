@@ -34,7 +34,9 @@ export function indianFYBounds(startYear) {
  * Distinct FY start years present in the ledger, ascending.
  */
 export function ledgerEntryDate(e) {
-  return toYmdDateKey(e.txnDate || e.date || '');
+  if (!e || typeof e !== 'object') return '';
+  const raw = e.txnDate ?? e.date ?? e.txn_date ?? '';
+  return toYmdDateKey(typeof raw === 'string' ? raw : '');
 }
 
 export function collectIndianFYStartYears(entries, getDate = ledgerEntryDate) {
