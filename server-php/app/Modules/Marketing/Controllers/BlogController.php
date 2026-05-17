@@ -51,9 +51,12 @@ class BlogController extends BaseController
 
     /**
      * Send a message to a WhatsApp Channel via the WA Bridge (Baileys).
-     * Silently returns false when the bridge is unavailable.
+     * Returns ['ok' => bool, 'error' => string|null] so callers can surface
+     * the exact bridge error instead of just a generic 502.
+     *
+     * @return array{ok: bool, error: string|null, http_code: int}
      */
-    private function dispatchWaChannel(int $posterId, string $channelJid, string $message): bool
+    private function dispatchWaChannel(int $posterId, string $channelJid, string $message): array
     {
         $bridgeUrl = rtrim($_ENV['WA_BRIDGE_URL'] ?? 'http://localhost:3001', '/');
         $sessionId = 'user_' . $posterId;
@@ -69,17 +72,30 @@ class BlogController extends BaseController
                 'targetType' => 'newsletter',
                 'message'    => $message,
             ]),
-            CURLOPT_TIMEOUT        => 15,
+            CURLOPT_TIMEOUT        => 30,
         ]);
-        $body   = curl_exec($ch);
-        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $body     = curl_exec($ch);
+        $curlErr  = curl_error($ch);
+        $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        $ok = $status >= 200 && $status < 300;
-        if (!$ok) {
-            error_log("[BlogController] WA Channel dispatch failed (HTTP {$status}): {$body}");
+        if ($body === false) {
+            $errMsg = "WA bridge unreachable (curl: {$curlErr}, url: {$bridgeUrl})";
+            error_log("[BlogController] dispatchWaChannel: {$errMsg}");
+            return ['ok' => false, 'error' => $errMsg, 'http_code' => 0];
         }
-        return $ok;
+
+        $ok = $httpCode >= 200 && $httpCode < 300;
+        if (!$ok) {
+            $parsed = json_decode($body, true);
+            $errMsg = (is_array($parsed) && isset($parsed['error']))
+                ? $parsed['error']
+                : "Bridge returned HTTP {$httpCode}: {$body}";
+            error_log("[BlogController] dispatchWaChannel failed (HTTP {$httpCode}): {$body}");
+            return ['ok' => false, 'error' => $errMsg, 'http_code' => $httpCode];
+        }
+
+        return ['ok' => true, 'error' => null, 'http_code' => $httpCode];
     }
 
     /**
@@ -409,7 +425,8 @@ class BlogController extends BaseController
             $baseUrl = rtrim((string)($_ENV['MARKETING_SITE_URL'] ?? $_ENV['BASE_URL'] ?? ''), '/');
             $blogUrl = "{$baseUrl}/blog/{$post['slug']}";
             $waMsg   = "*New blog post:* {$post['title']}\n\n{$post['excerpt']}\n\n{$blogUrl}";
-            $waOk    = $this->dispatchWaChannel((int)$user['id'], $waChannelJid, $waMsg);
+            $waResult = $this->dispatchWaChannel((int)$user['id'], $waChannelJid, $waMsg);
+            $waOk     = $waResult['ok'];
         }
 
         $parts = ['Post published'];
@@ -454,8 +471,9 @@ class BlogController extends BaseController
 
         $ok = $this->dispatchWaChannel((int)$user['id'], $waChannelJid, $waMsg);
 
-        if (!$ok) {
-            $this->error('Failed to send to WhatsApp channel. Make sure the WA bridge is running and connected.', 502);
+        if (!$ok['ok']) {
+            $detail = $ok['error'] ?? 'Bridge returned HTTP ' . $ok['http_code'];
+            $this->error("Failed to send to WhatsApp channel: {$detail}", 502);
         }
 
         $this->success(null, 'Blog post shared to WhatsApp channel');
@@ -616,7 +634,8 @@ class BlogController extends BaseController
             $baseUrl = rtrim((string)($_ENV['MARKETING_SITE_URL'] ?? $_ENV['BASE_URL'] ?? ''), '/');
             $blogUrl  = "{$baseUrl}/blog/{$slug}";
             $waMsg    = "*New blog post:* {$draft['title']}\n\n{$draft['excerpt']}\n\n{$blogUrl}";
-            $waOk     = $this->dispatchWaChannel((int)$user['id'], $waChannelJid, $waMsg);
+            $waResult = $this->dispatchWaChannel((int)$user['id'], $waChannelJid, $waMsg);
+            $waOk     = $waResult['ok'];
         }
 
         $parts = ['Draft approved and published'];

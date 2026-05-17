@@ -41,7 +41,15 @@ final class BlogAiGenerator
     ];
 
     /**
-     * @param array{pdo: PDO, server_php_root: string, dry_run?: bool, only_category?: ?string, options_per_category?: int, stream_callback?: ?callable(string):void} $cfg
+     * @param array{
+     *   pdo: PDO,
+     *   server_php_root: string,
+     *   dry_run?: bool,
+     *   only_category?: ?string,
+     *   options_per_category?: int,
+     *   stream_callback?: ?callable(string):void,
+     *   model_emit?: ?callable(string $context, string $phase, string $chunk):void
+     * } $cfg
      * @return array{total_generated: int, log: string[], error?: string}
      */
     public static function run(array $cfg): array
@@ -52,6 +60,7 @@ final class BlogAiGenerator
         $onlyCategory     = $cfg['only_category'] ?? null;
         $optionsPerCat    = max(1, (int)($cfg['options_per_category'] ?? 2));
         $streamCb         = $cfg['stream_callback'] ?? null;
+        $modelEmit        = \is_callable($cfg['model_emit'] ?? null) ? $cfg['model_emit'] : null;
 
         $log = [];
         $add = static function (string $line) use (&$log, $streamCb): void {
@@ -103,9 +112,17 @@ final class BlogAiGenerator
                 $add("[blog-ai]   Option {$optIdx}/{$optionsPerCat}...");
 
                 self::ensureOpenAiSpacing($afterLastAi, $minInterval, $add);
-                $topic = self::openaiChat($openAiKey, $textModel, [
-                    ['role' => 'user', 'content' => $config['topicPrompt']],
-                ], 320, false);
+                $topic = self::openaiChat(
+                    $openAiKey,
+                    $textModel,
+                    [
+                        ['role' => 'user', 'content' => $config['topicPrompt']],
+                    ],
+                    320,
+                    false,
+                    $modelEmit,
+                    'topic',
+                );
                 $afterLastAi = microtime(true);
 
                 if ($topic === null) {
@@ -144,6 +161,8 @@ PROMPT;
                     ],
                     $draftMaxTok,
                     true,
+                    $modelEmit,
+                    'draft_json',
                 );
                 $afterLastAi = microtime(true);
 
@@ -302,7 +321,248 @@ PROMPT;
         return 22;
     }
 
-    private static function openaiChat(string $apiKey, string $model, array $messages, int $maxCompletionTokens = 2000, bool $jsonObject = false): ?string
+    /**
+     * @param ?callable(string $context, string $phase, string $chunk):void $modelEmit
+     */
+    private static function openaiChat(
+        string $apiKey,
+        string $model,
+        array $messages,
+        int $maxCompletionTokens = 2000,
+        bool $jsonObject = false,
+        ?callable $modelEmit = null,
+        string $emitContext = 'chat',
+    ): ?string {
+        self::$lastOpenAiChatFailure = null;
+
+        if ($modelEmit !== null) {
+            return self::openaiChatViaStream($apiKey, $model, $messages, $maxCompletionTokens, $jsonObject, $modelEmit, $emitContext)
+                ?? self::openaiChatBuffered($apiKey, $model, $messages, $maxCompletionTokens, $jsonObject);
+        }
+
+        return self::openaiChatBuffered($apiKey, $model, $messages, $maxCompletionTokens, $jsonObject);
+    }
+
+    /**
+     * @param callable(string $context, string $phase, string $chunk):void $modelEmit
+     */
+    private static function forwardStreamDeltaPieces(array $delta, callable $modelEmit, string $emitContext): void
+    {
+        foreach ([
+            'reasoning_content',
+            'reasoning_summary',
+            'reasoning',
+            'thinking',
+            'thinking_summary',
+        ] as $key) {
+            if (!isset($delta[$key]) || !is_string($delta[$key]) || $delta[$key] === '') {
+                continue;
+            }
+            $modelEmit($emitContext, 'reasoning', $delta[$key]);
+        }
+
+        $blocks = $delta['thinking_blocks'] ?? null;
+        if (is_array($blocks)) {
+            foreach ($blocks as $b) {
+                if (!is_array($b)) {
+                    continue;
+                }
+                $t = $b['thinking'] ?? $b['thought'] ?? $b['summary'] ?? $b['text'] ?? null;
+                if (is_string($t) && $t !== '') {
+                    $modelEmit($emitContext, 'reasoning', $t);
+                }
+            }
+        }
+
+        $handledKeys = ['reasoning_content', 'reasoning_summary', 'reasoning', 'thinking', 'thinking_summary', 'thinking_blocks', 'content', 'role', 'refusal'];
+        foreach ($delta as $k => $v) {
+            if (!is_string($k) || !is_string($v) || $v === '') {
+                continue;
+            }
+            if (preg_match('/reason|think|reflection|thought|internal|chain/i', $k) !== 1) {
+                continue;
+            }
+            if (in_array($k, $handledKeys, true)) {
+                continue;
+            }
+            $modelEmit($emitContext, 'reasoning', $v);
+            $handledKeys[] = $k;
+        }
+
+        if (isset($delta['content']) && is_string($delta['content']) && $delta['content'] !== '') {
+            $modelEmit($emitContext, 'assistant', $delta['content']);
+        }
+    }
+
+    /**
+     * Streams OpenAI Chat Completions (SSE); accumulates assistant-visible `delta.content`.
+     *
+     * @param callable(string $context, string $phase, string $chunk):void $modelEmit
+     */
+    private static function openaiChatViaStream(
+        string $apiKey,
+        string $model,
+        array $messages,
+        int $maxCompletionTokens,
+        bool $jsonObject,
+        callable $modelEmit,
+        string $emitContext,
+    ): ?string {
+        $maxAttempts      = 5;
+        $lastFailureTail  = '';
+        $bufferedReturned = ''; // populated by non-stream fallback in caller via openaiChatBuffered
+
+        for ($attempt = 1; $attempt <= $maxAttempts; ++$attempt) {
+            $assembled    = '';
+            $sseRemainder = '';
+            $streamErr    = '';
+            $firstHttp    = null;
+
+            $body = [
+                'model'                 => $model,
+                'messages'              => $messages,
+                'max_completion_tokens' => $maxCompletionTokens,
+                'stream'                => true,
+            ];
+            if ($jsonObject) {
+                $body['response_format'] = ['type' => 'json_object'];
+            }
+
+            $payload = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+            $ch = curl_init('https://api.openai.com/v1/chat/completions');
+            curl_setopt_array($ch, [
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => $payload,
+                CURLOPT_TIMEOUT        => 400,
+                CURLOPT_CONNECTTIMEOUT => 20,
+                CURLOPT_HTTPHEADER     => [
+                    'Content-Type: application/json',
+                    'Accept: text/event-stream',
+                    "Authorization: Bearer {$apiKey}",
+                ],
+                CURLOPT_HEADERFUNCTION => static function ($ch, string $hdrLine) use (&$firstHttp): int {
+                    if ($firstHttp === null && preg_match('/HTTP\\/\\S+ (\\d{3}) /', $hdrLine, $m)) {
+                        $firstHttp = (int)$m[1];
+                    }
+
+                    return strlen($hdrLine);
+                },
+                CURLOPT_WRITEFUNCTION => function ($curl, string $chunk) use (
+                    &$sseRemainder,
+                    &$assembled,
+                    &$streamErr,
+                    $modelEmit,
+                    $emitContext
+                ): int {
+                    $sseRemainder .= $chunk;
+                    while (($nl = strpos($sseRemainder, "\n")) !== false) {
+                        $raw          = substr($sseRemainder, 0, $nl);
+                        $sseRemainder = substr($sseRemainder, $nl + 1);
+                        $line         = rtrim(str_replace("\r", '', $raw), "\r");
+                        if ($line === '' || str_starts_with($line, ':')) {
+                            continue;
+                        }
+                        if (!str_starts_with($line, 'data:')) {
+                            continue;
+                        }
+                        $jsonPart = trim(substr($line, 5));
+                        if ($jsonPart === '' || $jsonPart === '[DONE]') {
+                            continue;
+                        }
+
+                        $parsed = json_decode($jsonPart, true);
+                        if (!is_array($parsed)) {
+                            continue;
+                        }
+
+                        if (isset($parsed['error']) && is_array($parsed['error'])) {
+                            $streamErr = json_encode($parsed['error'], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE) ?: 'error';
+
+                            continue;
+                        }
+
+                        $choices = $parsed['choices'] ?? [];
+                        if (!isset($choices[0]) || !is_array($choices[0])) {
+                            continue;
+                        }
+
+                        $delta = $choices[0]['delta'] ?? [];
+                        if (!is_array($delta)) {
+                            continue;
+                        }
+
+                        self::forwardStreamDeltaPieces($delta, $modelEmit, $emitContext);
+
+                        if (isset($delta['content']) && is_string($delta['content']) && $delta['content'] !== '') {
+                            $assembled .= $delta['content'];
+                        }
+                    }
+
+                    return strlen($chunk);
+                },
+            ]);
+
+            $xfer = curl_exec($ch);
+            $cerr = curl_error($ch);
+            $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            if ($firstHttp !== null) {
+                $code = $firstHttp;
+            }
+            curl_close($ch);
+
+            if ($xfer === false) {
+                $lastFailureTail = self::collapseWhitespace($cerr);
+                self::$lastOpenAiChatFailure = 'stream curl_error: ' . $lastFailureTail;
+                sleep(min(3, 1 + $attempt));
+
+                continue;
+            }
+
+            if ($streamErr !== '') {
+                $lastFailureTail = self::collapseWhitespace($streamErr);
+                if ($code === 429 && $attempt < $maxAttempts) {
+                    sleep(self::sleepBefore429Retry($streamErr));
+                    continue;
+                }
+                self::$lastOpenAiChatFailure = 'OpenAI stream error: ' . $lastFailureTail;
+
+                return null;
+            }
+
+            if ($code === 429 && $attempt < $maxAttempts) {
+                sleep(self::sleepBefore429Retry($sseRemainder . $assembled));
+                continue;
+            }
+
+            if ($code !== 200) {
+                $tail = self::collapseWhitespace($sseRemainder);
+                if ($tail === '') {
+                    $tail = self::collapseWhitespace($assembled);
+                }
+                $lastFailureTail                = substr($tail, 0, 800);
+                self::$lastOpenAiChatFailure    = 'stream HTTP ' . $code . ($lastFailureTail !== '' ? ': ' . $lastFailureTail : '');
+
+                return null;
+            }
+
+            if ($assembled !== '') {
+                return $assembled;
+            }
+
+            $lastFailureTail = self::collapseWhitespace($sseRemainder);
+            if ($lastFailureTail === '') {
+                $lastFailureTail = 'empty stream body';
+            }
+            sleep(1);
+        }
+
+        self::$lastOpenAiChatFailure = 'streaming failed: ' . substr($lastFailureTail, 0, 400);
+
+        return null;
+    }
+
+    private static function openaiChatBuffered(string $apiKey, string $model, array $messages, int $maxCompletionTokens = 2000, bool $jsonObject = false): ?string
     {
         self::$lastOpenAiChatFailure = null;
 

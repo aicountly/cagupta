@@ -566,10 +566,28 @@ app.post('/send', async (req, res) => {
   }
 
   try {
-    await sess.socket.sendMessage(targetId, { text: message || '' });
+    // Newsletter (WhatsApp Channel) JIDs require the message to be sent as
+    // a newsletter/admin post, not a regular chat message.  Baileys 6.7.x
+    // exposes this via newsletterSendMessage when available; fall back to
+    // sendMessage which works for channel admins in most versions.
+    if (targetId.endsWith('@newsletter')) {
+      const newsletterSend =
+        sess.socket.newsletterSendMessage ||
+        sess.socket.sendNewsletterMessage;
+
+      if (typeof newsletterSend === 'function') {
+        await newsletterSend.call(sess.socket, targetId, { text: message || '' });
+      } else {
+        // Fallback: standard sendMessage — works when the connected account is
+        // the channel admin; throws for subscribers (non-admins).
+        await sess.socket.sendMessage(targetId, { text: message || '' });
+      }
+    } else {
+      await sess.socket.sendMessage(targetId, { text: message || '' });
+    }
     res.json({ ok: true });
   } catch (e) {
-    console.error(`[${sessionId}] Send error: ${e.message}`);
+    console.error(`[${sessionId}] Send error (target=${targetId}): ${e.message}`);
     res.status(500).json({ error: e.message });
   }
 });
