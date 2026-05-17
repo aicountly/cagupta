@@ -1034,11 +1034,18 @@ class BlogController extends BaseController
         $blogUrl = "{$baseUrl}/blog/{$slug}";
 
         $clients = $this->db()->query("
-            SELECT c.id, c.name, c.email
+            SELECT c.id,
+                   COALESCE(
+                       NULLIF(TRIM(c.organization_name), ''),
+                       TRIM(CONCAT_WS(' ', NULLIF(TRIM(c.first_name), ''), NULLIF(TRIM(c.last_name), ''))),
+                       ''
+                   ) AS name,
+                   c.email
             FROM   clients c
-            WHERE  c.status = 'active'
+            WHERE  c.is_active IS TRUE
+              AND  c.contact_status <> 'inactive'
               AND  c.email IS NOT NULL
-              AND  c.email != ''
+              AND  TRIM(c.email) <> ''
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
         if ($clients === []) {
@@ -1051,9 +1058,13 @@ class BlogController extends BaseController
         $subject = "New Article: {$title}";
 
         $recipientRows = array_map(static function (array $c): array {
+            $name = trim((string)($c['name'] ?? ''));
+            if ($name === '') {
+                $name = 'Client';
+            }
             return [
-                'email' => (string)$c['email'],
-                'name'  => (string)($c['name'] ?? ''),
+                'email' => trim((string)$c['email']),
+                'name'  => $name,
             ];
         }, $clients);
 
