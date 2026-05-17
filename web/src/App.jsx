@@ -126,7 +126,8 @@ const pageTitles = {
   '/services/follow-ups':      '📋 Pending Follow-ups',
   '/services/files':            '📂 Engagement Files',
   '/documents':                 '📂 Document Management',
-  '/invoices':                  '💰 Invoices & Ledger',
+  '/invoices':                  '🧾 Invoices',
+  '/invoices/ledgers':          '📒 Ledgers',
   '/finance/bank-reports':      '🏦 Bank & Firm Txns',
   '/finance/invoices-banking':  '💰 Invoices & Banking',
   '/finance/affiliate-payout-cycles': '💳 Affiliate Payout Cycles',
@@ -218,6 +219,7 @@ export default function App() {
           <Route path="/services/:id/files" element={<ProtectedRoute staffOnly><Layout routePath="/services/files"><ServiceEngagementFiles /></Layout></ProtectedRoute>} />
           <Route path="/documents" element={<ProtectedRoute staffOnly><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute staffOnly><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
+          <Route path="/invoices/ledgers" element={<ProtectedRoute staffOnly><Layout routePath="/invoices/ledgers"><Invoices ledgerOnly /></Layout></ProtectedRoute>} />
           <Route path="/finance/invoices-banking" element={<ProtectedRoute staffOnly><Layout routePath="/finance/invoices-banking"><InvoicesBankingHub /></Layout></ProtectedRoute>} />
           <Route
             path="/finance/bank-reports"

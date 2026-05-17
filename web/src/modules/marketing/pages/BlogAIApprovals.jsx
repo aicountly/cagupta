@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Sparkles, CheckCircle2, XCircle, Pencil, Loader2,
-  AlertCircle, RefreshCw, Upload, X, ChevronDown, ChevronUp, Mail, Globe,
+  AlertCircle, RefreshCw, Upload, X, ChevronDown, ChevronUp, Mail, Globe, Radio,
 } from 'lucide-react';
 import {
   fetchDrafts, updateDraft, approveDraft, rejectDraft, uploadBlogImage,
@@ -9,6 +9,12 @@ import {
 } from '../services/blog.service';
 import { RichTextEditor } from '../components/RichTextEditor';
 import { isHtml, markdownToHtml } from '../../../utils/blogContent';
+import { API_BASE_URL } from '../../../constants/config';
+
+function authHeaders() {
+  const token = localStorage.getItem('auth_token');
+  return { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+}
 
 const CATEGORIES = [
   { value: 'laws',                  label: 'New Laws & Provisions',      color: '#2563eb', bg: '#eff6ff' },
@@ -45,6 +51,8 @@ export default function BlogAIApprovals() {
   const [approving, setApproving]   = useState(false);
   const [approveError, setApproveError] = useState('');
   const [emailResult, setEmailResult] = useState(null);
+  const [waChannels, setWaChannels] = useState([]);
+  const [selectedWaChannel, setSelectedWaChannel] = useState('');
   const fileRefs = useRef({});
 
   const load = async () => {
@@ -86,18 +94,33 @@ export default function BlogAIApprovals() {
     }
   };
 
-  const handleApprove = (draft) => {
-    setApproveError('');
-    setApproveModal(draft);
+  const fetchWaChannels = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/marketing/wa/channels`, { headers: authHeaders() });
+      if (res.ok) {
+        const json = await res.json();
+        setWaChannels(json.data || []);
+      }
+    } catch {
+      // WA bridge may not be running — silently ignore
+    }
   };
 
-  const doApprove = async (sendEmail) => {
+  const handleApprove = (draft) => {
+    setApproveError('');
+    setSelectedWaChannel('');
+    setApproveModal(draft);
+    fetchWaChannels();
+  };
+
+  const doApprove = async (sendEmail, sendWa = false) => {
     if (!approveModal) return;
     setApproving(true);
     setApproveError('');
     setActionId(approveModal.id);
     try {
-      const res = await approveDraft(approveModal.id, sendEmail);
+      const waJid = (sendWa && selectedWaChannel) ? selectedWaChannel : null;
+      const res = await approveDraft(approveModal.id, sendEmail, waJid);
       setApproveModal(null);
       if (sendEmail && res?.data?.email) {
         setEmailResult({ postTitle: approveModal.title, ...res.data.email });
@@ -391,7 +414,7 @@ export default function BlogAIApprovals() {
       {/* Approve consent modal */}
       {approveModal && (
         <div style={overlayStyle}>
-          <div style={modalStyle}>
+          <div style={{ ...modalStyle, maxWidth: 520 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Approve & publish draft</h3>
               <button onClick={() => { setApproveModal(null); setApproveError(''); }} style={btn.icon} disabled={approving}>
@@ -401,16 +424,53 @@ export default function BlogAIApprovals() {
             <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
               "{approveModal.title}"
             </p>
-            <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
               This will create a published blog post on the marketing site.
-              Would you also like to send an email notification to all active clients?
+              Would you also like to notify clients via email and/or post to a WhatsApp Channel?
             </p>
+
+            {/* WA Channel selector */}
+            {waChannels.length > 0 && (
+              <div style={{ background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, padding: '12px 14px', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                  <Radio size={14} color="#16a34a" />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: '#15803d' }}>Post to WhatsApp Channel</span>
+                </div>
+                <select
+                  value={selectedWaChannel}
+                  onChange={e => setSelectedWaChannel(e.target.value)}
+                  style={{ width: '100%', padding: '7px 10px', border: '1px solid #86efac', borderRadius: 7, fontSize: 13, color: '#15803d', background: '#fff', cursor: 'pointer' }}
+                >
+                  <option value="">— Don't post to WA channel —</option>
+                  {waChannels.map(ch => (
+                    <option key={ch.id} value={ch.id}>{ch.name || ch.id}</option>
+                  ))}
+                </select>
+                {selectedWaChannel && (
+                  <p style={{ margin: '6px 0 0', fontSize: 12, color: '#16a34a' }}>
+                    The blog title and link will be posted to this channel when you approve.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {waChannels.length === 0 && (
+              <div style={{ background: '#fafafa', border: '1px solid #e2e8f0', borderRadius: 10, padding: '10px 14px', marginBottom: 16 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <Radio size={13} color="#94a3b8" />
+                  <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                    No WA channels found. Connect WhatsApp and add a channel in the WA Web Marketing tool to enable auto-posting.
+                  </span>
+                </div>
+              </div>
+            )}
+
             {approveError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, fontSize: 13, background: '#fef2f2', color: '#dc2626', marginBottom: 14 }}>
                 <AlertCircle size={13} /> {approveError}
               </div>
             )}
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button
                 onClick={() => { setApproveModal(null); setApproveError(''); }}
                 style={btn.secondary}
@@ -419,20 +479,20 @@ export default function BlogAIApprovals() {
                 Cancel
               </button>
               <button
-                onClick={() => doApprove(false)}
+                onClick={() => doApprove(false, !!selectedWaChannel)}
                 style={btn.secondary}
                 disabled={approving}
               >
                 {approving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Globe size={13} />}
-                Publish only
+                {selectedWaChannel ? 'Publish + WA only' : 'Publish only'}
               </button>
               <button
-                onClick={() => doApprove(true)}
+                onClick={() => doApprove(true, !!selectedWaChannel)}
                 style={btn.primary}
                 disabled={approving}
               >
                 {approving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={13} />}
-                Publish & notify clients
+                {selectedWaChannel ? 'Publish + Email + WA' : 'Publish & notify clients'}
               </button>
             </div>
           </div>

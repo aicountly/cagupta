@@ -50,6 +50,39 @@ class BlogController extends BaseController
     // ── Helpers ──────────────────────────────────────────────────────────────
 
     /**
+     * Send a message to a WhatsApp Channel via the WA Bridge (Baileys).
+     * Silently returns false when the bridge is unavailable.
+     */
+    private function dispatchWaChannel(int $posterId, string $channelJid, string $message): bool
+    {
+        $bridgeUrl = rtrim($_ENV['WA_BRIDGE_URL'] ?? 'http://localhost:3001', '/');
+        $sessionId = 'user_' . $posterId;
+
+        $ch = curl_init("{$bridgeUrl}/send");
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+            CURLOPT_POSTFIELDS     => json_encode([
+                'sessionId'  => $sessionId,
+                'targetId'   => $channelJid,
+                'targetType' => 'newsletter',
+                'message'    => $message,
+            ]),
+            CURLOPT_TIMEOUT        => 15,
+        ]);
+        $body   = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        $ok = $status >= 200 && $status < 300;
+        if (!$ok) {
+            error_log("[BlogController] WA Channel dispatch failed (HTTP {$status}): {$body}");
+        }
+        return $ok;
+    }
+
+    /**
      * Absolute directory for blog cover files on disk (BLOG_UPLOADS_PATH or server-php/blog_uploads).
      */
     private function blogUploadDir(): string
@@ -289,9 +322,11 @@ class BlogController extends BaseController
 
     public function blogPublish(int $id): never
     {
-        $user      = $this->authUser();
-        $body      = $this->getJsonBody();
-        $sendEmail = !empty($body['send_email']);
+        $user          = $this->authUser();
+        $body          = $this->getJsonBody();
+        $sendEmail     = !empty($body['send_email']);
+        $sendWaChannel = !empty($body['send_wa_channel']);
+        $waChannelJid  = trim((string)($body['wa_channel_jid'] ?? ''));
 
         $existing = $this->db()->prepare('SELECT * FROM blog_posts WHERE id = :id');
         $existing->execute([':id' => $id]);
@@ -318,8 +353,48 @@ class BlogController extends BaseController
             );
         }
 
-        $message = $sendEmail ? 'Post published and email blast triggered' : 'Post published';
-        $this->success(['email' => $emailStats], $message);
+        $waOk = null;
+        if ($sendWaChannel && $waChannelJid !== '') {
+            $baseUrl = rtrim((string)($_ENV['MARKETING_SITE_URL'] ?? $_ENV['BASE_URL'] ?? ''), '/');
+            $blogUrl = "{$baseUrl}/blog/{$post['slug']}";
+            $waMsg   = "*New blog post:* {$post['title']}\n\n{$post['excerpt']}\n\n{$blogUrl}";
+            $waOk    = $this->dispatchWaChannel((int)$user['id'], $waChannelJid, $waMsg);
+        }
+
+        $parts = ['Post published'];
+        if ($sendEmail)     $parts[] = 'email blast triggered';
+        if ($waOk === true) $parts[] = 'WA channel notified';
+        if ($waOk === false) $parts[] = 'WA channel failed (bridge may be down)';
+        $message = implode(', ', $parts);
+
+        $this->success(['email' => $emailStats, 'wa_channel' => $waOk], $message);
+    }
+
+    /**
+     * POST /api/marketing/blog/posts/:id/resend-email
+     *
+     * Re-sends the blog notification email blast for an already-published post.
+     * Unlike blogPublish(), this works even when the post is already published.
+     */
+    public function blogResendEmail(int $id): never
+    {
+        $existing = $this->db()->prepare('SELECT * FROM blog_posts WHERE id = :id');
+        $existing->execute([':id' => $id]);
+        $post = $existing->fetch(\PDO::FETCH_ASSOC);
+        if (!$post) $this->error('Post not found.', 404);
+
+        if ($post['status'] !== 'published') {
+            $this->error('Only published posts can have their email resent.', 422);
+        }
+
+        $emailStats = $this->dispatchBlogEmail(
+            (int)$post['id'],
+            (string)$post['title'],
+            (string)$post['excerpt'],
+            (string)$post['slug']
+        );
+
+        $this->success(['email' => $emailStats], 'Email blast sent');
     }
 
     // ── AI Drafts ────────────────────────────────────────────────────────────
@@ -381,9 +456,11 @@ class BlogController extends BaseController
 
     public function draftApprove(int $id): never
     {
-        $user      = $this->authUser();
-        $body      = $this->getJsonBody();
-        $sendEmail = !empty($body['send_email']);
+        $user         = $this->authUser();
+        $body         = $this->getJsonBody();
+        $sendEmail    = !empty($body['send_email']);
+        $sendWaChannel = !empty($body['send_wa_channel']);
+        $waChannelJid  = trim((string)($body['wa_channel_jid'] ?? ''));
 
         $existing = $this->db()->prepare('SELECT * FROM blog_ai_drafts WHERE id = :id');
         $existing->execute([':id' => $id]);
@@ -435,8 +512,26 @@ class BlogController extends BaseController
             $emailStats = $this->dispatchBlogEmail($postId, (string)$draft['title'], (string)$draft['excerpt'], $slug);
         }
 
-        $message = $sendEmail ? 'Draft approved, published and email blast triggered' : 'Draft approved and published';
-        $this->success(['blog_post_id' => $postId, 'slug' => $slug, 'email' => $emailStats], $message);
+        $waOk = null;
+        if ($sendWaChannel && $waChannelJid !== '') {
+            $baseUrl = rtrim((string)($_ENV['MARKETING_SITE_URL'] ?? $_ENV['BASE_URL'] ?? ''), '/');
+            $blogUrl  = "{$baseUrl}/blog/{$slug}";
+            $waMsg    = "*New blog post:* {$draft['title']}\n\n{$draft['excerpt']}\n\n{$blogUrl}";
+            $waOk     = $this->dispatchWaChannel((int)$user['id'], $waChannelJid, $waMsg);
+        }
+
+        $parts = ['Draft approved and published'];
+        if ($sendEmail)    $parts[] = 'email blast triggered';
+        if ($waOk === true) $parts[] = 'WA channel notified';
+        if ($waOk === false) $parts[] = 'WA channel failed (bridge may be down)';
+        $message = implode(', ', $parts);
+
+        $this->success([
+            'blog_post_id' => $postId,
+            'slug'         => $slug,
+            'email'        => $emailStats,
+            'wa_channel'   => $waOk,
+        ], $message);
     }
 
     public function draftReject(int $id): never

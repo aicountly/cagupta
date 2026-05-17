@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import {
   fetchBlogPosts, createBlogPost, updateBlogPost,
-  deleteBlogPost, publishBlogPost, uploadBlogImage, generateAiDraftsNow,
+  deleteBlogPost, publishBlogPost, resendBlogEmail, uploadBlogImage, generateAiDraftsNow,
 } from '../services/blog.service';
 import { RichTextEditor } from '../components/RichTextEditor';
 import { isHtml, markdownToHtml } from '../../../utils/blogContent';
@@ -160,6 +160,9 @@ export default function BlogManagement() {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
   const [emailResult, setEmailResult] = useState(null);
+  const [resendModal, setResendModal] = useState(null);
+  const [resending, setResending]     = useState(false);
+  const [resendError, setResendError] = useState('');
   const fileRef = useRef();
 
   const load = async () => {
@@ -277,6 +280,23 @@ export default function BlogManagement() {
       load();
     } catch (e) {
       alert('Delete failed: ' + e.message);
+    }
+  };
+
+  const handleResendEmail = async () => {
+    if (!resendModal) return;
+    setResending(true);
+    setResendError('');
+    try {
+      const res = await resendBlogEmail(resendModal.id);
+      setResendModal(null);
+      if (res?.data?.email) {
+        setEmailResult({ postTitle: resendModal.title, ...res.data.email });
+      }
+    } catch (e) {
+      setResendError(e.message);
+    } finally {
+      setResending(false);
     }
   };
 
@@ -411,6 +431,15 @@ export default function BlogManagement() {
                         <Globe size={14} />
                       </button>
                     )}
+                    {post.status === 'published' && (
+                      <button
+                        onClick={() => { setResendError(''); setResendModal(post); }}
+                        style={{ ...btn.icon, color: '#2563eb' }}
+                        title="Re-send email notification to all active clients"
+                      >
+                        <Mail size={14} />
+                      </button>
+                    )}
                     <button onClick={() => setConfirmDelete(post)} style={{ ...btn.icon, color: '#dc2626' }} title="Delete">
                       <Trash2 size={14} />
                     </button>
@@ -483,6 +512,41 @@ export default function BlogManagement() {
               >
                 {publishing ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={13} />}
                 Publish & notify clients
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Resend email confirmation modal */}
+      {resendModal && (
+        <div style={overlay}>
+          <div style={{ ...modal, maxWidth: 460 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Re-send email notification</h3>
+              <button onClick={() => { setResendModal(null); setResendError(''); }} style={btn.icon} disabled={resending}>
+                <X size={16} />
+              </button>
+            </div>
+            <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+              "{resendModal.title}"
+            </p>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
+              This will re-send the blog notification email to all active clients.
+              Use this if some clients missed the original email or if the email service was unavailable at publish time.
+            </p>
+            {resendError && (
+              <div style={{ ...alertBox, background: '#fef2f2', color: '#dc2626', marginBottom: 14 }}>
+                <AlertCircle size={13} /> {resendError}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => { setResendModal(null); setResendError(''); }} style={btn.secondary} disabled={resending}>
+                Cancel
+              </button>
+              <button onClick={handleResendEmail} style={btn.primary} disabled={resending}>
+                {resending ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={13} />}
+                {resending ? 'Sending…' : 'Send email now'}
               </button>
             </div>
           </div>
@@ -603,6 +667,44 @@ export default function BlogManagement() {
               placeholder="Paste formatted content from OpenAI or Word, or type and use the toolbar above."
               style={{ marginTop: 4 }}
             />
+
+            {/* CTA preview */}
+            <div style={{
+              marginTop: 20, borderRadius: 10, overflow: 'hidden',
+              border: '1px solid #e2e8f0',
+            }}>
+              <div style={{
+                background: '#f8fafc', borderBottom: '1px solid #e2e8f0',
+                padding: '7px 14px', display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <Mail size={13} style={{ color: '#F37920' }} />
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
+                  CTA section — shown below every published post
+                </span>
+              </div>
+              <div style={{
+                background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 60%, #F37920 100%)',
+                padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
+              }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.7)', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 4 }}>
+                    AI for Business
+                  </div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: '#fff', marginBottom: 4 }}>
+                    Want to implement AI in your business?
+                  </div>
+                  <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.8)' }}>
+                    CA Rahul Gupta Office helps businesses identify, integrate and automate with AI.
+                  </div>
+                </div>
+                <div style={{
+                  background: '#fff', color: '#1e3a5f', borderRadius: 8, padding: '8px 16px',
+                  fontSize: 12, fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0,
+                }}>
+                  Contact us →
+                </div>
+              </div>
+            </div>
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
               <button onClick={() => setShowEditor(false)} style={btn.secondary}>Cancel</button>

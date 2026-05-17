@@ -3,7 +3,7 @@ import {
   Smartphone, QrCode, RefreshCw, Users, MessageSquare,
   Send, Paperclip, Image, FileText, Clock, CheckCircle2,
   AlertCircle, Wifi, WifiOff, X, ChevronDown, ChevronRight,
-  Search, Filter, Play, Pause,
+  Search, Filter, Play, Pause, Radio, Plus, Trash2,
 } from 'lucide-react';
 import { API_BASE_URL } from '../../../constants/config';
 
@@ -20,8 +20,13 @@ export default function WAWebMarketing() {
   const [showQrModal, setShowQrModal] = useState(false);
   const [contacts, setContacts] = useState([]);
   const [groups, setGroups] = useState([]);
+  const [channels, setChannels] = useState([]);
   const [selectedTargets, setSelectedTargets] = useState([]);
   const [activeTab, setActiveTab] = useState('groups');
+  const [addChannelModal, setAddChannelModal] = useState(false);
+  const [channelInput, setChannelInput] = useState({ jid: '', name: '' });
+  const [addingChannel, setAddingChannel] = useState(false);
+  const [addChannelError, setAddChannelError] = useState('');
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState([]);
   const [sendDelay, setSendDelay] = useState({ min: 15, max: 60 });
@@ -33,6 +38,7 @@ export default function WAWebMarketing() {
   const fileRef = useRef(null);
   const wasConnectedRef = useRef(false);
   const refreshTimerRef = useRef(null);
+  const syncRetryRef = useRef(0);
 
   // Poll session status
   useEffect(() => {
@@ -84,18 +90,21 @@ export default function WAWebMarketing() {
       setSessionStatus(SESSION_STATUS.DISCONNECTED);
       setContacts([]);
       setGroups([]);
+      setChannels([]);
     } catch { /* ignore */ }
   }
 
-  async function loadContactsAndGroups() {
+  async function loadContactsAndGroups(isRetry = false) {
+    if (!isRetry) syncRetryRef.current = 0;
     if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    setRefreshStatus({ type: 'loading', message: 'Syncing contacts & groups…' });
+    setRefreshStatus({ type: 'loading', message: 'Syncing contacts, groups & channels…' });
     try {
-      const [cRes, gRes] = await Promise.all([
+      const [cRes, gRes, chRes] = await Promise.all([
         fetch(`${API_BASE_URL}/marketing/wa/contacts`, { headers: authHeaders() }),
         fetch(`${API_BASE_URL}/marketing/wa/groups`, { headers: authHeaders() }),
+        fetch(`${API_BASE_URL}/marketing/wa/channels`, { headers: authHeaders() }),
       ]);
-      let contactCount = 0, groupCount = 0;
+      let contactCount = 0, groupCount = 0, channelCount = 0;
       if (cRes.ok) {
         const d = await cRes.json();
         const arr = d.data || [];
@@ -108,15 +117,80 @@ export default function WAWebMarketing() {
         setGroups(arr);
         groupCount = arr.length;
       }
-      if (!cRes.ok || !gRes.ok) {
+      if (chRes.ok) {
+        const d = await chRes.json();
+        const arr = d.data || [];
+        setChannels(arr);
+        channelCount = arr.length;
+      }
+      // Auto-retry up to 3 times when contacts come back empty — the bridge may still
+      // be processing the initial contacts.set batch that WhatsApp sends after connect.
+      if (contactCount === 0 && syncRetryRef.current < 3) {
+        syncRetryRef.current += 1;
+        const delay = syncRetryRef.current * 5000;
+        setRefreshStatus({
+          type: 'loading',
+          message: `Contacts still loading… retrying in ${delay / 1000}s (${syncRetryRef.current}/3)`,
+        });
+        refreshTimerRef.current = setTimeout(() => loadContactsAndGroups(true), delay);
+        return;
+      }
+      const anyFailed = !cRes.ok || !gRes.ok || !chRes.ok;
+      if (anyFailed) {
         setRefreshStatus({ type: 'error', message: 'Some data failed to load. Try again.' });
       } else {
-        setRefreshStatus({ type: 'success', message: `Synced — ${groupCount} group${groupCount !== 1 ? 's' : ''}, ${contactCount} contact${contactCount !== 1 ? 's' : ''}` });
+        setRefreshStatus({ type: 'success', message: `Synced — ${groupCount} group${groupCount !== 1 ? 's' : ''}, ${contactCount} contact${contactCount !== 1 ? 's' : ''}, ${channelCount} channel${channelCount !== 1 ? 's' : ''}` });
       }
     } catch {
       setRefreshStatus({ type: 'error', message: 'Sync failed. Check your connection.' });
     }
     refreshTimerRef.current = setTimeout(() => setRefreshStatus(null), 4000);
+  }
+
+  async function handleAddChannel() {
+    const jid = channelInput.jid.trim();
+    if (!jid) return;
+    setAddingChannel(true);
+    setAddChannelError('');
+    try {
+      const token = localStorage.getItem('auth_token');
+      const isInvite = jid.includes('whatsapp.com/channel/') || (!jid.includes('@') && jid.length > 10);
+      const body = isInvite
+        ? { invite_code: jid, name: channelInput.name || '' }
+        : { jid, name: channelInput.name || '' };
+      const res = await fetch(`${API_BASE_URL}/marketing/wa/channels`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const channel = data.data || data;
+        setChannels((prev) => prev.some((c) => c.id === channel.id) ? prev : [...prev, channel]);
+        setAddChannelModal(false);
+        setChannelInput({ jid: '', name: '' });
+        setActiveTab('channels');
+      } else {
+        setAddChannelError(data.message || 'Failed to add channel');
+      }
+    } catch {
+      setAddChannelError('Network error. Is WhatsApp connected?');
+    } finally {
+      setAddingChannel(false);
+    }
+  }
+
+  async function handleRemoveChannel(channelId) {
+    if (!window.confirm('Remove this channel from the list?')) return;
+    try {
+      const token = localStorage.getItem('auth_token');
+      await fetch(`${API_BASE_URL}/marketing/wa/channels/${encodeURIComponent(channelId)}`, {
+        method: 'DELETE',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      setChannels((prev) => prev.filter((c) => c.id !== channelId));
+      setSelectedTargets((prev) => prev.filter((t) => t.id !== channelId));
+    } catch { /* ignore */ }
   }
 
   function sameId(a, b) {
@@ -185,7 +259,7 @@ export default function WAWebMarketing() {
     setIsSending(false);
   }
 
-  const displayList = (activeTab === 'groups' ? groups : contacts)
+  const displayList = (activeTab === 'groups' ? groups : activeTab === 'channels' ? channels : contacts)
     .filter((item) => String(item.name || item.id || '').toLowerCase().includes(search.toLowerCase()));
 
   const allFilteredSelected =
@@ -241,31 +315,46 @@ export default function WAWebMarketing() {
         <div style={card}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <div style={{ flex: 1, display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
-              {['groups', 'contacts'].map((tab) => (
-                <button key={tab} onClick={() => { setActiveTab(tab); setSearch(''); }} style={{
+              {[
+                { key: 'groups', label: 'Groups' },
+                { key: 'contacts', label: 'Contacts' },
+                { key: 'channels', label: 'Channels' },
+              ].map(({ key, label }) => (
+                <button key={key} onClick={() => { setActiveTab(key); setSearch(''); }} style={{
                   flex: 1, padding: '8px 0', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
-                  background: activeTab === tab ? '#F37920' : '#f8fafc',
-                  color: activeTab === tab ? '#fff' : '#64748b',
+                  background: activeTab === key ? '#F37920' : '#f8fafc',
+                  color: activeTab === key ? '#fff' : '#64748b',
                 }}>
-                  {tab === 'groups' ? 'Groups' : 'Contacts'}
+                  {label}
                 </button>
               ))}
             </div>
             {sessionStatus === SESSION_STATUS.CONNECTED && (
-              <button
-                onClick={loadContactsAndGroups}
-                disabled={refreshStatus?.type === 'loading'}
-                title="Refresh contacts & groups"
-                style={{
-                  ...btnOutline, padding: '7px 10px', flexShrink: 0,
-                  opacity: refreshStatus?.type === 'loading' ? 0.6 : 1,
-                }}
-              >
-                <RefreshCw
-                  size={13}
-                  style={refreshStatus?.type === 'loading' ? { animation: 'spin 1s linear infinite' } : undefined}
-                />
-              </button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {activeTab === 'channels' && (
+                  <button
+                    onClick={() => { setAddChannelModal(true); setAddChannelError(''); setChannelInput({ jid: '', name: '' }); }}
+                    title="Add a WhatsApp Channel"
+                    style={{ ...btnOutline, padding: '7px 10px', flexShrink: 0 }}
+                  >
+                    <Plus size={13} />
+                  </button>
+                )}
+                <button
+                  onClick={loadContactsAndGroups}
+                  disabled={refreshStatus?.type === 'loading'}
+                  title="Refresh contacts, groups & channels"
+                  style={{
+                    ...btnOutline, padding: '7px 10px', flexShrink: 0,
+                    opacity: refreshStatus?.type === 'loading' ? 0.6 : 1,
+                  }}
+                >
+                  <RefreshCw
+                    size={13}
+                    style={refreshStatus?.type === 'loading' ? { animation: 'spin 1s linear infinite' } : undefined}
+                  />
+                </button>
+              </div>
             )}
           </div>
 
@@ -319,38 +408,52 @@ export default function WAWebMarketing() {
           {sessionStatus !== SESSION_STATUS.CONNECTED ? (
             <div style={{ textAlign: 'center', padding: '32px 16px', color: '#94a3b8' }}>
               <QrCode size={40} style={{ margin: '0 auto 12px', display: 'block', opacity: 0.4 }} />
-              <div style={{ fontSize: 13 }}>Connect WhatsApp to load groups & contacts</div>
+              <div style={{ fontSize: 13 }}>Connect WhatsApp to load groups, contacts & channels</div>
             </div>
           ) : displayList.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: 13 }}>
               {search
                 ? `No ${activeTab} match "${search}"`
-                : `No ${activeTab} found`}
+                : activeTab === 'channels'
+                  ? <span>No channels yet. Click <strong>+</strong> to add your WhatsApp Channel.</span>
+                  : `No ${activeTab} found`}
             </div>
           ) : (
             <div style={{ maxHeight: 400, overflowY: 'auto' }}>
               {displayList.map((item) => {
                 const selected = selectedTargets.some((t) => sameId(t.id, item.id));
+                const isChannel = item.type === 'newsletter';
                 return (
-                  <div key={item.id ?? item.name} onClick={() => toggleTarget(item)} style={{
+                  <div key={item.id ?? item.name} style={{
                     display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
-                    borderRadius: 8, cursor: 'pointer', marginBottom: 4, userSelect: 'none',
+                    borderRadius: 8, marginBottom: 4, userSelect: 'none',
                     background: selected ? '#FEF0E6' : 'transparent',
                     border: selected ? '1px solid #F37920' : '1px solid transparent',
                     transition: 'background 0.12s, border-color 0.12s',
                   }}>
-                    <div style={{
-                      width: 32, height: 32, borderRadius: '50%', background: selected ? '#F37920' : '#e2e8f0',
+                    <div onClick={() => toggleTarget(item)} style={{
+                      width: 32, height: 32, borderRadius: isChannel ? 8 : '50%',
+                      background: selected ? '#F37920' : isChannel ? '#dcfce7' : '#e2e8f0',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
-                      color: selected ? '#fff' : '#64748b', flexShrink: 0,
+                      color: selected ? '#fff' : isChannel ? '#16a34a' : '#64748b', flexShrink: 0, cursor: 'pointer',
                     }}>
-                      {item.name?.charAt(0) || '?'}
+                      {isChannel ? <Radio size={14} /> : (item.name?.charAt(0) || '?')}
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
+                    <div onClick={() => toggleTarget(item)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
                       <div style={{ fontSize: 13, fontWeight: 500, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{item.name}</div>
                       {item.membersCount && <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.membersCount} members</div>}
+                      {isChannel && <div style={{ fontSize: 11, color: '#94a3b8' }}>WhatsApp Channel</div>}
                     </div>
                     {selected && <CheckCircle2 size={14} color="#F37920" />}
+                    {isChannel && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleRemoveChannel(item.id); }}
+                        title="Remove channel"
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8', padding: '2px 4px', flexShrink: 0 }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </div>
                 );
               })}
@@ -478,6 +581,59 @@ export default function WAWebMarketing() {
           )}
         </div>
       </div>
+
+      {/* Add Channel Modal */}
+      {addChannelModal && (
+        <div style={modalOverlay}>
+          <div style={{ ...modalCard, maxWidth: 420 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Radio size={18} color="#16a34a" />
+                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Add WhatsApp Channel</h3>
+              </div>
+              <button onClick={() => setAddChannelModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
+                <X size={18} />
+              </button>
+            </div>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
+              Enter your WhatsApp Channel invite link (e.g. <code style={{ background: '#f1f5f9', padding: '1px 5px', borderRadius: 4 }}>https://whatsapp.com/channel/…</code>)
+              or the Channel JID (e.g. <code style={{ background: '#f1f5f9', padding: '1px 5px', borderRadius: 4 }}>123456789@newsletter</code>).
+            </p>
+            <label style={labelStyle}>Channel Link or JID</label>
+            <input
+              value={channelInput.jid}
+              onChange={(e) => setChannelInput((p) => ({ ...p, jid: e.target.value }))}
+              placeholder="https://whatsapp.com/channel/ABC… or 123@newsletter"
+              style={{ ...inputStyle, marginBottom: 12 }}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddChannel()}
+            />
+            <label style={labelStyle}>Channel Name (optional)</label>
+            <input
+              value={channelInput.name}
+              onChange={(e) => setChannelInput((p) => ({ ...p, name: e.target.value }))}
+              placeholder="My CA Channel"
+              style={{ ...inputStyle, marginBottom: 16 }}
+              onKeyDown={(e) => e.key === 'Enter' && handleAddChannel()}
+            />
+            {addChannelError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#dc2626', marginBottom: 14 }}>
+                <AlertCircle size={13} /> {addChannelError}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button onClick={() => setAddChannelModal(false)} style={btnOutline} disabled={addingChannel}>Cancel</button>
+              <button
+                onClick={handleAddChannel}
+                disabled={addingChannel || !channelInput.jid.trim()}
+                style={{ ...btnPrimary, background: '#16a34a', opacity: (addingChannel || !channelInput.jid.trim()) ? 0.6 : 1 }}
+              >
+                {addingChannel ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Plus size={13} />}
+                {addingChannel ? 'Adding…' : 'Add Channel'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* QR Code Modal */}
       {showQrModal && (

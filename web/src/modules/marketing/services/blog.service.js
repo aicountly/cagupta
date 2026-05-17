@@ -76,11 +76,22 @@ export async function deleteBlogPost(id) {
   return handleResponse(res);
 }
 
-export async function publishBlogPost(id, sendEmail = false) {
+export async function publishBlogPost(id, sendEmail = false, waChannelJid = null) {
   const res = await fetch(`${BASE}/marketing/blog/posts/${id}/publish`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ send_email: sendEmail }),
+    body: JSON.stringify({
+      send_email: sendEmail,
+      ...(waChannelJid ? { send_wa_channel: true, wa_channel_jid: waChannelJid } : {}),
+    }),
+  });
+  return handleResponse(res);
+}
+
+export async function resendBlogEmail(id) {
+  const res = await fetch(`${BASE}/marketing/blog/posts/${id}/resend-email`, {
+    method: 'POST',
+    headers: authHeaders(),
   });
   return handleResponse(res);
 }
@@ -103,11 +114,14 @@ export async function updateDraft(id, data) {
   return handleResponse(res);
 }
 
-export async function approveDraft(id, sendEmail = false) {
+export async function approveDraft(id, sendEmail = false, waChannelJid = null) {
   const res = await fetch(`${BASE}/marketing/blog/drafts/${id}/approve`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ send_email: sendEmail }),
+    body: JSON.stringify({
+      send_email: sendEmail,
+      ...(waChannelJid ? { send_wa_channel: true, wa_channel_jid: waChannelJid } : {}),
+    }),
   });
   return handleResponse(res);
 }

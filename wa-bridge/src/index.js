@@ -5,14 +5,18 @@
  * Works on shared hosting where Puppeteer/Chrome is unavailable.
  *
  * Endpoints:
- *   POST /session/start           { sessionId }   → starts/reconnects a session
- *   GET  /session/:id/status      → { status, qr? }
- *   POST /session/stop            { sessionId }   → destroys the session
- *   GET  /session/:id/contacts    → { contacts: [...] }
- *   GET  /session/:id/groups      → { groups: [...] }
- *   POST /send                    { sessionId, targetId, targetType, message }
+ *   POST /session/start                    { sessionId }   → starts/reconnects a session
+ *   GET  /session/:id/status               → { status, qr? }
+ *   POST /session/stop                     { sessionId }   → destroys the session
+ *   GET  /session/:id/contacts             → { contacts: [...] }
+ *   GET  /session/:id/groups               → { groups: [...] }
+ *   GET  /session/:id/newsletters          → { newsletters: [...] }
+ *   POST /session/:id/newsletters          { jid?, inviteCode?, name? } → adds a channel
+ *   DELETE /session/:id/newsletters/:jid   → removes a channel
+ *   POST /send                             { sessionId, targetId, targetType, message }
  *
  * Session statuses: disconnected | connecting | connected
+ * targetType values: contact | group | newsletter
  */
 
 // Polyfill Web Crypto API for Node.js 18 (required by Baileys 6.7+; native in Node 19+)
@@ -77,6 +81,7 @@ async function initSession(sessionId) {
     qrDataUrl:      existing?.qrDataUrl ?? null,
     contacts:       existing?.contacts ?? [],
     groups:         existing?.groups ?? [],
+    newsletters:    existing?.newsletters ?? [],
     reconnectTimer: null,
   };
   sessions.set(sessionId, sess);
@@ -114,20 +119,63 @@ async function initSession(sessionId) {
 
   sock.ev.on('creds.update', saveCreds);
 
-  // Populate contacts from Baileys push events
-  sock.ev.on('contacts.upsert', (incoming) => {
-    for (const c of incoming) {
-      const displayName = c.name || c.notify || c.verifiedName || null;
-      if (!displayName) continue; // skip contacts with no name
-      const existing = sess.contacts.findIndex((x) => x.id === c.id);
-      const entry = { id: c.id, name: displayName, type: 'contact' };
-      if (existing >= 0) {
+  // ── Contact helpers ───────────────────────────────────────────────────────
+
+  // Returns true for JIDs that are not individual contacts
+  function isNonContact(jid) {
+    if (!jid) return true;
+    return jid.endsWith('@g.us') || jid.endsWith('@newsletter') || jid.endsWith('@broadcast');
+  }
+
+  // Resolve the best display name for a contact; fall back to phone number
+  function resolveName(c) {
+    return c.name || c.notify || c.verifiedName || (c.id ? `+${c.id.split('@')[0]}` : null);
+  }
+
+  function upsertContact(c) {
+    if (isNonContact(c.id)) return;
+    const name = resolveName(c);
+    if (!name) return;
+    const existing = sess.contacts.findIndex((x) => x.id === c.id);
+    const entry = { id: c.id, name, type: 'contact' };
+    if (existing >= 0) {
+      // Prefer a real display name over a phone-number fallback
+      const hadRealName = !sess.contacts[existing].name.startsWith('+');
+      if (!hadRealName || (c.name || c.notify || c.verifiedName)) {
         sess.contacts[existing] = entry;
+      }
+    } else {
+      sess.contacts.push(entry);
+    }
+  }
+
+  // contacts.set — fires ONCE after fresh connection with the FULL initial contact list.
+  // This is the bulk event that was previously unhandled (root cause of 0 contacts).
+  sock.ev.on('contacts.set', ({ contacts: initial }) => {
+    for (const c of initial) upsertContact(c);
+    console.log(`[${sessionId}] contacts.set: ${sess.contacts.length} loaded`);
+  });
+
+  // contacts.upsert — incremental additions/updates pushed by WhatsApp
+  sock.ev.on('contacts.upsert', (incoming) => {
+    for (const c of incoming) upsertContact(c);
+    console.log(`[${sessionId}] contacts.upsert: ${sess.contacts.length} total`);
+  });
+
+  // contacts.update — fires when a contact's name/avatar changes (e.g. after privacy toggle)
+  sock.ev.on('contacts.update', (updates) => {
+    for (const c of updates) {
+      if (isNonContact(c.id)) continue;
+      const displayName = c.name || c.notify || c.verifiedName;
+      if (!displayName) continue;
+      const existing = sess.contacts.findIndex((x) => x.id === c.id);
+      if (existing >= 0) {
+        sess.contacts[existing] = { ...sess.contacts[existing], name: displayName };
       } else {
-        sess.contacts.push(entry);
+        sess.contacts.push({ id: c.id, name: displayName, type: 'contact' });
       }
     }
-    console.log(`[${sessionId}] Contacts updated: ${sess.contacts.length} total`);
+    console.log(`[${sessionId}] contacts.update: ${sess.contacts.length} total`);
   });
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
@@ -145,7 +193,11 @@ async function initSession(sessionId) {
       sess.status    = 'connected';
       sess.qrDataUrl = null;
       console.log(`[${sessionId}] Connected`);
-      loadContactsAndGroups(sessionId);
+      loadGroups(sessionId);
+      // Contacts arrive via contacts.set/upsert events, but schedule group re-syncs
+      // to catch anything that arrives after the initial burst (8 s and 30 s windows).
+      setTimeout(() => loadGroups(sessionId), 8_000);
+      setTimeout(() => loadGroups(sessionId), 30_000);
     }
 
     if (connection === 'close') {
@@ -174,12 +226,11 @@ async function initSession(sessionId) {
   });
 }
 
-async function loadContactsAndGroups(sessionId) {
+async function loadGroups(sessionId) {
   const sess = sessions.get(sessionId);
   if (!sess?.socket) return;
 
   try {
-    // Baileys exposes contacts via store; for simplicity use chats
     const chats = await sess.socket.groupFetchAllParticipating();
     sess.groups = Object.values(chats).map((g) => ({
       id:           g.id,
@@ -249,24 +300,92 @@ app.post('/session/stop', async (req, res) => {
   res.json({ status: 'disconnected' });
 });
 
-// GET /session/:id/contacts  (contacts not natively available in Baileys without a store; return empty for now)
+// GET /session/:id/contacts
 app.get('/session/:id/contacts', (req, res) => {
   const sess = sessions.get(req.params.id);
   if (!sess || sess.status !== 'connected') {
     return res.status(423).json({ error: 'Session not connected' });
   }
-  res.json({ contacts: sess.contacts });
+  // Filter out any group/broadcast/newsletter JIDs that may have slipped through
+  const contacts = sess.contacts.filter((c) =>
+    !c.id.endsWith('@g.us') && !c.id.endsWith('@newsletter') && !c.id.endsWith('@broadcast')
+  );
+  res.json({ contacts });
 });
 
 // GET /session/:id/groups
-app.get('/session/:id/groups', (req, res) => {
+app.get('/session/:id/groups', async (req, res) => {
   const sess = sessions.get(req.params.id);
   if (!sess || sess.status !== 'connected') {
     return res.status(423).json({ error: 'Session not connected' });
   }
-  // Refresh groups on request
-  loadContactsAndGroups(req.params.id);
+  // Await the refresh so the caller always gets up-to-date groups
+  await loadGroups(req.params.id);
   res.json({ groups: sess.groups });
+});
+
+// GET /session/:id/newsletters — list channels stored for this session
+app.get('/session/:id/newsletters', (req, res) => {
+  const sess = sessions.get(req.params.id);
+  if (!sess || sess.status !== 'connected') {
+    return res.status(423).json({ error: 'Session not connected' });
+  }
+  res.json({ newsletters: sess.newsletters });
+});
+
+// POST /session/:id/newsletters — add a WhatsApp Channel by JID or invite code
+app.post('/session/:id/newsletters', async (req, res) => {
+  const sess = sessions.get(req.params.id);
+  if (!sess || sess.status !== 'connected' || !sess.socket) {
+    return res.status(423).json({ error: 'Session not connected' });
+  }
+
+  let { jid, inviteCode, name } = req.body;
+
+  // Normalise JID: strip trailing whitespace and ensure @newsletter suffix
+  if (jid) {
+    jid = String(jid).trim();
+    if (!jid.endsWith('@newsletter')) jid = jid + '@newsletter';
+  }
+
+  // Resolve invite code → JID via Baileys
+  if (!jid && inviteCode) {
+    try {
+      const code = String(inviteCode).trim().replace(/^.*\/channel\//i, '');
+      const meta = await sess.socket.newsletterMetadata('invite', code);
+      jid  = meta?.id ?? null;
+      name = name || meta?.name || meta?.id || inviteCode;
+    } catch (e) {
+      console.error(`[${req.params.id}] Newsletter metadata error: ${e.message}`);
+      return res.status(400).json({ error: `Could not resolve invite code: ${e.message}` });
+    }
+  }
+
+  if (!jid) {
+    return res.status(400).json({ error: 'Provide jid or inviteCode' });
+  }
+
+  // Avoid duplicates
+  if (sess.newsletters.some((n) => n.id === jid)) {
+    return res.json({ newsletter: sess.newsletters.find((n) => n.id === jid), alreadyExists: true });
+  }
+
+  const entry = { id: jid, name: name || jid, type: 'newsletter' };
+  sess.newsletters.push(entry);
+  console.log(`[${req.params.id}] Channel added: ${jid} (${entry.name})`);
+  res.json({ newsletter: entry });
+});
+
+// DELETE /session/:id/newsletters/:jid — remove a channel from the list
+app.delete('/session/:id/newsletters/:jid', (req, res) => {
+  const sess = sessions.get(req.params.id);
+  if (!sess) return res.status(404).json({ error: 'Session not found' });
+
+  const jid = decodeURIComponent(req.params.jid);
+  const before = sess.newsletters.length;
+  sess.newsletters = sess.newsletters.filter((n) => n.id !== jid);
+  console.log(`[${req.params.id}] Channel removed: ${jid} (had ${before}, now ${sess.newsletters.length})`);
+  res.json({ ok: true });
 });
 
 // POST /send

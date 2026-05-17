@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Receipt, Landmark, ArrowRight, Layers } from 'lucide-react';
+import { Receipt, Landmark, ArrowRight, Layers, BookOpen } from 'lucide-react';
 import { useAuth } from '../../../auth/AuthContext';
 
 const HUB_SECTIONS = [
@@ -11,10 +11,17 @@ const HUB_SECTIONS = [
     tools: [
       {
         id: 'invoices',
-        label: 'Invoices & Ledger',
-        description: 'Manage client invoices, record payments, and view the complete financial ledger.',
+        label: 'Invoices',
+        description: 'Manage client invoices, receipts, payments, TDS, rebates, and credit notes.',
         icon: Receipt,
         to: '/invoices',
+      },
+      {
+        id: 'ledgers',
+        label: 'Ledgers',
+        description: 'View client ledger, bill-by-bill settlement, and service billing reports.',
+        icon: BookOpen,
+        to: '/invoices/ledgers',
       },
     ],
   },

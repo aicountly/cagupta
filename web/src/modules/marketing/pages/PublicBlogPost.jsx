@@ -76,7 +76,7 @@ function renderMarkdown(md) {
       flushList();
     } else {
       flushList();
-      out.push(`<p style="font-size:15px;color:#334155;line-height:1.8;margin:0 0 18px">${inlineFormat(line)}</p>`);
+      out.push(`<p style="font-size:15px;color:#334155;line-height:1.8;margin:0 0 18px;text-align:justify">${inlineFormat(line)}</p>`);
     }
   }
 
@@ -152,11 +152,16 @@ export default function PublicBlogPost() {
         </div>
       </nav>
 
+      <style>{`
+        @keyframes blog-spin { from { transform:rotate(0); } to { transform:rotate(360deg); } }
+        .article-body p { text-align: justify !important; }
+        .article-body li { text-align: justify; }
+      `}</style>
+
       {loading && (
         <div style={s.center}>
           <div style={s.spinner} />
           <p style={{ margin: '14px 0 0', color: '#94a3b8', fontSize: 14 }}>Loading article…</p>
-          <style>{`@keyframes blog-spin { from { transform:rotate(0); } to { transform:rotate(360deg); } }`}</style>
         </div>
       )}
 
@@ -221,6 +226,7 @@ export default function PublicBlogPost() {
 
             {/* Article body — render HTML directly for rich-text posts, or convert from markdown */}
             <div
+              className="article-body"
               style={s.articleBody}
               dangerouslySetInnerHTML={{
                 __html: /<[a-z][\s\S]*>/i.test(post.content || '')
@@ -430,6 +436,7 @@ const s = {
   },
   articleBody: {
     marginBottom: 8,
+    textAlign: 'justify',
   },
 
   // Footer

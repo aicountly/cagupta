@@ -2018,6 +2018,24 @@ class Routes
                 'handler'    => 'Admin\MarketingController@waSend',
                 'middleware' => ['auth'],
             ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/wa/channels',
+                'handler'    => 'Admin\MarketingController@waChannels',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/wa/channels',
+                'handler'    => 'Admin\MarketingController@waChannelAdd',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/marketing/wa/channels/{jid}',
+                'handler'    => 'Admin\MarketingController@waChannelRemove',
+                'middleware' => ['auth'],
+            ],
 
             // ── Marketing — WA Native / Business API ─────────────────────────
             [
@@ -2152,6 +2170,12 @@ class Routes
                 'method'     => 'POST',
                 'pattern'    => '/api/marketing/blog/posts/:id/publish',
                 'handler'    => 'Admin\BlogController@blogPublish',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/blog/posts/:id/resend-email',
+                'handler'    => 'Admin\BlogController@blogResendEmail',
                 'middleware' => ['auth'],
             ],
 

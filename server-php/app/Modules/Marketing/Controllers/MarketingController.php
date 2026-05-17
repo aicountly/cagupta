@@ -109,6 +109,20 @@ class MarketingController extends BaseController
         return ['ok' => $status >= 200 && $status < 300, 'body' => json_decode($body ?: '{}', true)];
     }
 
+    private function httpDelete(string $url): array
+    {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CUSTOMREQUEST  => 'DELETE',
+            CURLOPT_TIMEOUT        => 10,
+        ]);
+        $body   = curl_exec($ch);
+        $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        return ['ok' => $status >= 200 && $status < 300, 'body' => json_decode($body ?: '{}', true)];
+    }
+
     // ── WA Web Session ────────────────────────────────────────────────────────
 
     /**
@@ -204,6 +218,70 @@ class MarketingController extends BaseController
             $this->success($res['body']['groups'] ?? [], 'Groups retrieved');
         }
         $this->error('Could not fetch groups. Ensure WhatsApp is connected.', 502);
+    }
+
+    /**
+     * GET /api/marketing/wa/channels
+     * List WhatsApp Channels (newsletters) stored for this session.
+     */
+    public function waChannels(): never
+    {
+        $user      = $this->authUser();
+        $sessionId = 'user_' . $user['id'];
+        $bridgeUrl = $this->getWaBridgeUrl();
+
+        $res = $this->httpGet("{$bridgeUrl}/session/{$sessionId}/newsletters");
+        if ($res['ok']) {
+            $this->success($res['body']['newsletters'] ?? [], 'Channels retrieved');
+        }
+        $this->error('Could not fetch channels. Ensure WhatsApp is connected.', 502);
+    }
+
+    /**
+     * POST /api/marketing/wa/channels
+     * Add a WhatsApp Channel by JID or invite code.
+     * Body: { jid?, invite_code?, name? }
+     */
+    public function waChannelAdd(): never
+    {
+        $user      = $this->authUser();
+        $sessionId = 'user_' . $user['id'];
+        $bridgeUrl = $this->getWaBridgeUrl();
+        $body      = $this->getJsonBody();
+
+        $payload = array_filter([
+            'jid'        => isset($body['jid'])         ? trim((string)$body['jid'])         : null,
+            'inviteCode' => isset($body['invite_code'])  ? trim((string)$body['invite_code']) : null,
+            'name'       => isset($body['name'])         ? trim((string)$body['name'])        : null,
+        ]);
+
+        if (empty($payload['jid']) && empty($payload['inviteCode'])) {
+            $this->error('Provide jid or invite_code.', 422);
+        }
+
+        $res = $this->httpPost("{$bridgeUrl}/session/{$sessionId}/newsletters", $payload);
+        if ($res['ok']) {
+            $this->success($res['body']['newsletter'] ?? [], 'Channel added');
+        }
+        $this->error($res['body']['error'] ?? 'Could not add channel.', 502);
+    }
+
+    /**
+     * DELETE /api/marketing/wa/channels/:jid
+     * Remove a WhatsApp Channel from this session's list.
+     */
+    public function waChannelRemove(string $jid): never
+    {
+        $user      = $this->authUser();
+        $sessionId = 'user_' . $user['id'];
+        $bridgeUrl = $this->getWaBridgeUrl();
+
+        $encodedJid = rawurlencode($jid);
+        $res = $this->httpDelete("{$bridgeUrl}/session/{$sessionId}/newsletters/{$encodedJid}");
+        if ($res['ok']) {
+            $this->success([], 'Channel removed');
+        }
+        $this->error('Could not remove channel.', 502);
     }
 
     /**

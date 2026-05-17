@@ -3586,7 +3586,10 @@ function OpeningBalanceModal({
 
 // ── Main Invoices page ────────────────────────────────────────────────────────
 
-export default function Invoices() {
+const INVOICE_TABS = new Set(['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note']);
+const LEDGER_TABS  = new Set(['ledger', 'bill_settlement', 'service_billing']);
+
+export default function Invoices({ ledgerOnly = false }) {
   const { hasPermission } = useAuth();
   const canEditInvoice = hasPermission('invoices.edit');
   const canDeleteInvoice = hasPermission('invoices.delete');
@@ -3595,15 +3598,17 @@ export default function Invoices() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState(() => {
     const t = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null;
-    return t || 'invoices';
+    const allowedSet = ledgerOnly ? LEDGER_TABS : INVOICE_TABS;
+    if (t && allowedSet.has(t)) return t;
+    return ledgerOnly ? 'ledger' : 'invoices';
   });
 
   useEffect(() => {
     const t = searchParams.get('tab');
     if (!t) return;
-    const allowed = ['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note', 'ledger', 'bill_settlement', 'service_billing'];
-    if (allowed.includes(t)) setTab(t);
-  }, [searchParams]);
+    const allowedSet = ledgerOnly ? LEDGER_TABS : INVOICE_TABS;
+    if (allowedSet.has(t)) setTab(t);
+  }, [searchParams, ledgerOnly]);
 
   // ── Invoice tab state ───────────────────────────────────────────────────────
   const [statusFilter, setStatusFilter]         = useState('all');
@@ -4480,17 +4485,19 @@ export default function Invoices() {
       .catch((e) => window.alert(e?.message || 'Could not update.'));
   }
 
-  const TABS = [
-    { key:'invoices',    label:'🧾 Invoices' },
-    { key:'receipts',    label:'💵 Receipts' },
-    { key:'payments',    label:'💳 Payments (on behalf)' },
-    { key:'tds',         label:'📋 TDS' },
-    { key:'rebate',      label:'💸 Rebate/Discount' },
-    { key:'credit_note', label:'📝 Credit Notes' },
-    { key:'ledger',      label:'📒 Ledger' },
-    { key:'bill_settlement', label:'📑 Bill by bill' },
-    { key:'service_billing', label:'📋 Service billing' },
+  const ALL_TABS = [
+    { key:'invoices',       label:'🧾 Invoices' },
+    { key:'receipts',       label:'💵 Receipts' },
+    { key:'payments',       label:'💳 Payments (on behalf)' },
+    { key:'tds',            label:'📋 TDS' },
+    { key:'rebate',         label:'💸 Rebate/Discount' },
+    { key:'credit_note',    label:'📝 Credit Notes' },
+    { key:'ledger',         label:'📒 Ledger' },
+    { key:'bill_settlement',label:'📑 Bill by bill' },
+    { key:'service_billing',label:'📋 Service billing' },
   ];
+  const visibleTabSet = ledgerOnly ? LEDGER_TABS : INVOICE_TABS;
+  const TABS = ALL_TABS.filter((t) => visibleTabSet.has(t.key));
 
   return (
     <div style={{ padding:24 }}>
