@@ -21,30 +21,77 @@ function formatDate(iso) {
 }
 
 /**
+ * Converts markdown text to an HTML string.
+ * Handles: # h1, ## h2, ### h3, **bold**, *italic*, [link](url),
+ *          unordered lists (- or *), numbered lists, paragraphs.
+ */
+function renderMarkdown(md) {
+  if (!md) return '';
+  const lines = md.split('\n');
+  const out = [];
+  let listBuf = [];
+  let orderedBuf = [];
+
+  function flushList() {
+    if (listBuf.length) {
+      out.push(`<ul>${listBuf.map(item => `<li>${item}</li>`).join('')}</ul>`);
+      listBuf = [];
+    }
+    if (orderedBuf.length) {
+      out.push(`<ol>${orderedBuf.map(item => `<li>${item}</li>`).join('')}</ol>`);
+      orderedBuf = [];
+    }
+  }
+
+  function inlineFormat(text) {
+    return text
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*(.+?)\*/g, '<em>$1</em>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  }
+
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (line.startsWith('### ')) {
+      flushList();
+      out.push(`<h3>${inlineFormat(line.slice(4))}</h3>`);
+    } else if (line.startsWith('## ')) {
+      flushList();
+      out.push(`<h2>${inlineFormat(line.slice(3))}</h2>`);
+    } else if (line.startsWith('# ')) {
+      flushList();
+      out.push(`<h1>${inlineFormat(line.slice(2))}</h1>`);
+    } else if (/^[-*] /.test(line)) {
+      orderedBuf.length && flushList();
+      listBuf.push(inlineFormat(line.slice(2)));
+    } else if (/^\d+\. /.test(line)) {
+      listBuf.length && flushList();
+      orderedBuf.push(inlineFormat(line.replace(/^\d+\. /, '')));
+    } else if (line.trim() === '') {
+      flushList();
+    } else {
+      flushList();
+      out.push(`<p>${inlineFormat(line)}</p>`);
+    }
+  }
+
+  flushList();
+  return out.join('\n');
+}
+
+/**
  * Render blog content that may come from either:
  *  - Static format: post.body array of { type, text } objects
- *  - API format:    post.content plain-text with ## headings
+ *  - API format:    post.content plain-text with markdown formatting
  */
 function BlogContent({ post }) {
-  // API-sourced post has a `content` string
+  // API-sourced post has a `content` string — render with full markdown support
   if (typeof post.content === 'string') {
-    const lines = post.content.split('\n');
     return (
-      <div className="blog-post__body">
-        {lines.map((line, i) => {
-          const trimmed = line.trim();
-          if (trimmed.startsWith('## ')) {
-            return <h2 key={i}>{trimmed.slice(3)}</h2>;
-          }
-          if (trimmed.startsWith('# ')) {
-            return <h1 key={i} style={{ fontSize: '1.4em' }}>{trimmed.slice(2)}</h1>;
-          }
-          if (trimmed === '') {
-            return <br key={i} />;
-          }
-          return <p key={i}>{trimmed}</p>;
-        })}
-      </div>
+      <div
+        className="blog-post__body"
+        dangerouslySetInnerHTML={{ __html: renderMarkdown(post.content) }}
+      />
     );
   }
 
