@@ -219,10 +219,14 @@ export default function PublicBlogPost() {
               />
             )}
 
-            {/* Article body */}
+            {/* Article body — render HTML directly for rich-text posts, or convert from markdown */}
             <div
               style={s.articleBody}
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(post.content || '') }}
+              dangerouslySetInnerHTML={{
+                __html: /<[a-z][\s\S]*>/i.test(post.content || '')
+                  ? post.content
+                  : renderMarkdown(post.content || ''),
+              }}
             />
 
             {/* CTA section */}

@@ -76,10 +76,11 @@ export async function deleteBlogPost(id) {
   return handleResponse(res);
 }
 
-export async function publishBlogPost(id) {
+export async function publishBlogPost(id, sendEmail = false) {
   const res = await fetch(`${BASE}/marketing/blog/posts/${id}/publish`, {
     method: 'POST',
     headers: authHeaders(),
+    body: JSON.stringify({ send_email: sendEmail }),
   });
   return handleResponse(res);
 }
@@ -102,10 +103,11 @@ export async function updateDraft(id, data) {
   return handleResponse(res);
 }
 
-export async function approveDraft(id) {
+export async function approveDraft(id, sendEmail = false) {
   const res = await fetch(`${BASE}/marketing/blog/drafts/${id}/approve`, {
     method: 'POST',
     headers: authHeaders(),
+    body: JSON.stringify({ send_email: sendEmail }),
   });
   return handleResponse(res);
 }

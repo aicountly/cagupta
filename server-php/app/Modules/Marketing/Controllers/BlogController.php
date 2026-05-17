@@ -289,16 +289,17 @@ class BlogController extends BaseController
 
     public function blogPublish(int $id): never
     {
-        $user = $this->authUser();
+        $user      = $this->authUser();
+        $body      = $this->getJsonBody();
+        $sendEmail = !empty($body['send_email']);
 
         $existing = $this->db()->prepare('SELECT * FROM blog_posts WHERE id = :id');
         $existing->execute([':id' => $id]);
         $post = $existing->fetch(\PDO::FETCH_ASSOC);
         if (!$post) $this->error('Post not found.', 404);
 
-        // Idempotent: if a proxy retry arrives after the DB was already updated, return success.
         if ($post['status'] === 'published') {
-            $this->success(null, 'Post published and email blast triggered');
+            $this->success(null, 'Post already published');
         }
 
         $this->db()->prepare('
@@ -307,28 +308,18 @@ class BlogController extends BaseController
             WHERE id = :id
         ')->execute([':status' => 'published', ':uid' => $user['id'], ':id' => $id]);
 
-        // Flush the HTTP response to the client immediately so the browser receives
-        // a 200 before the slow synchronous email blast begins.  Without this, the
-        // nginx proxy_read_timeout can fire, nginx retries the request, and the retry
-        // hits the guard above and used to return 409 even though the publish succeeded.
-        http_response_code(200);
-        header('Content-Type: application/json; charset=utf-8');
-        echo json_encode([
-            'success' => true,
-            'message' => 'Post published and email blast triggered',
-            'data'    => null,
-            'errors'  => [],
-        ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
-
-        if (function_exists('fastcgi_finish_request')) {
-            fastcgi_finish_request();
-        } else {
-            while (ob_get_level() > 0) ob_end_flush();
-            flush();
+        $emailStats = null;
+        if ($sendEmail) {
+            $emailStats = $this->dispatchBlogEmail(
+                (int)$post['id'],
+                (string)$post['title'],
+                (string)$post['excerpt'],
+                (string)$post['slug']
+            );
         }
 
-        $this->dispatchBlogEmail((int)$post['id'], (string)$post['title'], (string)$post['excerpt'], (string)$post['slug']);
-        exit;
+        $message = $sendEmail ? 'Post published and email blast triggered' : 'Post published';
+        $this->success(['email' => $emailStats], $message);
     }
 
     // ── AI Drafts ────────────────────────────────────────────────────────────
@@ -390,7 +381,9 @@ class BlogController extends BaseController
 
     public function draftApprove(int $id): never
     {
-        $user = $this->authUser();
+        $user      = $this->authUser();
+        $body      = $this->getJsonBody();
+        $sendEmail = !empty($body['send_email']);
 
         $existing = $this->db()->prepare('SELECT * FROM blog_ai_drafts WHERE id = :id');
         $existing->execute([':id' => $id]);
@@ -437,9 +430,13 @@ class BlogController extends BaseController
             $this->error('Failed to approve draft: ' . $e->getMessage(), 500);
         }
 
-        $this->dispatchBlogEmail($postId, (string)$draft['title'], (string)$draft['excerpt'], $slug);
+        $emailStats = null;
+        if ($sendEmail) {
+            $emailStats = $this->dispatchBlogEmail($postId, (string)$draft['title'], (string)$draft['excerpt'], $slug);
+        }
 
-        $this->success(['blog_post_id' => $postId, 'slug' => $slug], 'Draft approved and published');
+        $message = $sendEmail ? 'Draft approved, published and email blast triggered' : 'Draft approved and published';
+        $this->success(['blog_post_id' => $postId, 'slug' => $slug, 'email' => $emailStats], $message);
     }
 
     public function draftReject(int $id): never
@@ -777,12 +774,16 @@ class BlogController extends BaseController
 
     // ── Email blast helpers ──────────────────────────────────────────────────
 
-    private function dispatchBlogEmail(int $postId, string $title, string $excerpt, string $slug): void
+    /**
+     * Dispatch a blog notification email to all active clients.
+     *
+     * @return array{total: int, sent: int, status: string}
+     */
+    private function dispatchBlogEmail(int $postId, string $title, string $excerpt, string $slug): array
     {
         $baseUrl = rtrim((string)($_ENV['MARKETING_SITE_URL'] ?? $_ENV['BASE_URL'] ?? ''), '/');
         $blogUrl = "{$baseUrl}/blog/{$slug}";
 
-        // Fetch all active clients with email
         $clients = $this->db()->query("
             SELECT c.id, c.name, c.email
             FROM   clients c
@@ -792,7 +793,7 @@ class BlogController extends BaseController
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
         if (empty($clients)) {
-            return;
+            return ['total' => 0, 'sent' => 0, 'status' => 'no_recipients'];
         }
 
         $categoryLabel = 'Tax & Finance Insights';
@@ -811,7 +812,7 @@ class BlogController extends BaseController
             if ($sent) $successCount++;
         }
 
-        $total = count($clients);
+        $total  = count($clients);
         $status = $successCount === 0 ? 'failed' : ($successCount < $total ? 'partial' : 'sent');
 
         $this->db()->prepare('
@@ -823,6 +824,8 @@ class BlogController extends BaseController
             ':success' => $successCount,
             ':status'  => $status,
         ]);
+
+        return ['total' => $total, 'sent' => $successCount, 'status' => $status];
     }
 
     private function buildBlogEmailHtml(string $title, string $excerpt, string $url, string $category): string

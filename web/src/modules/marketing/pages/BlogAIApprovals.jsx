@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   Sparkles, CheckCircle2, XCircle, Pencil, Loader2,
-  AlertCircle, RefreshCw, Upload, X, ChevronDown, ChevronUp,
+  AlertCircle, RefreshCw, Upload, X, ChevronDown, ChevronUp, Mail, Globe,
 } from 'lucide-react';
 import {
   fetchDrafts, updateDraft, approveDraft, rejectDraft, uploadBlogImage,
   generateAiDraftsNow,
 } from '../services/blog.service';
+import { RichTextEditor } from '../components/RichTextEditor';
+import { isHtml, markdownToHtml } from '../../../utils/blogContent';
 
 const CATEGORIES = [
   { value: 'laws',                  label: 'New Laws & Provisions',      color: '#2563eb', bg: '#eff6ff' },
@@ -39,6 +41,10 @@ export default function BlogAIApprovals() {
   const [coverPreviews, setCoverPreviews] = useState({});
   const [uploading, setUploading]   = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [approveModal, setApproveModal] = useState(null);
+  const [approving, setApproving]   = useState(false);
+  const [approveError, setApproveError] = useState('');
+  const [emailResult, setEmailResult] = useState(null);
   const fileRefs = useRef({});
 
   const load = async () => {
@@ -57,7 +63,10 @@ export default function BlogAIApprovals() {
 
   const startEdit = (draft) => {
     setEditingId(draft.id);
-    setEditForm({ title: draft.title, excerpt: draft.excerpt ?? '', content: draft.content, cover_image_path: draft.cover_image_path ?? '' });
+    const content = draft.content
+      ? (isHtml(draft.content) ? draft.content : markdownToHtml(draft.content))
+      : '';
+    setEditForm({ title: draft.title, excerpt: draft.excerpt ?? '', content, cover_image_path: draft.cover_image_path ?? '' });
     setCoverPreviews(p => ({ ...p, [draft.id]: draft.cover_image_url ?? '' }));
     setExpandedId(draft.id);
   };
@@ -77,15 +86,27 @@ export default function BlogAIApprovals() {
     }
   };
 
-  const handleApprove = async (draft) => {
-    if (!window.confirm(`Approve and publish "${draft.title}"?\n\nThis will create a published blog post and email all active clients.`)) return;
-    setActionId(draft.id);
+  const handleApprove = (draft) => {
+    setApproveError('');
+    setApproveModal(draft);
+  };
+
+  const doApprove = async (sendEmail) => {
+    if (!approveModal) return;
+    setApproving(true);
+    setApproveError('');
+    setActionId(approveModal.id);
     try {
-      await approveDraft(draft.id);
+      const res = await approveDraft(approveModal.id, sendEmail);
+      setApproveModal(null);
+      if (sendEmail && res?.data?.email) {
+        setEmailResult({ postTitle: approveModal.title, ...res.data.email });
+      }
       load();
     } catch (e) {
-      alert('Approval failed: ' + e.message);
+      setApproveError(e.message);
     } finally {
+      setApproving(false);
       setActionId(null);
     }
   };
@@ -334,10 +355,13 @@ export default function BlogAIApprovals() {
                         )}
 
                         <label style={{ ...lbl, marginTop: 4 }}>Content</label>
-                        <textarea
-                          style={{ ...inp, height: 380, resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }}
-                          value={editForm.content}
-                          onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
+                        <RichTextEditor
+                          key={draft.id}
+                          defaultValue={editForm.content}
+                          onChange={v => setEditForm(f => ({ ...f, content: v }))}
+                          placeholder="Paste formatted content from OpenAI or Word, or edit with the toolbar above."
+                          style={{ marginTop: 4 }}
+                          minHeight={380}
                         />
 
                         <div style={{ display: 'flex', gap: 10, marginTop: 14 }}>
@@ -349,15 +373,110 @@ export default function BlogAIApprovals() {
                         </div>
                       </>
                     ) : (
-                      <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#334155', lineHeight: 1.7, maxHeight: 420, overflowY: 'auto' }}>
-                        {draft.content}
-                      </div>
+                      <div
+                        style={{ fontSize: 13, color: '#334155', lineHeight: 1.7, maxHeight: 420, overflowY: 'auto' }}
+                        dangerouslySetInnerHTML={{
+                          __html: isHtml(draft.content) ? draft.content : markdownToHtml(draft.content),
+                        }}
+                      />
                     )}
                   </div>
                 )}
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Approve consent modal */}
+      {approveModal && (
+        <div style={overlayStyle}>
+          <div style={modalStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Approve & publish draft</h3>
+              <button onClick={() => { setApproveModal(null); setApproveError(''); }} style={btn.icon} disabled={approving}>
+                <X size={16} />
+              </button>
+            </div>
+            <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+              "{approveModal.title}"
+            </p>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
+              This will create a published blog post on the marketing site.
+              Would you also like to send an email notification to all active clients?
+            </p>
+            {approveError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, fontSize: 13, background: '#fef2f2', color: '#dc2626', marginBottom: 14 }}>
+                <AlertCircle size={13} /> {approveError}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { setApproveModal(null); setApproveError(''); }}
+                style={btn.secondary}
+                disabled={approving}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => doApprove(false)}
+                style={btn.secondary}
+                disabled={approving}
+              >
+                {approving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Globe size={13} />}
+                Publish only
+              </button>
+              <button
+                onClick={() => doApprove(true)}
+                style={btn.primary}
+                disabled={approving}
+              >
+                {approving ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={13} />}
+                Publish & notify clients
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email blast stats modal */}
+      {emailResult && (
+        <div style={overlayStyle}>
+          <div style={modalStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Email blast sent</h3>
+              <button onClick={() => setEmailResult(null)} style={btn.icon}><X size={16} /></button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, color: '#16a34a' }}>
+              <CheckCircle2 size={18} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Draft approved and published</span>
+            </div>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
+              {emailResult.total === 0 ? (
+                <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>No active clients with email found — no emails were sent.</p>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: '#64748b' }}>Emails sent</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{emailResult.sent} / {emailResult.total}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13, color: '#64748b' }}>Status</span>
+                    <span style={{
+                      fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 99,
+                      background: emailResult.status === 'sent' ? '#f0fdf4' : emailResult.status === 'partial' ? '#fff7ed' : '#fef2f2',
+                      color:      emailResult.status === 'sent' ? '#16a34a' : emailResult.status === 'partial' ? '#c2410c'  : '#dc2626',
+                    }}>
+                      {emailResult.status}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setEmailResult(null)} style={btn.primary}>Close</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -407,3 +526,5 @@ const sel = { padding: '7px 12px', border: '1px solid #e2e8f0', borderRadius: 8,
 const alertBox = { display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, fontSize: 13 };
 const lbl = { display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 5 };
 const inp = { width: '100%', padding: '8px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, color: '#0f172a', outline: 'none', boxSizing: 'border-box', background: '#fff' };
+const overlayStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 };
+const modalStyle = { background: '#fff', borderRadius: 14, padding: 28, width: '100%', maxWidth: 460, boxShadow: '0 20px 60px rgba(0,0,0,.2)' };

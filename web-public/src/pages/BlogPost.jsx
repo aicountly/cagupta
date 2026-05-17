@@ -20,6 +20,11 @@ function formatDate(iso) {
   }
 }
 
+/** True when content was saved as HTML (new rich-text posts). */
+function isHtml(str) {
+  return typeof str === 'string' && /<[a-z][\s\S]*>/i.test(str);
+}
+
 /**
  * Converts markdown text to an HTML string.
  * Handles: # h1, ## h2, ### h3, **bold**, *italic*, [link](url),
@@ -85,12 +90,13 @@ function renderMarkdown(md) {
  *  - API format:    post.content plain-text with markdown formatting
  */
 function BlogContent({ post }) {
-  // API-sourced post has a `content` string — render with full markdown support
+  // API-sourced post has a `content` string — render HTML directly or convert from markdown
   if (typeof post.content === 'string') {
+    const html = isHtml(post.content) ? post.content : renderMarkdown(post.content);
     return (
       <div
         className="blog-post__body"
-        dangerouslySetInnerHTML={{ __html: renderMarkdown(post.content) }}
+        dangerouslySetInnerHTML={{ __html: html }}
       />
     );
   }

@@ -10,7 +10,7 @@ import {
   Target, Settings, ChevronRight, ChevronDown,
   UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, Bell,
   MessageSquare, Smartphone, Share2, Megaphone,
-  Mail, CheckSquare, Inbox,
+  Mail, CheckSquare, Inbox, Zap,
 } from 'lucide-react';
 import { ROLES } from '../../../constants/roles';
 
@@ -32,35 +32,22 @@ const navSections = [
       { to: '/services', label: 'Services & Tasks', icon: ClipboardList },
       { to: '/services/follow-ups', label: 'Pending Follow-ups', icon: Bell, permission: 'services.view', badge: 'overdue' },
       { to: '/documents', label: 'Documents', icon: FolderOpen },
+      { to: '/calendar', label: 'Calendar & Appointments', icon: CalendarDays },
     ],
   },
   {
     label: 'FINANCE',
     items: [
-      { to: '/invoices', label: 'Invoices & Ledger', icon: Receipt },
-      { to: '/finance/bank-reports', label: 'Bank & Firm Txns', icon: Landmark, permission: 'invoices.view' },
-      { to: '/finance/affiliate-payout-cycles', label: 'Affiliate Payout Cycles', icon: Wallet, permission: 'affiliates.manage' },
-      { to: '/finance/partner-payout-cycles', label: 'Partner Payout Cycles', icon: Wallet, permission: 'partners.manage' },
-      { to: '/leads', label: 'Leads & Quotations', icon: Target },
+      { to: '/finance/invoices-banking', label: 'Invoices & Banking', icon: Layers },
+      { to: '/finance/payout-cycles', label: 'Payout Cycles', icon: Wallet, anyOf: ['affiliates.manage', 'partners.manage'] },
     ],
   },
   {
     label: 'MARKETING',
     items: [
-      {
-        label: 'WA Marketing',
-        icon: MessageSquare,
-        navKey: 'wa-marketing',
-        children: [
-          { to: '/marketing/wa/web', label: 'WA Web (Browser)', icon: Smartphone },
-          { to: '/marketing/wa/api', label: 'WA Native (API)', icon: MessageSquare },
-        ],
-      },
-      { to: '/marketing/sms', label: 'SMS Marketing', icon: Smartphone },
-      { to: '/marketing/social', label: 'Social Posting', icon: Share2 },
-      { to: '/marketing/campaigns', label: 'Campaigns', icon: Megaphone },
-      { to: '/marketing/blog', label: 'Blog Management', icon: BookOpen },
+      { to: '/marketing/tools', label: 'Marketing Tools', icon: Zap },
       { to: '/marketing/blog/approvals', label: 'AI Approvals', icon: CheckSquare },
+      { to: '/leads', label: 'Leads & Quotations', icon: Target },
     ],
   },
   {
@@ -69,7 +56,6 @@ const navSections = [
       { to: '/reports', label: 'Reports Hub', icon: BarChart3, permission: 'services.view' },
       { to: '/registers', label: 'Registers', icon: BookOpen },
       { to: '/credentials', label: 'Credentials Vault', icon: KeyRound },
-      { to: '/calendar', label: 'Calendar & Appointments', icon: CalendarDays },
     ],
   },
   {
@@ -81,16 +67,14 @@ const navSections = [
 ];
 
 const adminNavItems = [
-  { to: '/admin/users', label: 'User Management', icon: ShieldCheck, anyOf: ['users.manage', 'users.delegate'] },
   {
     to: '/admin/approvals',
-    label: 'Approvals',
+    label: 'Team Approvals',
     icon: CheckSquare,
     rolesAllowed: [ROLES.SUPER_ADMIN],
   },
   { to: '/admin/affiliates', label: 'Affiliates', icon: Handshake, permission: 'affiliates.manage' },
   { to: '/admin/partners', label: 'Partners', icon: Briefcase, permission: 'partners.manage' },
-  { to: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function Sidebar() {
@@ -102,7 +86,6 @@ export default function Sidebar() {
   const [openMenus, setOpenMenus] = useState(() => {
     const initial = {};
     if (loc.pathname.startsWith('/clients')) initial['clients'] = true;
-    if (loc.pathname.startsWith('/marketing/wa')) initial['wa-marketing'] = true;
     return initial;
   });
 
@@ -123,7 +106,6 @@ export default function Sidebar() {
   // Auto-open parent menus when a child route is active
   useEffect(() => {
     if (loc.pathname.startsWith('/clients')) setOpenMenus((p) => ({ ...p, clients: true }));
-    if (loc.pathname.startsWith('/marketing/wa')) setOpenMenus((p) => ({ ...p, 'wa-marketing': true }));
   }, [loc.pathname]);
 
   const visibleAdminItems = adminNavItems.filter((item) => {

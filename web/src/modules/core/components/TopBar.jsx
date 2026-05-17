@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { Search, Bell, ChevronRight } from 'lucide-react';
+import { Search, Bell, ChevronRight, Settings, Users } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../auth/AuthContext';
 import { getInitials } from '../../../utils/getInitials';
@@ -44,15 +44,17 @@ export default function TopBar({ title }) {
   const [searchResults, setSearchResults] = useState([]);
   const [avatarOpen, setAvatarOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [staffNotifs, setStaffNotifs] = useState([]);
   const [staffUnread, setStaffUnread] = useState(0);
   const dropdownRef = useRef(null);
   const notifRef = useRef(null);
   const searchRef = useRef(null);
+  const settingsRef = useRef(null);
   const searchDebounceRef = useRef(null);
   const loc = useLocation();
   const navigate = useNavigate();
-  const { session, logout } = useAuth();
+  const { session, logout, hasAnyPermission } = useAuth();
   const { notifications, clearNotification } = useNotification();
   const crumbs = (() => {
     const p = loc.pathname;
@@ -208,6 +210,9 @@ export default function TopBar({ title }) {
       if (notifRef.current && !notifRef.current.contains(event.target)) {
         setNotifOpen(false);
       }
+      if (settingsRef.current && !settingsRef.current.contains(event.target)) {
+        setSettingsOpen(false);
+      }
       if (searchRef.current && !searchRef.current.contains(event.target)) {
         setShowSearchResults(false);
       }
@@ -303,7 +308,7 @@ export default function TopBar({ title }) {
           <button
             style={styles.iconBtn}
             title="Notifications"
-            onClick={() => setNotifOpen(v => !v)}
+            onClick={() => { setNotifOpen(v => !v); setSettingsOpen(false); setAvatarOpen(false); }}
           >
             <Bell size={18} color="#64748b" />
             {(staffUnread > 0 || notifications.length > 0) && (
@@ -367,10 +372,46 @@ export default function TopBar({ title }) {
           )}
         </div>
 
+        <div style={{ position: 'relative' }} ref={settingsRef}>
+          <button
+            style={styles.iconBtn}
+            title="Settings"
+            onClick={() => { setSettingsOpen(v => !v); setNotifOpen(false); setAvatarOpen(false); }}
+          >
+            <Settings size={17} color="#64748b" />
+          </button>
+          {settingsOpen && (
+            <div style={styles.dropMenu}>
+              <div
+                role="button"
+                tabIndex={0}
+                style={styles.dropItem}
+                onClick={() => { setSettingsOpen(false); navigate('/settings'); }}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSettingsOpen(false); navigate('/settings'); } }}
+              >
+                <Settings size={14} style={{ marginRight: 8, opacity: 0.6, flexShrink: 0 }} />
+                Settings
+              </div>
+              {hasAnyPermission(['users.manage', 'users.delegate']) && (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  style={styles.dropItem}
+                  onClick={() => { setSettingsOpen(false); navigate('/admin/users'); }}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSettingsOpen(false); navigate('/admin/users'); } }}
+                >
+                  <Users size={14} style={{ marginRight: 8, opacity: 0.6, flexShrink: 0 }} />
+                  User Management
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         <div style={{ position: 'relative' }} ref={dropdownRef}>
           <button
             style={styles.avatarBtn}
-            onClick={() => setAvatarOpen(v => !v)}
+            onClick={() => { setAvatarOpen(v => !v); setSettingsOpen(false); setNotifOpen(false); }}
             title="Account menu"
           >
             <div style={styles.avatarCircle}>{initials}</div>
@@ -588,6 +629,8 @@ const styles = {
     padding: '6px 0',
   },
   dropItem: {
+    display: 'flex',
+    alignItems: 'center',
     padding: '8px 14px',
     fontSize: 13,
     color: '#334155',

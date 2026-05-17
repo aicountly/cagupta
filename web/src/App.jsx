@@ -61,8 +61,11 @@ import BankFirmReportPage from './modules/finance/pages/bank-firm/BankFirmReport
 import InvoiceCostVarianceReport from './modules/finance/pages/InvoiceCostVarianceReport';
 import AffiliatePayoutCycles from './modules/finance/pages/AffiliatePayoutCycles';
 import PartnerPayoutCycles from './modules/finance/pages/PartnerPayoutCycles';
+import PayoutCyclesHub from './modules/finance/pages/PayoutCyclesHub';
+import InvoicesBankingHub from './modules/finance/pages/InvoicesBankingHub';
 
 // ── Marketing module ─────────────────────────────────────────────────────────
+import MarketingToolsHub from './modules/marketing/pages/MarketingToolsHub';
 import WAWebMarketing from './modules/marketing/pages/WAWebMarketing';
 import WANativeMarketing from './modules/marketing/pages/WANativeMarketing';
 import SMSMarketing from './modules/marketing/pages/SMSMarketing';
@@ -125,8 +128,10 @@ const pageTitles = {
   '/documents':                 '📂 Document Management',
   '/invoices':                  '💰 Invoices & Ledger',
   '/finance/bank-reports':      '🏦 Bank & Firm Txns',
+  '/finance/invoices-banking':  '💰 Invoices & Banking',
   '/finance/affiliate-payout-cycles': '💳 Affiliate Payout Cycles',
   '/finance/partner-payout-cycles': '💳 Partner Payout Cycles',
+  '/finance/payout-cycles':     '💳 Payout Cycles',
   '/reports':                            '📊 Reports Hub',
   '/reports/timesheets':                 '🕐 Timesheet Report',
   '/reports/timesheets/shift-target':    '📊 Staff Punch vs Target',
@@ -147,6 +152,7 @@ const pageTitles = {
   '/admin/approvals':           '✅ Approvals',
   '/admin/affiliates':          '🤝 Affiliates',
   '/admin/partners':            '🤝 Partners',
+  '/marketing/tools':           '⚡ Marketing Tools',
   '/marketing/wa/web':          '📱 WA Web Marketing',
   '/marketing/wa/api':          '📱 WA Native (API)',
   '/marketing/sms':             '📲 SMS Marketing',
@@ -212,6 +218,7 @@ export default function App() {
           <Route path="/services/:id/files" element={<ProtectedRoute staffOnly><Layout routePath="/services/files"><ServiceEngagementFiles /></Layout></ProtectedRoute>} />
           <Route path="/documents" element={<ProtectedRoute staffOnly><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute staffOnly><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
+          <Route path="/finance/invoices-banking" element={<ProtectedRoute staffOnly><Layout routePath="/finance/invoices-banking"><InvoicesBankingHub /></Layout></ProtectedRoute>} />
           <Route
             path="/finance/bank-reports"
             element={(
@@ -233,6 +240,11 @@ export default function App() {
           </Route>
           <Route path="/reports/invoice-cost-variance" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/reports/invoice-cost-variance"><InvoiceCostVarianceReport /></Layout></ProtectedRoute>} />
           <Route path="/finance/invoice-cost-variance" element={<Navigate to="/reports/invoice-cost-variance" replace />} />
+          <Route path="/finance/payout-cycles" element={
+            <ProtectedRoute staffOnly requiredAnyPermissions={['affiliates.manage', 'partners.manage']}>
+              <Layout routePath="/finance/payout-cycles"><PayoutCyclesHub /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/finance/affiliate-payout-cycles" element={
             <ProtectedRoute staffOnly requiredPermission="affiliates.manage">
               <Layout routePath="/finance/affiliate-payout-cycles"><AffiliatePayoutCycles /></Layout>
@@ -344,6 +356,7 @@ export default function App() {
           <Route path="/admin/partner-payout-cycle-amendments" element={<Navigate to="/admin/approvals" replace />} />
 
           {/* ── Marketing routes ───────────────────────────────────────────── */}
+          <Route path="/marketing/tools" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/tools"><MarketingToolsHub /></Layout></ProtectedRoute>} />
           <Route path="/marketing/wa/web" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/wa/web"><WAWebMarketing /></Layout></ProtectedRoute>} />
           <Route path="/marketing/wa/api" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/wa/api"><WANativeMarketing /></Layout></ProtectedRoute>} />
           <Route path="/marketing/sms" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/sms"><SMSMarketing /></Layout></ProtectedRoute>} />
@@ -355,7 +368,7 @@ export default function App() {
           {/* ── Public blog (no auth) ── */}
           <Route path="/blog" element={<PublicBlogList />} />
           <Route path="/blog/:slug" element={<PublicBlogPost />} />
-          <Route path="/marketing" element={<ProtectedRoute staffOnly><Navigate to="/marketing/campaigns" replace /></ProtectedRoute>} />
+          <Route path="/marketing" element={<ProtectedRoute staffOnly><Navigate to="/marketing/tools" replace /></ProtectedRoute>} />
           {/* Legacy redirects for removed marketing pages */}
           <Route path="/marketing/affiliate" element={<Navigate to="/admin/affiliates" replace />} />
           <Route path="/marketing/triggers" element={<Navigate to="/settings" replace />} />

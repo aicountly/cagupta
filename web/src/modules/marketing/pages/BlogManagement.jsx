@@ -2,11 +2,14 @@ import { useState, useEffect, useRef } from 'react';
 import {
   BookOpen, Plus, Pencil, Trash2, Globe, EyeOff, Upload,
   X, Check, Loader2, Image as ImageIcon, AlertCircle, ChevronDown, Sparkles,
+  Mail, CheckCircle2,
 } from 'lucide-react';
 import {
   fetchBlogPosts, createBlogPost, updateBlogPost,
   deleteBlogPost, publishBlogPost, uploadBlogImage, generateAiDraftsNow,
 } from '../services/blog.service';
+import { RichTextEditor } from '../components/RichTextEditor';
+import { isHtml, markdownToHtml } from '../../../utils/blogContent';
 
 const CATEGORIES = [
   { value: 'laws',                  label: 'New Laws & Provisions' },
@@ -153,6 +156,10 @@ export default function BlogManagement() {
   const [uploading, setUploading]   = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [publishModal, setPublishModal] = useState(null);
+  const [publishing, setPublishing] = useState(false);
+  const [publishError, setPublishError] = useState('');
+  const [emailResult, setEmailResult] = useState(null);
   const fileRef = useRef();
 
   const load = async () => {
@@ -191,10 +198,13 @@ export default function BlogManagement() {
 
   const openEdit = (post) => {
     setEditingPost(post);
+    const content = post.content
+      ? (isHtml(post.content) ? post.content : markdownToHtml(post.content))
+      : '';
     setForm({
       title: post.title,
       excerpt: post.excerpt ?? '',
-      content: post.content,
+      content,
       category: post.category,
       cover_image_path: post.cover_image_path ?? '',
     });
@@ -237,14 +247,26 @@ export default function BlogManagement() {
     }
   };
 
-  const handlePublish = async (post) => {
-    if (!window.confirm(`Publish "${post.title}"? An email will be sent to all active clients.`)) return;
+  const handlePublish = (post) => {
+    setPublishError('');
+    setPublishModal(post);
+  };
+
+  const doPublish = async (sendEmail) => {
+    if (!publishModal) return;
+    setPublishing(true);
+    setPublishError('');
     try {
-      await publishBlogPost(post.id);
-    } catch (e) {
-      alert('Publish failed: ' + e.message);
-    } finally {
+      const res = await publishBlogPost(publishModal.id, sendEmail);
+      setPublishModal(null);
+      if (sendEmail && res?.data?.email) {
+        setEmailResult({ postTitle: publishModal.title, ...res.data.email });
+      }
       load();
+    } catch (e) {
+      setPublishError(e.message);
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -416,6 +438,98 @@ export default function BlogManagement() {
         </div>
       )}
 
+      {/* Publish consent modal */}
+      {publishModal && (
+        <div style={overlay}>
+          <div style={{ ...modal, maxWidth: 460 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Publish post</h3>
+              <button onClick={() => { setPublishModal(null); setPublishError(''); }} style={btn.icon} disabled={publishing}>
+                <X size={16} />
+              </button>
+            </div>
+            <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+              "{publishModal.title}"
+            </p>
+            <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
+              The post will be made publicly available on the marketing site.
+              Would you also like to send an email notification to all active clients?
+            </p>
+            {publishError && (
+              <div style={{ ...alertBox, background: '#fef2f2', color: '#dc2626', marginBottom: 14 }}>
+                <AlertCircle size={13} /> {publishError}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => { setPublishModal(null); setPublishError(''); }}
+                style={btn.secondary}
+                disabled={publishing}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => doPublish(false)}
+                style={btn.secondary}
+                disabled={publishing}
+              >
+                {publishing ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Globe size={13} />}
+                Publish only
+              </button>
+              <button
+                onClick={() => doPublish(true)}
+                style={btn.primary}
+                disabled={publishing}
+              >
+                {publishing ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Mail size={13} />}
+                Publish & notify clients
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email blast stats modal */}
+      {emailResult && (
+        <div style={overlay}>
+          <div style={{ ...modal, maxWidth: 400 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Email blast sent</h3>
+              <button onClick={() => setEmailResult(null)} style={btn.icon}><X size={16} /></button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14, color: '#16a34a' }}>
+              <CheckCircle2 size={18} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Post published successfully</span>
+            </div>
+            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
+              {emailResult.total === 0 ? (
+                <p style={{ margin: 0, fontSize: 13, color: '#64748b' }}>No active clients with email found — no emails were sent.</p>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                    <span style={{ fontSize: 13, color: '#64748b' }}>Emails sent</span>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{emailResult.sent} / {emailResult.total}</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ fontSize: 13, color: '#64748b' }}>Status</span>
+                    <span style={{
+                      fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 99,
+                      background: emailResult.status === 'sent' ? '#f0fdf4' : emailResult.status === 'partial' ? '#fff7ed' : '#fef2f2',
+                      color:      emailResult.status === 'sent' ? '#16a34a' : emailResult.status === 'partial' ? '#c2410c'  : '#dc2626',
+                    }}>
+                      {emailResult.status}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => setEmailResult(null)} style={btn.primary}>Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Blog Editor Modal */}
       {showEditor && (
         <div style={overlay}>
@@ -481,12 +595,13 @@ export default function BlogManagement() {
               placeholder="2–3 sentence summary of the article"
             />
 
-            <label style={{ ...lbl, marginTop: 14 }}>Content * <span style={{ color: '#94a3b8', fontWeight: 400 }}>(use ## for H2 subheadings)</span></label>
-            <textarea
-              style={{ ...inp, height: 340, resize: 'vertical', fontFamily: 'monospace', fontSize: 13 }}
-              value={form.content}
-              onChange={e => setForm(f => ({ ...f, content: e.target.value }))}
-              placeholder="Write your article here. Use ## Heading for section headings."
+            <label style={{ ...lbl, marginTop: 14 }}>Content *</label>
+            <RichTextEditor
+              key={editingPost?.id ?? 'new'}
+              defaultValue={form.content}
+              onChange={v => setForm(f => ({ ...f, content: v }))}
+              placeholder="Paste formatted content from OpenAI or Word, or type and use the toolbar above."
+              style={{ marginTop: 4 }}
             />
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
