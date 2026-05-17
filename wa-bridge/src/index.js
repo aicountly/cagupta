@@ -27,7 +27,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import QRCode from 'qrcode';
-import { existsSync, mkdirSync, rmSync } from 'fs';
+import { existsSync, mkdirSync, rmSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import baileys from '@whiskeysockets/baileys';
@@ -66,6 +66,28 @@ function sessionAuthPath(sessionId) {
   return join(AUTH_DIR, sessionId.replace(/[^a-zA-Z0-9_-]/g, '_'));
 }
 
+function contactsFilePath(sessionId) {
+  return join(sessionAuthPath(sessionId), 'contacts_cache.json');
+}
+
+function loadContactsFromDisk(sessionId) {
+  try {
+    const raw = readFileSync(contactsFilePath(sessionId), 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveContactsToDisk(sessionId, contacts) {
+  try {
+    writeFileSync(contactsFilePath(sessionId), JSON.stringify(contacts));
+  } catch (e) {
+    console.error(`[${sessionId}] Failed to save contacts: ${e.message}`);
+  }
+}
+
 async function initSession(sessionId) {
   // Clean up previous socket if reconnecting
   const existing = sessions.get(sessionId);
@@ -79,7 +101,7 @@ async function initSession(sessionId) {
     socket:         null,
     status:         'connecting',
     qrDataUrl:      existing?.qrDataUrl ?? null,
-    contacts:       existing?.contacts ?? [],
+    contacts:       existing?.contacts?.length > 0 ? existing.contacts : loadContactsFromDisk(sessionId),
     groups:         existing?.groups ?? [],
     newsletters:    existing?.newsletters ?? [],
     reconnectTimer: null,
@@ -132,6 +154,12 @@ async function initSession(sessionId) {
     return c.name || c.notify || c.verifiedName || (c.id ? `+${c.id.split('@')[0]}` : null);
   }
 
+  let contactsSaveTimer = null;
+  function scheduleContactSave() {
+    if (contactsSaveTimer) clearTimeout(contactsSaveTimer);
+    contactsSaveTimer = setTimeout(() => saveContactsToDisk(sessionId, sess.contacts), 2000);
+  }
+
   function upsertContact(c) {
     if (isNonContact(c.id)) return;
     const name = resolveName(c);
@@ -154,12 +182,14 @@ async function initSession(sessionId) {
   sock.ev.on('contacts.set', ({ contacts: initial }) => {
     for (const c of initial) upsertContact(c);
     console.log(`[${sessionId}] contacts.set: ${sess.contacts.length} loaded`);
+    scheduleContactSave();
   });
 
   // contacts.upsert — incremental additions/updates pushed by WhatsApp
   sock.ev.on('contacts.upsert', (incoming) => {
     for (const c of incoming) upsertContact(c);
     console.log(`[${sessionId}] contacts.upsert: ${sess.contacts.length} total`);
+    scheduleContactSave();
   });
 
   // contacts.update — fires when a contact's name/avatar changes (e.g. after privacy toggle)
@@ -176,6 +206,7 @@ async function initSession(sessionId) {
       }
     }
     console.log(`[${sessionId}] contacts.update: ${sess.contacts.length} total`);
+    scheduleContactSave();
   });
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
@@ -314,13 +345,15 @@ app.get('/session/:id/contacts', (req, res) => {
 });
 
 // GET /session/:id/groups
-app.get('/session/:id/groups', async (req, res) => {
+app.get('/session/:id/groups', (req, res) => {
   const sess = sessions.get(req.params.id);
   if (!sess || sess.status !== 'connected') {
     return res.status(423).json({ error: 'Session not connected' });
   }
-  // Await the refresh so the caller always gets up-to-date groups
-  await loadGroups(req.params.id);
+  // Fire a background refresh; return the already-loaded list immediately.
+  // Groups are pre-loaded on connection open (and at 8 s / 30 s), so this
+  // is always populated by the time a user triggers a manual sync.
+  loadGroups(req.params.id).catch(() => {});
   res.json({ groups: sess.groups });
 });
 
