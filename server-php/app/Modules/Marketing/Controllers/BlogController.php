@@ -37,11 +37,14 @@ use App\Libraries\BrevoMailer;
  */
 class BlogController extends BaseController
 {
-    private \PDO $db;
+    private ?\PDO $db = null;
 
-    public function __construct()
+    private function db(): \PDO
     {
-        $this->db = \App\Config\Database::getConnection();
+        if ($this->db === null) {
+            $this->db = \App\Config\Database::getConnection();
+        }
+        return $this->db;
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
@@ -98,7 +101,7 @@ class BlogController extends BaseController
                 $sql .= ' AND id != :eid';
                 $params[':eid'] = $excludeId;
             }
-            $exists = $this->db->prepare($sql);
+            $exists = $this->db()->prepare($sql);
             $exists->execute($params);
             if ($exists->fetch() === false) {
                 break;
@@ -157,11 +160,11 @@ class BlogController extends BaseController
 
         $whereClause = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
-        $countStmt = $this->db->prepare("SELECT COUNT(*) FROM blog_posts {$whereClause}");
+        $countStmt = $this->db()->prepare("SELECT COUNT(*) FROM blog_posts {$whereClause}");
         $countStmt->execute($params);
         $total = (int)$countStmt->fetchColumn();
 
-        $stmt = $this->db->prepare("
+        $stmt = $this->db()->prepare("
             SELECT p.*, u.name AS author_name
             FROM   blog_posts p
             LEFT JOIN users u ON u.id = p.created_by
@@ -203,7 +206,7 @@ class BlogController extends BaseController
 
         $row = false;
         try {
-            $stmt = $this->db->prepare('
+            $stmt = $this->db()->prepare('
                 INSERT INTO blog_posts
                     (title, slug, excerpt, content, cover_image_path, category, status, source, created_by)
                 VALUES
@@ -239,7 +242,7 @@ class BlogController extends BaseController
         $user = $this->authUser();
         $body = $this->getJsonBody();
 
-        $existing = $this->db->prepare('SELECT * FROM blog_posts WHERE id = :id');
+        $existing = $this->db()->prepare('SELECT * FROM blog_posts WHERE id = :id');
         $existing->execute([':id' => $id]);
         $post = $existing->fetch(\PDO::FETCH_ASSOC);
         if (!$post) $this->error('Post not found.', 404);
@@ -256,7 +259,7 @@ class BlogController extends BaseController
 
         $slug = $title !== $post['title'] ? $this->uniqueSlug($title, $id) : $post['slug'];
 
-        $stmt = $this->db->prepare('
+        $stmt = $this->db()->prepare('
             UPDATE blog_posts
             SET title = :title, slug = :slug, excerpt = :excerpt, content = :content,
                 cover_image_path = :cover, category = :cat, updated_at = NOW()
@@ -277,7 +280,7 @@ class BlogController extends BaseController
 
     public function blogDelete(int $id): never
     {
-        $stmt = $this->db->prepare('DELETE FROM blog_posts WHERE id = :id RETURNING id');
+        $stmt = $this->db()->prepare('DELETE FROM blog_posts WHERE id = :id RETURNING id');
         $stmt->execute([':id' => $id]);
         if (!$stmt->fetch()) $this->error('Post not found.', 404);
 
@@ -288,7 +291,7 @@ class BlogController extends BaseController
     {
         $user = $this->authUser();
 
-        $existing = $this->db->prepare('SELECT * FROM blog_posts WHERE id = :id');
+        $existing = $this->db()->prepare('SELECT * FROM blog_posts WHERE id = :id');
         $existing->execute([':id' => $id]);
         $post = $existing->fetch(\PDO::FETCH_ASSOC);
         if (!$post) $this->error('Post not found.', 404);
@@ -298,7 +301,7 @@ class BlogController extends BaseController
             $this->success(null, 'Post published and email blast triggered');
         }
 
-        $this->db->prepare('
+        $this->db()->prepare('
             UPDATE blog_posts
             SET status = :status, approved_by = :uid, published_at = NOW(), updated_at = NOW()
             WHERE id = :id
@@ -343,7 +346,7 @@ class BlogController extends BaseController
             $params[':cat'] = $category;
         }
 
-        $stmt = $this->db->prepare('
+        $stmt = $this->db()->prepare('
             SELECT * FROM blog_ai_drafts
             WHERE ' . implode(' AND ', $where) . '
             ORDER BY created_at DESC
@@ -359,7 +362,7 @@ class BlogController extends BaseController
     {
         $body = $this->getJsonBody();
 
-        $existing = $this->db->prepare('SELECT * FROM blog_ai_drafts WHERE id = :id');
+        $existing = $this->db()->prepare('SELECT * FROM blog_ai_drafts WHERE id = :id');
         $existing->execute([':id' => $id]);
         $draft = $existing->fetch(\PDO::FETCH_ASSOC);
         if (!$draft) $this->error('Draft not found.', 404);
@@ -369,7 +372,7 @@ class BlogController extends BaseController
         $content  = trim((string)($body['content'] ?? $draft['content']));
         $coverImg = isset($body['cover_image_path']) ? trim((string)$body['cover_image_path']) : $draft['cover_image_path'];
 
-        $this->db->prepare('
+        $this->db()->prepare('
             UPDATE blog_ai_drafts
             SET title = :title, excerpt = :excerpt, content = :content,
                 cover_image_path = :cover, updated_at = NOW()
@@ -389,7 +392,7 @@ class BlogController extends BaseController
     {
         $user = $this->authUser();
 
-        $existing = $this->db->prepare('SELECT * FROM blog_ai_drafts WHERE id = :id');
+        $existing = $this->db()->prepare('SELECT * FROM blog_ai_drafts WHERE id = :id');
         $existing->execute([':id' => $id]);
         $draft = $existing->fetch(\PDO::FETCH_ASSOC);
         if (!$draft) $this->error('Draft not found.', 404);
@@ -397,9 +400,9 @@ class BlogController extends BaseController
 
         $slug = $this->uniqueSlug((string)$draft['title']);
 
-        $this->db->beginTransaction();
+        $this->db()->beginTransaction();
         try {
-            $ins = $this->db->prepare('
+            $ins = $this->db()->prepare('
                 INSERT INTO blog_posts
                     (title, slug, excerpt, content, cover_image_path, category,
                      status, source, created_by, approved_by, published_at)
@@ -422,15 +425,15 @@ class BlogController extends BaseController
             $postRow = $ins->fetch(\PDO::FETCH_ASSOC);
             $postId  = (int)$postRow['id'];
 
-            $this->db->prepare('
+            $this->db()->prepare('
                 UPDATE blog_ai_drafts
                 SET status = :status, blog_post_id = :pid, updated_at = NOW()
                 WHERE id = :id
             ')->execute([':status' => 'approved', ':pid' => $postId, ':id' => $id]);
 
-            $this->db->commit();
+            $this->db()->commit();
         } catch (\Throwable $e) {
-            $this->db->rollBack();
+            $this->db()->rollBack();
             $this->error('Failed to approve draft: ' . $e->getMessage(), 500);
         }
 
@@ -441,11 +444,11 @@ class BlogController extends BaseController
 
     public function draftReject(int $id): never
     {
-        $existing = $this->db->prepare('SELECT id FROM blog_ai_drafts WHERE id = :id');
+        $existing = $this->db()->prepare('SELECT id FROM blog_ai_drafts WHERE id = :id');
         $existing->execute([':id' => $id]);
         if (!$existing->fetch()) $this->error('Draft not found.', 404);
 
-        $this->db->prepare('
+        $this->db()->prepare('
             UPDATE blog_ai_drafts SET status = :status, updated_at = NOW() WHERE id = :id
         ')->execute([':status' => 'rejected', ':id' => $id]);
 
@@ -477,7 +480,7 @@ class BlogController extends BaseController
         $serverRoot = dirname(__DIR__, 4);
 
         $report = BlogAiGenerator::run([
-            'pdo'                  => $this->db,
+            'pdo'                  => $this->db(),
             'server_php_root'      => $serverRoot,
             'dry_run'              => $dryRun,
             'only_category'        => $onlyCategory,
@@ -629,6 +632,7 @@ class BlogController extends BaseController
 
     /**
      * Stream a cover image from BLOG_UPLOADS_PATH (public — used by marketing site and email clients).
+     * No database connection is needed here; this method is intentionally DB-free.
      */
     public function publicBlogCover(string $file): never
     {
@@ -640,14 +644,16 @@ class BlogController extends BaseController
         $uploadDir = $this->blogUploadDir();
         $absPath   = $uploadDir . DIRECTORY_SEPARATOR . $file;
 
-        $realDir = is_dir($uploadDir) ? realpath($uploadDir) : false;
-        $realFile = is_file($absPath) ? realpath($absPath) : false;
-        if ($realDir === false || $realFile === false || !str_starts_with($realFile, $realDir)) {
+        $realDir  = is_dir($uploadDir)  ? realpath($uploadDir) : false;
+        $realFile = is_file($absPath)   ? realpath($absPath)   : false;
+
+        if ($realDir === false || $realFile === false || !str_starts_with((string)$realFile, (string)$realDir)) {
+            error_log("[BlogController] publicBlogCover: not found — uploadDir={$uploadDir} file={$file}");
             $this->error('Not found.', 404);
         }
 
-        $mime = mime_content_type($realFile);
-        if ($mime === false) {
+        $mime = function_exists('mime_content_type') ? mime_content_type($realFile) : false;
+        if ($mime === false || $mime === '') {
             $mime = 'application/octet-stream';
         }
 
@@ -686,7 +692,7 @@ class BlogController extends BaseController
             ? $message
             : 'Interested in AI implementation for my business.';
 
-        $stmt = $this->db->prepare('
+        $stmt = $this->db()->prepare('
             INSERT INTO leads
                 (name, email, phone, source, service_interest, notes, status, probability)
             VALUES
@@ -726,7 +732,7 @@ class BlogController extends BaseController
 
         $whereClause = 'WHERE ' . implode(' AND ', $where);
 
-        $stmt = $this->db->prepare("
+        $stmt = $this->db()->prepare("
             SELECT p.id, p.title, p.slug, p.excerpt, p.cover_image_path,
                    p.category, p.published_at, p.created_at,
                    u.name AS author_name
@@ -752,7 +758,7 @@ class BlogController extends BaseController
 
     public function publicBlogPost(string $slug): never
     {
-        $stmt = $this->db->prepare("
+        $stmt = $this->db()->prepare("
             SELECT p.*, u.name AS author_name
             FROM   blog_posts p
             LEFT JOIN users u ON u.id = p.created_by
@@ -777,7 +783,7 @@ class BlogController extends BaseController
         $blogUrl = "{$baseUrl}/blog/{$slug}";
 
         // Fetch all active clients with email
-        $clients = $this->db->query("
+        $clients = $this->db()->query("
             SELECT c.id, c.name, c.email
             FROM   clients c
             WHERE  c.status = 'active'
@@ -808,7 +814,7 @@ class BlogController extends BaseController
         $total = count($clients);
         $status = $successCount === 0 ? 'failed' : ($successCount < $total ? 'partial' : 'sent');
 
-        $this->db->prepare('
+        $this->db()->prepare('
             INSERT INTO blog_email_logs (blog_post_id, recipients_count, success_count, status)
             VALUES (:pid, :total, :success, :status)
         ')->execute([
