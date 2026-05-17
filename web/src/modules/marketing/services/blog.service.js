@@ -13,6 +13,7 @@
  *   PUT    marketing/blog/drafts/:id
  *   POST   marketing/blog/drafts/:id/approve
  *   POST   marketing/blog/drafts/:id/reject
+ *   POST   marketing/blog/generate-ai-drafts
  *   POST   marketing/blog/upload-image
  */
 
@@ -113,6 +114,16 @@ export async function rejectDraft(id) {
   const res = await fetch(`${BASE}/marketing/blog/drafts/${id}/reject`, {
     method: 'POST',
     headers: authHeaders(),
+  });
+  return handleResponse(res);
+}
+
+/** Same pipeline as cron (daily 6 AM) / cli/blog_ai_generate.php — requires OpenAI in server .env. */
+export async function generateAiDraftsNow(body = {}) {
+  const res = await fetch(`${BASE}/marketing/blog/generate-ai-drafts`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(body),
   });
   return handleResponse(res);
 }

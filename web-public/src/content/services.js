@@ -76,6 +76,94 @@ export const SERVICES = [
   },
 ];
 
+/** Specialised / advanced practice areas shown on the /services page. */
+export const ADVANCED_PRACTICE_AREAS = [
+  {
+    id: 'ai_audit',
+    icon: 'ShieldCheck',
+    color: '#2563EB',
+    bg: '#EFF6FF',
+    border: '#BFDBFE',
+    label: 'AI Audit',
+    tagline: 'AI-powered audit & compliance review',
+    bullets: [
+      'Automated risk-flagging across ledgers',
+      'AI-assisted compliance checks',
+      'Continuous control monitoring',
+    ],
+  },
+  {
+    id: 'it_consultancy',
+    icon: 'Monitor',
+    color: '#7C3AED',
+    bg: '#F5F3FF',
+    border: '#DDD6FE',
+    label: 'IT Consultancy',
+    tagline: 'Information technology strategy & advisory',
+    bullets: [
+      'Technology roadmaps for finance teams',
+      'Bespoke portal & automation scoping',
+      'Vendor evaluation and delivery oversight',
+    ],
+  },
+  {
+    id: 'ai_consultancy',
+    icon: 'Brain',
+    color: '#DB2777',
+    bg: '#FDF2F8',
+    border: '#FBCFE8',
+    label: 'AI Consultancy',
+    tagline: 'AI strategy & transformation consulting',
+    bullets: [
+      'AI readiness assessment',
+      'Use-case identification and prioritisation',
+      'Change management and adoption planning',
+    ],
+  },
+  {
+    id: 'ai_implementation',
+    icon: 'Cpu',
+    color: '#0891B2',
+    bg: '#ECFEFF',
+    border: '#A5F3FC',
+    label: 'AI Implementation',
+    tagline: 'End-to-end AI solution delivery',
+    bullets: [
+      'Custom AI tool build and integration',
+      'LLM-powered workflow automation',
+      'Quality assurance and post-launch support',
+    ],
+  },
+  {
+    id: 'investor_funding',
+    icon: 'TrendingUp',
+    color: '#059669',
+    bg: '#ECFDF5',
+    border: '#A7F3D0',
+    label: 'Investor Funding',
+    tagline: 'Fundraising, pitch decks & investor relations',
+    bullets: [
+      'Financial narrative and MIS for fundraising',
+      'Cap tables and FEMA-aware structuring',
+      'Investor diligence room preparation',
+    ],
+  },
+  {
+    id: 'govt_subsidies',
+    icon: 'Building2',
+    color: '#D97706',
+    bg: '#FFFBEB',
+    border: '#FDE68A',
+    label: 'Govt. Subsidies',
+    tagline: 'Government grants, subsidies & scheme advisory',
+    bullets: [
+      'Central & state scheme mapping',
+      'Documentation and timeline management',
+      'Reimbursement tracking and audit-ready books',
+    ],
+  },
+];
+
 /** Highlights shown only on `/services`, below the main catalogue. */
 export const SERVICES_BEYOND = {
   eyebrow: 'Beyond the checklist',

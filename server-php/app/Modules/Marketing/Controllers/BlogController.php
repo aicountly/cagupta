@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
+use App\Libraries\BlogAiGenerator;
 use App\Libraries\BrevoMailer;
 
 /**
@@ -24,6 +25,7 @@ use App\Libraries\BrevoMailer;
  *   PUT    /api/marketing/blog/drafts/:id         — edit draft
  *   POST   /api/marketing/blog/drafts/:id/approve — approve → publishes post
  *   POST   /api/marketing/blog/drafts/:id/reject  — reject draft
+ *   POST   /api/marketing/blog/generate-ai-drafts — run daily AI generator (same as cron)
  *
  * Uploads:
  *   POST   /api/marketing/blog/upload-image       — upload cover image
@@ -416,6 +418,48 @@ class BlogController extends BaseController
         ')->execute([':status' => 'rejected', ':id' => $id]);
 
         $this->success(null, 'Draft rejected');
+    }
+
+    /**
+     * Manually trigger the same AI draft pipeline as cron (cli/blog_ai_generate.php).
+     *
+     * Optional JSON body:
+     *   dry_run — if true, do not persist (logs article text in meta.log)
+     *   category — "laws" | "tax_saving" | omit for both
+     *   options_per_category — default 2
+     */
+    public function generateAiDrafts(): never
+    {
+        set_time_limit(0);
+
+        $body = $this->getJsonBody();
+        $dryRun = !empty($body['dry_run']);
+        $rawCat = isset($body['category']) ? trim((string)$body['category']) : '';
+        $onlyCategory = $rawCat === '' ? null : $rawCat;
+        if ($onlyCategory !== null && !in_array($onlyCategory, ['laws', 'tax_saving'], true)) {
+            $this->error('category must be laws, tax_saving, or omitted.', 422);
+        }
+
+        $optionsPerCat = isset($body['options_per_category']) ? (int)$body['options_per_category'] : 2;
+
+        $serverRoot = dirname(__DIR__, 4);
+
+        $report = BlogAiGenerator::run([
+            'pdo'                  => $this->db,
+            'server_php_root'      => $serverRoot,
+            'dry_run'              => $dryRun,
+            'only_category'        => $onlyCategory,
+            'options_per_category' => $optionsPerCat,
+        ]);
+
+        if (isset($report['error'])) {
+            $this->error($report['error'], 500);
+        }
+
+        $this->success([
+            'drafts_generated' => $report['total_generated'],
+            'dry_run'          => $dryRun,
+        ], 'AI draft generation finished', 200, ['log' => $report['log']]);
     }
 
     // ── Image Upload ─────────────────────────────────────────────────────────

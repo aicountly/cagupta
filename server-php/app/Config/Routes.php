@@ -2180,6 +2180,12 @@ class Routes
                 'handler'    => 'Admin\BlogController@draftReject',
                 'middleware' => ['auth'],
             ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/blog/generate-ai-drafts',
+                'handler'    => 'Admin\BlogController@generateAiDrafts',
+                'middleware' => ['auth'],
+            ],
 
             // ── Marketing — Blog Image Upload ─────────────────────────────────
             [

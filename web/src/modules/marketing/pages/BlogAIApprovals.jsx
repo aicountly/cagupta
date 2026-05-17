@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import {
   fetchDrafts, updateDraft, approveDraft, rejectDraft, uploadBlogImage,
+  generateAiDraftsNow,
 } from '../services/blog.service';
 
 const CATEGORIES = [
@@ -34,6 +35,7 @@ export default function BlogAIApprovals() {
   const [expandedId, setExpandedId] = useState(null);
   const [coverPreviews, setCoverPreviews] = useState({});
   const [uploading, setUploading]   = useState(null);
+  const [generating, setGenerating] = useState(false);
   const fileRefs = useRef({});
 
   const load = async () => {
@@ -115,6 +117,29 @@ export default function BlogAIApprovals() {
 
   const pendingCount = drafts.filter(d => d.status === 'pending').length;
 
+  const handleGenerateNow = async () => {
+    if (!window.confirm(
+      'Run the AI blog generator now?\n\n'
+      + 'This uses the same process as the daily 6 AM cron job: new topics and drafts '
+      + 'from OpenAI, plus cover images when enabled. It can take several minutes.',
+    )) return;
+    setGenerating(true);
+    setError('');
+    try {
+      const res = await generateAiDraftsNow({});
+      const n = res?.data?.drafts_generated ?? 0;
+      const msg = n === 0
+        ? 'Generator finished — no drafts were saved (check server logs / OpenAI / .env).'
+        : `Created ${n} new draft${n === 1 ? '' : 's'}. Refresh the list to review them.`;
+      alert(`${res.message || 'Done'}\n\n${msg}`);
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div style={{ padding: 24, maxWidth: 1100, margin: '0 auto' }}>
 
@@ -133,9 +158,21 @@ export default function BlogAIApprovals() {
             Review, edit and approve AI-generated blog drafts before they go live
           </p>
         </div>
-        <button onClick={load} style={btn.secondary} title="Refresh">
-          <RefreshCw size={14} /> Refresh
-        </button>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <button
+            type="button"
+            onClick={handleGenerateNow}
+            style={btn.primary}
+            disabled={generating || loading}
+            title="Same pipeline as the 6 AM cron; adjust prompts and categories in server-php/app/Libraries/BlogAiGenerator.php and .env keys."
+          >
+            {generating ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={14} />}
+            {generating ? 'Generating…' : 'Run generator now'}
+          </button>
+          <button type="button" onClick={load} style={btn.secondary} title="Refresh" disabled={generating}>
+            <RefreshCw size={14} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -171,7 +208,9 @@ export default function BlogAIApprovals() {
         <div style={{ textAlign: 'center', padding: 70, color: '#94a3b8' }}>
           <Sparkles size={36} style={{ marginBottom: 12 }} />
           <p style={{ margin: 0, fontWeight: 600 }}>No drafts found</p>
-          <p style={{ margin: '6px 0 0', fontSize: 13 }}>AI-generated drafts will appear here once the daily cron runs.</p>
+          <p style={{ margin: '6px 0 0', fontSize: 13 }}>
+            Use &ldquo;Run generator now&rdquo; to create drafts anytime (same job as the 6 AM cron), or wait for the scheduled run.
+          </p>
         </div>
       )}
 

@@ -1,0 +1,293 @@
+<?php
+declare(strict_types=1);
+
+namespace App\Libraries;
+
+/**
+ * Shared AI blog draft generation used by cron (cli/blog_ai_generate.php) and manual API trigger.
+ */
+final class BlogAiGenerator
+{
+    /** @var array<string, array{label: string, topicPrompt: string, imagePrompt: string}> */
+    private const CATEGORY_CONFIG = [
+        'laws' => [
+            'label'       => 'New Laws & Provisions',
+            'topicPrompt' => 'You are an expert Indian chartered accountant. Suggest one highly specific, timely blog topic about a recent Indian tax law, provision, SEBI regulation, RBI circular, or GST amendment that would be most useful and engaging for business owners and individual taxpayers right now in 2026. Return ONLY the topic title — no extra text, no numbering, no quotes.',
+            'imagePrompt' => 'Professional, clean illustration for a CA firm blog about Indian tax law and regulations. Abstract legal/financial imagery, muted blues and oranges, courthouse columns, legal documents, no text, modern flat style.',
+        ],
+        'tax_saving' => [
+            'label'       => 'Tax Saving & Tax Planning',
+            'topicPrompt' => 'You are an expert Indian chartered accountant. Suggest one highly specific, actionable blog topic about a lesser-known or underutilised tax-saving strategy, deduction, exemption, or investment that Indian taxpayers and business owners can use in FY 2025-26 or FY 2026-27. Return ONLY the topic title — no extra text, no numbering, no quotes.',
+            'imagePrompt' => 'Professional, clean illustration for a CA firm blog about tax planning and savings. Abstract financial imagery — coins, piggy bank, growing plant, calculator, muted greens and oranges, no text, modern flat style.',
+        ],
+    ];
+
+    /**
+     * @param array{pdo: PDO, server_php_root: string, dry_run?: bool, only_category?: ?string, options_per_category?: int} $cfg
+     * @return array{total_generated: int, log: string[], error?: string}
+     */
+    public static function run(array $cfg): array
+    {
+        $pdo              = $cfg['pdo'];
+        $serverPhpRoot    = rtrim($cfg['server_php_root'], '/\\');
+        $dryRun           = (bool)($cfg['dry_run'] ?? false);
+        $onlyCategory     = $cfg['only_category'] ?? null;
+        $optionsPerCat    = max(1, (int)($cfg['options_per_category'] ?? 2));
+
+        $log = [];
+        $add = static function (string $line) use (&$log): void {
+            $log[] = $line;
+        };
+
+        $openAiKey  = (string)(getenv('OPENAI_API_KEY') ?: '');
+        $textModel  = (string)(getenv('OPENAI_MODEL') ?: 'gpt-5.5');
+        $imageModel = (string)(getenv('OPENAI_IMAGE_MODEL') ?: 'dall-e-3');
+
+        if ($openAiKey === '') {
+            return ['total_generated' => 0, 'log' => $log, 'error' => 'OPENAI_API_KEY is not set in .env'];
+        }
+
+        $blogUploadDir = self::resolveBlogUploadDir($serverPhpRoot);
+        if (!is_dir($blogUploadDir)) {
+            mkdir($blogUploadDir, 0755, true);
+        }
+
+        $categories = $onlyCategory !== null && $onlyCategory !== ''
+            ? [$onlyCategory]
+            : ['laws', 'tax_saving'];
+
+        $add('[blog-ai] Starting at ' . date('Y-m-d H:i:s'));
+
+        $totalGenerated = 0;
+
+        foreach ($categories as $category) {
+            if (!isset(self::CATEGORY_CONFIG[$category])) {
+                $add("[blog-ai] Unknown category skipped: {$category}");
+                continue;
+            }
+
+            $config   = self::CATEGORY_CONFIG[$category];
+            $catLabel = $config['label'];
+
+            $add("[blog-ai] Generating {$optionsPerCat} draft(s) for category: {$catLabel}");
+
+            for ($optIdx = 1; $optIdx <= $optionsPerCat; $optIdx++) {
+                $add("[blog-ai]   Option {$optIdx}/{$optionsPerCat}...");
+
+                $topic = self::openaiChat($openAiKey, $textModel, [
+                    ['role' => 'user', 'content' => $config['topicPrompt']],
+                ], 100);
+
+                if ($topic === null) {
+                    $add("[blog-ai] ERROR: Failed to generate topic for {$category} option {$optIdx}");
+                    continue;
+                }
+                $topic = trim(strip_tags($topic));
+                $add("[blog-ai]   Topic: {$topic}");
+
+                $blogPrompt = <<<PROMPT
+You are a senior Indian chartered accountant writing a blog for CA Rahul Gupta's firm website.
+Write a comprehensive, well-researched blog article on the following topic:
+
+Topic: {$topic}
+Category: {$catLabel}
+
+Requirements:
+- Write in clear, simple English that business owners and individual taxpayers can easily understand
+- Structure: Start with an engaging introduction, then use 3–5 main sections with subheadings (use ## for H2), end with a practical conclusion
+- Include real Indian tax provisions, section references (e.g. Section 80C, Section 194Q), and practical examples where relevant
+- Word count: 600–900 words
+- Do NOT use markdown bold (**) or italics (*) — plain text only
+- Return in this exact JSON format (no extra text before or after):
+{
+  "title": "SEO-optimised article title",
+  "excerpt": "2–3 sentence summary for blog listing page (max 160 characters)",
+  "content": "Full article in plain text with ## subheadings"
+}
+PROMPT;
+
+                $draftJson = self::openaiChat($openAiKey, $textModel, [
+                    ['role' => 'user', 'content' => $blogPrompt],
+                ], 2000);
+
+                if ($draftJson === null) {
+                    $add("[blog-ai] ERROR: Failed to generate draft for {$category} option {$optIdx}");
+                    continue;
+                }
+
+                if (preg_match('/\{[\s\S]*\}/m', $draftJson, $jsonMatch)) {
+                    $draftJson = $jsonMatch[0];
+                }
+
+                $draft = json_decode($draftJson, true);
+                if (!is_array($draft) || empty($draft['title']) || empty($draft['content'])) {
+                    $add('[blog-ai] ERROR: Invalid draft JSON for ' . $category . ' option ' . $optIdx . ': ' . substr($draftJson, 0, 200));
+                    continue;
+                }
+
+                $draftTitle   = substr(trim((string)$draft['title']), 0, 490);
+                $draftExcerpt = substr(trim((string)($draft['excerpt'] ?? '')), 0, 500);
+                $draftContent = trim((string)$draft['content']);
+
+                $add("[blog-ai]   Title: {$draftTitle}");
+
+                $coverPath = null;
+                if (!$dryRun) {
+                    $imagePromptFull = $config['imagePrompt'] . " Topic context: {$draftTitle}";
+                    $coverPath = self::openaiGenerateImage($openAiKey, $imageModel, $imagePromptFull, $blogUploadDir);
+                    if ($coverPath === null) {
+                        $add('[blog-ai]   Cover image generation failed — proceeding without cover.');
+                    } else {
+                        $add("[blog-ai]   Cover image saved: {$coverPath}");
+                    }
+                }
+
+                if ($dryRun) {
+                    $add('');
+                    $add("=== DRY RUN — Category: {$catLabel} | Option {$optIdx} ===");
+                    $add("TOPIC:   {$topic}");
+                    $add("TITLE:   {$draftTitle}");
+                    $add("EXCERPT: {$draftExcerpt}");
+                    $add('CONTENT:');
+                    $add($draftContent);
+                    $add('');
+                    $totalGenerated++;
+                    continue;
+                }
+
+                try {
+                    $stmt = $pdo->prepare('
+                        INSERT INTO blog_ai_drafts
+                            (topic, category, option_index, title, excerpt, content, cover_image_path, status)
+                        VALUES
+                            (:topic, :cat, :opt, :title, :excerpt, :content, :cover, :status)
+                    ');
+                    $stmt->execute([
+                        ':topic'   => $topic,
+                        ':cat'     => $category,
+                        ':opt'     => $optIdx,
+                        ':title'   => $draftTitle,
+                        ':excerpt' => $draftExcerpt,
+                        ':content' => $draftContent,
+                        ':cover'   => $coverPath ?? '',
+                        ':status'  => 'pending',
+                    ]);
+                    $add('[blog-ai]   Saved to DB (id: ' . $pdo->lastInsertId() . ')');
+                    $totalGenerated++;
+                } catch (\Throwable $e) {
+                    $add('[blog-ai] ERROR: DB insert failed: ' . $e->getMessage());
+                }
+
+                if ($optIdx < $optionsPerCat) {
+                    sleep(2);
+                }
+            }
+
+            $add("[blog-ai] Done with category: {$catLabel}");
+        }
+
+        $add('[blog-ai] Finished at ' . date('Y-m-d H:i:s') . " — {$totalGenerated} draft(s) generated.");
+
+        return ['total_generated' => $totalGenerated, 'log' => $log];
+    }
+
+    private static function resolveBlogUploadDir(string $serverPhpRoot): string
+    {
+        $configured = (string)(getenv('BLOG_UPLOADS_PATH') ?: ($_ENV['BLOG_UPLOADS_PATH'] ?? ''));
+        if ($configured !== '') {
+            return rtrim($configured, '/\\');
+        }
+
+        return $serverPhpRoot . DIRECTORY_SEPARATOR . 'blog_uploads';
+    }
+
+    private static function openaiChat(string $apiKey, string $model, array $messages, int $maxCompletionTokens = 2000): ?string
+    {
+        $payload = json_encode([
+            'model'                 => $model,
+            'messages'              => $messages,
+            'max_completion_tokens' => $maxCompletionTokens,
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $ch = curl_init('https://api.openai.com/v1/chat/completions');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_TIMEOUT        => 120,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                "Authorization: Bearer {$apiKey}",
+            ],
+        ]);
+
+        $response = curl_exec($ch);
+        $err      = curl_error($ch);
+        $code     = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($err !== '') {
+            return null;
+        }
+        if ($code !== 200) {
+            return null;
+        }
+
+        $data = json_decode((string)$response, true);
+        return $data['choices'][0]['message']['content'] ?? null;
+    }
+
+    private static function openaiGenerateImage(string $apiKey, string $model, string $prompt, string $uploadDir): ?string
+    {
+        $payload = json_encode([
+            'model'   => $model,
+            'prompt'  => $prompt,
+            'n'       => 1,
+            'size'    => '1792x1024',
+            'quality' => 'standard',
+        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+
+        $ch = curl_init('https://api.openai.com/v1/images/generations');
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => $payload,
+            CURLOPT_TIMEOUT        => 120,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_HTTPHEADER     => [
+                'Content-Type: application/json',
+                "Authorization: Bearer {$apiKey}",
+            ],
+        ]);
+
+        $response = curl_exec($ch);
+        $err      = curl_error($ch);
+        $code     = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($err !== '') {
+            return null;
+        }
+        if ($code !== 200) {
+            return null;
+        }
+
+        $data     = json_decode((string)$response, true);
+        $imageUrl = $data['data'][0]['url'] ?? null;
+        if ($imageUrl === null) {
+            return null;
+        }
+
+        $imgData = @file_get_contents($imageUrl);
+        if ($imgData === false) {
+            return null;
+        }
+
+        $filename = 'cover_ai_' . uniqid('', true) . '.png';
+        $fullPath = rtrim($uploadDir, '/\\') . DIRECTORY_SEPARATOR . $filename;
+        file_put_contents($fullPath, $imgData);
+
+        return 'blog_uploads/' . $filename;
+    }
+}

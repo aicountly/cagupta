@@ -8,7 +8,6 @@ import {
   Plus, Search, SlidersHorizontal,
   Clock, AlertTriangle,
   Info, CheckCircle2, Briefcase,
-  ShieldCheck, Monitor, Brain, Cpu, TrendingUp, Building2, X, Sparkles,
 } from 'lucide-react';
 import { KPI_SLUGS, filterEngagementsBySlug } from '../../../utils/serviceKpiFilters';
 import ServicesEngagementTableBlock from '../../../components/services/ServicesEngagementTableBlock';
@@ -118,149 +117,6 @@ function KpiCard({ item, to }) {
   );
 }
 
-// ── Advanced Practice Areas config ───────────────────────────────────────────
-const PRACTICE_AREAS = [
-  {
-    id: 'ai_audit',
-    label: 'AI Audit',
-    icon: ShieldCheck,
-    color: '#2563EB',
-    bg: '#EFF6FF',
-    border: '#BFDBFE',
-    description: 'AI-powered audit & compliance review',
-    keywords: ['ai audit'],
-  },
-  {
-    id: 'it_consultancy',
-    label: 'IT Consultancy',
-    icon: Monitor,
-    color: '#7C3AED',
-    bg: '#F5F3FF',
-    border: '#DDD6FE',
-    description: 'Information technology strategy & advisory',
-    keywords: ['it consultancy', 'information technology consultancy'],
-  },
-  {
-    id: 'ai_consultancy',
-    label: 'AI Consultancy',
-    icon: Brain,
-    color: '#DB2777',
-    bg: '#FDF2F8',
-    border: '#FBCFE8',
-    description: 'AI strategy & transformation consulting',
-    keywords: ['ai consultancy'],
-  },
-  {
-    id: 'ai_implementation',
-    label: 'AI Implementation',
-    icon: Cpu,
-    color: '#0891B2',
-    bg: '#ECFEFF',
-    border: '#A5F3FC',
-    description: 'End-to-end AI solution delivery',
-    keywords: ['ai implementation'],
-  },
-  {
-    id: 'investor_funding',
-    label: 'Investor Funding',
-    icon: TrendingUp,
-    color: '#059669',
-    bg: '#ECFDF5',
-    border: '#A7F3D0',
-    description: 'Fundraising, pitch decks & investor relations',
-    keywords: ['investor funding'],
-  },
-  {
-    id: 'govt_subsidies',
-    label: 'Govt. Subsidies',
-    icon: Building2,
-    color: '#D97706',
-    bg: '#FFFBEB',
-    border: '#FDE68A',
-    description: 'Government grants, subsidies & scheme advisory',
-    keywords: ['govt subsidies', 'government subsidies'],
-  },
-];
-
-// ── Practice Area Card ────────────────────────────────────────────────────────
-function PracticeAreaCard({ area, activeCount, isActive, onClick }) {
-  const Icon = area.icon;
-  const [hover, setHover] = useState(false);
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        background: isActive ? area.bg : hover ? area.bg : '#fff',
-        border: `1.5px solid ${isActive ? area.color : hover ? area.border : '#E6E8F0'}`,
-        borderRadius: 14,
-        padding: '14px 16px',
-        cursor: 'pointer',
-        textAlign: 'left',
-        display: 'flex',
-        alignItems: 'flex-start',
-        gap: 12,
-        boxShadow: isActive
-          ? `0 4px 16px ${area.color}22`
-          : hover
-          ? `0 2px 8px ${area.color}18`
-          : '0 1px 3px rgba(0,0,0,0.04)',
-        transition: 'all 0.15s ease',
-        width: '100%',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-      aria-pressed={isActive}
-    >
-      {isActive && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0,
-          height: 3, background: area.color, borderRadius: '14px 14px 0 0',
-        }} />
-      )}
-      <div style={{
-        width: 40, height: 40, borderRadius: 10,
-        background: isActive ? `${area.color}18` : area.bg,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0,
-        border: `1px solid ${area.border}`,
-      }}>
-        <Icon size={19} color={area.color} />
-      </div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontSize: 13, fontWeight: 700,
-          color: isActive ? area.color : '#0B1F3B',
-          marginBottom: 2,
-        }}>
-          {area.label}
-        </div>
-        <div style={{ fontSize: 11, color: '#64748b', lineHeight: 1.45, marginBottom: 6 }}>
-          {area.description}
-        </div>
-        <div style={{
-          fontSize: 12, fontWeight: 600,
-          color: isActive ? area.color : '#94a3b8',
-        }}>
-          {activeCount} active
-        </div>
-      </div>
-      {isActive && (
-        <div style={{
-          width: 20, height: 20, borderRadius: '50%',
-          background: area.color, display: 'flex',
-          alignItems: 'center', justifyContent: 'center',
-          flexShrink: 0, marginTop: 2,
-        }}>
-          <X size={11} color="#fff" strokeWidth={2.5} />
-        </div>
-      )}
-    </button>
-  );
-}
-
 // ── Main component ────────────────────────────────────────────────────────────
 export default function Services() {
   const navigate = useNavigate();
@@ -279,7 +135,6 @@ export default function Services() {
   const [loading, setLoading] = useState(true);
   const [expandServiceId, setExpandServiceId] = useState(null);
   const onExpandConsumed = useCallback(() => setExpandServiceId(null), []);
-  const [activePracticeArea, setActivePracticeArea] = useState(null);
 
   // Temporary charge state
   const [tempCharges, setTempCharges] = useState([]);
@@ -331,24 +186,6 @@ export default function Services() {
   const kpis = kpiData(allServices, kpiSnapshot);
   const hasTempCharges = tempChargesLoaded && tempCharges.length > 0;
 
-  const practiceAreaCounts = useMemo(() => {
-    const counts = {};
-    PRACTICE_AREAS.forEach((area) => {
-      counts[area.id] = allServices.filter(
-        (s) =>
-          !['completed', 'cancelled'].includes(s.status) &&
-          area.keywords.some((kw) =>
-            (s.type || '').toLowerCase().includes(kw.toLowerCase())
-          )
-      ).length;
-    });
-    return counts;
-  }, [allServices]);
-
-  const activePracticeAreaDef = activePracticeArea
-    ? PRACTICE_AREAS.find((a) => a.id === activePracticeArea)
-    : null;
-
   const filteredServices = allServices.filter((s) => {
     const matchStatus = filterStatus === 'all'
       || (filterStatus === PENDING_ON_ME_FILTER
@@ -356,11 +193,7 @@ export default function Services() {
         : s.status === filterStatus);
     const q = search.toLowerCase();
     const matchSearch = !q || s.clientName.toLowerCase().includes(q) || s.type.toLowerCase().includes(q);
-    const matchPracticeArea = !activePracticeAreaDef
-      || activePracticeAreaDef.keywords.some((kw) =>
-          (s.type || '').toLowerCase().includes(kw.toLowerCase())
-        );
-    return matchStatus && matchSearch && matchPracticeArea;
+    return matchStatus && matchSearch;
   });
 
   return (
@@ -374,44 +207,6 @@ export default function Services() {
           {kpis.map((k) => (
             <KpiCard key={k.label} item={k} to={`/services/focus/${k.slug}`} />
           ))}
-        </div>
-      )}
-
-      {/* Advanced Practice Areas — only shown on the main tab */}
-      {activeTab === TAB_ALL && (
-        <div style={practiceSection}>
-          <div style={practiceSectionHeader}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={practiceHeaderIcon}>
-                <Sparkles size={14} color="#F37920" />
-              </div>
-              <span style={practiceSectionTitle}>Advanced Practice Areas</span>
-              <span style={practiceSectionBadge}>Specialised Services</span>
-            </div>
-            {activePracticeArea && (
-              <button
-                type="button"
-                onClick={() => setActivePracticeArea(null)}
-                style={practiceClearBtn}
-              >
-                <X size={12} />
-                Clear filter
-              </button>
-            )}
-          </div>
-          <div style={practiceGrid}>
-            {PRACTICE_AREAS.map((area) => (
-              <PracticeAreaCard
-                key={area.id}
-                area={area}
-                activeCount={practiceAreaCounts[area.id] ?? 0}
-                isActive={activePracticeArea === area.id}
-                onClick={() =>
-                  setActivePracticeArea((prev) => (prev === area.id ? null : area.id))
-                }
-              />
-            ))}
-          </div>
         </div>
       )}
 
@@ -488,29 +283,6 @@ export default function Services() {
           </div>
         )}
       </div>
-
-      {/* Active practice area filter pill */}
-      {activeTab === TAB_ALL && activePracticeAreaDef && (
-        <div style={practiceFilterPill}>
-          <div style={{
-            width: 8, height: 8, borderRadius: '50%',
-            background: activePracticeAreaDef.color, flexShrink: 0,
-          }} />
-          <span style={{ fontSize: 12, fontWeight: 600, color: activePracticeAreaDef.color }}>
-            Showing: {activePracticeAreaDef.label}
-          </span>
-          <span style={{ fontSize: 12, color: '#64748b' }}>
-            · {filteredServices.length} engagement{filteredServices.length !== 1 ? 's' : ''}
-          </span>
-          <button
-            type="button"
-            onClick={() => setActivePracticeArea(null)}
-            style={practiceFilterClearBtn}
-          >
-            <X size={11} />
-          </button>
-        </div>
-      )}
 
       {/* All Services tab content */}
       {activeTab === TAB_ALL && (
@@ -687,51 +459,3 @@ const tempTh = {
 };
 const tempTd = { padding: '12px 16px', borderBottom: '1px solid #F1F5F9', verticalAlign: 'middle' };
 
-// ── Advanced Practice Areas styles ────────────────────────────────────────────
-const practiceSection = {
-  background: '#fff',
-  borderRadius: 14,
-  border: '1px solid #E6E8F0',
-  padding: '18px 20px',
-  boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-};
-const practiceSectionHeader = {
-  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-  marginBottom: 14,
-};
-const practiceHeaderIcon = {
-  width: 26, height: 26, borderRadius: 7,
-  background: '#FEF0E6', display: 'flex',
-  alignItems: 'center', justifyContent: 'center',
-};
-const practiceSectionTitle = {
-  fontSize: 13, fontWeight: 700, color: '#0B1F3B',
-};
-const practiceSectionBadge = {
-  fontSize: 10, fontWeight: 700, color: '#F37920',
-  background: '#FEF0E6', border: '1px solid rgba(243,121,32,0.25)',
-  borderRadius: 6, padding: '2px 8px', letterSpacing: '0.03em',
-};
-const practiceGrid = {
-  display: 'grid',
-  gridTemplateColumns: 'repeat(3, 1fr)',
-  gap: 12,
-};
-const practiceClearBtn = {
-  display: 'flex', alignItems: 'center', gap: 4,
-  fontSize: 12, fontWeight: 600, color: '#64748b',
-  background: '#F1F5F9', border: '1px solid #E2E8F0',
-  borderRadius: 7, padding: '4px 10px', cursor: 'pointer',
-};
-const practiceFilterPill = {
-  display: 'flex', alignItems: 'center', gap: 8,
-  background: '#fff', border: '1px solid #E6E8F0',
-  borderRadius: 8, padding: '8px 14px',
-  boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
-};
-const practiceFilterClearBtn = {
-  display: 'flex', alignItems: 'center', justifyContent: 'center',
-  width: 20, height: 20, borderRadius: '50%',
-  background: '#F1F5F9', border: 'none', cursor: 'pointer',
-  marginLeft: 4,
-};
