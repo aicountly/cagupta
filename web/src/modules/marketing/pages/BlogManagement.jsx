@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import {
   BookOpen, Plus, Pencil, Trash2, Globe, EyeOff, Upload,
-  X, Check, Loader2, Image as ImageIcon, AlertCircle, ChevronDown,
+  X, Check, Loader2, Image as ImageIcon, AlertCircle, ChevronDown, Sparkles,
 } from 'lucide-react';
 import {
   fetchBlogPosts, createBlogPost, updateBlogPost,
-  deleteBlogPost, publishBlogPost, uploadBlogImage,
+  deleteBlogPost, publishBlogPost, uploadBlogImage, generateAiDraftsNow,
 } from '../services/blog.service';
 
 const CATEGORIES = [
@@ -152,6 +152,7 @@ export default function BlogManagement() {
   const [coverPreview, setCoverPreview] = useState('');
   const [uploading, setUploading]   = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [generating, setGenerating] = useState(false);
   const fileRef = useRef();
 
   const load = async () => {
@@ -240,9 +241,10 @@ export default function BlogManagement() {
     if (!window.confirm(`Publish "${post.title}"? An email will be sent to all active clients.`)) return;
     try {
       await publishBlogPost(post.id);
-      load();
     } catch (e) {
       alert('Publish failed: ' + e.message);
+    } finally {
+      load();
     }
   };
 
@@ -253,6 +255,29 @@ export default function BlogManagement() {
       load();
     } catch (e) {
       alert('Delete failed: ' + e.message);
+    }
+  };
+
+  const handlePlanNow = async () => {
+    if (!window.confirm(
+      'Run the AI blog generator now?\n\n'
+      + 'This uses the same process as the daily 6 AM cron job: new topics and drafts '
+      + 'from OpenAI, plus cover images when enabled. It can take several minutes.\n\n'
+      + 'New drafts will appear in the AI Approvals page for review.',
+    )) return;
+    setGenerating(true);
+    setError('');
+    try {
+      const res = await generateAiDraftsNow({});
+      const n = res?.data?.drafts_generated ?? 0;
+      const msg = n === 0
+        ? 'Generator finished — no drafts were saved (check server logs / OpenAI key in .env).'
+        : `Created ${n} new draft${n === 1 ? '' : 's'}. Go to AI Approvals to review them.`;
+      alert(`${res.message || 'Done'}\n\n${msg}`);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setGenerating(false);
     }
   };
 
@@ -267,9 +292,21 @@ export default function BlogManagement() {
             Create, edit and publish blog articles to the marketing site
           </p>
         </div>
-        <button onClick={openNew} style={btn.primary}>
-          <Plus size={14} /> New Post
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            type="button"
+            onClick={handlePlanNow}
+            style={btn.secondary}
+            disabled={generating || loading}
+            title="Same pipeline as the 6 AM cron — generates AI drafts via OpenAI for review in AI Approvals."
+          >
+            {generating ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={14} />}
+            {generating ? 'Planning…' : 'Plan now'}
+          </button>
+          <button onClick={openNew} style={btn.primary}>
+            <Plus size={14} /> New Post
+          </button>
+        </div>
       </div>
 
       {/* Filters */}

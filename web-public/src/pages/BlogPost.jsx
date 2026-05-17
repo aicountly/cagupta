@@ -107,15 +107,11 @@ export default function BlogPost() {
             author: data.author_name ?? 'CA Rahul Gupta',
           });
         })
-        .catch(err => {
-          if (err.message === 'not_found') {
-            setNotFound(true);
-          } else {
-            // Network error — try static fallback
-            const staticPost = BLOG_POSTS.find(p => p.slug === slug);
-            if (staticPost) setPost(staticPost);
-            else setNotFound(true);
-          }
+        .catch(() => {
+          // API 404 or network error — try static fallback before giving up
+          const staticPost = BLOG_POSTS.find(p => p.slug === slug);
+          if (staticPost) setPost(staticPost);
+          else setNotFound(true);
         })
         .finally(() => setLoading(false));
     } else {

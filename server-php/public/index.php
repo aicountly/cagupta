@@ -208,13 +208,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 
 // ── Route dispatching ─────────────────────────────────────────────────────────
 $requestMethod = strtoupper($_SERVER['REQUEST_METHOD']);
-$requestUri    = strtok($_SERVER['REQUEST_URI'], '?');
-// Strip base path if the app is in a subdirectory
-$scriptDir = dirname($_SERVER['SCRIPT_NAME']);
-if ($scriptDir !== '/' && str_starts_with($requestUri, $scriptDir)) {
-    $requestUri = substr($requestUri, strlen($scriptDir));
-}
-$requestUri = '/' . ltrim($requestUri, '/');
+// All routes are defined with their full /api/... prefix, so no base-path
+// stripping is needed. Using the raw REQUEST_URI avoids a production bug where
+// SCRIPT_NAME = /api/public/index.php causes dirname = /api/public, which
+// incorrectly strips that prefix from /api/public/blogs and similar routes.
+$requestUri = '/' . ltrim(strtok($_SERVER['REQUEST_URI'], '?'), '/');
 
 $routes  = Routes::getRoutes();
 $matched = false;

@@ -293,7 +293,10 @@ class BlogController extends BaseController
         $post = $existing->fetch(\PDO::FETCH_ASSOC);
         if (!$post) $this->error('Post not found.', 404);
 
-        if ($post['status'] === 'published') $this->error('Post is already published.', 409);
+        // Idempotent: if a proxy retry arrives after the DB was already updated, return success.
+        if ($post['status'] === 'published') {
+            $this->success(null, 'Post published and email blast triggered');
+        }
 
         $this->db->prepare('
             UPDATE blog_posts
@@ -301,9 +304,28 @@ class BlogController extends BaseController
             WHERE id = :id
         ')->execute([':status' => 'published', ':uid' => $user['id'], ':id' => $id]);
 
-        $this->dispatchBlogEmail((int)$post['id'], (string)$post['title'], (string)$post['excerpt'], (string)$post['slug']);
+        // Flush the HTTP response to the client immediately so the browser receives
+        // a 200 before the slow synchronous email blast begins.  Without this, the
+        // nginx proxy_read_timeout can fire, nginx retries the request, and the retry
+        // hits the guard above and used to return 409 even though the publish succeeded.
+        http_response_code(200);
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'success' => true,
+            'message' => 'Post published and email blast triggered',
+            'data'    => null,
+            'errors'  => [],
+        ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
 
-        $this->success(null, 'Post published and email blast triggered');
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        } else {
+            while (ob_get_level() > 0) ob_end_flush();
+            flush();
+        }
+
+        $this->dispatchBlogEmail((int)$post['id'], (string)$post['title'], (string)$post['excerpt'], (string)$post['slug']);
+        exit;
     }
 
     // ── AI Drafts ────────────────────────────────────────────────────────────
