@@ -144,6 +144,19 @@ async function initSession(sessionId) {
 
   sock.ev.on('creds.update', saveCreds);
 
+  // Debug: log all contact/history events Baileys emits and their payload shape
+  const _origEmit = sock.ev.emit;
+  sock.ev.emit = function(event, ...args) {
+    if (typeof event === 'string' && (event.includes('contact') || event.includes('history') || event.includes('chats.set'))) {
+      const data = args[0];
+      const isArr = Array.isArray(data);
+      const keys = (data && typeof data === 'object' && !isArr) ? Object.keys(data) : [];
+      const len = isArr ? data.length : (data?.contacts?.length ?? data?.chats?.length ?? '?');
+      console.log(`[${sessionId}] RAW_EVENT "${event}" isArray=${isArr} keys=[${keys}] len=${len}`);
+    }
+    return _origEmit.apply(this, [event, ...args]);
+  };
+
   // ── Contact helpers ───────────────────────────────────────────────────────
 
   // Returns true for JIDs that are not individual contacts
@@ -180,19 +193,20 @@ async function initSession(sessionId) {
     }
   }
 
-  // contacts.set — fires ONCE after fresh connection with the FULL initial contact list.
-  // This is the bulk event that was previously unhandled (root cause of 0 contacts).
-  sock.ev.on('contacts.set', ({ contacts: initial }) => {
-    for (const c of initial) upsertContact(c);
-    console.log(`[${sessionId}] contacts.set: ${sess.contacts.length} loaded`);
+  // contacts.set — handle both { contacts: [...] } and raw array payloads
+  sock.ev.on('contacts.set', (data) => {
+    const list = Array.isArray(data) ? data : (data?.contacts || []);
+    for (const c of list) upsertContact(c);
+    console.log(`[${sessionId}] contacts.set: ${list.length} incoming, ${sess.contacts.length} total`);
     scheduleContactSave();
   });
 
   // messaging-history.set — Baileys 6.7+ delivers contacts/chats/messages via this
   // event during history sync (both fresh QR and reconnects with saved credentials).
-  // Without this handler + syncFullHistory, reconnects yield 0 contacts.
-  sock.ev.on('messaging-history.set', ({ contacts: histContacts }) => {
-    if (histContacts?.length) {
+  sock.ev.on('messaging-history.set', (data) => {
+    console.log(`[${sessionId}] messaging-history.set keys: ${data ? Object.keys(data) : 'null'}`);
+    const histContacts = Array.isArray(data) ? data : (data?.contacts || []);
+    if (histContacts.length) {
       for (const c of histContacts) upsertContact(c);
       console.log(`[${sessionId}] messaging-history.set: ${histContacts.length} contacts in batch, ${sess.contacts.length} total`);
       scheduleContactSave();
