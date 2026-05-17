@@ -8,6 +8,9 @@ namespace App\Libraries;
  */
 final class BlogAiGenerator
 {
+    /** Set when the last openaiChat() call fails; appended to the generator log next to ERROR lines. */
+    private static ?string $lastOpenAiChatFailure = null;
+
     /** @var array<string, array{label: string, topicPrompt: string, imagePrompt: string}> */
     private const CATEGORY_CONFIG = [
         'laws' => [
@@ -95,6 +98,9 @@ final class BlogAiGenerator
 
                 if ($topic === null) {
                     $add("[blog-ai] ERROR: Failed to generate topic for {$category} option {$optIdx}");
+                    if (self::$lastOpenAiChatFailure !== null && self::$lastOpenAiChatFailure !== '') {
+                        $add('[blog-ai]   → ' . self::$lastOpenAiChatFailure);
+                    }
                     continue;
                 }
                 $topic = trim(strip_tags($topic));
@@ -127,6 +133,9 @@ PROMPT;
 
                 if ($draftJson === null) {
                     $add("[blog-ai] ERROR: Failed to generate draft for {$category} option {$optIdx}");
+                    if (self::$lastOpenAiChatFailure !== null && self::$lastOpenAiChatFailure !== '') {
+                        $add('[blog-ai]   → ' . self::$lastOpenAiChatFailure);
+                    }
                     continue;
                 }
 
@@ -216,8 +225,17 @@ PROMPT;
         return $serverPhpRoot . DIRECTORY_SEPARATOR . 'blog_uploads';
     }
 
+    private static function collapseWhitespace(string $s): string
+    {
+        $s = preg_replace('/\s+/', ' ', trim($s));
+
+        return is_string($s) ? $s : '';
+    }
+
     private static function openaiChat(string $apiKey, string $model, array $messages, int $maxCompletionTokens = 2000): ?string
     {
+        self::$lastOpenAiChatFailure = null;
+
         $payload = json_encode([
             'model'                 => $model,
             'messages'              => $messages,
@@ -243,14 +261,33 @@ PROMPT;
         curl_close($ch);
 
         if ($err !== '') {
+            self::$lastOpenAiChatFailure = 'curl_error: ' . self::collapseWhitespace($err);
+
             return null;
         }
         if ($code !== 200) {
+            $preview = self::collapseWhitespace(substr((string)$response, 0, 800));
+            self::$lastOpenAiChatFailure = "HTTP {$code}" . ($preview !== '' ? ': ' . $preview : '');
+
             return null;
         }
 
         $data = json_decode((string)$response, true);
-        return $data['choices'][0]['message']['content'] ?? null;
+        if (!is_array($data)) {
+            $preview = self::collapseWhitespace(substr((string)$response, 0, 600));
+            self::$lastOpenAiChatFailure = 'HTTP 200 but invalid JSON — body: ' . $preview;
+
+            return null;
+        }
+        $content = $data['choices'][0]['message']['content'] ?? null;
+        if ($content !== null && is_string($content)) {
+            return $content;
+        }
+
+        $preview = self::collapseWhitespace(substr((string)$response, 0, 600));
+        self::$lastOpenAiChatFailure = 'HTTP 200 but unexpected JSON shape — body: ' . $preview;
+
+        return null;
     }
 
     private static function openaiGenerateImage(string $apiKey, string $model, string $prompt, string $uploadDir): ?string
