@@ -802,6 +802,10 @@ PROMPT;
         $fullPath = rtrim($uploadDir, '/\\') . DIRECTORY_SEPARATOR . $filename;
         file_put_contents($fullPath, $imgData);
 
-        return 'blog_uploads/' . $filename;
+        // DALL-E images are typically 2-4 MB PNGs; compress to ≤1 MB JPEG
+        // for reliable WhatsApp/social link previews.
+        $fullPath = \App\Controllers\Admin\BlogController::compressCoverImage($fullPath, 1_048_576);
+
+        return 'blog_uploads/' . basename($fullPath);
     }
 }

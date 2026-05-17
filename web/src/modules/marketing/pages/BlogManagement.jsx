@@ -312,6 +312,10 @@ export default function BlogManagement() {
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      setSaveError('Image must be under 5 MB. The server will auto-compress it to ≤1 MB for optimal social sharing.');
+      return;
+    }
     setUploading(true);
     try {
       const res = await uploadBlogImage(file);

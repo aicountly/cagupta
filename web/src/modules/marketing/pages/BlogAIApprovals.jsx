@@ -158,6 +158,10 @@ export default function BlogAIApprovals() {
   const handleImageUpload = async (e, draftId) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Image must be under 5 MB. The server will auto-compress it to ≤1 MB for optimal social sharing.');
+      return;
+    }
     setUploading(draftId);
     try {
       const res = await uploadBlogImage(file);

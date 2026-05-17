@@ -811,7 +811,7 @@ class BlogController extends BaseController
         }
 
         if ($file['size'] > 5 * 1024 * 1024) {
-            $this->error('Image must be under 5 MB.', 422);
+            $this->error('Image must be under 5 MB (will be compressed to ≤1 MB).', 422);
         }
 
         $uploadDir = $this->blogUploadDir();
@@ -837,6 +837,10 @@ class BlogController extends BaseController
         if (!move_uploaded_file($file['tmp_name'], $destPath)) {
             $this->error('Failed to save uploaded image to ' . $uploadDir . '. Check open_basedir allows this path.', 500);
         }
+
+        // Auto-compress to ≤1 MB for reliable WhatsApp/social link previews
+        $destPath = self::compressCoverImage($destPath, 1_048_576);
+        $filename = basename($destPath);
 
         $relativePath = 'blog_uploads/' . $filename;
         $this->success([
@@ -900,6 +904,75 @@ class BlogController extends BaseController
     }
 
     /**
+     * Compress a cover image on disk to fit within a byte-size budget (default 1 MB).
+     *
+     * Strategy: re-encode as JPEG at progressively lower quality until the file
+     * is small enough. If the source is PNG/WebP with transparency, it is
+     * flattened onto a white background first. GD is available on virtually all
+     * PHP hosts including cPanel.
+     *
+     * @return string The (possibly new) file path — extension may change to .jpg
+     */
+    public static function compressCoverImage(string $filePath, int $maxBytes = 1_048_576): string
+    {
+        if (!is_file($filePath) || filesize($filePath) <= $maxBytes) {
+            return $filePath;
+        }
+
+        if (!extension_loaded('gd')) {
+            error_log('[BlogController] compressCoverImage: GD not available, skipping compression');
+            return $filePath;
+        }
+
+        $img = @imagecreatefromstring(file_get_contents($filePath));
+        if ($img === false) {
+            error_log('[BlogController] compressCoverImage: could not read image');
+            return $filePath;
+        }
+
+        $w = imagesx($img);
+        $h = imagesy($img);
+
+        // Cap dimensions at 1600px wide (keeps most cover images under 1 MB at q80)
+        $maxW = 1600;
+        if ($w > $maxW) {
+            $newH = (int)round($h * ($maxW / $w));
+            $resized = imagecreatetruecolor($maxW, $newH);
+            imagefill($resized, 0, 0, imagecolorallocate($resized, 255, 255, 255));
+            imagecopyresampled($resized, $img, 0, 0, 0, 0, $maxW, $newH, $w, $h);
+            imagedestroy($img);
+            $img = $resized;
+        } else {
+            // Flatten transparency onto white
+            $flat = imagecreatetruecolor($w, $h);
+            imagefill($flat, 0, 0, imagecolorallocate($flat, 255, 255, 255));
+            imagecopy($flat, $img, 0, 0, 0, 0, $w, $h);
+            imagedestroy($img);
+            $img = $flat;
+        }
+
+        // Re-encode as JPEG, stepping quality down until under budget
+        $dir = dirname($filePath);
+        $base = pathinfo($filePath, PATHINFO_FILENAME);
+        $outPath = $dir . DIRECTORY_SEPARATOR . $base . '.jpg';
+
+        foreach ([85, 75, 65, 50, 40] as $q) {
+            imagejpeg($img, $outPath, $q);
+            if (filesize($outPath) <= $maxBytes) {
+                break;
+            }
+        }
+        imagedestroy($img);
+
+        // Remove original if extension changed
+        if (realpath($outPath) !== realpath($filePath) && is_file($filePath)) {
+            @unlink($filePath);
+        }
+
+        return $outPath;
+    }
+
+    /**
      * Stream a cover image from BLOG_UPLOADS_PATH (public — used by marketing site and email clients).
      * No database connection is needed here; this method is intentionally DB-free.
      */
@@ -921,9 +994,18 @@ class BlogController extends BaseController
             $this->error('Not found.', 404);
         }
 
-        $mime = function_exists('mime_content_type') ? mime_content_type($realFile) : false;
-        if ($mime === false || $mime === '') {
-            $mime = 'application/octet-stream';
+        $extMap = [
+            'png'  => 'image/png',
+            'jpg'  => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'gif'  => 'image/gif',
+            'webp' => 'image/webp',
+            'svg'  => 'image/svg+xml',
+        ];
+        $ext  = strtolower(pathinfo($realFile, PATHINFO_EXTENSION));
+        $mime = function_exists('mime_content_type') ? (mime_content_type($realFile) ?: '') : '';
+        if ($mime === '' || $mime === 'application/octet-stream') {
+            $mime = $extMap[$ext] ?? 'application/octet-stream';
         }
 
         header('Access-Control-Allow-Origin: *');
