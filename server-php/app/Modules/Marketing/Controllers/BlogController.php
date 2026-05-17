@@ -876,6 +876,12 @@ class BlogController extends BaseController
      */
     private function dispatchBlogEmail(int $postId, string $title, string $excerpt, string $slug): array
     {
+        // One HTTP call per client; default max_execution_time (often 30s) is too low for dozens of recipients.
+        $maxSeconds = (int)(getenv('BLOG_EMAIL_MAX_SECONDS') ?: '600');
+        if ($maxSeconds > 0) {
+            @set_time_limit($maxSeconds);
+        }
+
         $baseUrl = rtrim((string)($_ENV['MARKETING_SITE_URL'] ?? $_ENV['BASE_URL'] ?? ''), '/');
         $blogUrl = "{$baseUrl}/blog/{$slug}";
 
@@ -910,17 +916,28 @@ class BlogController extends BaseController
         $total  = count($clients);
         $status = $successCount === 0 ? 'failed' : ($successCount < $total ? 'partial' : 'sent');
 
-        $this->db()->prepare('
-            INSERT INTO blog_email_logs (blog_post_id, recipients_count, success_count, status)
-            VALUES (:pid, :total, :success, :status)
-        ')->execute([
-            ':pid'     => $postId,
-            ':total'   => $total,
-            ':success' => $successCount,
-            ':status'  => $status,
-        ]);
+        $emailLogSaved = true;
+        try {
+            $this->db()->prepare('
+                INSERT INTO blog_email_logs (blog_post_id, recipients_count, success_count, status)
+                VALUES (:pid, :total, :success, :status)
+            ')->execute([
+                ':pid'     => $postId,
+                ':total'   => $total,
+                ':success' => $successCount,
+                ':status'  => $status,
+            ]);
+        } catch (\PDOException $e) {
+            $emailLogSaved = false;
+            error_log('[BlogController] blog_email_logs INSERT failed: ' . $e->getMessage());
+        }
 
-        return ['total' => $total, 'sent' => $successCount, 'status' => $status];
+        return [
+            'total'             => $total,
+            'sent'              => $successCount,
+            'status'            => $status,
+            'email_log_saved'   => $emailLogSaved,
+        ];
     }
 
     private function buildBlogEmailHtml(string $title, string $excerpt, string $url, string $category): string

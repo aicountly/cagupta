@@ -38,6 +38,11 @@ class BrevoMailer
             return false;
         }
 
+        if (!function_exists('curl_init')) {
+            error_log('[BrevoMailer] PHP cURL extension is not loaded — cannot send email.');
+            return false;
+        }
+
         $senderEmail = (string)(getenv('SENDER_EMAIL') ?: 'office@carahulgupta.in');
         $senderName  = (string)(getenv('SENDER_NAME')  ?: 'CA Rahul Gupta');
 

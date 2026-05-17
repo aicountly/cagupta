@@ -88,6 +88,50 @@ function saveContactsToDisk(sessionId, contacts) {
   }
 }
 
+function groupsFilePath(sessionId) {
+  return join(sessionAuthPath(sessionId), 'groups_cache.json');
+}
+
+function loadGroupsFromDisk(sessionId) {
+  try {
+    const raw = readFileSync(groupsFilePath(sessionId), 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGroupsToDisk(sessionId, groups) {
+  try {
+    writeFileSync(groupsFilePath(sessionId), JSON.stringify(groups));
+  } catch (e) {
+    console.error(`[${sessionId}] Failed to save groups: ${e.message}`);
+  }
+}
+
+function newslettersFilePath(sessionId) {
+  return join(sessionAuthPath(sessionId), 'newsletters_cache.json');
+}
+
+function loadNewslettersFromDisk(sessionId) {
+  try {
+    const raw = readFileSync(newslettersFilePath(sessionId), 'utf8');
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveNewslettersToDisk(sessionId, newsletters) {
+  try {
+    writeFileSync(newslettersFilePath(sessionId), JSON.stringify(newsletters));
+  } catch (e) {
+    console.error(`[${sessionId}] Failed to save newsletters: ${e.message}`);
+  }
+}
+
 async function initSession(sessionId) {
   // Clean up previous socket if reconnecting
   const existing = sessions.get(sessionId);
@@ -102,12 +146,12 @@ async function initSession(sessionId) {
     status:         'connecting',
     qrDataUrl:      existing?.qrDataUrl ?? null,
     contacts:       existing?.contacts?.length > 0 ? existing.contacts : loadContactsFromDisk(sessionId),
-    groups:         existing?.groups ?? [],
-    newsletters:    existing?.newsletters ?? [],
+    groups:         existing?.groups?.length > 0 ? existing.groups : loadGroupsFromDisk(sessionId),
+    newsletters:    existing?.newsletters?.length > 0 ? existing.newsletters : loadNewslettersFromDisk(sessionId),
     reconnectTimer: null,
   };
   sessions.set(sessionId, sess);
-  console.log(`[${sessionId}] Init session — ${sess.contacts.length} contacts from cache`);
+  console.log(`[${sessionId}] Init session — ${sess.contacts.length} contacts, ${sess.groups.length} groups from cache`);
 
   const authPath = sessionAuthPath(sessionId);
   mkdirSync(authPath, { recursive: true });
@@ -143,19 +187,6 @@ async function initSession(sessionId) {
   sess.socket = sock;
 
   sock.ev.on('creds.update', saveCreds);
-
-  // Debug: log all contact/history events Baileys emits and their payload shape
-  const _origEmit = sock.ev.emit;
-  sock.ev.emit = function(event, ...args) {
-    if (typeof event === 'string' && (event.includes('contact') || event.includes('history') || event.includes('chats.set'))) {
-      const data = args[0];
-      const isArr = Array.isArray(data);
-      const keys = (data && typeof data === 'object' && !isArr) ? Object.keys(data) : [];
-      const len = isArr ? data.length : (data?.contacts?.length ?? data?.chats?.length ?? '?');
-      console.log(`[${sessionId}] RAW_EVENT "${event}" isArray=${isArr} keys=[${keys}] len=${len}`);
-    }
-    return _origEmit.apply(this, [event, ...args]);
-  };
 
   // ── Contact helpers ───────────────────────────────────────────────────────
 
@@ -204,13 +235,25 @@ async function initSession(sessionId) {
   // messaging-history.set — Baileys 6.7+ delivers contacts/chats/messages via this
   // event during history sync (both fresh QR and reconnects with saved credentials).
   sock.ev.on('messaging-history.set', (data) => {
-    console.log(`[${sessionId}] messaging-history.set keys: ${data ? Object.keys(data) : 'null'}`);
     const histContacts = Array.isArray(data) ? data : (data?.contacts || []);
     if (histContacts.length) {
       for (const c of histContacts) upsertContact(c);
-      console.log(`[${sessionId}] messaging-history.set: ${histContacts.length} contacts in batch, ${sess.contacts.length} total`);
-      scheduleContactSave();
     }
+
+    // Enrich contacts from individual chat metadata — chats carry saved names
+    // that may not appear in the contacts list (e.g. pushName from chat history)
+    const histChats = data?.chats || [];
+    let enriched = 0;
+    for (const chat of histChats) {
+      if (!chat.id || !chat.name) continue;
+      if (chat.id.endsWith('@s.whatsapp.net') || chat.id.endsWith('@lid')) {
+        upsertContact({ id: chat.id, name: chat.name });
+        enriched++;
+      }
+    }
+
+    console.log(`[${sessionId}] messaging-history.set: ${histContacts.length} contacts, ${enriched} from chats, ${sess.contacts.length} total`);
+    scheduleContactSave();
   });
 
   // contacts.upsert — incremental additions/updates pushed by WhatsApp
@@ -237,6 +280,57 @@ async function initSession(sessionId) {
     scheduleContactSave();
   });
 
+  // Enrich contacts from incremental chat events — individual chats carry
+  // the saved contact name which may not arrive via contacts.upsert.
+  function enrichFromChats(chats) {
+    let enriched = 0;
+    for (const chat of chats) {
+      if (!chat.id || !chat.name) continue;
+      if (chat.id.endsWith('@s.whatsapp.net') || chat.id.endsWith('@lid')) {
+        upsertContact({ id: chat.id, name: chat.name });
+        enriched++;
+      }
+    }
+    if (enriched > 0) {
+      console.log(`[${sessionId}] chats enriched ${enriched} contacts, ${sess.contacts.length} total`);
+      scheduleContactSave();
+    }
+  }
+
+  sock.ev.on('chats.set', (data) => {
+    const list = Array.isArray(data) ? data : (data?.chats || []);
+    enrichFromChats(list);
+  });
+
+  sock.ev.on('chats.upsert', (chats) => {
+    enrichFromChats(Array.isArray(chats) ? chats : []);
+  });
+
+  // Extract pushName from incoming messages to enrich number-only contacts
+  sock.ev.on('messages.upsert', ({ messages: msgs }) => {
+    if (!msgs?.length) return;
+    let enriched = 0;
+    for (const msg of msgs) {
+      const pushName = msg.pushName;
+      if (!pushName) continue;
+      // For individual chats use remoteJid; for group messages use participant
+      const jid = msg.key?.participant || msg.key?.remoteJid;
+      if (!jid || isNonContact(jid)) continue;
+      const idx = sess.contacts.findIndex((x) => x.id === jid);
+      if (idx >= 0 && sess.contacts[idx].name.startsWith('+')) {
+        sess.contacts[idx] = { ...sess.contacts[idx], name: pushName };
+        enriched++;
+      } else if (idx < 0) {
+        sess.contacts.push({ id: jid, name: pushName, type: 'contact' });
+        enriched++;
+      }
+    }
+    if (enriched > 0) {
+      console.log(`[${sessionId}] messages.upsert enriched ${enriched} contacts, ${sess.contacts.length} total`);
+      scheduleContactSave();
+    }
+  });
+
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
       try {
@@ -252,11 +346,8 @@ async function initSession(sessionId) {
       sess.status    = 'connected';
       sess.qrDataUrl = null;
       console.log(`[${sessionId}] Connected`);
-      loadGroups(sessionId);
-      // Contacts arrive via contacts.set/upsert events, but schedule group re-syncs
-      // to catch anything that arrives after the initial burst (8 s and 30 s windows).
-      setTimeout(() => loadGroups(sessionId), 8_000);
-      setTimeout(() => loadGroups(sessionId), 30_000);
+      // Single delayed group load to avoid WhatsApp rate-limiting
+      setTimeout(() => loadGroups(sessionId), 5_000);
     }
 
     if (connection === 'close') {
@@ -297,6 +388,7 @@ async function loadGroups(sessionId) {
       type:         'group',
       membersCount: g.participants?.length || 0,
     }));
+    saveGroupsToDisk(sessionId, sess.groups);
     console.log(`[${sessionId}] Loaded ${sess.groups.length} groups`);
   } catch (e) {
     console.error(`[${sessionId}] Groups error: ${e.message}`);
@@ -378,10 +470,8 @@ app.get('/session/:id/groups', (req, res) => {
   if (!sess || sess.status !== 'connected') {
     return res.status(423).json({ error: 'Session not connected' });
   }
-  // Fire a background refresh; return the already-loaded list immediately.
-  // Groups are pre-loaded on connection open (and at 8 s / 30 s), so this
-  // is always populated by the time a user triggers a manual sync.
-  loadGroups(req.params.id).catch(() => {});
+  // Groups are loaded on connection open (with 5s delay) and cached to disk.
+  // No background refresh here to avoid WhatsApp rate-limiting.
   res.json({ groups: sess.groups });
 });
 
@@ -409,16 +499,27 @@ app.post('/session/:id/newsletters', async (req, res) => {
     if (!jid.endsWith('@newsletter')) jid = jid + '@newsletter';
   }
 
-  // Resolve invite code → JID via Baileys
+  // Resolve invite code → JID via Baileys (try multiple API names across versions)
   if (!jid && inviteCode) {
-    try {
-      const code = String(inviteCode).trim().replace(/^.*\/channel\//i, '');
-      const meta = await sess.socket.newsletterMetadata('invite', code);
-      jid  = meta?.id ?? null;
-      name = name || meta?.name || meta?.id || inviteCode;
-    } catch (e) {
-      console.error(`[${req.params.id}] Newsletter metadata error: ${e.message}`);
-      return res.status(400).json({ error: `Could not resolve invite code: ${e.message}` });
+    const code = String(inviteCode).trim().replace(/^.*\/channel\//i, '');
+    const metadataFn = sess.socket.newsletterMetadata
+      || sess.socket.getNewsletterInfo
+      || sess.socket.newsletterGetInfo;
+
+    if (metadataFn) {
+      try {
+        const meta = await metadataFn.call(sess.socket, 'invite', code);
+        jid  = meta?.id ?? null;
+        name = name || meta?.name || meta?.id || inviteCode;
+      } catch (e) {
+        console.error(`[${req.params.id}] Newsletter metadata error: ${e.message}`);
+        return res.status(400).json({ error: `Could not resolve invite code: ${e.message}` });
+      }
+    } else {
+      // Baileys version lacks newsletter API — store with invite code as identifier
+      console.log(`[${req.params.id}] newsletterMetadata not available, storing channel with invite code`);
+      jid = code + '@newsletter';
+      name = name || inviteCode;
     }
   }
 
@@ -433,6 +534,7 @@ app.post('/session/:id/newsletters', async (req, res) => {
 
   const entry = { id: jid, name: name || jid, type: 'newsletter' };
   sess.newsletters.push(entry);
+  saveNewslettersToDisk(req.params.id, sess.newsletters);
   console.log(`[${req.params.id}] Channel added: ${jid} (${entry.name})`);
   res.json({ newsletter: entry });
 });
@@ -445,6 +547,7 @@ app.delete('/session/:id/newsletters/:jid', (req, res) => {
   const jid = decodeURIComponent(req.params.jid);
   const before = sess.newsletters.length;
   sess.newsletters = sess.newsletters.filter((n) => n.id !== jid);
+  saveNewslettersToDisk(req.params.id, sess.newsletters);
   console.log(`[${req.params.id}] Channel removed: ${jid} (had ${before}, now ${sess.newsletters.length})`);
   res.json({ ok: true });
 });
