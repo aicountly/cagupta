@@ -165,6 +165,24 @@ export default function WAWebMarketing() {
   const displayList = (activeTab === 'groups' ? groups : contacts)
     .filter((item) => String(item.name || item.id || '').toLowerCase().includes(search.toLowerCase()));
 
+  const allFilteredSelected =
+    displayList.length > 0 && displayList.every((item) => selectedTargets.some((t) => sameId(t.id, item.id)));
+
+  function toggleSelectAll() {
+    if (allFilteredSelected) {
+      // Deselect only the filtered items, keep any others that were selected outside this filter
+      const filteredIds = new Set(displayList.map((item) => String(item.id).trim()));
+      setSelectedTargets((prev) => prev.filter((t) => !filteredIds.has(String(t.id).trim())));
+    } else {
+      // Add all filtered items that aren't already selected
+      setSelectedTargets((prev) => {
+        const existing = new Set(prev.map((t) => String(t.id).trim()));
+        const toAdd = displayList.filter((item) => !existing.has(String(item.id).trim()));
+        return [...prev, ...toAdd];
+      });
+    }
+  }
+
   const statusColor = sessionStatus === SESSION_STATUS.CONNECTED ? '#22c55e'
     : sessionStatus === SESSION_STATUS.CONNECTING ? '#f59e0b' : '#94a3b8';
 
@@ -227,6 +245,24 @@ export default function WAWebMarketing() {
               style={{ ...inputStyle, paddingLeft: 32 }}
             />
           </div>
+
+          {sessionStatus === SESSION_STATUS.CONNECTED && displayList.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, paddingBottom: 8, borderBottom: '1px solid #f1f5f9' }}>
+              <span style={{ fontSize: 12, color: '#94a3b8' }}>
+                {displayList.length} {activeTab}{displayList.length !== 1 ? '' : ''} {search ? 'matched' : 'total'}
+              </span>
+              <button
+                onClick={toggleSelectAll}
+                style={{
+                  fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'none', border: 'none', padding: '2px 0',
+                  color: allFilteredSelected ? '#ef4444' : '#F37920',
+                  textDecoration: 'underline', textUnderlineOffset: 2,
+                }}
+              >
+                {allFilteredSelected ? `Deselect all (${displayList.length})` : `Select all (${displayList.length})`}
+              </button>
+            </div>
+          )}
 
           {sessionStatus !== SESSION_STATUS.CONNECTED ? (
             <div style={{ textAlign: 'center', padding: '32px 16px', color: '#94a3b8' }}>
