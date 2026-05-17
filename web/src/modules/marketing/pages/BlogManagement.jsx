@@ -16,6 +16,100 @@ const CATEGORIES = [
   { value: 'funding_promotions',    label: 'Funding Promotions' },
 ];
 
+const MOCK_POSTS = [
+  {
+    id: 1,
+    slug: 'ai-in-ca-practice',
+    title: 'How AI Is Transforming CA Practices in India',
+    excerpt: 'From automated bookkeeping to intelligent compliance checks, discover how AI tools are reshaping the way chartered accountants work.',
+    content: `## The AI Revolution in Finance
+
+Artificial Intelligence is no longer a buzzword — it is a practical tool reshaping how chartered accountants and finance professionals work in India.
+
+## What AI Can Do for Your Business
+
+- **Automated bookkeeping** — reconcile transactions in seconds, not hours
+- **Intelligent compliance alerts** — never miss a GST filing or TDS deadline
+- **Predictive cash flow analysis** — know your liquidity position 30 days in advance
+- **Expense categorisation** — AI reads receipts and categorises spend automatically
+
+## Getting Started
+
+The first step is identifying your highest-friction workflows. Where do your staff spend the most manual time? That is usually where AI delivers the fastest return on investment.
+
+## Working With Your CA
+
+An experienced CA can bridge the gap between technology vendors and your real business needs. At CA Rahul Gupta Office we have helped dozens of businesses identify the right AI tools and integrate them seamlessly.`,
+    category: 'ai_promotions',
+    status: 'published',
+    source: 'manual',
+    published_at: new Date().toISOString(),
+    cover_image_path: '',
+    cover_image_url: '',
+  },
+  {
+    id: 2,
+    slug: 'new-income-tax-provisions-2025',
+    title: 'Key Income Tax Provisions to Know in 2025–26',
+    excerpt: 'A concise breakdown of the major amendments in the Union Budget affecting individuals, HUFs and businesses this financial year.',
+    content: `## Union Budget 2025–26 at a Glance
+
+The Union Budget introduced several significant changes to direct taxation that every individual and business must understand before filing returns this year.
+
+## Changes for Individual Taxpayers
+
+- **Revised tax slabs** under the new regime now make it more attractive for most salaried employees
+- **Standard deduction** increased to ₹75,000 for salaried individuals
+- **NPS employer contribution** limit raised to 14% for private-sector employees
+
+## Key Changes for Businesses
+
+- **Presumptive taxation limits** revised upward for small businesses and professionals
+- **TDS threshold changes** on various payment categories reduce compliance burden
+- **Angel tax** removal for all investor classes simplifies startup funding
+
+## Filing Deadlines to Remember
+
+Ensure you file your ITR on time to avoid penalties. Consult your CA to determine which regime — old or new — results in lower tax for your specific income profile.`,
+    category: 'laws',
+    status: 'published',
+    source: 'manual',
+    published_at: new Date().toISOString(),
+    cover_image_path: '',
+    cover_image_url: '',
+  },
+  {
+    id: 3,
+    slug: 'msme-subsidies-guide',
+    title: 'Top Government Subsidies for MSMEs You Should Know',
+    excerpt: 'Many small businesses miss out on crores in subsidies simply because they are unaware. Here is your complete guide.',
+    content: `## Why MSMEs Miss Out on Subsidies
+
+Lack of awareness is the single biggest reason small and medium businesses fail to claim government benefits they are fully entitled to.
+
+## Major Subsidy Schemes in 2025
+
+- **CGTMSE** — Collateral-free credit up to ₹2 crore for micro and small enterprises
+- **PMEGP** — Capital subsidy of 15–35% on project cost for new manufacturing units
+- **TReDS** — Invoice financing platform ensuring MSMEs are paid on time by large buyers
+- **PLI Scheme** — Production-linked incentives across 14 sectors including textiles and food processing
+
+## How to Apply
+
+Most schemes are administered through the Udyam portal. Ensure your MSME registration is current and your GST filings are up to date before applying.
+
+## Getting Expert Help
+
+A CA with MSME expertise can identify which schemes your business qualifies for and manage the documentation process end to end. Contact our office to schedule a free eligibility assessment.`,
+    category: 'subsidies_promotions',
+    status: 'published',
+    source: 'manual',
+    published_at: new Date().toISOString(),
+    cover_image_path: '',
+    cover_image_url: '',
+  },
+];
+
 const STATUS_STYLES = {
   published: { background: '#f0fdf4', color: '#16a34a' },
   draft:     { background: '#f8fafc', color: '#64748b' },
@@ -36,10 +130,18 @@ function formatDate(iso) {
 
 const emptyForm = { title: '', excerpt: '', content: '', category: 'laws', cover_image_path: '' };
 
+function applyFilters(posts, category, status) {
+  return posts.filter(p =>
+    (!category || p.category === category) &&
+    (!status   || p.status   === status)
+  );
+}
+
 export default function BlogManagement() {
   const [posts, setPosts]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState('');
+  const [isMock, setIsMock]         = useState(false);
   const [filterCat, setFilterCat]   = useState('');
   const [filterSt, setFilterSt]     = useState('');
   const [showEditor, setShowEditor] = useState(false);
@@ -56,9 +158,21 @@ export default function BlogManagement() {
     setLoading(true); setError('');
     try {
       const res = await fetchBlogPosts({ category: filterCat, status: filterSt });
-      setPosts(res.data ?? []);
+      const list = res.data ?? [];
+      if (list.length === 0 && !import.meta.env.VITE_API_BASE_URL) {
+        setPosts(applyFilters(MOCK_POSTS, filterCat, filterSt));
+        setIsMock(true);
+      } else {
+        setPosts(list);
+        setIsMock(false);
+      }
     } catch (e) {
-      setError(e.message);
+      if (!import.meta.env.VITE_API_BASE_URL) {
+        setPosts(applyFilters(MOCK_POSTS, filterCat, filterSt));
+        setIsMock(true);
+      } else {
+        setError(e.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -170,6 +284,14 @@ export default function BlogManagement() {
           <option value="published">Published</option>
         </select>
       </div>
+
+      {/* Mock mode banner */}
+      {isMock && (
+        <div style={{ ...alertBox, background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', marginBottom: 16 }}>
+          <AlertCircle size={14} />
+          Preview mode — showing sample posts. Connect the backend to manage real content.
+        </div>
+      )}
 
       {/* Error */}
       {error && (

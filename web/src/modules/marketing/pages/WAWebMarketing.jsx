@@ -29,8 +29,10 @@ export default function WAWebMarketing() {
   const [sendProgress, setSendProgress] = useState(null);
   const [sendLog, setSendLog] = useState([]);
   const [search, setSearch] = useState('');
+  const [refreshStatus, setRefreshStatus] = useState(null); // null | { type: 'loading'|'success'|'error', message: string }
   const fileRef = useRef(null);
   const wasConnectedRef = useRef(false);
+  const refreshTimerRef = useRef(null);
 
   // Poll session status
   useEffect(() => {
@@ -86,14 +88,35 @@ export default function WAWebMarketing() {
   }
 
   async function loadContactsAndGroups() {
+    if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    setRefreshStatus({ type: 'loading', message: 'Syncing contacts & groups…' });
     try {
       const [cRes, gRes] = await Promise.all([
         fetch(`${API_BASE_URL}/marketing/wa/contacts`, { headers: authHeaders() }),
         fetch(`${API_BASE_URL}/marketing/wa/groups`, { headers: authHeaders() }),
       ]);
-      if (cRes.ok) setContacts(await cRes.json().then(d => d.data || []));
-      if (gRes.ok) setGroups(await gRes.json().then(d => d.data || []));
-    } catch { /* ignore */ }
+      let contactCount = 0, groupCount = 0;
+      if (cRes.ok) {
+        const d = await cRes.json();
+        const arr = d.data || [];
+        setContacts(arr);
+        contactCount = arr.length;
+      }
+      if (gRes.ok) {
+        const d = await gRes.json();
+        const arr = d.data || [];
+        setGroups(arr);
+        groupCount = arr.length;
+      }
+      if (!cRes.ok || !gRes.ok) {
+        setRefreshStatus({ type: 'error', message: 'Some data failed to load. Try again.' });
+      } else {
+        setRefreshStatus({ type: 'success', message: `Synced — ${groupCount} group${groupCount !== 1 ? 's' : ''}, ${contactCount} contact${contactCount !== 1 ? 's' : ''}` });
+      }
+    } catch {
+      setRefreshStatus({ type: 'error', message: 'Sync failed. Check your connection.' });
+    }
+    refreshTimerRef.current = setTimeout(() => setRefreshStatus(null), 4000);
   }
 
   function sameId(a, b) {
@@ -229,13 +252,42 @@ export default function WAWebMarketing() {
               ))}
             </div>
             {sessionStatus === SESSION_STATUS.CONNECTED && (
-              <button onClick={loadContactsAndGroups} title="Refresh list" style={{
-                ...btnOutline, padding: '7px 10px', flexShrink: 0,
-              }}>
-                <RefreshCw size={13} />
+              <button
+                onClick={loadContactsAndGroups}
+                disabled={refreshStatus?.type === 'loading'}
+                title="Refresh contacts & groups"
+                style={{
+                  ...btnOutline, padding: '7px 10px', flexShrink: 0,
+                  opacity: refreshStatus?.type === 'loading' ? 0.6 : 1,
+                }}
+              >
+                <RefreshCw
+                  size={13}
+                  style={refreshStatus?.type === 'loading' ? { animation: 'spin 1s linear infinite' } : undefined}
+                />
               </button>
             )}
           </div>
+
+          {refreshStatus && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: '7px 10px', marginBottom: 10, borderRadius: 7, fontSize: 12,
+              background: refreshStatus.type === 'success' ? '#f0fdf4'
+                : refreshStatus.type === 'error' ? '#fef2f2' : '#f8fafc',
+              border: `1px solid ${refreshStatus.type === 'success' ? '#bbf7d0'
+                : refreshStatus.type === 'error' ? '#fecaca' : '#e2e8f0'}`,
+              color: refreshStatus.type === 'success' ? '#16a34a'
+                : refreshStatus.type === 'error' ? '#dc2626' : '#64748b',
+            }}>
+              {refreshStatus.type === 'loading' && (
+                <RefreshCw size={12} style={{ animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+              )}
+              {refreshStatus.type === 'success' && <CheckCircle2 size={12} style={{ flexShrink: 0 }} />}
+              {refreshStatus.type === 'error' && <AlertCircle size={12} style={{ flexShrink: 0 }} />}
+              <span>{refreshStatus.message}</span>
+            </div>
+          )}
 
           <div style={{ position: 'relative', marginBottom: 12 }}>
             <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />

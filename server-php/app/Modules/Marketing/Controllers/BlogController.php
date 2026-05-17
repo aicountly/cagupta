@@ -553,20 +553,53 @@ class BlogController extends BaseController
 
     /**
      * Detect the MIME type of an uploaded file.
-     * Tries finfo (PHP fileinfo extension) first; falls back to mime_content_type.
+     * Tries finfo first, then mime_content_type, then reads magic bytes directly
+     * so detection works on Windows where the fileinfo extension may be absent.
      */
     private function detectMimeType(string $tmpPath): string|false
     {
         if (class_exists(\finfo::class)) {
             $finfo = new \finfo(FILEINFO_MIME_TYPE);
             $mime  = $finfo->file($tmpPath);
-            if ($mime !== false) {
+            if ($mime !== false && $mime !== 'application/octet-stream') {
                 return $mime;
             }
         }
 
         if (function_exists('mime_content_type')) {
-            return mime_content_type($tmpPath);
+            $mime = mime_content_type($tmpPath);
+            if ($mime !== false && $mime !== 'application/octet-stream') {
+                return $mime;
+            }
+        }
+
+        // Magic-byte fallback — reliable on all platforms including Windows.
+        $handle = @fopen($tmpPath, 'rb');
+        if ($handle === false) {
+            return false;
+        }
+        $header = fread($handle, 12);
+        fclose($handle);
+
+        if ($header === false || strlen($header) < 4) {
+            return false;
+        }
+
+        // PNG: 89 50 4E 47 0D 0A 1A 0A
+        if (str_starts_with($header, "\x89PNG\r\n\x1a\n")) {
+            return 'image/png';
+        }
+        // JPEG: FF D8 FF
+        if (str_starts_with($header, "\xFF\xD8\xFF")) {
+            return 'image/jpeg';
+        }
+        // GIF: GIF87a or GIF89a
+        if (str_starts_with($header, 'GIF87a') || str_starts_with($header, 'GIF89a')) {
+            return 'image/gif';
+        }
+        // WebP: RIFF????WEBP
+        if (str_starts_with($header, 'RIFF') && substr($header, 8, 4) === 'WEBP') {
+            return 'image/webp';
         }
 
         return false;
