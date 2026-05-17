@@ -20,6 +20,21 @@ final class BlogAiGenerator
             'topicPrompt' => 'You are an expert Indian chartered accountant. Suggest one highly specific, actionable blog topic about a lesser-known or underutilised tax-saving strategy, deduction, exemption, or investment that Indian taxpayers and business owners can use in FY 2025-26 or FY 2026-27. Return ONLY the topic title — no extra text, no numbering, no quotes.',
             'imagePrompt' => 'Professional, clean illustration for a CA firm blog about tax planning and savings. Abstract financial imagery — coins, piggy bank, growing plant, calculator, muted greens and oranges, no text, modern flat style.',
         ],
+        'ai_promotions' => [
+            'label'       => 'AI Promotions',
+            'topicPrompt' => 'You are an expert Indian chartered accountant and business consultant. Suggest one highly specific, practical blog topic about how Indian businesses, startups, or professionals can leverage AI tools, automation, or government AI initiatives to improve productivity, reduce costs, or unlock new revenue in 2026. Return ONLY the topic title — no extra text, no numbering, no quotes.',
+            'imagePrompt' => 'Professional, clean illustration for a CA firm blog about AI adoption in Indian business. Abstract tech imagery — neural network nodes, digital gears, glowing circuits, muted purples and greys, no text, modern flat style.',
+        ],
+        'subsidies_promotions' => [
+            'label'       => 'Subsidies Promotions',
+            'topicPrompt' => 'You are an expert Indian chartered accountant and government scheme advisor. Suggest one highly specific, actionable blog topic about a central or state government subsidy, grant, or incentive scheme available to Indian MSMEs, startups, or individuals in 2026 that most businesses are unaware of or underutilise. Return ONLY the topic title — no extra text, no numbering, no quotes.',
+            'imagePrompt' => 'Professional, clean illustration for a CA firm blog about government subsidies and grants in India. Abstract imagery — government building, handshake, growth chart, Indian rupee coins, muted greens and blues, no text, modern flat style.',
+        ],
+        'funding_promotions' => [
+            'label'       => 'Funding Promotions',
+            'topicPrompt' => 'You are an expert Indian chartered accountant and startup funding advisor. Suggest one highly specific, actionable blog topic about fundraising options, investor funding rounds, venture debt, angel networks, or government-backed funding schemes available to Indian startups and SMEs in 2026. Return ONLY the topic title — no extra text, no numbering, no quotes.',
+            'imagePrompt' => 'Professional, clean illustration for a CA firm blog about startup and business funding in India. Abstract financial imagery — rocket launch, seed money, growth arrows, investor handshake, muted oranges and greens, no text, modern flat style.',
+        ],
     ];
 
     /**
@@ -54,7 +69,7 @@ final class BlogAiGenerator
 
         $categories = $onlyCategory !== null && $onlyCategory !== ''
             ? [$onlyCategory]
-            : ['laws', 'tax_saving'];
+            : ['laws', 'tax_saving', 'ai_promotions', 'subsidies_promotions', 'funding_promotions'];
 
         $add('[blog-ai] Starting at ' . date('Y-m-d H:i:s'));
 

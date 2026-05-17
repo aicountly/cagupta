@@ -9,8 +9,11 @@ import {
 } from '../services/blog.service';
 
 const CATEGORIES = [
-  { value: 'laws',       label: 'New Laws & Provisions',       color: '#2563eb', bg: '#eff6ff' },
-  { value: 'tax_saving', label: 'Tax Saving & Tax Planning',   color: '#d97706', bg: '#fef3c7' },
+  { value: 'laws',                  label: 'New Laws & Provisions',      color: '#2563eb', bg: '#eff6ff' },
+  { value: 'tax_saving',            label: 'Tax Saving & Tax Planning',  color: '#d97706', bg: '#fef3c7' },
+  { value: 'ai_promotions',         label: 'AI Promotions',              color: '#7c3aed', bg: '#f3e8ff' },
+  { value: 'subsidies_promotions',  label: 'Subsidies Promotions',       color: '#059669', bg: '#ecfdf5' },
+  { value: 'funding_promotions',    label: 'Funding Promotions',         color: '#c2410c', bg: '#fff7ed' },
 ];
 
 function catConfig(value) {

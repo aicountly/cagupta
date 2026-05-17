@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS blog_posts (
     excerpt          TEXT,
     content          TEXT NOT NULL,
     cover_image_path VARCHAR(500),
-    category         VARCHAR(50)  NOT NULL DEFAULT 'laws', -- laws | tax_saving
+    category         VARCHAR(50)  NOT NULL DEFAULT 'laws', -- laws | tax_saving | ai_promotions | subsidies_promotions | funding_promotions
     status           VARCHAR(32)  NOT NULL DEFAULT 'draft', -- draft | published
     source           VARCHAR(32)  NOT NULL DEFAULT 'manual', -- manual | ai
     created_by       INTEGER REFERENCES users(id),
@@ -28,7 +28,7 @@ CREATE INDEX IF NOT EXISTS idx_blog_posts_published ON blog_posts(published_at D
 CREATE TABLE IF NOT EXISTS blog_ai_drafts (
     id               SERIAL PRIMARY KEY,
     topic            TEXT         NOT NULL,
-    category         VARCHAR(50)  NOT NULL DEFAULT 'laws', -- laws | tax_saving
+    category         VARCHAR(50)  NOT NULL DEFAULT 'laws', -- laws | tax_saving | ai_promotions | subsidies_promotions | funding_promotions
     option_index     SMALLINT     NOT NULL DEFAULT 1,       -- 1 or 2 (which AI option)
     title            VARCHAR(500) NOT NULL,
     excerpt          TEXT,
@@ -52,3 +52,22 @@ CREATE TABLE IF NOT EXISTS blog_email_logs (
     status           VARCHAR(32) NOT NULL DEFAULT 'sent' -- sent | partial | failed
 );
 CREATE INDEX IF NOT EXISTS idx_blog_email_logs_post ON blog_email_logs(blog_post_id);
+
+-- ── Grant runtime app-user access ────────────────────────────────────────────
+-- Production DB_USER = carahulgupta_cagupta_user (see .env / app/Config/Database.php).
+-- Wrapped in DO so local dev environments with a different user (e.g. postgres)
+-- don't fail when this role doesn't exist.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'carahulgupta_cagupta_user') THEN
+        GRANT SELECT, INSERT, UPDATE, DELETE
+            ON blog_posts, blog_ai_drafts, blog_email_logs
+            TO "carahulgupta_cagupta_user";
+        GRANT USAGE, SELECT
+            ON SEQUENCE blog_posts_id_seq, blog_ai_drafts_id_seq, blog_email_logs_id_seq
+            TO "carahulgupta_cagupta_user";
+    END IF;
+END $$;
+
+INSERT INTO schema_migrations (version) VALUES ('069_blog_posts')
+ON CONFLICT (version) DO NOTHING;

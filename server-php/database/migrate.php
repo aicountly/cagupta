@@ -117,6 +117,12 @@ foreach ($files as $file) {
     echo "  → Applying {$version} … ";
     try {
         $pdo->exec($sql);
+        // Auto-track the migration so migrate.php skips it on the next run.
+        // Migration files that already contain their own INSERT INTO schema_migrations
+        // are protected by ON CONFLICT DO NOTHING.
+        $pdo->prepare(
+            "INSERT INTO schema_migrations (version) VALUES (:v) ON CONFLICT (version) DO NOTHING"
+        )->execute([':v' => $version]);
         echo "✅\n";
         $appliedCount++;
     } catch (PDOException $e) {

@@ -51,7 +51,8 @@ class LeadModel
         int    $page    = 1,
         int    $perPage = 20,
         string $search  = '',
-        string $status  = ''
+        string $status  = '',
+        string $source  = ''
     ): array {
         $where  = ['1=1'];
         $params = [];
@@ -63,6 +64,10 @@ class LeadModel
         if ($status !== '') {
             $where[]           = 'l.status = :status';
             $params[':status'] = $status;
+        }
+        if ($source !== '') {
+            $where[]           = 'l.source = :source';
+            $params[':source'] = $source;
         }
 
         $whereClause = implode(' AND ', $where);

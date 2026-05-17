@@ -128,6 +128,26 @@ export async function generateAiDraftsNow(body = {}) {
   return handleResponse(res);
 }
 
+// ── Public API (no auth — for /blog public pages) ────────────────────────────
+
+/**
+ * Fetch published blog posts for the public blog listing page (no auth).
+ */
+export async function fetchPublicBlogPosts({ category = '', page = 1 } = {}) {
+  const params = new URLSearchParams({ page });
+  if (category) params.set('category', category);
+  const res = await fetch(`${BASE}/public/blogs?${params}`);
+  return handleResponse(res);
+}
+
+/**
+ * Fetch a single published blog post by slug (no auth).
+ */
+export async function fetchPublicBlogPost(slug) {
+  const res = await fetch(`${BASE}/public/blogs/${encodeURIComponent(slug)}`);
+  return handleResponse(res);
+}
+
 // ── Image Upload ─────────────────────────────────────────────────────────────
 
 export async function uploadBlogImage(file) {

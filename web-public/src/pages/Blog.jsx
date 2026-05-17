@@ -63,8 +63,11 @@ export default function Blog() {
   }, []);
 
   const CATEGORY_LABELS = {
-    laws:       'Laws & Provisions',
-    tax_saving: 'Tax Planning',
+    laws:                 'Laws & Provisions',
+    tax_saving:           'Tax Planning',
+    ai_promotions:        'AI Promotions',
+    subsidies_promotions: 'Subsidies',
+    funding_promotions:   'Funding',
   };
 
   return (

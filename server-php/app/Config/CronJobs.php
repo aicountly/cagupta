@@ -6,11 +6,15 @@ namespace App\Config;
 /**
  * Static registry of all scheduled CLI scripts (cron jobs).
  *
- * Add a new entry here whenever a new CLI script is created.
- * This is the single source of truth displayed in the Settings → Cron Jobs page.
+ * Add a new entry here whenever a new CLI script is created, and configure
+ * the matching cPanel cron to redirect output to the log_file path:
+ *
+ *   php /home/<user>/public_html/api/cli/<script>.php \
+ *       >> /home/<user>/public_html/api/logs/<name>.log 2>&1
  *
  * Fields:
  *   file        — Script path relative to server-php/ (e.g. cli/send-digest.php)
+ *   log_file    — Log file path relative to server-php/ (e.g. logs/digest.log)
  *   cron        — Standard 5-field cron expression configured in cPanel
  *   frequency   — Human-readable frequency (e.g. "Daily", "Hourly")
  *   timing      — Human-readable time description (e.g. "5:00 AM daily")
@@ -20,13 +24,14 @@ namespace App\Config;
 class CronJobs
 {
     /**
-     * @return array<int, array{file:string, cron:string, frequency:string, timing:string, category:string, purpose:string}>
+     * @return array<int, array{file:string, log_file:string, cron:string, frequency:string, timing:string, category:string, purpose:string}>
      */
     public static function getAll(): array
     {
         return [
             [
                 'file'      => 'cli/send-digest.php',
+                'log_file'  => 'logs/digest.log',
                 'cron'      => '30 17 * * *',
                 'frequency' => 'Daily',
                 'timing'    => '5:30 PM daily',
@@ -35,6 +40,7 @@ class CronJobs
             ],
             [
                 'file'      => 'cli/send-superadmin-timesheet-report.php',
+                'log_file'  => 'logs/superadmin-timesheet.log',
                 'cron'      => '0 5 * * *',
                 'frequency' => 'Daily',
                 'timing'    => '5:00 AM daily',
@@ -43,6 +49,7 @@ class CronJobs
             ],
             [
                 'file'      => 'cli/send-timesheet-intimation.php',
+                'log_file'  => 'logs/timesheet-intimation.log',
                 'cron'      => '0 6 * * *',
                 'frequency' => 'Daily',
                 'timing'    => '6:00 AM daily',
@@ -51,6 +58,7 @@ class CronJobs
             ],
             [
                 'file'      => 'cli/notify-superadmin-unbilled-stale.php',
+                'log_file'  => 'logs/unbilled-stale.log',
                 'cron'      => '0 0,12 * * *',
                 'frequency' => 'Twice daily',
                 'timing'    => '12:00 AM and 12:00 PM',
@@ -59,6 +67,7 @@ class CronJobs
             ],
             [
                 'file'      => 'cli/notify-unbilled-accounts.php',
+                'log_file'  => 'logs/unbilled-accounts.log',
                 'cron'      => '0 0,12 * * *',
                 'frequency' => 'Twice daily',
                 'timing'    => '12:00 AM and 12:00 PM',
@@ -67,6 +76,7 @@ class CronJobs
             ],
             [
                 'file'      => 'cli/notify-affiliate-payout-cycle-sla.php',
+                'log_file'  => 'logs/affiliate-payout-sla.log',
                 'cron'      => '0 9 * * *',
                 'frequency' => 'Daily',
                 'timing'    => '9:00 AM daily',
@@ -75,6 +85,7 @@ class CronJobs
             ],
             [
                 'file'      => 'cli/notify-partner-payout-cycle-sla.php',
+                'log_file'  => 'logs/partner-payout-sla.log',
                 'cron'      => '0 9 * * *',
                 'frequency' => 'Daily',
                 'timing'    => '9:00 AM daily',
@@ -83,6 +94,7 @@ class CronJobs
             ],
             [
                 'file'      => 'cli/notify-invoice-cost-variance-yesterday.php',
+                'log_file'  => 'logs/invoice-cost-variance.log',
                 'cron'      => '5 0 * * *',
                 'frequency' => 'Daily',
                 'timing'    => '12:05 AM daily (after midnight)',
@@ -91,6 +103,7 @@ class CronJobs
             ],
             [
                 'file'      => 'cli/send-client-engagement-digest.php',
+                'log_file'  => 'logs/client-engagement-digest.log',
                 'cron'      => '0 8 * * 0',
                 'frequency' => 'Weekly',
                 'timing'    => '8:00 AM every Sunday',
@@ -99,6 +112,7 @@ class CronJobs
             ],
             [
                 'file'      => 'cli/purge-work-hold-windows.php',
+                'log_file'  => 'logs/purge-work-hold.log',
                 'cron'      => '0 * * * *',
                 'frequency' => 'Hourly',
                 'timing'    => 'Every hour',
@@ -107,11 +121,39 @@ class CronJobs
             ],
             [
                 'file'      => 'cli/blog_ai_generate.php',
+                'log_file'  => 'logs/blog-ai.log',
                 'cron'      => '0 6 * * *',
                 'frequency' => 'Daily',
                 'timing'    => '6:00 AM daily',
                 'category'  => 'marketing',
-                'purpose'   => 'Calls OpenAI GPT and DALL-E to generate pending blog draft rows in blog_ai_drafts, which are then reviewed and approved through the Blog AI Approvals page before publishing.',
+                'purpose'   => 'Calls OpenAI GPT and DALL-E to generate pending blog draft rows for the Laws & Provisions and Tax Saving categories in blog_ai_drafts, reviewed via Blog AI Approvals before publishing.',
+            ],
+            [
+                'file'      => 'cli/blog_ai_generate_ai_promotions.php',
+                'log_file'  => 'logs/blog-ai-ai-promotions.log',
+                'cron'      => '10 6 * * *',
+                'frequency' => 'Daily',
+                'timing'    => '6:10 AM daily',
+                'category'  => 'marketing',
+                'purpose'   => 'Calls OpenAI GPT and DALL-E to generate pending blog draft rows for the AI Promotions category, covering AI tools, automation, and government AI initiatives for Indian businesses.',
+            ],
+            [
+                'file'      => 'cli/blog_ai_generate_subsidies_promotions.php',
+                'log_file'  => 'logs/blog-ai-subsidies-promotions.log',
+                'cron'      => '20 6 * * *',
+                'frequency' => 'Daily',
+                'timing'    => '6:20 AM daily',
+                'category'  => 'marketing',
+                'purpose'   => 'Calls OpenAI GPT and DALL-E to generate pending blog draft rows for the Subsidies Promotions category, covering government subsidies, grants, and incentive schemes for Indian MSMEs and startups.',
+            ],
+            [
+                'file'      => 'cli/blog_ai_generate_funding_promotions.php',
+                'log_file'  => 'logs/blog-ai-funding-promotions.log',
+                'cron'      => '30 6 * * *',
+                'frequency' => 'Daily',
+                'timing'    => '6:30 AM daily',
+                'category'  => 'marketing',
+                'purpose'   => 'Calls OpenAI GPT and DALL-E to generate pending blog draft rows for the Funding Promotions category, covering fundraising, investor funding rounds, and government-backed funding for Indian startups and SMEs.',
             ],
         ];
     }

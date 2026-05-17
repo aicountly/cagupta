@@ -2214,6 +2214,12 @@ class Routes
                 'handler'    => 'Admin\BlogController@publicBlogPost',
                 'middleware' => [],
             ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/public/leads',
+                'handler'    => 'Admin\BlogController@publicLeadSubmit',
+                'middleware' => [],
+            ],
 
             // ── Contact Verification ──────────────────────────────────────────
             [
@@ -2254,6 +2260,12 @@ class Routes
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/settings/cron-jobs',
                 'handler'    => 'Admin\CronJobsController@index',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/settings/cron-jobs/logs',
+                'handler'    => 'Admin\CronJobLogsController@tail',
                 'middleware' => ['auth', 'permission:settings.view'],
             ],
         ];

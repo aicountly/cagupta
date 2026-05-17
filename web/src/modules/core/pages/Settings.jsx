@@ -585,6 +585,11 @@ export default function Settings() {
   const [cronJobs, setCronJobs] = useState([]);
   const [cronJobsLoading, setCronJobsLoading] = useState(false);
   const [cronJobsError, setCronJobsError] = useState('');
+  const [cronLogModal, setCronLogModal] = useState(null); // { job }
+  const [cronLogLines, setCronLogLines] = useState([]);
+  const [cronLogMeta, setCronLogMeta] = useState(null);  // { exists, mtime, size, log_file }
+  const [cronLogLoading, setCronLogLoading] = useState(false);
+  const [cronLogError, setCronLogError] = useState('');
   const [zoomStatus, setZoomStatus] = useState({ connected: false, accountId: null });
   const [zoomLoading, setZoomLoading] = useState(false);
   const [portalTypes, setPortalTypes] = useState(() => getPortalTypes());
@@ -1281,6 +1286,37 @@ export default function Settings() {
       .finally(() => setCronJobsLoading(false));
   }, [tab]);
 
+  async function openCronLogs(job) {
+    setCronLogModal({ job });
+    setCronLogLines([]);
+    setCronLogMeta(null);
+    setCronLogError('');
+    setCronLogLoading(true);
+    try {
+      const res = await parseApiResponse(
+        await fetch(`${API_BASE_URL}/admin/settings/cron-jobs/logs?job=${encodeURIComponent(job.file)}`, {
+          headers: authHeaders(),
+        }),
+      );
+      setCronLogLines(res.data?.lines ?? []);
+      setCronLogMeta({
+        exists:   res.data?.exists ?? false,
+        mtime:    res.data?.mtime  ?? null,
+        size:     res.data?.size   ?? 0,
+        log_file: res.data?.log_file ?? job.log_file,
+      });
+    } catch (e) {
+      setCronLogError(e.message || 'Failed to load logs.');
+    } finally {
+      setCronLogLoading(false);
+    }
+  }
+
+  async function refreshCronLogs() {
+    if (!cronLogModal) return;
+    await openCronLogs(cronLogModal.job);
+  }
+
   useEffect(() => {
     function onMsg(ev) {
       if (ev?.data?.type !== 'zoom_oauth' || !ev.data.ok) return;
@@ -1798,6 +1834,117 @@ export default function Settings() {
 
       {tab==='cron_jobs' && (
         <div>
+          {/* ── Log Viewer Modal ──────────────────────────────────────────── */}
+          {cronLogModal && (
+            <div style={overlayStyle} onClick={() => setCronLogModal(null)}>
+              <div
+                style={{ background:'#fff', borderRadius:12, boxShadow:'0 8px 32px rgba(0,0,0,.18)', width:'min(860px,96vw)', maxHeight:'85vh', display:'flex', flexDirection:'column', overflow:'hidden' }}
+                onClick={e => e.stopPropagation()}
+              >
+                {/* header */}
+                <div style={{ padding:'16px 20px', borderBottom:'1px solid #e2e8f0', display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:12 }}>
+                  <div>
+                    <div style={{ fontWeight:700, fontSize:15, color:'#1e293b', marginBottom:4 }}>
+                      📋 Execution Logs
+                    </div>
+                    <code style={{ fontSize:12, color:'#475569', background:'#f1f5f9', padding:'2px 7px', borderRadius:4 }}>
+                      {cronLogModal.job.file}
+                    </code>
+                    {cronLogMeta && (
+                      <div style={{ marginTop:6, display:'flex', gap:16, flexWrap:'wrap' }}>
+                        {cronLogMeta.exists ? (
+                          <>
+                            <span style={{ fontSize:11, color:'#64748b' }}>
+                              Log: <code style={{ background:'#f8fafc', padding:'1px 4px', borderRadius:3 }}>{cronLogMeta.log_file}</code>
+                            </span>
+                            <span style={{ fontSize:11, color:'#64748b' }}>
+                              Last modified: <strong style={{ color:'#334155' }}>{cronLogMeta.mtime}</strong>
+                            </span>
+                            <span style={{ fontSize:11, color:'#64748b' }}>
+                              Size: <strong style={{ color:'#334155' }}>{(cronLogMeta.size / 1024).toFixed(1)} KB</strong>
+                            </span>
+                          </>
+                        ) : (
+                          <span style={{ fontSize:11, color:'#f59e0b', fontWeight:600 }}>
+                            ⚠ Log file not found — either this cron has not run yet, or the cPanel command is not redirecting output to <code style={{ background:'#fef9c3', padding:'1px 4px', borderRadius:3 }}>{cronLogMeta.log_file}</code>
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display:'flex', gap:8, alignItems:'center', flexShrink:0 }}>
+                    <button
+                      type="button"
+                      style={{ ...btnSecondary, fontSize:12, padding:'5px 12px', display:'flex', alignItems:'center', gap:6 }}
+                      onClick={refreshCronLogs}
+                      disabled={cronLogLoading}
+                    >
+                      {cronLogLoading ? '⏳' : '🔄'} Refresh
+                    </button>
+                    <button type="button" style={closeBtnStyle} onClick={() => setCronLogModal(null)}>✕</button>
+                  </div>
+                </div>
+
+                {/* body */}
+                <div style={{ flex:1, overflowY:'auto', background:'#0f172a', padding:0 }}>
+                  {cronLogLoading && (
+                    <div style={{ padding:32, textAlign:'center', color:'#94a3b8', fontSize:13 }}>Loading logs…</div>
+                  )}
+                  {cronLogError && (
+                    <div style={{ padding:16, color:'#f87171', fontSize:13 }}>{cronLogError}</div>
+                  )}
+                  {!cronLogLoading && !cronLogError && cronLogMeta && !cronLogMeta.exists && (
+                    <div style={{ padding:32, textAlign:'center', color:'#64748b', fontSize:13 }}>
+                      <div style={{ fontSize:32, marginBottom:8 }}>📂</div>
+                      No log file found. Configure your cPanel cron to redirect output:<br />
+                      <code style={{ display:'inline-block', marginTop:10, background:'#1e293b', color:'#7dd3fc', padding:'6px 12px', borderRadius:6, fontSize:12 }}>
+                        php /path/to/server-php/{cronLogModal.job.file} &gt;&gt; /path/to/server-php/{cronLogModal.job.log_file} 2&gt;&amp;1
+                      </code>
+                    </div>
+                  )}
+                  {!cronLogLoading && !cronLogError && cronLogLines.length > 0 && (
+                    <pre style={{ margin:0, padding:'14px 18px', fontFamily:'monospace', fontSize:12, lineHeight:1.7, color:'#e2e8f0', whiteSpace:'pre-wrap', wordBreak:'break-all' }}>
+                      {cronLogLines.map((line, i) => {
+                        const isErr = /\[.*error.*\]|error|fail|exception/i.test(line);
+                        const isOk  = /sent|success|deleted|done|ok\b/i.test(line);
+                        const color = isErr ? '#f87171' : isOk ? '#86efac' : '#e2e8f0';
+                        return (
+                          <span key={i} style={{ display:'block', color }}>
+                            <span style={{ userSelect:'none', color:'#475569', marginRight:10, minWidth:42, display:'inline-block', textAlign:'right' }}>{cronLogLines.length - cronLogLines.length + i + 1}</span>
+                            {line}
+                          </span>
+                        );
+                      })}
+                    </pre>
+                  )}
+                  {!cronLogLoading && !cronLogError && cronLogMeta?.exists && cronLogLines.length === 0 && (
+                    <div style={{ padding:32, textAlign:'center', color:'#64748b', fontSize:13 }}>Log file is empty.</div>
+                  )}
+                </div>
+
+                {/* footer */}
+                {cronLogLines.length > 0 && (
+                  <div style={{ padding:'8px 20px', borderTop:'1px solid #1e293b', background:'#0f172a', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <span style={{ fontSize:11, color:'#475569' }}>Showing last {cronLogLines.length} lines</span>
+                    <button
+                      type="button"
+                      style={{ background:'none', border:'none', cursor:'pointer', fontSize:11, color:'#475569', padding:'2px 6px' }}
+                      onClick={() => {
+                        const blob = new Blob([cronLogLines.join('\n')], { type: 'text/plain' });
+                        const a = document.createElement('a');
+                        a.href = URL.createObjectURL(blob);
+                        a.download = cronLogModal.job.file.replace(/\//g,'-').replace('.php','.log');
+                        a.click();
+                      }}
+                    >
+                      ⬇ Download
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           <h2 style={{ margin:'0 0 4px 0', fontSize:18, fontWeight:700, color:'#1e293b' }}>⏱️ Cron Jobs</h2>
           <p style={{ margin:'0 0 6px 0', fontSize:13, color:'#64748b' }}>
             All scheduled CLI scripts configured in cPanel. This list is maintained in <code style={{ background:'#f1f5f9', padding:'1px 5px', borderRadius:4, fontSize:12 }}>server-php/app/Config/CronJobs.php</code> — add a new entry there whenever you create a new script.
@@ -1835,15 +1982,16 @@ export default function Settings() {
                     <div style={{ overflowX:'auto' }}>
                       <table style={{ ...tableStyle, tableLayout:'fixed' }}>
                         <colgroup>
-                          <col style={{ width:'26%' }} />
-                          <col style={{ width:'14%' }} />
-                          <col style={{ width:'16%' }} />
-                          <col style={{ width:'44%' }} />
+                          <col style={{ width:'24%' }} />
+                          <col style={{ width:'12%' }} />
+                          <col style={{ width:'15%' }} />
+                          <col style={{ width:'39%' }} />
+                          <col style={{ width:'10%' }} />
                         </colgroup>
                         <thead>
                           <tr>
-                            {['Script File','Frequency','Timing / Cron Expression','Purpose'].map(h => (
-                              <th key={h} style={thStyle}>{h}</th>
+                            {['Script File','Frequency','Timing / Cron','Purpose',''].map((h, i) => (
+                              <th key={i} style={thStyle}>{h}</th>
                             ))}
                           </tr>
                         </thead>
@@ -1863,6 +2011,15 @@ export default function Settings() {
                                 <code style={{ display:'block', marginTop:3, fontSize:11, color:'#64748b', background:'#f8fafc', padding:'1px 5px', borderRadius:4 }}>{job.cron}</code>
                               </td>
                               <td style={{ ...tdStyle, fontSize:12, color:'#475569', lineHeight:1.5 }}>{job.purpose}</td>
+                              <td style={{ ...tdStyle, textAlign:'center' }}>
+                                <button
+                                  type="button"
+                                  style={{ ...btnOutline, fontSize:11, padding:'4px 10px', whiteSpace:'nowrap' }}
+                                  onClick={() => openCronLogs(job)}
+                                >
+                                  📋 View Logs
+                                </button>
+                              </td>
                             </tr>
                           ))}
                         </tbody>

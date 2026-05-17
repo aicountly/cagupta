@@ -54,10 +54,11 @@ function normalizeLead(l) {
  * Fetch the list of leads.
  * @returns {Promise<object[]>}
  */
-export async function getLeads({ page = 1, perPage = 100, search = '', stage = '' } = {}) {
+export async function getLeads({ page = 1, perPage = 100, search = '', stage = '', source = '' } = {}) {
   const params = new URLSearchParams({ page, per_page: perPage });
   if (search) params.set('search', search);
   if (stage && stage !== 'all') params.set('status', stage);
+  if (source && source !== 'all') params.set('source', source);
 
   const res = await fetch(`${API_BASE}/admin/leads?${params}`, {
     headers: authHeaders(),

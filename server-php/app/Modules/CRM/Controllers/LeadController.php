@@ -33,8 +33,9 @@ class LeadController extends BaseController
         $perPage = min(100, max(1, (int)$this->query('per_page', 20)));
         $search  = trim((string)$this->query('search', ''));
         $status  = trim((string)$this->query('status', ''));
+        $source  = trim((string)$this->query('source', ''));
 
-        $result = $this->leads->paginate($page, $perPage, $search, $status);
+        $result = $this->leads->paginate($page, $perPage, $search, $status, $source);
 
         $this->success($result['leads'], 'Leads retrieved', 200, [
             'pagination' => [

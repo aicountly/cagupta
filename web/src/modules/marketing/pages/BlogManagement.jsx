@@ -9,8 +9,11 @@ import {
 } from '../services/blog.service';
 
 const CATEGORIES = [
-  { value: 'laws',       label: 'New Laws & Provisions' },
-  { value: 'tax_saving', label: 'Tax Saving & Tax Planning' },
+  { value: 'laws',                  label: 'New Laws & Provisions' },
+  { value: 'tax_saving',            label: 'Tax Saving & Tax Planning' },
+  { value: 'ai_promotions',         label: 'AI Promotions' },
+  { value: 'subsidies_promotions',  label: 'Subsidies Promotions' },
+  { value: 'funding_promotions',    label: 'Funding Promotions' },
 ];
 
 const STATUS_STYLES = {
@@ -19,8 +22,11 @@ const STATUS_STYLES = {
 };
 
 const CATEGORY_STYLES = {
-  laws:       { background: '#eff6ff', color: '#2563eb' },
-  tax_saving: { background: '#fef3c7', color: '#d97706' },
+  laws:                 { background: '#eff6ff', color: '#2563eb' },
+  tax_saving:           { background: '#fef3c7', color: '#d97706' },
+  ai_promotions:        { background: '#f3e8ff', color: '#7c3aed' },
+  subsidies_promotions: { background: '#ecfdf5', color: '#059669' },
+  funding_promotions:   { background: '#fff7ed', color: '#c2410c' },
 };
 
 function formatDate(iso) {

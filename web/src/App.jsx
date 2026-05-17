@@ -70,6 +70,8 @@ import SocialPosting from './modules/marketing/pages/SocialPosting';
 import MarketingCampaigns from './modules/marketing/pages/MarketingCampaigns';
 import BlogManagement from './modules/marketing/pages/BlogManagement';
 import BlogAIApprovals from './modules/marketing/pages/BlogAIApprovals';
+import PublicBlogList from './modules/marketing/pages/PublicBlogList';
+import PublicBlogPost from './modules/marketing/pages/PublicBlogPost';
 
 // ── Affiliate module ─────────────────────────────────────────────────────────
 import AdminAffiliates from './modules/affiliate/pages/AdminAffiliates';
@@ -349,6 +351,10 @@ export default function App() {
           <Route path="/marketing/campaigns" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/campaigns"><MarketingCampaigns /></Layout></ProtectedRoute>} />
           <Route path="/marketing/blog" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/blog"><BlogManagement /></Layout></ProtectedRoute>} />
           <Route path="/marketing/blog/approvals" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/blog/approvals"><BlogAIApprovals /></Layout></ProtectedRoute>} />
+
+          {/* ── Public blog (no auth) ── */}
+          <Route path="/blog" element={<PublicBlogList />} />
+          <Route path="/blog/:slug" element={<PublicBlogPost />} />
           <Route path="/marketing" element={<ProtectedRoute staffOnly><Navigate to="/marketing/campaigns" replace /></ProtectedRoute>} />
           {/* Legacy redirects for removed marketing pages */}
           <Route path="/marketing/affiliate" element={<Navigate to="/admin/affiliates" replace />} />

@@ -51,6 +51,7 @@ export default function Leads() {
   const { addNotification } = useNotification();
   const { staffUsers } = useStaffUsers();
   const { hasPermission } = useAuth();
+  const [sourceFilter, setSourceFilter] = useState('');
 
   const [engTypes, setEngTypes] = useState([]);
   const [pendingSummary, setPendingSummary] = useState(null);
@@ -67,7 +68,7 @@ export default function Leads() {
 
   useEffect(() => {
     setLoading(true);
-    getLeads()
+    getLeads({ source: sourceFilter })
       .then(data => setLeads(data))
       .catch(() => setLeads([]))
       .finally(() => setLoading(false));
@@ -82,7 +83,7 @@ export default function Leads() {
     getQuotationPendingSummary()
       .then(setPendingSummary)
       .catch(() => setPendingSummary(null));
-  }, []);
+  }, [sourceFilter]);
 
   const needingQuotationIds = new Set(pendingSummary?.lead_ids_needing_quotation || pendingSummary?.sample_lead_ids_needing_quotation || []);
 
@@ -375,13 +376,28 @@ export default function Leads() {
 
   return (
     <div style={{ padding:24 }}>
-      <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid #e2e8f0' }}>
+      <div style={{ display:'flex', gap:4, marginBottom:20, borderBottom:'2px solid #e2e8f0', flexWrap:'wrap', alignItems:'center' }}>
         {[['pipeline','Kanban Pipeline'],['list','List View'],['pending','Pending & setup']].map(([t,l])=>(
           <button key={t} onClick={()=>setTab(t)} style={{ padding:'8px 20px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600, color:tab===t?'#2563eb':'#64748b', borderBottom:tab===t?'2px solid #2563eb':'2px solid transparent', marginBottom:-2 }}>
             🎯 {l}
           </button>
         ))}
-        <button style={{ ...btnPrimary, marginLeft:'auto' }} onClick={openAddModal}>➕ New Lead</button>
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:8, paddingBottom:2 }}>
+          <select
+            value={sourceFilter}
+            onChange={e => setSourceFilter(e.target.value)}
+            style={{ padding:'6px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:12, color:'#475569', cursor:'pointer', background:'#fff' }}
+          >
+            <option value="">All Sources</option>
+            <option value="Blog CTA">Blog CTA</option>
+            <option value="Referral">Referral</option>
+            <option value="Website">Website</option>
+            <option value="Cold Call">Cold Call</option>
+            <option value="Social Media">Social Media</option>
+            <option value="Other">Other</option>
+          </select>
+          <button style={btnPrimary} onClick={openAddModal}>➕ New Lead</button>
+        </div>
       </div>
 
       {tab==='pipeline' && (

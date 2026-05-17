@@ -195,31 +195,41 @@ class BlogController extends BaseController
 
         if ($title === '')   $this->error('title is required.', 422);
         if ($content === '') $this->error('content is required.', 422);
-        if (!in_array($category, ['laws', 'tax_saving'], true)) {
-            $this->error('category must be laws or tax_saving.', 422);
+        if (!in_array($category, ['laws', 'tax_saving', 'ai_promotions', 'subsidies_promotions', 'funding_promotions'], true)) {
+            $this->error('category must be laws, tax_saving, ai_promotions, subsidies_promotions, or funding_promotions.', 422);
         }
 
         $slug = $this->uniqueSlug($title);
 
-        $stmt = $this->db->prepare('
-            INSERT INTO blog_posts
-                (title, slug, excerpt, content, cover_image_path, category, status, source, created_by)
-            VALUES
-                (:title, :slug, :excerpt, :content, :cover, :cat, :status, :source, :uid)
-            RETURNING id, created_at
-        ');
-        $stmt->execute([
-            ':title'   => $title,
-            ':slug'    => $slug,
-            ':excerpt' => $excerpt,
-            ':content' => $content,
-            ':cover'   => $coverImg,
-            ':cat'     => $category,
-            ':status'  => 'draft',
-            ':source'  => 'manual',
-            ':uid'     => $user['id'],
-        ]);
-        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        $row = false;
+        try {
+            $stmt = $this->db->prepare('
+                INSERT INTO blog_posts
+                    (title, slug, excerpt, content, cover_image_path, category, status, source, created_by)
+                VALUES
+                    (:title, :slug, :excerpt, :content, :cover, :cat, :status, :source, :uid)
+                RETURNING id, created_at
+            ');
+            $stmt->execute([
+                ':title'   => $title,
+                ':slug'    => $slug,
+                ':excerpt' => $excerpt,
+                ':content' => $content,
+                ':cover'   => $coverImg ?: null,
+                ':cat'     => $category,
+                ':status'  => 'draft',
+                ':source'  => 'manual',
+                ':uid'     => $user['id'],
+            ]);
+            $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        } catch (\PDOException $e) {
+            error_log('[BlogController::blogStore] PDOException: ' . $e->getMessage());
+            $this->error('Failed to save blog post. ' . $e->getMessage(), 500);
+        }
+
+        if ($row === false || !isset($row['id'])) {
+            $this->error('Failed to save blog post: database did not return an ID.', 500);
+        }
 
         $this->success(['id' => (int)$row['id'], 'slug' => $slug], 'Blog post created', 201);
     }
@@ -240,8 +250,8 @@ class BlogController extends BaseController
         $category = (string)($body['category'] ?? $post['category']);
         $coverImg = isset($body['cover_image_path']) ? trim((string)$body['cover_image_path']) : $post['cover_image_path'];
 
-        if (!in_array($category, ['laws', 'tax_saving'], true)) {
-            $this->error('category must be laws or tax_saving.', 422);
+        if (!in_array($category, ['laws', 'tax_saving', 'ai_promotions', 'subsidies_promotions', 'funding_promotions'], true)) {
+            $this->error('category must be laws, tax_saving, ai_promotions, subsidies_promotions, or funding_promotions.', 422);
         }
 
         $slug = $title !== $post['title'] ? $this->uniqueSlug($title, $id) : $post['slug'];
@@ -436,8 +446,8 @@ class BlogController extends BaseController
         $dryRun = !empty($body['dry_run']);
         $rawCat = isset($body['category']) ? trim((string)$body['category']) : '';
         $onlyCategory = $rawCat === '' ? null : $rawCat;
-        if ($onlyCategory !== null && !in_array($onlyCategory, ['laws', 'tax_saving'], true)) {
-            $this->error('category must be laws, tax_saving, or omitted.', 422);
+        if ($onlyCategory !== null && !in_array($onlyCategory, ['laws', 'tax_saving', 'ai_promotions', 'subsidies_promotions', 'funding_promotions'], true)) {
+            $this->error('category must be laws, tax_saving, ai_promotions, subsidies_promotions, funding_promotions, or omitted.', 422);
         }
 
         $optionsPerCat = isset($body['options_per_category']) ? (int)$body['options_per_category'] : 2;
@@ -466,19 +476,44 @@ class BlogController extends BaseController
 
     public function imageUpload(): never
     {
+        try {
+            $this->doImageUpload();
+        } catch (\Throwable $e) {
+            error_log('[BlogController.imageUpload] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            $this->error('Image upload failed: ' . $e->getMessage(), 500);
+        }
+    }
+
+    private function doImageUpload(): never
+    {
         if (empty($_FILES['image'])) {
+            // When post_max_size is exceeded, PHP empties $_FILES entirely but keeps CONTENT_LENGTH.
+            $contentLength = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
+            if ($contentLength > 0) {
+                $this->error('Request body exceeds post_max_size. Reduce file size or increase post_max_size.', 422);
+            }
             $this->error('No image file uploaded.', 422);
         }
 
         $file = $_FILES['image'];
         if ($file['error'] !== UPLOAD_ERR_OK) {
-            $this->error('Upload error code: ' . $file['error'], 422);
+            $labels = [
+                UPLOAD_ERR_INI_SIZE   => 'File exceeds upload_max_filesize.',
+                UPLOAD_ERR_FORM_SIZE  => 'File exceeds MAX_FILE_SIZE.',
+                UPLOAD_ERR_PARTIAL    => 'File only partially uploaded.',
+                UPLOAD_ERR_NO_FILE    => 'No file was uploaded.',
+                UPLOAD_ERR_NO_TMP_DIR => 'Missing temp directory.',
+                UPLOAD_ERR_CANT_WRITE => 'Failed to write to disk.',
+                UPLOAD_ERR_EXTENSION  => 'Upload blocked by PHP extension.',
+            ];
+            $this->error($labels[$file['error']] ?? 'Upload error code: ' . $file['error'], 422);
         }
 
+        $mime = $this->detectMimeType($file['tmp_name']);
+
         $allowedMime = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
-        $mime        = mime_content_type($file['tmp_name']);
         if (!in_array($mime, $allowedMime, true)) {
-            $this->error('Only JPEG, PNG, WebP and GIF images are allowed.', 422);
+            $this->error('Only JPEG, PNG, WebP and GIF images are allowed. Detected: ' . ($mime ?: 'unknown'), 422);
         }
 
         if ($file['size'] > 5 * 1024 * 1024) {
@@ -486,8 +521,13 @@ class BlogController extends BaseController
         }
 
         $uploadDir = $this->blogUploadDir();
-        if (!is_dir($uploadDir)) {
-            mkdir($uploadDir, 0755, true);
+
+        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true) && !is_dir($uploadDir)) {
+            $this->error('Upload directory could not be created: ' . $uploadDir . '. Check open_basedir or directory permissions.', 500);
+        }
+
+        if (!is_writable($uploadDir)) {
+            $this->error('Upload directory is not writable: ' . $uploadDir, 500);
         }
 
         $ext      = match ($mime) {
@@ -501,7 +541,7 @@ class BlogController extends BaseController
         $destPath = $uploadDir . DIRECTORY_SEPARATOR . $filename;
 
         if (!move_uploaded_file($file['tmp_name'], $destPath)) {
-            $this->error('Failed to save uploaded image.', 500);
+            $this->error('Failed to save uploaded image to ' . $uploadDir . '. Check open_basedir allows this path.', 500);
         }
 
         $relativePath = 'blog_uploads/' . $filename;
@@ -509,6 +549,27 @@ class BlogController extends BaseController
             'path' => $relativePath,
             'url'  => $this->coverImageUrl($relativePath),
         ], 'Image uploaded', 201);
+    }
+
+    /**
+     * Detect the MIME type of an uploaded file.
+     * Tries finfo (PHP fileinfo extension) first; falls back to mime_content_type.
+     */
+    private function detectMimeType(string $tmpPath): string|false
+    {
+        if (class_exists(\finfo::class)) {
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $mime  = $finfo->file($tmpPath);
+            if ($mime !== false) {
+                return $mime;
+            }
+        }
+
+        if (function_exists('mime_content_type')) {
+            return mime_content_type($tmpPath);
+        }
+
+        return false;
     }
 
     /**
@@ -545,6 +606,53 @@ class BlogController extends BaseController
     }
 
     // ── Public API (no auth — for marketing site) ────────────────────────────
+
+    /**
+     * POST /api/public/leads
+     *
+     * Accept a lead submission from the public blog CTA form (no auth required).
+     * Stores the enquiry in the `leads` table with source = "Blog CTA".
+     *
+     * Body: { name*, email?, phone?, message? }
+     */
+    public function publicLeadSubmit(): never
+    {
+        $body    = $this->getJsonBody();
+        $name    = trim((string)($body['name']    ?? ''));
+        $email   = trim((string)($body['email']   ?? ''));
+        $phone   = trim((string)($body['phone']   ?? ''));
+        $message = trim((string)($body['message'] ?? ''));
+
+        if ($name === '') {
+            $this->error('Name is required.', 422);
+        }
+
+        $notes = $message !== ''
+            ? $message
+            : 'Interested in AI implementation for my business.';
+
+        $stmt = $this->db->prepare('
+            INSERT INTO leads
+                (name, email, phone, source, service_interest, notes, status, probability)
+            VALUES
+                (:name, :email, :phone, :source, :si, :notes, :status, :prob)
+            RETURNING id
+        ');
+        $stmt->execute([
+            ':name'   => $name,
+            ':email'  => $email  !== '' ? $email  : null,
+            ':phone'  => $phone  !== '' ? $phone  : null,
+            ':source' => 'Blog CTA',
+            ':si'     => 'AI Implementation',
+            ':notes'  => $notes,
+            ':status' => 'new',
+            ':prob'   => 50,
+        ]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+
+        header('Access-Control-Allow-Origin: *');
+        $this->success(['id' => (int)$row['id']], 'Thank you! We will be in touch soon.', 201);
+    }
 
     public function publicBlogs(): never
     {
