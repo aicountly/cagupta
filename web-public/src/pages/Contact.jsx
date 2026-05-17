@@ -3,6 +3,7 @@ import { Clock, Mail, MapPin, Phone, Send } from 'lucide-react';
 import Button from '../components/ui/Button.jsx';
 import Container from '../components/ui/Container.jsx';
 import { SITE } from '../config/site.config.js';
+import useSeo from '../hooks/useSeo.js';
 
 const SERVICE_OPTIONS = [
   'Income tax & ITR',
@@ -15,6 +16,12 @@ const SERVICE_OPTIONS = [
 ];
 
 export default function Contact() {
+  useSeo({
+    title: 'Contact Us | Book a Free Consultation — CA Rahul Gupta, Chandigarh',
+    description:
+      'Get in touch with CA Rahul Gupta & Associates. Office in Chandigarh (Sector 51D) with presence in Mohali, Jalandhar and Gurugram. Book a free 20-minute consultation today.',
+  });
+
   const [form, setForm] = useState({
     name: '',
     email: '',

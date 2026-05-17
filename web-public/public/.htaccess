@@ -5,6 +5,17 @@ RewriteEngine On
 # Preserves any ?portal= query string the visitor was carrying.
 RewriteRule ^login/?$ https://app.carahulgupta.in/login [QSA,R=301,L]
 
+# Dynamic XML sitemap (includes static pages + published blog posts from API).
+RewriteRule ^sitemap\.xml$ /sitemap.php [L]
+
+# Social-media / messaging bot pre-rendering for /blog/:slug
+# These bots do not execute JavaScript, so they cannot see Open Graph meta
+# tags that React injects after load. Serve them a PHP-rendered page that
+# contains og:title, og:description, og:image, etc. from the real post data.
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{HTTP_USER_AGENT} "(WhatsApp|facebookexternalhit|Twitterbot|LinkedInBot|Slackbot|TelegramBot|ia_archiver|Googlebot|bingbot|DuckDuckBot|Discordbot|Applebot)" [NC]
+RewriteRule ^blog/([^/?#]+)/?$ /prerender.php?slug=$1 [QSA,L]
+
 # SPA fallback for all other client-side routes.
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d

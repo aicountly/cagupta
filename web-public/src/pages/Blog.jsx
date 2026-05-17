@@ -3,6 +3,7 @@ import { ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import Container from '../components/ui/Container.jsx';
 import { BLOG_POSTS } from '../content/blogPosts.js';
+import useSeo from '../hooks/useSeo.js';
 
 // In production both sites share the same origin, so /api is sufficient.
 // For local dev set VITE_API_BASE_URL=http://localhost:8080/api in web-public/.env
@@ -33,6 +34,12 @@ function normalizePost(p) {
 }
 
 export default function Blog() {
+  useSeo({
+    title: 'Blog | Tax, GST, Compliance & Finance Insights for Indian Businesses',
+    description:
+      'Practical articles on income tax, GST, audit, ROC compliance, MSME subsidies and AI for businesses — written by CA Rahul Gupta & Associates.',
+  });
+
   const [posts, setPosts]     = useState(null);
   const [loading, setLoading] = useState(true);
 

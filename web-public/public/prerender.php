@@ -2,17 +2,17 @@
 /**
  * prerender.php — Social-media bot pre-renderer for /blog/:slug pages.
  *
- * Apache (.htaccess) routes WhatsApp, Facebook, Twitter and other crawlers
- * here instead of to the React SPA, because those bots never execute
- * JavaScript and therefore cannot see Open Graph meta tags that React
- * injects after page load.
+ * Apache (.htaccess) routes WhatsApp, Facebook, Twitter, Telegram and other
+ * crawlers here instead of to the React SPA, because those bots never execute
+ * JavaScript and therefore cannot see Open Graph meta tags that React injects
+ * after page load.
  *
  * This script:
  *   1. Calls the existing public blog API to fetch post data.
- *   2. Returns a minimal HTML page containing og:title, og:description,
- *      og:image, og:url and Twitter Card equivalents.
- *   3. Adds a <meta http-equiv="refresh"> so that any human who lands
- *      here directly is immediately forwarded to the React SPA URL.
+ *   2. Returns a minimal HTML page with og:title, og:description, og:image,
+ *      og:url, og:type and Twitter Card equivalents.
+ *   3. Adds a <meta http-equiv="refresh"> so any human who lands here
+ *      directly is immediately forwarded to the React SPA URL.
  */
 
 declare(strict_types=1);
@@ -31,7 +31,9 @@ if ($slug === '' || !preg_match('/^[a-zA-Z0-9_-]+$/', $slug)) {
 $scheme       = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
 $host         = (string)($_SERVER['HTTP_HOST'] ?? 'carahulgupta.in');
 $canonicalUrl = "{$scheme}://{$host}/blog/" . rawurlencode($slug);
-$apiUrl       = "{$scheme}://{$host}/api/public/blogs/" . rawurlencode($slug);
+
+// The PHP API is co-deployed at the same origin under /api
+$apiUrl = "{$scheme}://{$host}/api/public/blogs/" . rawurlencode($slug);
 
 // ── Fetch post from the public API ────────────────────────────────────────────
 
@@ -46,10 +48,10 @@ $post = null;
 
 if ($json !== false) {
     $decoded = json_decode($json, true);
-    // API wraps response in { success, data, message }
+    // API wraps response as { success, data, message }
     if (isset($decoded['data']) && is_array($decoded['data'])) {
         $post = $decoded['data'];
-    } elseif (is_array($decoded)) {
+    } elseif (is_array($decoded) && isset($decoded['title'])) {
         $post = $decoded;
     }
 }
@@ -57,9 +59,9 @@ if ($json !== false) {
 // ── Resolve meta-tag values ───────────────────────────────────────────────────
 
 $siteName    = 'CA Rahul Gupta — Chartered Accountants';
-$title       = isset($post['title'])   && $post['title']   !== '' ? (string)$post['title']   : $siteName;
-$description = isset($post['excerpt']) && $post['excerpt'] !== '' ? (string)$post['excerpt'] : 'Insights on tax, compliance, AI and finance from CA Rahul Gupta Office.';
-$image       = isset($post['cover_image_url']) && $post['cover_image_url'] !== '' ? (string)$post['cover_image_url'] : '';
+$title       = (isset($post['title'])   && $post['title']   !== '') ? (string)$post['title']   : $siteName;
+$description = (isset($post['excerpt']) && $post['excerpt'] !== '') ? (string)$post['excerpt'] : 'Insights on tax, compliance, AI and finance from CA Rahul Gupta Office.';
+$image       = (isset($post['cover_image_url']) && $post['cover_image_url'] !== '') ? (string)$post['cover_image_url'] : '';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

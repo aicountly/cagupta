@@ -16,6 +16,7 @@ import Button from '../components/ui/Button.jsx';
 import Container from '../components/ui/Container.jsx';
 import CtaBanner from '../components/sections/CtaBanner.jsx';
 import { SERVICES, ADVANCED_PRACTICE_AREAS } from '../content/services.js';
+import useSeo from '../hooks/useSeo.js';
 
 const SERVICE_ICONS = {
   FileText,
@@ -36,6 +37,12 @@ const AREA_ICONS = {
 };
 
 export default function Services() {
+  useSeo({
+    title: 'CA Services | ITR Filing, GST, Audit, ROC Compliance & Advisory',
+    description:
+      'Complete range of CA services: income tax & ITR filing, GST compliance, statutory audit, ROC / MCA compliance, bookkeeping, and business advisory. Serving individuals, startups and SMEs across India.',
+  });
+
   return (
     <>
       {/* ── Page header ──────────────────────────────────────────────────── */}

@@ -144,6 +144,50 @@ export default function BlogPost() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
 
+  // Inject OG / Twitter meta tags into <head> once post data is loaded.
+  // Covers browsers' native share sheets and in-app browsers that execute JS.
+  // WhatsApp's link-preview bot (no JS) is handled server-side via prerender.php.
+  useEffect(() => {
+    if (!post) return;
+
+    const siteName = 'CA Rahul Gupta — Chartered Accountants';
+    const url      = window.location.href;
+    const tags = [
+      { property: 'og:type',        content: 'article' },
+      { property: 'og:site_name',   content: siteName },
+      { property: 'og:url',         content: url },
+      { property: 'og:title',       content: post.title || siteName },
+      { property: 'og:description', content: post.excerpt || '' },
+      { property: 'og:image',       content: post.cover_image_url || '' },
+      { name: 'twitter:card',        content: 'summary_large_image' },
+      { name: 'twitter:title',       content: post.title || siteName },
+      { name: 'twitter:description', content: post.excerpt || '' },
+      { name: 'twitter:image',       content: post.cover_image_url || '' },
+    ];
+
+    const inserted = [];
+    tags.forEach(attrs => {
+      if (!attrs.content) return;
+      const key  = attrs.property ?? attrs.name;
+      const attr = attrs.property ? 'property' : 'name';
+      let el = document.querySelector(`meta[${attr}="${key}"]`);
+      if (!el) {
+        el = document.createElement('meta');
+        document.head.appendChild(el);
+        inserted.push(el);
+      }
+      Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    });
+
+    const prevTitle = document.title;
+    document.title  = post.title || siteName;
+
+    return () => {
+      document.title = prevTitle;
+      inserted.forEach(el => el.parentNode?.removeChild(el));
+    };
+  }, [post]);
+
   useEffect(() => {
     setLoading(true);
     setNotFound(false);

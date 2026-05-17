@@ -1,8 +1,14 @@
 import { Award, GraduationCap, Mail, MapPin, Phone, ScrollText } from 'lucide-react';
 import Container from '../components/ui/Container.jsx';
 import { SITE } from '../config/site.config.js';
+import useSeo from '../hooks/useSeo.js';
 
 export default function About() {
+  useSeo({
+    title: 'About Us | CA Firm in Chandigarh with 10+ Years of Practice',
+    description:
+      'Meet CA Rahul Gupta & Associates — a Chandigarh-based Chartered Accountancy practice with offices in Mohali, Jalandhar and Gurugram. ITR, GST, audit, and advisory services since 2016.',
+  });
   return (
     <>
       <header className="page-header">
