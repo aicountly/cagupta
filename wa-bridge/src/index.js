@@ -107,6 +107,7 @@ async function initSession(sessionId) {
     reconnectTimer: null,
   };
   sessions.set(sessionId, sess);
+  console.log(`[${sessionId}] Init session — ${sess.contacts.length} contacts from cache`);
 
   const authPath = sessionAuthPath(sessionId);
   mkdirSync(authPath, { recursive: true });
@@ -135,6 +136,8 @@ async function initSession(sessionId) {
     browser: ['CA Office', 'Chrome', '120.0'],
     connectTimeoutMs: 60_000,
     keepAliveIntervalMs: 25_000,
+    syncFullHistory: true,
+    shouldSyncHistoryMessage: () => true,
   });
 
   sess.socket = sock;
@@ -183,6 +186,17 @@ async function initSession(sessionId) {
     for (const c of initial) upsertContact(c);
     console.log(`[${sessionId}] contacts.set: ${sess.contacts.length} loaded`);
     scheduleContactSave();
+  });
+
+  // messaging-history.set — Baileys 6.7+ delivers contacts/chats/messages via this
+  // event during history sync (both fresh QR and reconnects with saved credentials).
+  // Without this handler + syncFullHistory, reconnects yield 0 contacts.
+  sock.ev.on('messaging-history.set', ({ contacts: histContacts }) => {
+    if (histContacts?.length) {
+      for (const c of histContacts) upsertContact(c);
+      console.log(`[${sessionId}] messaging-history.set: ${histContacts.length} contacts in batch, ${sess.contacts.length} total`);
+      scheduleContactSave();
+    }
   });
 
   // contacts.upsert — incremental additions/updates pushed by WhatsApp
