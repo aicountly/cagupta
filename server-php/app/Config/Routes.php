@@ -2248,6 +2248,14 @@ class Routes
                 'handler'    => 'Admin\ActivityTriggerController@update',
                 'middleware' => ['auth', 'permission:settings.view'],
             ],
+
+            // ── Cron Jobs Registry ────────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/settings/cron-jobs',
+                'handler'    => 'Admin\CronJobsController@index',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
         ];
     }
 }

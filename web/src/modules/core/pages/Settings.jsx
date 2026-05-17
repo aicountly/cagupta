@@ -568,6 +568,7 @@ const SETTINGS_SECTIONS = [
   { key: 'notifications', label: 'Notification Triggers', desc: 'Automated alerts for activities and events', icon: '🔔' },
   { key: 'service_config', label: 'Service Configuration', desc: 'Categories, types, engagement settings', icon: '⚙️' },
   { key: 'other', label: 'Other Settings', desc: 'Portal types, register types, and misc', icon: '📋' },
+  { key: 'cron_jobs', label: 'Cron Jobs', desc: 'Scheduled CLI scripts configured in cPanel', icon: '⏱️' },
 ];
 
 export default function Settings() {
@@ -581,6 +582,9 @@ export default function Settings() {
   const canManageServiceCatalog =
     user?.role === ROLES.SUPER_ADMIN || user?.role === ROLES.ADMIN;
   const [tab, setTab] = useState(null);
+  const [cronJobs, setCronJobs] = useState([]);
+  const [cronJobsLoading, setCronJobsLoading] = useState(false);
+  const [cronJobsError, setCronJobsError] = useState('');
   const [zoomStatus, setZoomStatus] = useState({ connected: false, accountId: null });
   const [zoomLoading, setZoomLoading] = useState(false);
   const [portalTypes, setPortalTypes] = useState(() => getPortalTypes());
@@ -1266,6 +1270,18 @@ export default function Settings() {
   }, [tab]);
 
   useEffect(() => {
+    if (tab !== 'cron_jobs') return;
+    if (cronJobs.length > 0) return;
+    setCronJobsLoading(true);
+    setCronJobsError('');
+    fetch(`${API_BASE_URL}/admin/settings/cron-jobs`, { headers: authHeaders() })
+      .then(parseApiResponse)
+      .then((res) => setCronJobs(Array.isArray(res.data) ? res.data : []))
+      .catch((e) => setCronJobsError(e.message || 'Failed to load cron jobs.'))
+      .finally(() => setCronJobsLoading(false));
+  }, [tab]);
+
+  useEffect(() => {
     function onMsg(ev) {
       if (ev?.data?.type !== 'zoom_oauth' || !ev.data.ok) return;
       setZoomLoading(true);
@@ -1777,6 +1793,89 @@ export default function Settings() {
           <div style={{ fontSize:40, marginBottom:12 }}>🚧</div>
           <div style={{ fontWeight:700, fontSize:16, color:'#1e293b' }}>Notifications Configuration</div>
           <div style={{ color:'#64748b', fontSize:13, marginTop:8 }}>This section will allow you to configure email and SMS notification templates and triggers.</div>
+        </div>
+      )}
+
+      {tab==='cron_jobs' && (
+        <div>
+          <h2 style={{ margin:'0 0 4px 0', fontSize:18, fontWeight:700, color:'#1e293b' }}>⏱️ Cron Jobs</h2>
+          <p style={{ margin:'0 0 6px 0', fontSize:13, color:'#64748b' }}>
+            All scheduled CLI scripts configured in cPanel. This list is maintained in <code style={{ background:'#f1f5f9', padding:'1px 5px', borderRadius:4, fontSize:12 }}>server-php/app/Config/CronJobs.php</code> — add a new entry there whenever you create a new script.
+          </p>
+          <p style={{ margin:'0 0 20px 0', fontSize:12, color:'#94a3b8', fontStyle:'italic' }}>
+            Note: This registry is manually maintained. cPanel does not expose a standard API that can be safely queried from within the application, so new cron jobs must be documented here after adding them in cPanel.
+          </p>
+          {cronJobsLoading && (
+            <div style={{ padding:32, textAlign:'center', color:'#64748b', fontSize:14 }}>Loading cron jobs…</div>
+          )}
+          {cronJobsError && (
+            <div style={{ padding:12, background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, color:'#dc2626', fontSize:13, marginBottom:16 }}>{cronJobsError}</div>
+          )}
+          {!cronJobsLoading && !cronJobsError && cronJobs.length === 0 && (
+            <div style={{ padding:32, textAlign:'center', color:'#94a3b8', fontSize:14 }}>No cron jobs registered.</div>
+          )}
+          {!cronJobsLoading && cronJobs.length > 0 && (
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              {['report','notification','maintenance','marketing'].map(cat => {
+                const items = cronJobs.filter(j => j.category === cat);
+                if (!items.length) return null;
+                const catMeta = {
+                  report:      { label: 'Reports', color:'#dbeafe', textColor:'#1d4ed8', icon:'📊' },
+                  notification:{ label: 'Notifications', color:'#dcfce7', textColor:'#15803d', icon:'🔔' },
+                  maintenance: { label: 'Maintenance', color:'#fef9c3', textColor:'#854d0e', icon:'🔧' },
+                  marketing:   { label: 'Marketing', color:'#fce7f3', textColor:'#9d174d', icon:'📣' },
+                }[cat];
+                return (
+                  <div key={cat} style={cardStyle}>
+                    <h3 style={{ ...sectionTitle, display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ background:catMeta.color, color:catMeta.textColor, borderRadius:6, padding:'2px 10px', fontSize:12, fontWeight:700 }}>
+                        {catMeta.icon} {catMeta.label}
+                      </span>
+                    </h3>
+                    <div style={{ overflowX:'auto' }}>
+                      <table style={{ ...tableStyle, tableLayout:'fixed' }}>
+                        <colgroup>
+                          <col style={{ width:'26%' }} />
+                          <col style={{ width:'14%' }} />
+                          <col style={{ width:'16%' }} />
+                          <col style={{ width:'44%' }} />
+                        </colgroup>
+                        <thead>
+                          <tr>
+                            {['Script File','Frequency','Timing / Cron Expression','Purpose'].map(h => (
+                              <th key={h} style={thStyle}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {items.map((job, idx) => (
+                            <tr key={idx} style={trStyle}>
+                              <td style={{ ...tdStyle, fontFamily:'monospace', fontSize:12, wordBreak:'break-all', color:'#1e293b', fontWeight:600 }}>
+                                {job.file}
+                              </td>
+                              <td style={tdStyle}>
+                                <span style={{ background:'#f1f5f9', color:'#475569', padding:'2px 8px', borderRadius:12, fontSize:12, fontWeight:600, whiteSpace:'nowrap' }}>
+                                  {job.frequency}
+                                </span>
+                              </td>
+                              <td style={{ ...tdStyle, fontSize:12 }}>
+                                <div style={{ color:'#334155' }}>{job.timing}</div>
+                                <code style={{ display:'block', marginTop:3, fontSize:11, color:'#64748b', background:'#f8fafc', padding:'1px 5px', borderRadius:4 }}>{job.cron}</code>
+                              </td>
+                              <td style={{ ...tdStyle, fontSize:12, color:'#475569', lineHeight:1.5 }}>{job.purpose}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })}
+              <div style={{ fontSize:12, color:'#94a3b8', textAlign:'right', marginTop:4 }}>
+                {cronJobs.length} jobs registered
+              </div>
+            </div>
+          )}
         </div>
       )}
 
