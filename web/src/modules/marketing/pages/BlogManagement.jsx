@@ -244,6 +244,8 @@ export default function BlogManagement() {
   const [waShareSuccess, setWaShareSuccess] = useState(false);
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [plannerLines, setPlannerLines] = useState([]);
+  const [plannerModelReasoning, setPlannerModelReasoning] = useState('');
+  const [plannerModelAssistant, setPlannerModelAssistant] = useState('');
   const [plannerSummary, setPlannerSummary] = useState(null);
   const [plannerErr, setPlannerErr] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -291,8 +293,9 @@ export default function BlogManagement() {
 
   const openEdit = (post) => {
     setEditingPost(post);
-    const content = post.content
-      ? (isHtml(post.content) ? post.content : markdownToHtml(post.content))
+    const raw = (post.content || '').replace(/\\n/g, '\n');
+    const content = raw
+      ? (isHtml(raw) ? raw : markdownToHtml(raw))
       : '';
     setForm({
       title: post.title,
@@ -442,6 +445,9 @@ export default function BlogManagement() {
 
     setPlannerOpen(true);
     setPlannerLines([]);
+    setPlannerModelReasoning('');
+    setPlannerModelAssistant('');
+    setPlannerSummary(null);
     setPlannerSummary(null);
     setPlannerErr('');
     setGenerating(true);
@@ -449,6 +455,13 @@ export default function BlogManagement() {
     try {
       const done = await generateAiDraftsStream({}, {
         onLogLine: (line) => { setPlannerLines(prev => [...prev, line]); },
+        onModelChunk: ({ phase, chunk }) => {
+          if (phase === 'reasoning') {
+            setPlannerModelReasoning(p => p + chunk);
+          } else {
+            setPlannerModelAssistant(p => p + chunk);
+          }
+        },
       });
       const n = typeof done?.drafts_generated === 'number' ? done.drafts_generated : 0;
       setPlannerSummary(
@@ -981,7 +994,9 @@ export default function BlogManagement() {
 
       <AiDraftPlannerModal
         open={plannerOpen}
-        lines={plannerLines}
+        serverLines={plannerLines}
+        modelReasoning={plannerModelReasoning}
+        modelAssistant={plannerModelAssistant}
         running={generating}
         summary={plannerSummary}
         errorMsg={plannerErr}

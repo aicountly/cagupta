@@ -2,26 +2,40 @@ import { useEffect, useRef } from 'react';
 import { Loader2, X } from 'lucide-react';
 
 /**
- * Full-screen overlay showing live log lines from POST /generate-ai-drafts (SSE).
- * OpenAI “reasoning” is not streamed here — only server-side steps (topic, draft, DB, spacing).
+ * Full-screen overlay with live OpenAI deltas (reasoning/content when the API emits them),
+ * plus server planner log lines from SSE.
  */
 export default function AiDraftPlannerModal({
   open,
-  lines,
+  serverLines,
+  modelReasoning,
+  modelAssistant,
   running,
   summary,
   errorMsg,
   onClose,
 }) {
-  const scrollRef = useRef(null);
+  const logRef = useRef(null);
+  const reasoningRef = useRef(null);
+  const assistantRef = useRef(null);
 
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    el.scrollTop = el.scrollHeight;
-  }, [lines, open]);
+    const scroll = (r) => {
+      const el = r.current;
+      if (!el) return;
+      el.scrollTop = el.scrollHeight;
+    };
+    scroll(logRef);
+    scroll(reasoningRef);
+    scroll(assistantRef);
+  }, [serverLines, modelReasoning, modelAssistant, open]);
 
   if (!open) return null;
+
+  const showConnecting = running
+    && serverLines.length === 0
+    && !modelReasoning
+    && !modelAssistant;
 
   return (
     <div
@@ -41,8 +55,8 @@ export default function AiDraftPlannerModal({
     >
       <div
         style={{
-          width: 'min(720px, 100%)',
-          maxHeight: 'min(85vh, 640px)',
+          width: 'min(900px, 100%)',
+          maxHeight: 'min(88vh, 680px)',
           background: '#fff',
           borderRadius: 12,
           boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
@@ -70,7 +84,8 @@ export default function AiDraftPlannerModal({
                 AI blog planner
               </h2>
               <p style={{ margin: '2px 0 0', fontSize: 12, color: '#64748b' }}>
-                Live log from the server (steps and OpenAI status). Model reasoning is not streamed.
+                Model stream (Chat Completions) when available; reasoning fields depend on the model.
+                Separate panel shows server-side steps (DB, spacing).
               </p>
             </div>
           </div>
@@ -94,26 +109,104 @@ export default function AiDraftPlannerModal({
         </div>
 
         <div
-          ref={scrollRef}
           style={{
             flex: 1,
-            overflow: 'auto',
-            padding: 14,
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-            fontSize: 12,
-            lineHeight: 1.55,
-            background: '#0f172a',
-            colorScheme: 'dark',
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            minHeight: 0,
+            gap: 0,
           }}
         >
-          {lines.length === 0 && running && (
-            <span style={{ color: '#94a3b8' }}>Connecting…</span>
-          )}
-          {lines.map((ln, i) => (
-            <div key={`${i}-${ln.slice(0, 40)}`} style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', color: '#e2e8f0' }}>
-              {ln}
+          {/* Model stream row */}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: '1fr 1fr',
+              gap: 1,
+              minHeight: 140,
+              maxHeight: '32vh',
+              borderBottom: '1px solid #1e293b',
+            }}
+          >
+            <div style={{ background: '#1e1b4b', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <div style={{ padding: '6px 10px', fontSize: 10, fontWeight: 700, color: '#c4b5fd', letterSpacing: '.06em', textTransform: 'uppercase' }}>
+                Reasoning hints
+              </div>
+              <pre
+                ref={reasoningRef}
+                style={{
+                  flex: 1,
+                  margin: 0,
+                  padding: '0 10px 10px',
+                  overflow: 'auto',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                  fontSize: 11,
+                  lineHeight: 1.5,
+                  color: '#ddd6fe',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {modelReasoning || '\u200b'}
+              </pre>
             </div>
-          ))}
+            <div style={{ background: '#0f172a', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+              <div style={{ padding: '6px 10px', fontSize: 10, fontWeight: 700, color: '#93c5fd', letterSpacing: '.06em', textTransform: 'uppercase' }}>
+                Model output tokens
+              </div>
+              <pre
+                ref={assistantRef}
+                style={{
+                  flex: 1,
+                  margin: 0,
+                  padding: '0 10px 10px',
+                  overflow: 'auto',
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                  fontSize: 11,
+                  lineHeight: 1.5,
+                  color: '#e2e8f0',
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {modelAssistant || '\u200b'}
+              </pre>
+            </div>
+          </div>
+
+          {/* Server log */}
+          <div
+            ref={logRef}
+            style={{
+              flex: 1,
+              overflow: 'auto',
+              padding: 12,
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+              fontSize: 12,
+              lineHeight: 1.55,
+              background: '#020617',
+              colorScheme: 'dark',
+              minHeight: 120,
+            }}
+          >
+            {showConnecting && (
+              <span style={{ color: '#94a3b8' }}>Connecting…</span>
+            )}
+            {serverLines.map((ln, i) => (
+              <div
+                key={`${i}-${ln.slice(0, 36)}`}
+                style={{
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  color: '#cbd5e1',
+                  paddingBottom: 2,
+                }}
+              >
+                {ln}
+              </div>
+            ))}
+          </div>
         </div>
 
         {(summary || errorMsg) && (

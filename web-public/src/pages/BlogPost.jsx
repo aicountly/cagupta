@@ -29,10 +29,13 @@ function isHtml(str) {
  * Converts markdown text to an HTML string.
  * Handles: # h1, ## h2, ### h3, **bold**, *italic*, [link](url),
  *          unordered lists (- or *), numbered lists, paragraphs.
+ * Also fixes legacy literal "\n" sequences from the old AI prompt.
  */
 function renderMarkdown(md) {
   if (!md) return '';
-  const lines = md.split('\n');
+  // Fix literal "\n" (two-char backslash+n) → real newlines
+  let fixed = md.replace(/\\n/g, '\n');
+  const lines = fixed.split('\n');
   const out = [];
   let listBuf = [];
   let orderedBuf = [];
@@ -92,7 +95,9 @@ function renderMarkdown(md) {
 function BlogContent({ post }) {
   // API-sourced post has a `content` string — render HTML directly or convert from markdown
   if (typeof post.content === 'string') {
-    const html = isHtml(post.content) ? post.content : renderMarkdown(post.content);
+    // Fix legacy literal "\n" sequences before any check
+    const cleaned = post.content.replace(/\\n/g, '\n');
+    const html = isHtml(cleaned) ? cleaned : renderMarkdown(cleaned);
     return (
       <div
         className="blog-post__body"

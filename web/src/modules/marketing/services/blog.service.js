@@ -154,13 +154,15 @@ export async function generateAiDraftsNow(body = {}) {
 }
 
 /**
- * Streams server log lines via SSE ({ stream: true }).
+ * Streams server activity via SSE ({ stream: true }).
+ *
+ * Events: log, model_delta `{ context, phase, chunk }`, done, error.
+ *
  * @param {Record<string, unknown>} body forwarded to API (minus stream flag)
- * @param {{ onLogLine?: (line: string) => void, signal?: AbortSignal }} opts
- * @returns {Promise<{ drafts_generated?: number, dry_run?: boolean, log?: string[], message?: string, success?: boolean }>}
+ * @param {{ onLogLine?: (line: string) => void, onModelChunk?: (payload: { context?: string, phase: string, chunk: string }) => void, signal?: AbortSignal }} opts
  */
 export async function generateAiDraftsStream(body = {}, opts = {}) {
-  const { onLogLine, signal } = opts;
+  const { onLogLine, onModelChunk, signal } = opts;
   const res = await fetch(`${BASE}/marketing/blog/generate-ai-drafts`, {
     method: 'POST',
     headers: {
@@ -213,9 +215,21 @@ export async function generateAiDraftsStream(body = {}, opts = {}) {
         continue;
       }
 
+      if (eventName === 'model_delta') {
+        if (typeof onModelChunk === 'function') {
+          onModelChunk({
+            context: parsed.context != null ? String(parsed.context) : '',
+            phase: parsed.phase != null ? String(parsed.phase) : 'assistant',
+            chunk: parsed.chunk != null ? String(parsed.chunk) : '',
+          });
+        }
+        continue;
+      }
       if (eventName === 'log') {
         const line = parsed.line != null ? String(parsed.line) : '';
-        if (line && typeof onLogLine === 'function') onLogLine(line);
+        if (line && typeof onLogLine === 'function') {
+          onLogLine(line);
+        }
         continue;
       }
       if (eventName === 'error') {

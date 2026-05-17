@@ -1,6 +1,12 @@
 Options -MultiViews
 RewriteEngine On
 
+# Social-media / messaging bot pre-rendering for /blog/:slug
+# These bots do not execute JavaScript, so they cannot see OG tags
+# injected by React. Serve them a PHP-rendered page with correct meta tags.
+RewriteCond %{HTTP_USER_AGENT} "(WhatsApp|facebookexternalhit|Twitterbot|LinkedInBot|Slackbot|TelegramBot|ia_archiver|Googlebot|bingbot|DuckDuckBot|Discordbot|Applebot)" [NC]
+RewriteRule ^blog/([^/?#]+)/?$ /prerender.php?slug=$1 [QSA,L]
+
 # Route /api/* requests to PHP backend
 RewriteRule ^api/(.*)$ /api/public/index.php [QSA,L]
 

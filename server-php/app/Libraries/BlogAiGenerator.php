@@ -136,19 +136,35 @@ final class BlogAiGenerator
                 $add("[blog-ai]   Topic: {$topic}");
 
                 $blogPrompt = <<<PROMPT
-You are a senior Indian chartered accountant writing a blog for CA Rahul Gupta's firm website.
-Write a comprehensive, well-researched blog article on the following topic:
+You are a senior Indian chartered accountant writing a professional blog article for CA Rahul Gupta's firm website.
+Write a comprehensive, well-researched article on this topic:
 
 Topic: {$topic}
 Category: {$catLabel}
 
-Requirements:
-- Write in clear, simple English that business owners and individual taxpayers can easily understand
-- Structure: Start with an engaging introduction, then use 3–5 main sections with subheadings (use ## for H2), end with a practical conclusion
-- Include real Indian tax provisions, section references (e.g. Section 80C, Section 194Q), and practical examples where relevant
-- Word count: 600–900 words
-- Do NOT use markdown bold (**) or italics (*) — plain text only
-- Output MUST be ONE valid JSON object with exactly these keys — no prose outside JSON: "title" (string), "excerpt" (string), "content" (string). Escape any double quotes inside string values as \\\". Replace line breaks inside values with \\\\n.
+Return ONE valid JSON object with these keys — no prose before or after:
+{
+  "title": "Clear, SEO-friendly article title",
+  "excerpt": "2–3 sentence plain-text summary for listing cards (NO HTML tags here)",
+  "content": "Full article body as clean semantic HTML (see rules below)"
+}
+
+Content HTML rules (these are strict):
+- Start with an engaging introductory <p> paragraph — do NOT start with a heading
+- Use <h2> for 3–5 main section headings spread throughout the article
+- Use <p> for every paragraph of body text
+- Use <strong> to emphasise key terms, section numbers (e.g. Section 80C), amounts, deadlines
+- Use <em> sparingly for definitions or asides
+- Use <ul><li> for bullet lists and <ol><li> for numbered steps
+- Do NOT include <html>, <head>, <body>, <h1>, <style>, or <script> tags
+- Do NOT use markdown syntax (##, **, -, ```, etc.) — only HTML tags
+- All tags must be properly opened and closed
+
+Writing style:
+- Clear, simple English that business owners and individual taxpayers can easily understand
+- 600–900 words
+- Include real Indian tax provisions, section references, and practical examples where relevant
+- End with a short, actionable conclusion section under an <h2>
 
 PROMPT;
 
@@ -182,13 +198,15 @@ PROMPT;
 
                 $draftTitle   = substr(trim((string)$draft['title']), 0, 490);
                 $draftExcerpt = substr(trim((string)($draft['excerpt'] ?? '')), 0, 500);
-                $draftContent = trim((string)$draft['content']);
+                $draftContent = self::normalizeContent(trim((string)$draft['content']));
 
                 $add("[blog-ai]   Title: {$draftTitle}");
 
                 $coverPath = null;
                 if (!$dryRun) {
-                    $imagePromptFull = $config['imagePrompt'] . " Topic context: {$draftTitle}";
+                    $imagePromptFull = "Professional blog cover image for a CA firm website article titled \"{$draftTitle}\". "
+                        . $config['imagePrompt']
+                        . ' Wide landscape format, visually striking, suitable as a hero banner.';
                     self::ensureOpenAiSpacing($afterLastAi, $minInterval, $add);
                     $coverPath = self::openaiGenerateImage($openAiKey, $imageModel, $imagePromptFull, $blogUploadDir);
                     $afterLastAi = microtime(true);
@@ -308,6 +326,80 @@ PROMPT;
         return is_string($s) ? $s : '';
     }
 
+    /**
+     * Ensure the draft content is clean HTML ready for rendering.
+     *
+     * Handles three scenarios from OpenAI output:
+     *  1. Already valid HTML (has block-level tags) — return as-is.
+     *  2. Markdown with literal "\n" (two-char backslash+n from the old prompt bug) — fix and convert.
+     *  3. Markdown with real newlines — convert to HTML.
+     */
+    private static function normalizeContent(string $raw): string
+    {
+        if ($raw === '') {
+            return '';
+        }
+
+        // Fix the double-escape bug: literal two-char "\n" → actual newline
+        $content = str_replace("\\n", "\n", $raw);
+        // Strip stray \r
+        $content = str_replace("\r", '', $content);
+
+        // If the content already contains block-level HTML tags, it's ready.
+        if (preg_match('/<(?:p|h[1-6]|ul|ol|div|section|article|blockquote)\b/i', $content)) {
+            return trim($content);
+        }
+
+        // Fallback: content is markdown / plain text — convert to semantic HTML.
+        return self::markdownToHtml($content);
+    }
+
+    /**
+     * Simple markdown-to-HTML converter for legacy or fallback plain-text drafts.
+     */
+    private static function markdownToHtml(string $md): string
+    {
+        $lines   = explode("\n", $md);
+        $html    = [];
+        $listBuf = [];
+
+        $flushList = static function () use (&$html, &$listBuf): void {
+            if ($listBuf !== []) {
+                $html[]  = '<ul>' . implode('', array_map(static fn($l) => "<li>{$l}</li>", $listBuf)) . '</ul>';
+                $listBuf = [];
+            }
+        };
+
+        $inlineFmt = static function (string $text): string {
+            $text = preg_replace('/\*\*(.+?)\*\*/', '<strong>$1</strong>', $text) ?? $text;
+            $text = preg_replace('/\*(.+?)\*/', '<em>$1</em>', $text) ?? $text;
+            return $text;
+        };
+
+        foreach ($lines as $line) {
+            $line = rtrim($line);
+
+            if (preg_match('/^#{1,3}\s+(.+)/', $line, $m)) {
+                $flushList();
+                $html[] = '<h2>' . $inlineFmt($m[1]) . '</h2>';
+            } elseif (preg_match('/^[-*]\s+(.+)/', $line, $m)) {
+                $listBuf[] = $inlineFmt($m[1]);
+            } elseif (preg_match('/^\d+\.\s+(.+)/', $line, $m)) {
+                $flushList();
+                $html[] = '<p>' . $inlineFmt($m[1]) . '</p>';
+            } elseif (trim($line) === '') {
+                $flushList();
+            } else {
+                $flushList();
+                $html[] = '<p>' . $inlineFmt($line) . '</p>';
+            }
+        }
+
+        $flushList();
+
+        return implode("\n", $html);
+    }
+
     private static function sleepBefore429Retry(string $responseBody): int
     {
         if (preg_match('/retry after (\d+)ms/i', $responseBody, $m)) {
@@ -348,6 +440,8 @@ PROMPT;
      */
     private static function forwardStreamDeltaPieces(array $delta, callable $modelEmit, string $emitContext): void
     {
+        $seen = [];
+
         foreach ([
             'reasoning_content',
             'reasoning_summary',
@@ -359,6 +453,7 @@ PROMPT;
                 continue;
             }
             $modelEmit($emitContext, 'reasoning', $delta[$key]);
+            $seen[$key] = true;
         }
 
         $blocks = $delta['thinking_blocks'] ?? null;
@@ -374,19 +469,22 @@ PROMPT;
             }
         }
 
-        $handledKeys = ['reasoning_content', 'reasoning_summary', 'reasoning', 'thinking', 'thinking_summary', 'thinking_blocks', 'content', 'role', 'refusal'];
+        $skipKeys = ['thinking_blocks', 'content', 'role', 'refusal'];
         foreach ($delta as $k => $v) {
-            if (!is_string($k) || !is_string($v) || $v === '') {
+            if (!is_string($k) || isset($seen[$k])) {
+                continue;
+            }
+            if (!is_string($v) || $v === '') {
                 continue;
             }
             if (preg_match('/reason|think|reflection|thought|internal|chain/i', $k) !== 1) {
                 continue;
             }
-            if (in_array($k, $handledKeys, true)) {
+            if (in_array($k, $skipKeys, true)) {
                 continue;
             }
             $modelEmit($emitContext, 'reasoning', $v);
-            $handledKeys[] = $k;
+            $seen[$k] = true;
         }
 
         if (isset($delta['content']) && is_string($delta['content']) && $delta['content'] !== '') {
@@ -410,7 +508,6 @@ PROMPT;
     ): ?string {
         $maxAttempts      = 5;
         $lastFailureTail  = '';
-        $bufferedReturned = ''; // populated by non-stream fallback in caller via openaiChatBuffered
 
         for ($attempt = 1; $attempt <= $maxAttempts; ++$attempt) {
             $assembled    = '';
@@ -442,8 +539,15 @@ PROMPT;
                     "Authorization: Bearer {$apiKey}",
                 ],
                 CURLOPT_HEADERFUNCTION => static function ($ch, string $hdrLine) use (&$firstHttp): int {
-                    if ($firstHttp === null && preg_match('/HTTP\\/\\S+ (\\d{3}) /', $hdrLine, $m)) {
+                    $t = trim($hdrLine);
+                    if ($firstHttp === null && $t !== '' && preg_match('/^HTTP\\/\\S+ (\\d{3}) /', $t, $m)) {
                         $firstHttp = (int)$m[1];
+                    }
+                    if ($firstHttp === null && str_starts_with($t, ':status')) {
+                        $bits = preg_split('/\s+/', $t) ?: [];
+                        if (isset($bits[1]) && ctype_digit((string)$bits[1])) {
+                            $firstHttp = (int)$bits[1];
+                        }
                     }
 
                     return strlen($hdrLine);
@@ -547,6 +651,8 @@ PROMPT;
             }
 
             if ($assembled !== '') {
+                self::$lastOpenAiChatFailure = null;
+
                 return $assembled;
             }
 
@@ -564,8 +670,6 @@ PROMPT;
 
     private static function openaiChatBuffered(string $apiKey, string $model, array $messages, int $maxCompletionTokens = 2000, bool $jsonObject = false): ?string
     {
-        self::$lastOpenAiChatFailure = null;
-
         $response = '';
         $maxAttempts = 5;
 
@@ -627,6 +731,8 @@ PROMPT;
 
             $content = $data['choices'][0]['message']['content'] ?? null;
             if (is_string($content) && $content !== '') {
+                self::$lastOpenAiChatFailure = null;
+
                 return $content;
             }
 
@@ -670,20 +776,25 @@ PROMPT;
         curl_close($ch);
 
         if ($err !== '') {
+            error_log("[BlogAiGenerator] Image curl_error: {$err}");
             return null;
         }
         if ($code !== 200) {
+            error_log("[BlogAiGenerator] Image HTTP {$code}: " . substr((string)$response, 0, 500));
             return null;
         }
 
         $data     = json_decode((string)$response, true);
         $imageUrl = $data['data'][0]['url'] ?? null;
         if ($imageUrl === null) {
+            error_log('[BlogAiGenerator] Image response missing URL: ' . substr((string)$response, 0, 500));
             return null;
         }
 
-        $imgData = @file_get_contents($imageUrl);
+        $ctx = stream_context_create(['http' => ['timeout' => 60]]);
+        $imgData = @file_get_contents($imageUrl, false, $ctx);
         if ($imgData === false) {
+            error_log("[BlogAiGenerator] Failed to download image from: {$imageUrl}");
             return null;
         }
 

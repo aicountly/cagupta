@@ -672,7 +672,7 @@ class BlogController extends BaseController
      *   dry_run — if true, do not persist (logs article text in meta.log)
      *   category — "laws" | "tax_saving" | omit for both
      *   options_per_category — default 2
-     *   stream — if true, response is SSE (events: log, done, error)
+     *   stream — if true, response is SSE (events: log, model_delta, done, error)
      */
     public function generateAiDrafts(): never
     {
@@ -695,6 +695,9 @@ class BlogController extends BaseController
             while (ob_get_level() > 0) {
                 ob_end_clean();
             }
+            @ini_set('zlib.output_compression', '0');
+            @ini_set('output_buffering', '0');
+            @ini_set('implicit_flush', '1');
             header('Content-Type: text/event-stream; charset=utf-8');
             header('Cache-Control: no-store, must-revalidate');
             header('X-Accel-Buffering: no');
@@ -707,6 +710,8 @@ class BlogController extends BaseController
                 flush();
             };
 
+            $sendEvent('log', ['line' => '[blog-ai] Stream connected — running generator']);
+
             try {
                 $report = BlogAiGenerator::run([
                     'pdo'                  => $this->db(),
@@ -716,6 +721,12 @@ class BlogController extends BaseController
                     'options_per_category' => $optionsPerCat,
                     'stream_callback'      => function (string $line) use ($sendEvent): void {
                         $sendEvent('log', ['line' => $line]);
+                    },
+                    'model_emit'           => function (string $context, string $phase, string $chunk) use ($sendEvent): void {
+                        if ($chunk === '') {
+                            return;
+                        }
+                        $sendEvent('model_delta', ['context' => $context, 'phase' => $phase, 'chunk' => $chunk]);
                     },
                 ]);
             } catch (\Throwable $e) {

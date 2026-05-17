@@ -50,6 +50,8 @@ export default function BlogAIApprovals() {
   const [generating, setGenerating] = useState(false);
   const [plannerOpen, setPlannerOpen] = useState(false);
   const [plannerLines, setPlannerLines] = useState([]);
+  const [plannerModelReasoning, setPlannerModelReasoning] = useState('');
+  const [plannerModelAssistant, setPlannerModelAssistant] = useState('');
   const [plannerSummary, setPlannerSummary] = useState(null);
   const [plannerErr, setPlannerErr] = useState('');
   const [approveModal, setApproveModal] = useState(null);
@@ -76,8 +78,9 @@ export default function BlogAIApprovals() {
 
   const startEdit = (draft) => {
     setEditingId(draft.id);
-    const content = draft.content
-      ? (isHtml(draft.content) ? draft.content : markdownToHtml(draft.content))
+    const raw = (draft.content || '').replace(/\\n/g, '\n');
+    const content = raw
+      ? (isHtml(raw) ? raw : markdownToHtml(raw))
       : '';
     setEditForm({ title: draft.title, excerpt: draft.excerpt ?? '', content, cover_image_path: draft.cover_image_path ?? '' });
     setCoverPreviews(p => ({ ...p, [draft.id]: draft.cover_image_url ?? '' }));
@@ -178,6 +181,8 @@ export default function BlogAIApprovals() {
 
     setPlannerOpen(true);
     setPlannerLines([]);
+    setPlannerModelReasoning('');
+    setPlannerModelAssistant('');
     setPlannerSummary(null);
     setPlannerErr('');
     setGenerating(true);
@@ -185,6 +190,13 @@ export default function BlogAIApprovals() {
     try {
       const done = await generateAiDraftsStream({}, {
         onLogLine: (line) => { setPlannerLines(prev => [...prev, line]); },
+        onModelChunk: ({ phase, chunk }) => {
+          if (phase === 'reasoning') {
+            setPlannerModelReasoning(p => p + chunk);
+          } else {
+            setPlannerModelAssistant(p => p + chunk);
+          }
+        },
       });
       const n = typeof done?.drafts_generated === 'number' ? done.drafts_generated : 0;
       setPlannerSummary(
@@ -412,7 +424,10 @@ export default function BlogAIApprovals() {
                       <div
                         style={{ fontSize: 13, color: '#334155', lineHeight: 1.7, maxHeight: 420, overflowY: 'auto' }}
                         dangerouslySetInnerHTML={{
-                          __html: isHtml(draft.content) ? draft.content : markdownToHtml(draft.content),
+                          __html: (() => {
+                            const cleaned = (draft.content || '').replace(/\\n/g, '\n');
+                            return isHtml(cleaned) ? cleaned : markdownToHtml(cleaned);
+                          })(),
                         }}
                       />
                     )}
@@ -555,7 +570,9 @@ export default function BlogAIApprovals() {
 
       <AiDraftPlannerModal
         open={plannerOpen}
-        lines={plannerLines}
+        serverLines={plannerLines}
+        modelReasoning={plannerModelReasoning}
+        modelAssistant={plannerModelAssistant}
         running={generating}
         summary={plannerSummary}
         errorMsg={plannerErr}

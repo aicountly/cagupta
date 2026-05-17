@@ -12,10 +12,16 @@ export function isHtml(str) {
 /**
  * Convert plain-text markdown (## headings, **bold**, bullet lists, etc.)
  * to clean semantic HTML suitable for the rich-text editor or public display.
+ *
+ * Also fixes the legacy literal "\n" bug where the OpenAI prompt caused
+ * two-char backslash-n sequences to be stored instead of real newlines.
  */
 export function markdownToHtml(md) {
   if (!md) return '';
-  const lines = md.split('\n');
+
+  // Fix literal "\n" (two-char backslash+n) → real newlines
+  let fixed = md.replace(/\\n/g, '\n');
+  const lines = fixed.split('\n');
   const out = [];
   let listBuf = [];
   let ordBuf = [];
