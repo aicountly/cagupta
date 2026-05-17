@@ -5,9 +5,10 @@ import {
 } from 'lucide-react';
 import {
   fetchDrafts, updateDraft, approveDraft, rejectDraft, uploadBlogImage,
-  generateAiDraftsNow,
+  generateAiDraftsStream,
 } from '../services/blog.service';
 import { RichTextEditor } from '../components/RichTextEditor';
+import AiDraftPlannerModal from '../components/AiDraftPlannerModal';
 import { isHtml, markdownToHtml } from '../../../utils/blogContent';
 import { API_BASE_URL } from '../../../constants/config';
 
@@ -47,6 +48,10 @@ export default function BlogAIApprovals() {
   const [coverPreviews, setCoverPreviews] = useState({});
   const [uploading, setUploading]   = useState(null);
   const [generating, setGenerating] = useState(false);
+  const [plannerOpen, setPlannerOpen] = useState(false);
+  const [plannerLines, setPlannerLines] = useState([]);
+  const [plannerSummary, setPlannerSummary] = useState(null);
+  const [plannerErr, setPlannerErr] = useState('');
   const [approveModal, setApproveModal] = useState(null);
   const [approving, setApproving]   = useState(false);
   const [approveError, setApproveError] = useState('');
@@ -170,18 +175,26 @@ export default function BlogAIApprovals() {
       + 'This uses the same process as the daily 6 AM cron job: new topics and drafts '
       + 'from OpenAI, plus cover images when enabled. It can take several minutes.',
     )) return;
+
+    setPlannerOpen(true);
+    setPlannerLines([]);
+    setPlannerSummary(null);
+    setPlannerErr('');
     setGenerating(true);
     setError('');
     try {
-      const res = await generateAiDraftsNow({});
-      const n = res?.data?.drafts_generated ?? 0;
-      const msg = n === 0
-        ? 'Generator finished — no drafts were saved (check server logs / OpenAI / .env).'
-        : `Created ${n} new draft${n === 1 ? '' : 's'}. Refresh the list to review them.`;
-      alert(`${res.message || 'Done'}\n\n${msg}`);
+      const done = await generateAiDraftsStream({}, {
+        onLogLine: (line) => { setPlannerLines(prev => [...prev, line]); },
+      });
+      const n = typeof done?.drafts_generated === 'number' ? done.drafts_generated : 0;
+      setPlannerSummary(
+        n === 0
+          ? 'No drafts were saved — see log above for details (JSON, quotas, RPM, etc.).'
+          : `Created ${n} new draft${n === 1 ? '' : 's'}. Refresh the list to review them.`,
+      );
       await load();
     } catch (e) {
-      setError(e.message);
+      setPlannerErr(e.message || 'Generation failed.');
     } finally {
       setGenerating(false);
     }
@@ -539,6 +552,15 @@ export default function BlogAIApprovals() {
           </div>
         </div>
       )}
+
+      <AiDraftPlannerModal
+        open={plannerOpen}
+        lines={plannerLines}
+        running={generating}
+        summary={plannerSummary}
+        errorMsg={plannerErr}
+        onClose={() => { setPlannerOpen(false); }}
+      />
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>

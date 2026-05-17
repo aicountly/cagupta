@@ -169,6 +169,40 @@ class BlogController extends BaseController
         return $row;
     }
 
+    /**
+     * Strip joined blog_email_logs columns and expose a single summary object for admin list UI.
+     *
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function attachLastEmailBlast(array $row): array
+    {
+        $sentAt       = $row['email_last_sent_at'] ?? null;
+        $recipients   = $row['email_last_recipients'] ?? null;
+        $success      = $row['email_last_success'] ?? null;
+        $blastStatus  = $row['email_last_status'] ?? null;
+
+        unset(
+            $row['email_last_sent_at'],
+            $row['email_last_recipients'],
+            $row['email_last_success'],
+            $row['email_last_status'],
+        );
+
+        if ($sentAt !== null && $sentAt !== '') {
+            $row['email_last_blast'] = [
+                'sent_at' => $sentAt,
+                'total'   => (int)$recipients,
+                'sent'    => (int)$success,
+                'status'  => (string)$blastStatus,
+            ];
+        } else {
+            $row['email_last_blast'] = null;
+        }
+
+        return $row;
+    }
+
     // ── Blog Posts — CRUD ────────────────────────────────────────────────────
 
     public function blogIndex(): never
@@ -183,24 +217,39 @@ class BlogController extends BaseController
         $params = [];
 
         if ($category !== '') {
-            $where[] = 'category = :cat';
+            $where[] = 'p.category = :cat';
             $params[':cat'] = $category;
         }
         if ($status !== '') {
-            $where[] = 'status = :status';
+            $where[] = 'p.status = :status';
             $params[':status'] = $status;
         }
 
         $whereClause = $where ? ('WHERE ' . implode(' AND ', $where)) : '';
 
-        $countStmt = $this->db()->prepare("SELECT COUNT(*) FROM blog_posts {$whereClause}");
+        $countStmt = $this->db()->prepare("SELECT COUNT(*) FROM blog_posts p {$whereClause}");
         $countStmt->execute($params);
         $total = (int)$countStmt->fetchColumn();
 
         $stmt = $this->db()->prepare("
-            SELECT p.*, u.name AS author_name
+            SELECT p.*,
+                   u.name AS author_name,
+                   el.sent_at          AS email_last_sent_at,
+                   el.recipients_count AS email_last_recipients,
+                   el.success_count    AS email_last_success,
+                   el.status           AS email_last_status
             FROM   blog_posts p
             LEFT JOIN users u ON u.id = p.created_by
+            LEFT JOIN (
+                SELECT DISTINCT ON (blog_post_id)
+                    blog_post_id,
+                    sent_at,
+                    recipients_count,
+                    success_count,
+                    status
+                FROM blog_email_logs
+                ORDER BY blog_post_id, sent_at DESC
+            ) el ON el.blog_post_id = p.id
             {$whereClause}
             ORDER  BY p.created_at DESC
             LIMIT  :lim OFFSET :off
@@ -213,7 +262,9 @@ class BlogController extends BaseController
         $stmt->execute();
         $rows = $stmt->fetchAll(\PDO::FETCH_ASSOC);
 
-        $rows = array_map(fn($r) => $this->formatPost($r), $rows);
+        $rows = array_map(function (array $r): array {
+            return $this->attachLastEmailBlast($this->formatPost($r));
+        }, $rows);
 
         $this->success($rows, 'OK', 200, ['total' => $total, 'page' => $page, 'limit' => $limit]);
     }
@@ -371,6 +422,46 @@ class BlogController extends BaseController
     }
 
     /**
+     * POST /api/marketing/blog/posts/:id/share-wa
+     *
+     * Sends an already-published post to a WhatsApp Channel.
+     * Works independently of the publish flow — can be called at any time.
+     *
+     * Body: { wa_channel_jid: string }
+     */
+    public function blogShareWa(int $id): never
+    {
+        $user          = $this->authUser();
+        $body          = $this->getJsonBody();
+        $waChannelJid  = trim((string)($body['wa_channel_jid'] ?? ''));
+
+        if ($waChannelJid === '') {
+            $this->error('wa_channel_jid is required.', 422);
+        }
+
+        $stmt = $this->db()->prepare('SELECT * FROM blog_posts WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        $post = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if (!$post) $this->error('Post not found.', 404);
+
+        if ($post['status'] !== 'published') {
+            $this->error('Only published posts can be shared to a WhatsApp channel.', 422);
+        }
+
+        $baseUrl = rtrim((string)($_ENV['MARKETING_SITE_URL'] ?? $_ENV['BASE_URL'] ?? ''), '/');
+        $blogUrl = "{$baseUrl}/blog/{$post['slug']}";
+        $waMsg   = "*{$post['title']}*\n\n{$post['excerpt']}\n\n{$blogUrl}";
+
+        $ok = $this->dispatchWaChannel((int)$user['id'], $waChannelJid, $waMsg);
+
+        if (!$ok) {
+            $this->error('Failed to send to WhatsApp channel. Make sure the WA bridge is running and connected.', 502);
+        }
+
+        $this->success(null, 'Blog post shared to WhatsApp channel');
+    }
+
+    /**
      * POST /api/marketing/blog/posts/:id/resend-email
      *
      * Re-sends the blog notification email blast for an already-published post.
@@ -378,23 +469,31 @@ class BlogController extends BaseController
      */
     public function blogResendEmail(int $id): never
     {
-        $existing = $this->db()->prepare('SELECT * FROM blog_posts WHERE id = :id');
-        $existing->execute([':id' => $id]);
-        $post = $existing->fetch(\PDO::FETCH_ASSOC);
-        if (!$post) $this->error('Post not found.', 404);
+        try {
+            $existing = $this->db()->prepare('SELECT * FROM blog_posts WHERE id = :id');
+            $existing->execute([':id' => $id]);
+            $post = $existing->fetch(\PDO::FETCH_ASSOC);
+            if (!$post) $this->error('Post not found.', 404);
 
-        if ($post['status'] !== 'published') {
-            $this->error('Only published posts can have their email resent.', 422);
+            if ($post['status'] !== 'published') {
+                $this->error('Only published posts can have their email resent.', 422);
+            }
+
+            $emailStats = $this->dispatchBlogEmail(
+                (int)$post['id'],
+                (string)$post['title'],
+                (string)$post['excerpt'],
+                (string)$post['slug']
+            );
+
+            $this->success(['email' => $emailStats], 'Email blast sent');
+        } catch (\Throwable $e) {
+            error_log('[BlogController] blogResendEmail: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
+            $this->error(
+                'Email blast failed unexpectedly. Check server PHP logs; verify migrations (blog_email_logs), Brevo API key, and network.',
+                503
+            );
         }
-
-        $emailStats = $this->dispatchBlogEmail(
-            (int)$post['id'],
-            (string)$post['title'],
-            (string)$post['excerpt'],
-            (string)$post['slug']
-        );
-
-        $this->success(['email' => $emailStats], 'Email blast sent');
     }
 
     // ── AI Drafts ────────────────────────────────────────────────────────────
@@ -554,6 +653,7 @@ class BlogController extends BaseController
      *   dry_run — if true, do not persist (logs article text in meta.log)
      *   category — "laws" | "tax_saving" | omit for both
      *   options_per_category — default 2
+     *   stream — if true, response is SSE (events: log, done, error)
      */
     public function generateAiDrafts(): never
     {
@@ -561,6 +661,7 @@ class BlogController extends BaseController
 
         $body = $this->getJsonBody();
         $dryRun = !empty($body['dry_run']);
+        $stream = !empty($body['stream']);
         $rawCat = isset($body['category']) ? trim((string)$body['category']) : '';
         $onlyCategory = $rawCat === '' ? null : $rawCat;
         if ($onlyCategory !== null && !in_array($onlyCategory, ['laws', 'tax_saving', 'ai_promotions', 'subsidies_promotions', 'funding_promotions'], true)) {
@@ -570,6 +671,52 @@ class BlogController extends BaseController
         $optionsPerCat = isset($body['options_per_category']) ? (int)$body['options_per_category'] : 2;
 
         $serverRoot = dirname(__DIR__, 4);
+
+        if ($stream) {
+            while (ob_get_level() > 0) {
+                ob_end_clean();
+            }
+            header('Content-Type: text/event-stream; charset=utf-8');
+            header('Cache-Control: no-store, must-revalidate');
+            header('X-Accel-Buffering: no');
+            header('Connection: keep-alive');
+
+            $sendEvent = static function (string $eventType, array $payload): void {
+                echo 'event: ', $eventType, "\n";
+                echo 'data: ', json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE), "\n\n";
+                @ob_flush();
+                flush();
+            };
+
+            try {
+                $report = BlogAiGenerator::run([
+                    'pdo'                  => $this->db(),
+                    'server_php_root'      => $serverRoot,
+                    'dry_run'              => $dryRun,
+                    'only_category'        => $onlyCategory,
+                    'options_per_category' => $optionsPerCat,
+                    'stream_callback'      => function (string $line) use ($sendEvent): void {
+                        $sendEvent('log', ['line' => $line]);
+                    },
+                ]);
+            } catch (\Throwable $e) {
+                $sendEvent('error', ['message' => $e->getMessage()]);
+                exit;
+            }
+
+            if (isset($report['error'])) {
+                $sendEvent('error', ['message' => $report['error']]);
+                exit;
+            }
+
+            $sendEvent('done', [
+                'success'           => true,
+                'message'           => 'AI draft generation finished',
+                'drafts_generated'  => $report['total_generated'],
+                'dry_run'           => $dryRun,
+            ]);
+            exit;
+        }
 
         $report = BlogAiGenerator::run([
             'pdo'                  => $this->db(),
@@ -872,15 +1019,16 @@ class BlogController extends BaseController
     /**
      * Dispatch a blog notification email to all active clients.
      *
-     * @return array{total: int, sent: int, status: string}
+     * @return array{total: int, sent: int, status: string, email_log_saved?: bool}
      */
     private function dispatchBlogEmail(int $postId, string $title, string $excerpt, string $slug): array
     {
-        // One HTTP call per client; default max_execution_time (often 30s) is too low for dozens of recipients.
+        // Concurrent Brevo HTTP calls (curl_multi); extend PHP max_execution_time as fallback on huge lists.
         $maxSeconds = (int)(getenv('BLOG_EMAIL_MAX_SECONDS') ?: '600');
         if ($maxSeconds > 0) {
             @set_time_limit($maxSeconds);
         }
+        @ignore_user_abort(true);
 
         $baseUrl = rtrim((string)($_ENV['MARKETING_SITE_URL'] ?? $_ENV['BASE_URL'] ?? ''), '/');
         $blogUrl = "{$baseUrl}/blog/{$slug}";
@@ -893,25 +1041,23 @@ class BlogController extends BaseController
               AND  c.email != ''
         ")->fetchAll(\PDO::FETCH_ASSOC);
 
-        if (empty($clients)) {
-            return ['total' => 0, 'sent' => 0, 'status' => 'no_recipients'];
+        if ($clients === []) {
+            return ['total' => 0, 'sent' => 0, 'status' => 'no_recipients', 'email_log_saved' => true];
         }
 
         $categoryLabel = 'Tax & Finance Insights';
         $htmlBody = $this->buildBlogEmailHtml($title, $excerpt, $blogUrl, $categoryLabel);
 
-        $subject      = "New Article: {$title}";
-        $successCount = 0;
+        $subject = "New Article: {$title}";
 
-        foreach ($clients as $client) {
-            $sent = BrevoMailer::send(
-                (string)$client['email'],
-                (string)$client['name'],
-                $subject,
-                $htmlBody
-            );
-            if ($sent) $successCount++;
-        }
+        $recipientRows = array_map(static function (array $c): array {
+            return [
+                'email' => (string)$c['email'],
+                'name'  => (string)($c['name'] ?? ''),
+            ];
+        }, $clients);
+
+        $successCount = BrevoMailer::sendBulkSameHtml($recipientRows, $subject, $htmlBody);
 
         $total  = count($clients);
         $status = $successCount === 0 ? 'failed' : ($successCount < $total ? 'partial' : 'sent');
@@ -942,10 +1088,11 @@ class BlogController extends BaseController
 
     private function buildBlogEmailHtml(string $title, string $excerpt, string $url, string $category): string
     {
-        $safeTitle    = htmlspecialchars($title, ENT_QUOTES, 'UTF-8');
-        $safeExcerpt  = htmlspecialchars($excerpt, ENT_QUOTES, 'UTF-8');
-        $safeCategory = htmlspecialchars($category, ENT_QUOTES, 'UTF-8');
-        $safeUrl      = htmlspecialchars($url, ENT_QUOTES, 'UTF-8');
+        $enc          = ENT_QUOTES | ENT_SUBSTITUTE;
+        $safeTitle    = htmlspecialchars($title, $enc, 'UTF-8');
+        $safeExcerpt  = htmlspecialchars($excerpt, $enc, 'UTF-8');
+        $safeCategory = htmlspecialchars($category, $enc, 'UTF-8');
+        $safeUrl      = htmlspecialchars($url, $enc, 'UTF-8');
 
         return <<<HTML
 <!DOCTYPE html>

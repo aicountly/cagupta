@@ -2,14 +2,17 @@ import { useState, useEffect, useRef } from 'react';
 import {
   BookOpen, Plus, Pencil, Trash2, Globe, EyeOff, Upload,
   X, Check, Loader2, Image as ImageIcon, AlertCircle, ChevronDown, Sparkles,
-  Mail, CheckCircle2,
+  Mail, CheckCircle2, MessageSquare, RefreshCw,
 } from 'lucide-react';
 import {
   fetchBlogPosts, createBlogPost, updateBlogPost,
-  deleteBlogPost, publishBlogPost, resendBlogEmail, uploadBlogImage, generateAiDraftsNow,
+  deleteBlogPost, publishBlogPost, resendBlogEmail, uploadBlogImage, generateAiDraftsStream,
+  shareToWaChannel,
 } from '../services/blog.service';
 import { RichTextEditor } from '../components/RichTextEditor';
+import AiDraftPlannerModal from '../components/AiDraftPlannerModal';
 import { isHtml, markdownToHtml } from '../../../utils/blogContent';
+import { API_BASE_URL } from '../../../constants/config';
 
 const CATEGORIES = [
   { value: 'laws',                  label: 'New Laws & Provisions' },
@@ -131,6 +134,75 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+function formatDateTime(iso) {
+  if (!iso) return '—';
+  return new Date(iso).toLocaleString('en-IN', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+const BLAST_STATUS_META = {
+  sent: { label: 'All sent', color: '#16a34a', bg: '#f0fdf4' },
+  partial: { label: 'Partial', color: '#ca8a04', bg: '#fefce8' },
+  failed: { label: 'Failed', color: '#dc2626', bg: '#fef2f2' },
+  no_recipients: { label: 'No recipients', color: '#64748b', bg: '#f8fafc' },
+};
+
+/** Latest completed blast from API (`email_last_blast`); not live progress during an in-flight send. */
+function EmailBlastCell({ post, isMock }) {
+  if (post.status !== 'published') {
+    return <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>;
+  }
+  if (isMock) {
+    return <span style={{ fontSize: 12, color: '#94a3b8' }}>—</span>;
+  }
+  const blast = post.email_last_blast;
+  if (!blast) {
+    return <span style={{ fontSize: 12, color: '#94a3b8' }}>Not sent yet</span>;
+  }
+  const { sent, total, status, sent_at: sentAt } = blast;
+  const pct = total > 0 ? Math.min(100, Math.round((sent / total) * 100)) : 0;
+  const meta = BLAST_STATUS_META[status] ?? { label: status || '—', color: '#64748b', bg: '#f8fafc' };
+
+  return (
+    <div style={{ minWidth: 148, maxWidth: 220 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+        <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>
+          {sent}/{total}
+          <span style={{ fontWeight: 400, color: '#94a3b8' }}> sent</span>
+        </span>
+        <span style={{
+          fontSize: 10,
+          fontWeight: 600,
+          padding: '2px 6px',
+          borderRadius: 4,
+          color: meta.color,
+          background: meta.bg,
+        }}>
+          {meta.label}
+        </span>
+      </div>
+      <div style={{ height: 5, borderRadius: 3, background: '#e2e8f0', overflow: 'hidden' }}>
+        <div style={{
+          width: `${pct}%`,
+          height: '100%',
+          borderRadius: 3,
+          background: status === 'failed' ? '#dc2626' : status === 'partial' ? '#eab308' : '#22c55e',
+          transition: 'width 0.25s ease',
+        }}
+        />
+      </div>
+      <div style={{ fontSize: 10, color: '#94a3b8', marginTop: 4 }}>
+        Last: {formatDateTime(sentAt)}
+      </div>
+    </div>
+  );
+}
+
 const emptyForm = { title: '', excerpt: '', content: '', category: 'laws', cover_image_path: '' };
 
 function applyFilters(posts, category, status) {
@@ -163,10 +235,27 @@ export default function BlogManagement() {
   const [resendModal, setResendModal] = useState(null);
   const [resending, setResending]     = useState(false);
   const [resendError, setResendError] = useState('');
+  const [waShareModal, setWaShareModal]     = useState(null);
+  const [waChannels, setWaChannels]         = useState([]);
+  const [waChannelsLoading, setWaChannelsLoading] = useState(false);
+  const [waSelectedChannel, setWaSelectedChannel] = useState('');
+  const [waSending, setWaSending]           = useState(false);
+  const [waShareError, setWaShareError]     = useState('');
+  const [waShareSuccess, setWaShareSuccess] = useState(false);
+  const [plannerOpen, setPlannerOpen] = useState(false);
+  const [plannerLines, setPlannerLines] = useState([]);
+  const [plannerSummary, setPlannerSummary] = useState(null);
+  const [plannerErr, setPlannerErr] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
   const fileRef = useRef();
 
-  const load = async () => {
-    setLoading(true); setError('');
+  const load = async (opts = {}) => {
+    const silent = !!opts.silent;
+    if (silent) setRefreshing(true);
+    else {
+      setLoading(true);
+      setError('');
+    }
     try {
       const res = await fetchBlogPosts({ category: filterCat, status: filterSt });
       const list = res.data ?? [];
@@ -181,11 +270,12 @@ export default function BlogManagement() {
       if (!import.meta.env.VITE_API_BASE_URL) {
         setPosts(applyFilters(MOCK_POSTS, filterCat, filterSt));
         setIsMock(true);
-      } else {
+      } else if (!silent) {
         setError(e.message);
       }
     } finally {
-      setLoading(false);
+      if (silent) setRefreshing(false);
+      else setLoading(false);
     }
   };
 
@@ -293,10 +383,52 @@ export default function BlogManagement() {
       if (res?.data?.email) {
         setEmailResult({ postTitle: resendModal.title, ...res.data.email });
       }
+      await load({ silent: true });
     } catch (e) {
       setResendError(e.message);
     } finally {
       setResending(false);
+    }
+  };
+
+  const openWaShare = async (post) => {
+    setWaShareError('');
+    setWaShareSuccess(false);
+    setWaSelectedChannel('');
+    setWaShareModal(post);
+    setWaChannelsLoading(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      const res = await fetch(`${API_BASE_URL}/marketing/wa/channels`, { headers });
+      if (res.ok) {
+        const json = await res.json();
+        const list = json.data ?? [];
+        setWaChannels(list);
+        if (list.length === 1) setWaSelectedChannel(list[0].id);
+      } else {
+        setWaChannels([]);
+        setWaShareError('Could not load channels. Make sure WhatsApp is connected in WA Web Marketing.');
+      }
+    } catch {
+      setWaChannels([]);
+      setWaShareError('Could not load channels. Make sure the WA bridge is running.');
+    } finally {
+      setWaChannelsLoading(false);
+    }
+  };
+
+  const doWaShare = async () => {
+    if (!waShareModal || !waSelectedChannel) return;
+    setWaSending(true);
+    setWaShareError('');
+    try {
+      await shareToWaChannel(waShareModal.id, waSelectedChannel);
+      setWaShareSuccess(true);
+    } catch (e) {
+      setWaShareError(e.message);
+    } finally {
+      setWaSending(false);
     }
   };
 
@@ -307,17 +439,25 @@ export default function BlogManagement() {
       + 'from OpenAI, plus cover images when enabled. It can take several minutes.\n\n'
       + 'New drafts will appear in the AI Approvals page for review.',
     )) return;
+
+    setPlannerOpen(true);
+    setPlannerLines([]);
+    setPlannerSummary(null);
+    setPlannerErr('');
     setGenerating(true);
     setError('');
     try {
-      const res = await generateAiDraftsNow({});
-      const n = res?.data?.drafts_generated ?? 0;
-      const msg = n === 0
-        ? 'Generator finished — no drafts were saved (check server logs / OpenAI key in .env).'
-        : `Created ${n} new draft${n === 1 ? '' : 's'}. Go to AI Approvals to review them.`;
-      alert(`${res.message || 'Done'}\n\n${msg}`);
+      const done = await generateAiDraftsStream({}, {
+        onLogLine: (line) => { setPlannerLines(prev => [...prev, line]); },
+      });
+      const n = typeof done?.drafts_generated === 'number' ? done.drafts_generated : 0;
+      setPlannerSummary(
+        n === 0
+          ? 'No drafts were saved — see log above for details (JSON parse, quotas, RPM, etc.).'
+          : `Created ${n} new draft${n === 1 ? '' : 's'}. Go to AI Approvals to review them.`,
+      );
     } catch (e) {
-      setError(e.message);
+      setPlannerErr(e.message || 'Generation failed.');
     } finally {
       setGenerating(false);
     }
@@ -352,7 +492,7 @@ export default function BlogManagement() {
       </div>
 
       {/* Filters */}
-      <div style={{ display: 'flex', gap: 12, marginBottom: 18 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 18, alignItems: 'center' }}>
         <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={sel}>
           <option value="">All Categories</option>
           {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
@@ -362,6 +502,21 @@ export default function BlogManagement() {
           <option value="draft">Draft</option>
           <option value="published">Published</option>
         </select>
+        <button
+          type="button"
+          onClick={() => load({ silent: true })}
+          disabled={loading || refreshing || isMock}
+          style={{ ...btn.secondary, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+          title="Reload posts and latest email blast stats from the server"
+        >
+          <RefreshCw size={14} style={refreshing ? { animation: 'spin 1s linear infinite' } : undefined} />
+          Refresh
+        </button>
+        {!isMock && (
+          <span style={{ fontSize: 11, color: '#94a3b8' }}>
+            Email column shows the last completed blast (sent vs total). Use Refresh after sending.
+          </span>
+        )}
       </div>
 
       {/* Mock mode banner */}
@@ -394,7 +549,7 @@ export default function BlogManagement() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ borderBottom: '1px solid #f1f5f9', background: '#f8fafc' }}>
-                {['Title', 'Category', 'Status', 'Published', 'Source', 'Actions'].map(h => (
+                {['Title', 'Category', 'Status', 'Published', 'Email blast', 'Source', 'Actions'].map(h => (
                   <th key={h} style={th}>{h}</th>
                 ))}
               </tr>
@@ -421,6 +576,9 @@ export default function BlogManagement() {
                     </span>
                   </td>
                   <td style={{ ...td, color: '#64748b', fontSize: 12 }}>{formatDate(post.published_at)}</td>
+                  <td style={{ ...td, verticalAlign: 'middle' }}>
+                    <EmailBlastCell post={post} isMock={isMock} />
+                  </td>
                   <td style={{ ...td, color: '#64748b', fontSize: 12 }}>{post.source}</td>
                   <td style={{ ...td, whiteSpace: 'nowrap' }}>
                     <button onClick={() => openEdit(post)} style={btn.icon} title="Edit">
@@ -438,6 +596,15 @@ export default function BlogManagement() {
                         title="Re-send email notification to all active clients"
                       >
                         <Mail size={14} />
+                      </button>
+                    )}
+                    {post.status === 'published' && (
+                      <button
+                        onClick={() => openWaShare(post)}
+                        style={{ ...btn.icon, color: '#25d366' }}
+                        title="Share to WhatsApp Channel"
+                      >
+                        <MessageSquare size={14} />
                       </button>
                     )}
                     <button onClick={() => setConfirmDelete(post)} style={{ ...btn.icon, color: '#dc2626' }} title="Delete">
@@ -549,6 +716,101 @@ export default function BlogManagement() {
                 {resending ? 'Sending…' : 'Send email now'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* WA Channel share modal */}
+      {waShareModal && (
+        <div style={overlay}>
+          <div style={{ ...modal, maxWidth: 460 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>Share to WhatsApp Channel</h3>
+              <button
+                onClick={() => { setWaShareModal(null); setWaShareSuccess(false); setWaShareError(''); }}
+                style={btn.icon}
+                disabled={waSending}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {waShareSuccess ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#16a34a', marginBottom: 20 }}>
+                  <CheckCircle2 size={18} />
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>Post shared to WhatsApp channel!</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => { setWaShareModal(null); setWaShareSuccess(false); }}
+                    style={btn.primary}
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600, color: '#0f172a' }}>
+                  "{waShareModal.title}"
+                </p>
+                <p style={{ margin: '0 0 18px', fontSize: 13, color: '#64748b', lineHeight: 1.6 }}>
+                  Select a saved WhatsApp channel to share this post. The message will include the title, excerpt and a link.
+                </p>
+
+                {waChannelsLoading ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#94a3b8', marginBottom: 18, fontSize: 13 }}>
+                    <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> Loading channels…
+                  </div>
+                ) : waChannels.length === 0 ? (
+                  <div style={{ ...alertBox, background: '#fff7ed', color: '#c2410c', border: '1px solid #fed7aa', marginBottom: 14 }}>
+                    <AlertCircle size={13} />
+                    No channels saved. Add a channel in WA Web Marketing first.
+                  </div>
+                ) : (
+                  <div style={{ marginBottom: 18 }}>
+                    <label style={lbl}>Channel</label>
+                    <select
+                      style={{ ...inp, cursor: 'pointer' }}
+                      value={waSelectedChannel}
+                      onChange={e => setWaSelectedChannel(e.target.value)}
+                    >
+                      <option value="">— select a channel —</option>
+                      {waChannels.map(ch => (
+                        <option key={ch.id} value={ch.id}>{ch.name || ch.id}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {waShareError && (
+                  <div style={{ ...alertBox, background: '#fef2f2', color: '#dc2626', marginBottom: 14 }}>
+                    <AlertCircle size={13} /> {waShareError}
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                  <button
+                    onClick={() => { setWaShareModal(null); setWaShareError(''); }}
+                    style={btn.secondary}
+                    disabled={waSending}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={doWaShare}
+                    style={{ ...btn.primary, background: '#25d366' }}
+                    disabled={waSending || !waSelectedChannel}
+                  >
+                    {waSending
+                      ? <Loader2 size={13} style={{ animation: 'spin 1s linear infinite' }} />
+                      : <MessageSquare size={13} />}
+                    {waSending ? 'Sending…' : 'Share to channel'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -716,6 +978,15 @@ export default function BlogManagement() {
           </div>
         </div>
       )}
+
+      <AiDraftPlannerModal
+        open={plannerOpen}
+        lines={plannerLines}
+        running={generating}
+        summary={plannerSummary}
+        errorMsg={plannerErr}
+        onClose={() => { setPlannerOpen(false); }}
+      />
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </div>

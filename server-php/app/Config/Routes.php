@@ -2178,6 +2178,12 @@ class Routes
                 'handler'    => 'Admin\BlogController@blogResendEmail',
                 'middleware' => ['auth'],
             ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/blog/posts/:id/share-wa',
+                'handler'    => 'Admin\BlogController@blogShareWa',
+                'middleware' => ['auth'],
+            ],
 
             // ── Marketing — Blog AI Drafts ────────────────────────────────────
             [

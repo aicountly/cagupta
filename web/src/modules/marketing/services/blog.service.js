@@ -96,6 +96,15 @@ export async function resendBlogEmail(id) {
   return handleResponse(res);
 }
 
+export async function shareToWaChannel(id, waChannelJid) {
+  const res = await fetch(`${BASE}/marketing/blog/posts/${id}/share-wa`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ wa_channel_jid: waChannelJid }),
+  });
+  return handleResponse(res);
+}
+
 // ── AI Drafts ────────────────────────────────────────────────────────────────
 
 export async function fetchDrafts({ status = 'pending', category = '' } = {}) {
@@ -134,7 +143,7 @@ export async function rejectDraft(id) {
   return handleResponse(res);
 }
 
-/** Same pipeline as cron (daily 6 AM) / cli/blog_ai_generate.php — requires OpenAI in server .env. */
+/** Same pipeline as cron — requires OpenAI in server .env. */
 export async function generateAiDraftsNow(body = {}) {
   const res = await fetch(`${BASE}/marketing/blog/generate-ai-drafts`, {
     method: 'POST',
@@ -144,6 +153,99 @@ export async function generateAiDraftsNow(body = {}) {
   return handleResponse(res);
 }
 
+/**
+ * Streams server log lines via SSE ({ stream: true }).
+ * @param {Record<string, unknown>} body forwarded to API (minus stream flag)
+ * @param {{ onLogLine?: (line: string) => void, signal?: AbortSignal }} opts
+ * @returns {Promise<{ drafts_generated?: number, dry_run?: boolean, log?: string[], message?: string, success?: boolean }>}
+ */
+export async function generateAiDraftsStream(body = {}, opts = {}) {
+  const { onLogLine, signal } = opts;
+  const res = await fetch(`${BASE}/marketing/blog/generate-ai-drafts`, {
+    method: 'POST',
+    headers: {
+      ...authHeaders(),
+      Accept: 'text/event-stream',
+    },
+    body: JSON.stringify({ ...body, stream: true }),
+    signal,
+  });
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.message || `HTTP ${res.status}`);
+  }
+  if (!res.body) throw new Error('Streaming is not supported in this browser.');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  /** @type {Record<string, unknown>|null} */
+  let donePayload = null;
+
+  /** @returns {boolean} ended with `done` event */
+  const ingestBlocks = () => {
+    let ended = false;
+    while (!ended) {
+      const sep = buffer.indexOf('\n\n');
+      if (sep < 0) break;
+      const block = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+
+      let eventName = 'message';
+      /** @type {string[]} */
+      const dataLines = [];
+      for (const line of block.split('\n')) {
+        if (!line) continue;
+        if (line.startsWith('event:')) {
+          eventName = line.slice(6).trim();
+        } else if (line.startsWith('data:')) {
+          const rest = line.slice(5);
+          dataLines.push(rest.startsWith(' ') ? rest.slice(1) : rest);
+        }
+      }
+
+      const dataStr = dataLines.join('\n');
+      if (!dataStr) continue;
+      /** @type {Record<string, unknown>} */
+      let parsed;
+      try {
+        parsed = JSON.parse(dataStr);
+      } catch {
+        continue;
+      }
+
+      if (eventName === 'log') {
+        const line = parsed.line != null ? String(parsed.line) : '';
+        if (line && typeof onLogLine === 'function') onLogLine(line);
+        continue;
+      }
+      if (eventName === 'error') {
+        throw new Error(String(parsed.message || 'Generation failed'));
+      }
+      if (eventName === 'done') {
+        donePayload = parsed;
+        ended = true;
+      }
+    }
+    return ended;
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      if (ingestBlocks()) break;
+      if (done) break;
+    }
+    ingestBlocks();
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!donePayload) {
+    throw new Error('Connection closed before planner finished.');
+  }
+  return donePayload;
+}
 // ── Public API (no auth — for /blog public pages) ────────────────────────────
 
 /**

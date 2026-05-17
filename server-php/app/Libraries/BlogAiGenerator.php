@@ -41,7 +41,7 @@ final class BlogAiGenerator
     ];
 
     /**
-     * @param array{pdo: PDO, server_php_root: string, dry_run?: bool, only_category?: ?string, options_per_category?: int} $cfg
+     * @param array{pdo: PDO, server_php_root: string, dry_run?: bool, only_category?: ?string, options_per_category?: int, stream_callback?: ?callable(string):void} $cfg
      * @return array{total_generated: int, log: string[], error?: string}
      */
     public static function run(array $cfg): array
@@ -51,15 +51,25 @@ final class BlogAiGenerator
         $dryRun           = (bool)($cfg['dry_run'] ?? false);
         $onlyCategory     = $cfg['only_category'] ?? null;
         $optionsPerCat    = max(1, (int)($cfg['options_per_category'] ?? 2));
+        $streamCb         = $cfg['stream_callback'] ?? null;
 
         $log = [];
-        $add = static function (string $line) use (&$log): void {
+        $add = static function (string $line) use (&$log, $streamCb): void {
             $log[] = $line;
+            if (\is_callable($streamCb)) {
+                ($streamCb)($line);
+            }
         };
 
         $openAiKey  = (string)(getenv('OPENAI_API_KEY') ?: '');
-        $textModel  = (string)(getenv('OPENAI_MODEL') ?: 'gpt-5.5');
+        $textModel  = (string)(getenv('OPENAI_MODEL') ?: 'gpt-5.1');
         $imageModel = (string)(getenv('OPENAI_IMAGE_MODEL') ?: 'dall-e-3');
+        /** Minimum seconds between each OpenAI API call (set to ~21 on low-RPM tiers; 0 disables). */
+        $minInterval = max(0.0, (float)(getenv('OPENAI_MIN_REQUEST_INTERVAL_SEC') ?: '0'));
+        /** Max completion tokens for the long JSON article response. */
+        $draftMaxTok = max(4096, min(32768, (int)(getenv('OPENAI_DRAFT_MAX_COMPLETION_TOKENS') ?: '8192')));
+        /** After last OpenAI completion (Unix seconds.micro); null = skip spacing before first call. */
+        $afterLastAi = null;
 
         if ($openAiKey === '') {
             return ['total_generated' => 0, 'log' => $log, 'error' => 'OPENAI_API_KEY is not set in .env'];
@@ -92,9 +102,11 @@ final class BlogAiGenerator
             for ($optIdx = 1; $optIdx <= $optionsPerCat; $optIdx++) {
                 $add("[blog-ai]   Option {$optIdx}/{$optionsPerCat}...");
 
+                self::ensureOpenAiSpacing($afterLastAi, $minInterval, $add);
                 $topic = self::openaiChat($openAiKey, $textModel, [
                     ['role' => 'user', 'content' => $config['topicPrompt']],
-                ], 100);
+                ], 320, false);
+                $afterLastAi = microtime(true);
 
                 if ($topic === null) {
                     $add("[blog-ai] ERROR: Failed to generate topic for {$category} option {$optIdx}");
@@ -119,17 +131,21 @@ Requirements:
 - Include real Indian tax provisions, section references (e.g. Section 80C, Section 194Q), and practical examples where relevant
 - Word count: 600–900 words
 - Do NOT use markdown bold (**) or italics (*) — plain text only
-- Return in this exact JSON format (no extra text before or after):
-{
-  "title": "SEO-optimised article title",
-  "excerpt": "2–3 sentence summary for blog listing page (max 160 characters)",
-  "content": "Full article in plain text with ## subheadings"
-}
+- Output MUST be ONE valid JSON object with exactly these keys — no prose outside JSON: "title" (string), "excerpt" (string), "content" (string). Escape any double quotes inside string values as \\\". Replace line breaks inside values with \\\\n.
+
 PROMPT;
 
-                $draftJson = self::openaiChat($openAiKey, $textModel, [
-                    ['role' => 'user', 'content' => $blogPrompt],
-                ], 2000);
+                self::ensureOpenAiSpacing($afterLastAi, $minInterval, $add);
+                $draftJson = self::openaiChat(
+                    $openAiKey,
+                    $textModel,
+                    [
+                        ['role' => 'user', 'content' => $blogPrompt],
+                    ],
+                    $draftMaxTok,
+                    true,
+                );
+                $afterLastAi = microtime(true);
 
                 if ($draftJson === null) {
                     $add("[blog-ai] ERROR: Failed to generate draft for {$category} option {$optIdx}");
@@ -139,13 +155,9 @@ PROMPT;
                     continue;
                 }
 
-                if (preg_match('/\{[\s\S]*\}/m', $draftJson, $jsonMatch)) {
-                    $draftJson = $jsonMatch[0];
-                }
-
-                $draft = json_decode($draftJson, true);
-                if (!is_array($draft) || empty($draft['title']) || empty($draft['content'])) {
-                    $add('[blog-ai] ERROR: Invalid draft JSON for ' . $category . ' option ' . $optIdx . ': ' . substr($draftJson, 0, 200));
+                $draft = self::decodeDraftJson($draftJson);
+                if ($draft === null) {
+                    $add('[blog-ai] ERROR: Invalid draft JSON for ' . $category . ' option ' . $optIdx . ': ' . substr(self::collapseWhitespace($draftJson), 0, 420));
                     continue;
                 }
 
@@ -158,7 +170,9 @@ PROMPT;
                 $coverPath = null;
                 if (!$dryRun) {
                     $imagePromptFull = $config['imagePrompt'] . " Topic context: {$draftTitle}";
+                    self::ensureOpenAiSpacing($afterLastAi, $minInterval, $add);
                     $coverPath = self::openaiGenerateImage($openAiKey, $imageModel, $imagePromptFull, $blogUploadDir);
+                    $afterLastAi = microtime(true);
                     if ($coverPath === null) {
                         $add('[blog-ai]   Cover image generation failed — proceeding without cover.');
                     } else {
@@ -202,7 +216,7 @@ PROMPT;
                     $add('[blog-ai] ERROR: DB insert failed: ' . $e->getMessage());
                 }
 
-                if ($optIdx < $optionsPerCat) {
+                if ($optIdx < $optionsPerCat && $minInterval <= 0) {
                     sleep(2);
                 }
             }
@@ -225,6 +239,49 @@ PROMPT;
         return $serverPhpRoot . DIRECTORY_SEPARATOR . 'blog_uploads';
     }
 
+    /**
+     * @param callable(string):void $logLine
+     */
+    private static function ensureOpenAiSpacing(?float &$afterLast, float $minIntervalSec, callable $logLine): void
+    {
+        if ($minIntervalSec <= 0.0 || $afterLast === null) {
+            return;
+        }
+
+        $elapsed = microtime(true) - $afterLast;
+        if ($elapsed < $minIntervalSec) {
+            $wait = $minIntervalSec - $elapsed;
+            $logLine(sprintf('[blog-ai]   Waiting %.0fs before next OpenAI call', $wait));
+            usleep(max(1000, (int)floor($wait * 1e6)));
+        }
+    }
+
+    /**
+     * @return ?array{title: mixed, excerpt: mixed, content: mixed}
+     */
+    private static function decodeDraftJson(string $raw): ?array
+    {
+        $s = trim($raw);
+
+        if (preg_match('/^```(?:json)?\s*([\s\S]*?)\s*```$/i', $s, $fence)) {
+            $s = trim($fence[1]);
+        }
+
+        $decoded = json_decode($s, true);
+        if (is_array($decoded) && !empty($decoded['title']) && !empty($decoded['content'])) {
+            return $decoded;
+        }
+
+        if (preg_match('/\{[\s\S]*}/', $raw, $m)) {
+            $decoded = json_decode($m[0], true);
+            if (is_array($decoded) && !empty($decoded['title']) && !empty($decoded['content'])) {
+                return $decoded;
+            }
+        }
+
+        return null;
+    }
+
     private static function collapseWhitespace(string $s): string
     {
         $s = preg_replace('/\s+/', ' ', trim($s));
@@ -232,60 +289,94 @@ PROMPT;
         return is_string($s) ? $s : '';
     }
 
-    private static function openaiChat(string $apiKey, string $model, array $messages, int $maxCompletionTokens = 2000): ?string
+    private static function sleepBefore429Retry(string $responseBody): int
+    {
+        if (preg_match('/retry after (\d+)ms/i', $responseBody, $m)) {
+            return max(2, (int)ceil(((int)$m[1]) / 1000) + 1);
+        }
+
+        if (preg_match('/try again in (\d+)\s*s/i', $responseBody, $m)) {
+            return max(2, ((int)$m[1]) + 2);
+        }
+
+        return 22;
+    }
+
+    private static function openaiChat(string $apiKey, string $model, array $messages, int $maxCompletionTokens = 2000, bool $jsonObject = false): ?string
     {
         self::$lastOpenAiChatFailure = null;
 
-        $payload = json_encode([
-            'model'                 => $model,
-            'messages'              => $messages,
-            'max_completion_tokens' => $maxCompletionTokens,
-        ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        $response = '';
+        $maxAttempts = 5;
 
-        $ch = curl_init('https://api.openai.com/v1/chat/completions');
-        curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_POST           => true,
-            CURLOPT_POSTFIELDS     => $payload,
-            CURLOPT_TIMEOUT        => 120,
-            CURLOPT_CONNECTTIMEOUT => 10,
-            CURLOPT_HTTPHEADER     => [
-                'Content-Type: application/json',
-                "Authorization: Bearer {$apiKey}",
-            ],
-        ]);
+        for ($attempt = 1; $attempt <= $maxAttempts; ++$attempt) {
+            $body = [
+                'model'                 => $model,
+                'messages'              => $messages,
+                'max_completion_tokens' => $maxCompletionTokens,
+            ];
+            if ($jsonObject) {
+                $body['response_format'] = ['type' => 'json_object'];
+            }
 
-        $response = curl_exec($ch);
-        $err      = curl_error($ch);
-        $code     = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+            $payload = json_encode($body, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
-        if ($err !== '') {
-            self::$lastOpenAiChatFailure = 'curl_error: ' . self::collapseWhitespace($err);
+            $ch = curl_init('https://api.openai.com/v1/chat/completions');
+            curl_setopt_array($ch, [
+                CURLOPT_RETURNTRANSFER => true,
+                CURLOPT_POST           => true,
+                CURLOPT_POSTFIELDS     => $payload,
+                CURLOPT_TIMEOUT        => 300,
+                CURLOPT_CONNECTTIMEOUT => 15,
+                CURLOPT_HTTPHEADER     => [
+                    'Content-Type: application/json',
+                    "Authorization: Bearer {$apiKey}",
+                ],
+            ]);
 
-            return null;
-        }
-        if ($code !== 200) {
-            $preview = self::collapseWhitespace(substr((string)$response, 0, 800));
-            self::$lastOpenAiChatFailure = "HTTP {$code}" . ($preview !== '' ? ': ' . $preview : '');
+            $response = curl_exec($ch);
+            $err      = curl_error($ch);
+            $code     = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
 
-            return null;
-        }
+            if ($err !== '') {
+                self::$lastOpenAiChatFailure = 'curl_error: ' . self::collapseWhitespace($err);
 
-        $data = json_decode((string)$response, true);
-        if (!is_array($data)) {
+                return null;
+            }
+
+            if ($code === 429 && $attempt < $maxAttempts) {
+                sleep(self::sleepBefore429Retry((string)$response));
+                continue;
+            }
+
+            if ($code !== 200) {
+                $preview = self::collapseWhitespace(substr((string)$response, 0, 800));
+                self::$lastOpenAiChatFailure = "HTTP {$code}" . ($preview !== '' ? ': ' . $preview : '');
+
+                return null;
+            }
+
+            $data = json_decode((string)$response, true);
+            if (!is_array($data)) {
+                $preview = self::collapseWhitespace(substr((string)$response, 0, 600));
+                self::$lastOpenAiChatFailure = 'HTTP 200 but invalid chat JSON envelope — body: ' . $preview;
+
+                return null;
+            }
+
+            $content = $data['choices'][0]['message']['content'] ?? null;
+            if (is_string($content) && $content !== '') {
+                return $content;
+            }
+
             $preview = self::collapseWhitespace(substr((string)$response, 0, 600));
-            self::$lastOpenAiChatFailure = 'HTTP 200 but invalid JSON — body: ' . $preview;
+            self::$lastOpenAiChatFailure = 'HTTP 200 but empty or missing assistant text — body: ' . $preview;
 
             return null;
         }
-        $content = $data['choices'][0]['message']['content'] ?? null;
-        if ($content !== null && is_string($content)) {
-            return $content;
-        }
 
-        $preview = self::collapseWhitespace(substr((string)$response, 0, 600));
-        self::$lastOpenAiChatFailure = 'HTTP 200 but unexpected JSON shape — body: ' . $preview;
+        self::$lastOpenAiChatFailure = 'Retries exhausted for OpenAI chat';
 
         return null;
     }
