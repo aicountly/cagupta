@@ -1,0 +1,387 @@
+import { useState, useEffect, useCallback } from 'react';
+import {
+  BarChart2, Users, Eye, TrendingUp, ArrowUpRight, ArrowDownRight,
+  Minus, RefreshCw, AlertCircle, Globe, ExternalLink,
+} from 'lucide-react';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, BarChart, Bar, Cell, Legend,
+} from 'recharts';
+import {
+  fetchTrafficOverview,
+  fetchTrafficSources,
+  fetchTrafficLeads,
+} from '../services/traffic.service';
+
+const DAY_OPTIONS = [
+  { label: '7 days',  value: 7  },
+  { label: '14 days', value: 14 },
+  { label: '30 days', value: 30 },
+  { label: '90 days', value: 90 },
+];
+
+const CHANNEL_COLORS = [
+  '#F37920', '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2',
+];
+
+function formatDate(dateStr) {
+  if (!dateStr || dateStr.length !== 8) return dateStr;
+  return `${dateStr.slice(6, 8)}/${dateStr.slice(4, 6)}`;
+}
+
+function TrendBadge({ value, inverse = false }) {
+  if (value === 0) return <span style={s.trendNeutral}><Minus size={11} /> 0%</span>;
+  const positive = inverse ? value < 0 : value > 0;
+  return positive
+    ? <span style={s.trendUp}><ArrowUpRight size={11} /> {Math.abs(value)}%</span>
+    : <span style={s.trendDown}><ArrowDownRight size={11} /> {Math.abs(value)}%</span>;
+}
+
+function KPICard({ icon: Icon, label, value, sub, trend, inverseColor }) {
+  return (
+    <div style={s.kpiCard}>
+      <div style={s.kpiTop}>
+        <span style={s.kpiIcon}><Icon size={18} color="#F37920" /></span>
+        <TrendBadge value={trend ?? 0} inverse={inverseColor} />
+      </div>
+      <div style={s.kpiValue}>{value ?? '—'}</div>
+      <div style={s.kpiLabel}>{label}</div>
+      {sub && <div style={s.kpiSub}>{sub}</div>}
+    </div>
+  );
+}
+
+function DemoBanner() {
+  return (
+    <div style={s.demoBanner}>
+      <AlertCircle size={15} color="#92400e" />
+      <span>
+        Showing <strong>demo data</strong> — add <code>GA4_PROPERTY_ID</code> and{' '}
+        <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> to <code>server-php/.env</code> to see live data.
+      </span>
+    </div>
+  );
+}
+
+export default function TrafficAnalyticsDashboard() {
+  const [days, setDays]         = useState(30);
+  const [overview, setOverview] = useState(null);
+  const [sources,  setSources]  = useState(null);
+  const [leads,    setLeads]    = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const [ov, src, ld] = await Promise.all([
+        fetchTrafficOverview({ days }),
+        fetchTrafficSources({ days }),
+        fetchTrafficLeads({ days }),
+      ]);
+      setOverview(ov.data ?? ov);
+      setSources(src.data  ?? src);
+      setLeads(ld.data     ?? ld);
+    } catch (e) {
+      setError(e.message || 'Failed to load analytics data.');
+    } finally {
+      setLoading(false);
+    }
+  }, [days]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const isDemo = overview?._demo || sources?._demo;
+
+  const totals = overview?.totals ?? {};
+  const trend  = (overview?.trend ?? []).map((r) => ({
+    ...r,
+    dateLabel: formatDate(r.date),
+  }));
+  const topPages = overview?.top_pages ?? [];
+  const channels = sources?.channels ?? [];
+
+  const leadFunnel = leads ? [
+    { name: 'CTA clicks',       count: leads.blog_cta_click       ?? 0 },
+    { name: 'Blog leads',       count: leads.blog_lead_submit      ?? 0 },
+    { name: 'Contact form',     count: leads.lead_form_submit      ?? 0 },
+    { name: 'Affiliate clicks', count: leads.affiliate_link_click  ?? 0 },
+  ] : [];
+
+  const newPct = totals.users > 0
+    ? Math.round((totals.new_users / totals.users) * 100)
+    : 0;
+
+  return (
+    <div style={s.page}>
+      {/* Header */}
+      <div style={s.header}>
+        <div style={s.headerLeft}>
+          <div style={s.headerIcon}><BarChart2 size={24} color="#F37920" /></div>
+          <div>
+            <h1 style={s.pageTitle}>Traffic Analytics</h1>
+            <p style={s.pageSub}>Website traffic across all portals — public site, affiliate, partner &amp; client.</p>
+          </div>
+        </div>
+        <div style={s.headerRight}>
+          <div style={s.dayTabs}>
+            {DAY_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                style={{ ...s.dayTab, ...(days === opt.value ? s.dayTabActive : {}) }}
+                onClick={() => setDays(opt.value)}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <button type="button" style={s.refreshBtn} onClick={load} disabled={loading}>
+            <RefreshCw size={14} style={loading ? { animation: 'spin 1s linear infinite' } : {}} />
+            {loading ? 'Loading…' : 'Refresh'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div style={s.errorBox}>
+          <AlertCircle size={16} color="#dc2626" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {isDemo && <DemoBanner />}
+
+      {loading && !overview ? (
+        <div style={s.loadingState}>Loading traffic data…</div>
+      ) : (
+        <>
+          {/* KPI cards */}
+          <div style={s.kpiGrid}>
+            <KPICard icon={Users}     label="Unique Users"    value={totals.users?.toLocaleString('en-IN')}     sub={`${newPct}% new`}          trend={0} />
+            <KPICard icon={TrendingUp} label="Sessions"       value={totals.sessions?.toLocaleString('en-IN')}  sub={`${days}-day period`}       trend={0} />
+            <KPICard icon={Eye}        label="Page Views"     value={totals.pageviews?.toLocaleString('en-IN')} sub={`${totals.pageviews && totals.sessions ? Math.round(totals.pageviews / totals.sessions * 10) / 10 : '–'} pages/session`} trend={0} />
+            <KPICard icon={Globe}      label="Bounce Rate"    value={`${totals.bounce_rate ?? 0}%`}             sub="lower is better"            trend={0} inverseColor />
+          </div>
+
+          {/* Sessions trend chart */}
+          {trend.length > 0 && (
+            <div style={s.chartCard}>
+              <h2 style={s.sectionTitle}>Daily Sessions — Last {days} Days</h2>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={trend} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+                  <XAxis dataKey="dateLabel" tick={{ fontSize: 11, fill: '#94a3b8' }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} width={36} />
+                  <Tooltip
+                    contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }}
+                    formatter={(v, n) => [v.toLocaleString('en-IN'), n]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Line type="monotone" dataKey="sessions"  stroke="#F37920" dot={false} strokeWidth={2} name="Sessions" />
+                  <Line type="monotone" dataKey="users"     stroke="#2563eb" dot={false} strokeWidth={2} name="Users" />
+                  <Line type="monotone" dataKey="pageviews" stroke="#16a34a" dot={false} strokeWidth={1.5} name="Page Views" strokeDasharray="4 2" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          <div style={s.twoCol}>
+            {/* Traffic sources */}
+            {channels.length > 0 && (
+              <div style={s.chartCard}>
+                <h2 style={s.sectionTitle}>Traffic by Channel</h2>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={channels} layout="vertical" margin={{ left: 8, right: 20 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" horizontal={false} />
+                    <XAxis type="number" tick={{ fontSize: 11, fill: '#94a3b8' }} />
+                    <YAxis type="category" dataKey="channel" width={110} tick={{ fontSize: 11, fill: '#475569' }} />
+                    <Tooltip
+                      contentStyle={{ borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12 }}
+                      formatter={(v) => [v.toLocaleString('en-IN') + ' sessions', 'Sessions']}
+                    />
+                    <Bar dataKey="sessions" radius={[0, 4, 4, 0]}>
+                      {channels.map((_, idx) => (
+                        <Cell key={idx} fill={CHANNEL_COLORS[idx % CHANNEL_COLORS.length]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+                <div style={s.channelLegend}>
+                  {channels.map((ch, idx) => (
+                    <div key={ch.channel} style={s.channelRow}>
+                      <span style={{ ...s.channelDot, background: CHANNEL_COLORS[idx % CHANNEL_COLORS.length] }} />
+                      <span style={s.channelName}>{ch.channel}</span>
+                      <span style={s.channelPct}>{ch.pct}%</span>
+                      <span style={s.channelSessions}>{ch.sessions.toLocaleString('en-IN')}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Lead funnel */}
+            <div style={s.chartCard}>
+              <h2 style={s.sectionTitle}>Lead Funnel Events</h2>
+              {leadFunnel.every((e) => e.count === 0) ? (
+                <div style={s.emptyFunnel}>
+                  No lead events tracked yet. Add <code>VITE_GA4_MEASUREMENT_ID</code> to{' '}
+                  <code>web/.env</code> and <code>web-public/.env</code> to start capturing events.
+                </div>
+              ) : (
+                <div style={s.funnelList}>
+                  {leadFunnel.map((row, idx) => {
+                    const max = Math.max(...leadFunnel.map((r) => r.count), 1);
+                    const pct = Math.round((row.count / max) * 100);
+                    return (
+                      <div key={row.name} style={s.funnelRow}>
+                        <div style={s.funnelMeta}>
+                          <span style={s.funnelStep}>{idx + 1}</span>
+                          <span style={s.funnelName}>{row.name}</span>
+                          <span style={s.funnelCount}>{row.count.toLocaleString('en-IN')}</span>
+                        </div>
+                        <div style={s.funnelBarWrap}>
+                          <div style={{ ...s.funnelBar, width: `${pct}%`, background: CHANNEL_COLORS[idx] ?? '#F37920' }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Top pages */}
+          {topPages.length > 0 && (
+            <div style={s.chartCard}>
+              <h2 style={s.sectionTitle}>Top Pages</h2>
+              <table style={s.table}>
+                <thead>
+                  <tr>
+                    <th style={s.th}>#</th>
+                    <th style={s.th}>Page</th>
+                    <th style={s.th}>Title</th>
+                    <th style={{ ...s.th, textAlign: 'right' }}>Views</th>
+                    <th style={{ ...s.th, textAlign: 'right' }}>Users</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topPages.map((page, idx) => (
+                    <tr key={page.path} style={idx % 2 === 0 ? s.trEven : {}}>
+                      <td style={s.td}>{idx + 1}</td>
+                      <td style={s.td}>
+                        <span style={s.pagePathCell}>
+                          {page.path}
+                          <a
+                            href={`https://carahulgupta.in${page.path}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={s.extLink}
+                            title="Open page"
+                          >
+                            <ExternalLink size={11} />
+                          </a>
+                        </span>
+                      </td>
+                      <td style={{ ...s.td, color: '#64748b' }}>{page.title || '—'}</td>
+                      <td style={{ ...s.td, textAlign: 'right', fontWeight: 600 }}>{page.pageviews.toLocaleString('en-IN')}</td>
+                      <td style={{ ...s.td, textAlign: 'right' }}>{page.users.toLocaleString('en-IN')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+const s = {
+  page: { padding: '28px 32px', maxWidth: 1100 },
+  header: {
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+    marginBottom: 24, gap: 16, flexWrap: 'wrap',
+  },
+  headerLeft: { display: 'flex', alignItems: 'center', gap: 14 },
+  headerIcon: {
+    width: 48, height: 48, borderRadius: 12,
+    background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  pageTitle: { margin: 0, fontSize: 20, fontWeight: 700, color: '#1e293b' },
+  pageSub:   { margin: '3px 0 0', fontSize: 13, color: '#64748b' },
+  headerRight: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' },
+  dayTabs: {
+    display: 'flex', background: '#f1f5f9', borderRadius: 8, padding: 3, gap: 2,
+  },
+  dayTab: {
+    padding: '5px 12px', border: 'none', borderRadius: 6, cursor: 'pointer',
+    fontSize: 12, fontWeight: 500, color: '#64748b', background: 'transparent',
+    transition: 'all 0.15s',
+  },
+  dayTabActive: { background: '#fff', color: '#F37920', fontWeight: 700, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' },
+  refreshBtn: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: '7px 14px', border: '1px solid #e2e8f0', borderRadius: 8,
+    background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+    color: '#64748b',
+  },
+  errorBox: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: '#fef2f2', border: '1px solid #fecaca',
+    borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: '#dc2626',
+  },
+  demoBanner: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: '#fffbeb', border: '1px solid #fde68a',
+    borderRadius: 8, padding: '10px 14px', marginBottom: 20, fontSize: 13, color: '#92400e',
+  },
+  loadingState: { color: '#94a3b8', padding: '40px 0', textAlign: 'center', fontSize: 14 },
+  kpiGrid: {
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+    gap: 14, marginBottom: 20,
+  },
+  kpiCard: {
+    background: '#fff', border: '1px solid #e8ecf3', borderRadius: 12,
+    padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+  },
+  kpiTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  kpiIcon: { display: 'flex' },
+  kpiValue: { fontSize: 26, fontWeight: 800, color: '#0f172a', lineHeight: 1 },
+  kpiLabel: { fontSize: 12, fontWeight: 600, color: '#64748b', marginTop: 4 },
+  kpiSub:   { fontSize: 11, color: '#94a3b8', marginTop: 3 },
+  trendUp:      { display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, fontWeight: 600, color: '#16a34a', background: '#f0fdf4', padding: '2px 6px', borderRadius: 6 },
+  trendDown:    { display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, fontWeight: 600, color: '#dc2626', background: '#fef2f2', padding: '2px 6px', borderRadius: 6 },
+  trendNeutral: { display: 'inline-flex', alignItems: 'center', gap: 2, fontSize: 11, fontWeight: 600, color: '#64748b', background: '#f1f5f9', padding: '2px 6px', borderRadius: 6 },
+  chartCard: {
+    background: '#fff', border: '1px solid #e8ecf3', borderRadius: 12,
+    padding: '20px 24px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', marginBottom: 20,
+  },
+  sectionTitle: { margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#1e293b' },
+  twoCol: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 20, marginBottom: 0 },
+  channelLegend: { marginTop: 14 },
+  channelRow: { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 },
+  channelDot: { width: 10, height: 10, borderRadius: '50%', flexShrink: 0 },
+  channelName: { flex: 1, fontSize: 12, color: '#475569' },
+  channelPct:  { fontSize: 12, fontWeight: 600, color: '#1e293b', minWidth: 36, textAlign: 'right' },
+  channelSessions: { fontSize: 11, color: '#94a3b8', minWidth: 56, textAlign: 'right' },
+  funnelList:   { display: 'flex', flexDirection: 'column', gap: 12 },
+  funnelRow:    {},
+  funnelMeta:   { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 },
+  funnelStep:   { width: 20, height: 20, borderRadius: 6, background: '#FEF0E6', color: '#F37920', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  funnelName:   { flex: 1, fontSize: 13, color: '#475569' },
+  funnelCount:  { fontSize: 13, fontWeight: 700, color: '#1e293b' },
+  funnelBarWrap: { height: 6, background: '#f1f5f9', borderRadius: 3 },
+  funnelBar:     { height: '100%', borderRadius: 3, transition: 'width 0.5s ease' },
+  emptyFunnel:   { fontSize: 13, color: '#94a3b8', lineHeight: 1.6, padding: '20px 0' },
+  table: { width: '100%', borderCollapse: 'collapse' },
+  th: { padding: '8px 10px', fontSize: 11, fontWeight: 700, color: '#94a3b8', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid #f1f5f9' },
+  td: { padding: '9px 10px', fontSize: 13, color: '#1e293b', borderBottom: '1px solid #f8fafc', verticalAlign: 'middle' },
+  trEven: { background: '#fafbfd' },
+  pagePathCell: { display: 'flex', alignItems: 'center', gap: 6, fontFamily: 'monospace', fontSize: 12 },
+  extLink: { color: '#94a3b8', display: 'flex', alignItems: 'center', textDecoration: 'none' },
+};

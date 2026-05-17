@@ -1,5 +1,8 @@
 import { BrowserRouter, Routes, Route, useLocation } from 'react-router-dom';
 import { useEffect } from 'react';
+import { initAnalytics, trackPageView } from './utils/analytics.js';
+
+initAnalytics();
 import NavBar from './components/layout/NavBar.jsx';
 import Footer from './components/layout/Footer.jsx';
 import Home from './pages/Home.jsx';
@@ -22,6 +25,11 @@ function ScrollToTop() {
     }
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
   }, [pathname, hash]);
+
+  useEffect(() => {
+    trackPageView(pathname + hash);
+  }, [pathname, hash]);
+
   return null;
 }
 

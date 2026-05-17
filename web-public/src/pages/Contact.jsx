@@ -4,6 +4,7 @@ import Button from '../components/ui/Button.jsx';
 import Container from '../components/ui/Container.jsx';
 import { SITE } from '../config/site.config.js';
 import useSeo from '../hooks/useSeo.js';
+import { trackLeadFormSubmit } from '../utils/analytics.js';
 
 const SERVICE_OPTIONS = [
   'Income tax & ITR',
@@ -36,6 +37,7 @@ export default function Contact() {
 
   function handleSubmit(e) {
     e.preventDefault();
+    trackLeadFormSubmit(form.service);
     const subject = `Enquiry from ${form.name || 'website'} – ${form.service}`;
     const body = [
       `Name: ${form.name}`,

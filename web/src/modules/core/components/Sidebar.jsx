@@ -10,7 +10,7 @@ import {
   Target, Settings, ChevronRight, ChevronDown,
   UserRound, Building2, ShieldCheck, Layers, Handshake, Briefcase, BarChart3, Bell,
   MessageSquare, Smartphone, Share2, Megaphone,
-  Mail, CheckSquare, Inbox, Zap,
+  Mail, CheckSquare, Inbox, Zap, BarChart2, Sparkles,
 } from 'lucide-react';
 import { ROLES } from '../../../constants/roles';
 
@@ -45,9 +45,11 @@ const navSections = [
   {
     label: 'MARKETING',
     items: [
-      { to: '/marketing/tools', label: 'Marketing Tools', icon: Zap },
-      { to: '/marketing/blog/approvals', label: 'AI Approvals', icon: CheckSquare },
-      { to: '/leads', label: 'Leads & Quotations', icon: Target },
+      { to: '/marketing/tools',      label: 'Marketing Tools',    icon: Zap },
+      { to: '/marketing/analytics',  label: 'Traffic Analytics',  icon: BarChart2 },
+      { to: '/marketing/ai-insights',label: 'AI Insights',        icon: Sparkles },
+      { to: '/marketing/blog/approvals', label: 'AI Approvals',   icon: CheckSquare },
+      { to: '/leads',                label: 'Leads & Quotations', icon: Target },
     ],
   },
   {

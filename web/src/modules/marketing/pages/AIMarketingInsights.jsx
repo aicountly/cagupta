@@ -1,0 +1,337 @@
+import { useState, useEffect } from 'react';
+import {
+  Sparkles, RefreshCw, AlertCircle, Search, TrendingUp,
+  FileText, Megaphone, Users, Link2, Share2, Clock,
+} from 'lucide-react';
+import { fetchAIInsights, refreshAIInsights } from '../services/traffic.service';
+
+const CATEGORY_META = {
+  SEO:          { icon: Search,    color: '#2563eb', bg: '#eff6ff' },
+  Content:      { icon: FileText,  color: '#16a34a', bg: '#f0fdf4' },
+  Campaigns:    { icon: Megaphone, color: '#9333ea', bg: '#faf5ff' },
+  'Lead Funnel':{ icon: TrendingUp,color: '#F37920', bg: '#FEF0E6' },
+  Affiliate:    { icon: Link2,     color: '#0891b2', bg: '#ecfeff' },
+  Social:       { icon: Share2,    color: '#db2777', bg: '#fdf2f8' },
+};
+
+const PRIORITY_STYLE = {
+  high:   { background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca' },
+  medium: { background: '#fffbeb', color: '#b45309', border: '1px solid #fde68a' },
+  low:    { background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0' },
+};
+
+const DEMO_INSIGHTS = [
+  {
+    category: 'SEO',
+    title: 'Improve meta descriptions on service pages',
+    recommendation: 'Your services page has a high bounce rate (41%). Rewrite the meta description to include specific service keywords like "ITR filing Chandigarh" and "GST registration India". This helps align search intent with landing page content and reduces paid-traffic cost.',
+    priority: 'high',
+  },
+  {
+    category: 'Content',
+    title: 'Add blog content on GST compliance topics',
+    recommendation: 'Organic search drives 48% of your traffic but the blog category with lowest engagement is GST compliance. Publishing 2–3 in-depth guides on common GST filing errors and deadlines can capture long-tail search queries and increase time-on-site.',
+    priority: 'high',
+  },
+  {
+    category: 'Lead Funnel',
+    title: 'Reduce contact form drop-off rate',
+    recommendation: 'Only 23 contact form submissions were captured from 340 contact page views — a 6.8% conversion rate. Consider simplifying the form to 3 fields (name, phone, service), and add a callback-request option to lower friction for mobile visitors.',
+    priority: 'high',
+  },
+  {
+    category: 'Campaigns',
+    title: 'Run targeted ITR season email campaign',
+    recommendation: 'July–August ITR season is approaching. Send a segmented campaign to past clients who filed through you last year reminding them of the deadline. Use the Blog CTA lead list from the last 90 days as the primary audience.',
+    priority: 'medium',
+  },
+  {
+    category: 'Affiliate',
+    title: 'Activate underperforming affiliate partners',
+    recommendation: 'Referral traffic accounts for 18% of sessions but affiliate link click events are lower than expected. Identify affiliates who have not shared their UTM links in the last 30 days and send them a WhatsApp campaign nudge with a fresh trackable URL.',
+    priority: 'medium',
+  },
+  {
+    category: 'Social',
+    title: 'Increase social posting frequency',
+    recommendation: 'Organic social drives only 12% of traffic. Schedule at least 3 posts per week focused on tax tips, client success stories, and compliance reminders via the Social Posting tool. LinkedIn and WhatsApp Channels show the best engagement for CA practices.',
+    priority: 'low',
+  },
+];
+
+function formatRelativeTime(dateStr) {
+  if (!dateStr) return null;
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins  = Math.round(diff / 60000);
+  if (mins < 2)    return 'just now';
+  if (mins < 60)   return `${mins} minutes ago`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24)    return `${hrs} hour${hrs !== 1 ? 's' : ''} ago`;
+  const days = Math.round(hrs / 24);
+  return `${days} day${days !== 1 ? 's' : ''} ago`;
+}
+
+function InsightCard({ insight, index }) {
+  const meta = CATEGORY_META[insight.category] ?? CATEGORY_META.Campaigns;
+  const Icon = meta.icon;
+  const priorityStyle = PRIORITY_STYLE[insight.priority] ?? PRIORITY_STYLE.medium;
+
+  return (
+    <div style={s.card}>
+      <div style={s.cardHeader}>
+        <div style={{ ...s.categoryBadge, background: meta.bg, color: meta.color }}>
+          <Icon size={13} />
+          <span>{insight.category}</span>
+        </div>
+        <div style={{ ...s.priorityBadge, ...priorityStyle }}>
+          {insight.priority?.toUpperCase()}
+        </div>
+      </div>
+      <h3 style={s.cardTitle}>{insight.title}</h3>
+      <p style={s.cardBody}>{insight.recommendation}</p>
+      <div style={s.cardNum}>{String(index + 1).padStart(2, '0')}</div>
+    </div>
+  );
+}
+
+export default function AIMarketingInsights() {
+  const [insights,     setInsights]     = useState([]);
+  const [generatedAt,  setGeneratedAt]  = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [refreshing,   setRefreshing]   = useState(false);
+  const [error,        setError]        = useState('');
+  const [isDemo,       setIsDemo]       = useState(false);
+  const [filterCat,    setFilterCat]    = useState('All');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetchAIInsights();
+        const data = res.data ?? res;
+        if (data.insights && data.insights.length > 0) {
+          setInsights(data.insights);
+          setGeneratedAt(data.generated_at);
+        } else {
+          setInsights(DEMO_INSIGHTS);
+          setIsDemo(true);
+        }
+      } catch {
+        setInsights(DEMO_INSIGHTS);
+        setIsDemo(true);
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    setError('');
+    try {
+      const res = await refreshAIInsights();
+      const data = res.data ?? res;
+      if (data.insights && data.insights.length > 0) {
+        setInsights(data.insights);
+        setGeneratedAt(data.generated_at);
+        setIsDemo(false);
+      }
+    } catch (e) {
+      setError(e.message || 'Failed to refresh. Check OPENAI_API_KEY in server-php/.env.');
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
+  const categories = ['All', ...Object.keys(CATEGORY_META)];
+  const filtered   = filterCat === 'All' ? insights : insights.filter((i) => i.category === filterCat);
+
+  const highCount   = insights.filter((i) => i.priority === 'high').length;
+  const mediumCount = insights.filter((i) => i.priority === 'medium').length;
+
+  return (
+    <div style={s.page}>
+      {/* Header */}
+      <div style={s.header}>
+        <div style={s.headerLeft}>
+          <div style={s.headerIcon}><Sparkles size={24} color="#F37920" /></div>
+          <div>
+            <h1 style={s.pageTitle}>AI Marketing Insights</h1>
+            <p style={s.pageSub}>
+              Traffic-based recommendations to grow leads and improve conversions.
+            </p>
+          </div>
+        </div>
+        <div style={s.headerRight}>
+          {generatedAt && !isDemo && (
+            <div style={s.timestamp}>
+              <Clock size={12} />
+              Updated {formatRelativeTime(generatedAt)}
+            </div>
+          )}
+          <button
+            type="button"
+            style={{ ...s.refreshBtn, ...(refreshing ? s.refreshBtnLoading : {}) }}
+            onClick={handleRefresh}
+            disabled={refreshing}
+          >
+            <RefreshCw size={14} style={refreshing ? { animation: 'spin 1s linear infinite' } : {}} />
+            {refreshing ? 'Generating…' : 'Refresh Insights'}
+          </button>
+        </div>
+      </div>
+
+      {error && (
+        <div style={s.errorBox}>
+          <AlertCircle size={16} color="#dc2626" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {isDemo && (
+        <div style={s.demoBanner}>
+          <Sparkles size={15} color="#92400e" />
+          <span>
+            Showing <strong>sample insights</strong>. Click <strong>Refresh Insights</strong> to generate
+            real AI recommendations using your traffic data. Requires{' '}
+            <code>OPENAI_API_KEY</code> in <code>server-php/.env</code>.
+          </span>
+        </div>
+      )}
+
+      {/* Summary strip */}
+      {!loading && insights.length > 0 && (
+        <div style={s.summaryStrip}>
+          <div style={s.summaryItem}>
+            <span style={s.summaryNum}>{insights.length}</span>
+            <span style={s.summaryLabel}>Suggestions</span>
+          </div>
+          <div style={s.summaryDivider} />
+          <div style={s.summaryItem}>
+            <span style={{ ...s.summaryNum, color: '#dc2626' }}>{highCount}</span>
+            <span style={s.summaryLabel}>High priority</span>
+          </div>
+          <div style={s.summaryDivider} />
+          <div style={s.summaryItem}>
+            <span style={{ ...s.summaryNum, color: '#b45309' }}>{mediumCount}</span>
+            <span style={s.summaryLabel}>Medium priority</span>
+          </div>
+          <div style={s.summaryDivider} />
+          <div style={s.summaryItem}>
+            <span style={{ ...s.summaryNum, color: '#16a34a' }}>{insights.length - highCount - mediumCount}</span>
+            <span style={s.summaryLabel}>Low priority</span>
+          </div>
+        </div>
+      )}
+
+      {/* Category filter */}
+      <div style={s.filterRow}>
+        {categories.map((cat) => (
+          <button
+            key={cat}
+            type="button"
+            style={{ ...s.filterBtn, ...(filterCat === cat ? s.filterBtnActive : {}) }}
+            onClick={() => setFilterCat(cat)}
+          >
+            {cat}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <div style={s.loadingState}>Loading insights…</div>
+      ) : filtered.length === 0 ? (
+        <div style={s.emptyState}>No suggestions in this category.</div>
+      ) : (
+        <div style={s.grid}>
+          {filtered.map((insight, idx) => (
+            <InsightCard key={idx} insight={insight} index={insights.indexOf(insight)} />
+          ))}
+        </div>
+      )}
+
+      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+const s = {
+  page: { padding: '28px 32px', maxWidth: 1100 },
+  header: {
+    display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',
+    marginBottom: 20, gap: 16, flexWrap: 'wrap',
+  },
+  headerLeft: { display: 'flex', alignItems: 'center', gap: 14 },
+  headerIcon: {
+    width: 48, height: 48, borderRadius: 12,
+    background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center',
+  },
+  pageTitle: { margin: 0, fontSize: 20, fontWeight: 700, color: '#1e293b' },
+  pageSub:   { margin: '3px 0 0', fontSize: 13, color: '#64748b' },
+  headerRight: { display: 'flex', alignItems: 'center', gap: 10 },
+  timestamp: {
+    display: 'flex', alignItems: 'center', gap: 4,
+    fontSize: 12, color: '#94a3b8',
+  },
+  refreshBtn: {
+    display: 'flex', alignItems: 'center', gap: 6,
+    padding: '9px 16px', border: 'none', borderRadius: 8,
+    background: '#F37920', color: '#fff', cursor: 'pointer',
+    fontSize: 13, fontWeight: 700, transition: 'opacity 0.15s',
+  },
+  refreshBtnLoading: { opacity: 0.7, cursor: 'not-allowed' },
+  errorBox: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: '#fef2f2', border: '1px solid #fecaca',
+    borderRadius: 8, padding: '10px 14px', marginBottom: 18, fontSize: 13, color: '#dc2626',
+  },
+  demoBanner: {
+    display: 'flex', alignItems: 'center', gap: 8,
+    background: '#fffbeb', border: '1px solid #fde68a',
+    borderRadius: 8, padding: '10px 14px', marginBottom: 18, fontSize: 13, color: '#92400e',
+  },
+  summaryStrip: {
+    display: 'flex', alignItems: 'center', gap: 0,
+    background: '#fff', border: '1px solid #e8ecf3', borderRadius: 12,
+    padding: '14px 24px', marginBottom: 18, width: 'fit-content',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+  },
+  summaryItem: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '0 20px' },
+  summaryNum:  { fontSize: 22, fontWeight: 800, color: '#0f172a', lineHeight: 1 },
+  summaryLabel:{ fontSize: 11, color: '#94a3b8', fontWeight: 500, marginTop: 2 },
+  summaryDivider: { width: 1, height: 32, background: '#f1f5f9' },
+  filterRow: { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 20 },
+  filterBtn: {
+    padding: '6px 14px', border: '1px solid #e2e8f0', borderRadius: 20,
+    background: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 500,
+    color: '#64748b', transition: 'all 0.15s',
+  },
+  filterBtnActive: {
+    background: '#F37920', color: '#fff', border: '1px solid #F37920', fontWeight: 700,
+  },
+  loadingState: { color: '#94a3b8', padding: '40px 0', textAlign: 'center', fontSize: 14 },
+  emptyState:   { color: '#94a3b8', padding: '40px 0', textAlign: 'center', fontSize: 14 },
+  grid: {
+    display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16,
+  },
+  card: {
+    background: '#fff', border: '1px solid #e8ecf3', borderRadius: 14,
+    padding: '20px 22px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+    position: 'relative', overflow: 'hidden',
+  },
+  cardHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  categoryBadge: {
+    display: 'inline-flex', alignItems: 'center', gap: 5,
+    padding: '4px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700,
+  },
+  priorityBadge: {
+    fontSize: 10, fontWeight: 700, letterSpacing: '0.06em',
+    padding: '3px 8px', borderRadius: 6,
+  },
+  cardTitle: { margin: '0 0 10px', fontSize: 14, fontWeight: 700, color: '#1e293b', lineHeight: 1.35 },
+  cardBody:  { margin: 0, fontSize: 13, color: '#475569', lineHeight: 1.65 },
+  cardNum: {
+    position: 'absolute', bottom: 14, right: 16,
+    fontSize: 36, fontWeight: 900, color: '#f1f5f9', lineHeight: 1,
+    userSelect: 'none', pointerEvents: 'none',
+  },
+};

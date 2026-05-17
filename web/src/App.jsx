@@ -1,6 +1,8 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { useEffect } from 'react';
 import { AuthProvider } from './auth/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { initAnalytics, trackPageView } from './utils/analytics';
 import ProtectedRoute from './auth/ProtectedRoute';
 // ── Core module ──────────────────────────────────────────────────────────────
 import LoginPage from './modules/core/pages/Login';
@@ -75,6 +77,9 @@ import BlogManagement from './modules/marketing/pages/BlogManagement';
 import BlogAIApprovals from './modules/marketing/pages/BlogAIApprovals';
 import PublicBlogList from './modules/marketing/pages/PublicBlogList';
 import PublicBlogPost from './modules/marketing/pages/PublicBlogPost';
+import TrafficAnalyticsDashboard from './modules/marketing/pages/TrafficAnalyticsDashboard';
+import AIMarketingInsights from './modules/marketing/pages/AIMarketingInsights';
+import AffiliateShareTrack from './modules/marketing/pages/AffiliateShareTrack';
 
 // ── Affiliate module ─────────────────────────────────────────────────────────
 import AdminAffiliates from './modules/affiliate/pages/AdminAffiliates';
@@ -101,6 +106,17 @@ import ClientCompletedServices from './modules/client/pages/ClientCompletedServi
 import ClientServiceDetails from './modules/client/pages/ClientServiceDetails';
 import ClientLedger from './modules/client/pages/ClientLedger';
 import ClientProfile from './modules/client/pages/ClientProfile';
+
+initAnalytics();
+
+/** Fires a GA4 page_view on every client-side navigation. */
+function AnalyticsTracker() {
+  const location = useLocation();
+  useEffect(() => {
+    trackPageView(location.pathname + location.search);
+  }, [location]);
+  return null;
+}
 
 /** Subpath deployments (e.g. `npm run build:github` → base `/cagupta/`) need this or /search opens the wrong URL. */
 const ROUTER_BASENAME =
@@ -154,6 +170,9 @@ const pageTitles = {
   '/admin/affiliates':          '🤝 Affiliates',
   '/admin/partners':            '🤝 Partners',
   '/marketing/tools':           '⚡ Marketing Tools',
+  '/marketing/analytics':         '📊 Traffic Analytics',
+  '/marketing/ai-insights':       '✨ AI Marketing Insights',
+  '/marketing/affiliate-tracking':'🔗 Affiliate Share & Track',
   '/marketing/wa/web':          '📱 WA Web Marketing',
   '/marketing/wa/api':          '📱 WA Native (API)',
   '/marketing/sms':             '📲 SMS Marketing',
@@ -183,6 +202,7 @@ function Layout({ routePath, children }) {
 export default function App() {
   return (
     <BrowserRouter basename={ROUTER_BASENAME}>
+      <AnalyticsTracker />
       <AuthProvider>
         <NotificationProvider>
         <Routes>
@@ -359,6 +379,9 @@ export default function App() {
 
           {/* ── Marketing routes ───────────────────────────────────────────── */}
           <Route path="/marketing/tools" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/tools"><MarketingToolsHub /></Layout></ProtectedRoute>} />
+          <Route path="/marketing/analytics" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/analytics"><TrafficAnalyticsDashboard /></Layout></ProtectedRoute>} />
+          <Route path="/marketing/ai-insights" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/ai-insights"><AIMarketingInsights /></Layout></ProtectedRoute>} />
+          <Route path="/marketing/affiliate-tracking" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/affiliate-tracking"><AffiliateShareTrack /></Layout></ProtectedRoute>} />
           <Route path="/marketing/wa/web" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/wa/web"><WAWebMarketing /></Layout></ProtectedRoute>} />
           <Route path="/marketing/wa/api" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/wa/api"><WANativeMarketing /></Layout></ProtectedRoute>} />
           <Route path="/marketing/sms" element={<ProtectedRoute staffOnly><Layout routePath="/marketing/sms"><SMSMarketing /></Layout></ProtectedRoute>} />

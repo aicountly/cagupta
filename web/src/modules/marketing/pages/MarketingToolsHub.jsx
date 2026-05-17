@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   MessageSquare, Smartphone, Share2, Megaphone, BookOpen,
-  Search, ArrowRight, Zap,
+  Search, ArrowRight, Zap, BarChart2, Sparkles, Link2,
 } from 'lucide-react';
 
 const TOOL_CATEGORIES = [
@@ -80,6 +80,34 @@ const TOOL_CATEGORIES = [
         description: 'Write, manage, and publish AI-assisted blog posts to your website.',
         icon: BookOpen,
         to: '/marketing/blog',
+      },
+    ],
+  },
+  {
+    id: 'analytics',
+    label: 'Traffic & Intelligence',
+    description: 'Monitor website traffic and get AI-powered growth recommendations',
+    tools: [
+      {
+        id: 'traffic-analytics',
+        label: 'Traffic Analytics',
+        description: 'Monitor sessions, users, lead funnel, and top pages across all portals.',
+        icon: BarChart2,
+        to: '/marketing/analytics',
+      },
+      {
+        id: 'ai-insights',
+        label: 'AI Marketing Insights',
+        description: 'Get AI-generated SEO, content, campaign and lead maximization suggestions.',
+        icon: Sparkles,
+        to: '/marketing/ai-insights',
+      },
+      {
+        id: 'affiliate-tracking',
+        label: 'Affiliate Share & Track',
+        description: 'Generate UTM-tagged affiliate links and monitor referral traffic attribution.',
+        icon: Link2,
+        to: '/marketing/affiliate-tracking',
       },
     ],
   },

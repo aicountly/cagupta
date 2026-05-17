@@ -2251,6 +2251,38 @@ class Routes
                 'middleware' => [],
             ],
 
+            // ── Marketing - Traffic Analytics & AI Insights ───────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/traffic/overview',
+                'handler'    => 'Admin\TrafficAnalyticsController@overview',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/traffic/sources',
+                'handler'    => 'Admin\TrafficAnalyticsController@sources',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/traffic/leads',
+                'handler'    => 'Admin\TrafficAnalyticsController@leads',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/ai-insights',
+                'handler'    => 'Admin\TrafficAnalyticsController@aiInsights',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/marketing/ai-insights/refresh',
+                'handler'    => 'Admin\TrafficAnalyticsController@refreshAiInsights',
+                'middleware' => ['auth'],
+            ],
+
             // ── Contact Verification ──────────────────────────────────────────
             [
                 'method'     => 'POST',

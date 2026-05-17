@@ -11,6 +11,7 @@
 
 import { useState } from 'react';
 import { submitPublicLead } from '../../../services/publicLeadService';
+import { trackBlogCTAClick, trackBlogLeadSubmit } from '../../../utils/analytics';
 
 const IS_MOCK = !import.meta.env.VITE_API_BASE_URL && import.meta.env.DEV;
 
@@ -29,6 +30,7 @@ export default function BlogCTA() {
     setDone(false);
     setError('');
     setOpen(true);
+    trackBlogCTAClick();
   }
 
   function closeModal() {
@@ -53,6 +55,7 @@ export default function BlogCTA() {
         });
       }
       setDone(true);
+      trackBlogLeadSubmit();
     } catch (err) {
       setError(err.message || 'Something went wrong. Please try again.');
     } finally {
