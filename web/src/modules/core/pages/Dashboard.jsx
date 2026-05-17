@@ -6,6 +6,7 @@ import { getEngagements } from '../../../services/engagementService';
 import { getInvoices } from '../../../services/invoiceService';
 import { getAppointments } from '../../../services/appointmentService';
 import StatusBadge from '../../../components/common/StatusBadge';
+import { formatRupeeKpiLakhAbbrev } from '../../../utils/indianRupeeKpi';
 
 const METRIC_CARD_CONFIG = [
   { key: 'activeClients', label: 'Active Clients', icon: '👥', color: '#2563eb', bg: '#EFF6FF', to: '/clients/contacts' },
@@ -17,13 +18,13 @@ const METRIC_CARD_CONFIG = [
   { key: 'appointmentsToday', label: 'Appointments Today', icon: '📅', color: '#16a34a', bg: '#F0FDF4', to: '/calendar' },
 ];
 
-const StatCard = ({ icon, label, value, sub, color, bg, to, onNavigate }) => (
+const StatCard = ({ icon, label, value, sub, color, bg, to, onNavigate, valueTooltip, valueNowrap }) => (
   <button
     type="button"
     onClick={() => onNavigate(to)}
     style={{ ...statCardStyle, cursor: 'pointer' }}
     title={`Open ${label}`}
-    aria-label={`${label}: ${value}`}
+    aria-label={`${label}: ${valueTooltip || value}`}
   >
     <div style={{ width: 48, height: 48, borderRadius: 12, background: bg || '#F6F7FB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{icon}</div>
     <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
@@ -35,11 +36,12 @@ const StatCard = ({ icon, label, value, sub, color, bg, to, onNavigate }) => (
           color: '#1e293b',
           lineHeight: 1.15,
           minWidth: 0,
-          overflowWrap: 'anywhere',
-          wordBreak: 'break-word',
+          ...(valueNowrap
+            ? { whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+            : { overflowWrap: 'anywhere', wordBreak: 'break-word' }),
         }}
       >
-        {value}
+        {valueTooltip ? <span title={valueTooltip}>{value}</span> : value}
       </div>
       {sub && (
         <div style={{ fontSize: 11, color: color, marginTop: 4, fontWeight: 600, overflowWrap: 'break-word' }}>{sub}</div>
@@ -91,18 +93,33 @@ export default function Dashboard() {
     }).finally(() => setLoading(false));
   }, []);
 
-  const outstandingFmt = typeof stats.totalOutstanding === 'number'
-    ? `₹${stats.totalOutstanding.toLocaleString('en-IN')}`
-    : stats.totalOutstanding;
+  const outstandingDisplay = useMemo(() => {
+    if (loading) return { value: '…', valueTooltip: undefined, valueNowrap: false };
+    if (typeof stats.totalOutstanding !== 'number') {
+      return { value: stats.totalOutstanding, valueTooltip: undefined, valueNowrap: false };
+    }
+    const { short, full, abbreviated } = formatRupeeKpiLakhAbbrev(stats.totalOutstanding);
+    return {
+      value: short,
+      valueTooltip: abbreviated ? full : undefined,
+      valueNowrap: abbreviated,
+    };
+  }, [loading, stats.totalOutstanding]);
+
   const metricValues = useMemo(() => ({
     activeClients: loading ? '…' : stats.activeClients,
     activeServices: loading ? '…' : stats.activeServices,
     unbilledServices: loading ? '…' : (typeof stats.unbilledServices === 'number' ? String(stats.unbilledServices) : (stats.unbilledServices ?? '0')),
     pendingTasks: loading ? '…' : stats.pendingTasks,
-    outstandingAmount: loading ? '…' : outstandingFmt,
+    outstandingAmount: outstandingDisplay.value,
     documentsThisMonth: loading ? '…' : stats.documentsThisMonth,
     appointmentsToday: loading ? '…' : stats.appointmentsToday,
-  }), [loading, stats, outstandingFmt]);
+  }), [loading, stats, outstandingDisplay.value]);
+
+  const outstandingCardExtras =
+    metricValues.outstandingAmount === '…'
+      ? {}
+      : { valueTooltip: outstandingDisplay.valueTooltip, valueNowrap: outstandingDisplay.valueNowrap };
 
   const handleMetricNavigate = (to) => {
     if (to) {
@@ -127,6 +144,7 @@ export default function Dashboard() {
             bg={card.bg}
             to={card.to}
             onNavigate={handleMetricNavigate}
+            {...(card.key === 'outstandingAmount' ? outstandingCardExtras : {})}
           />
         ))}
       </div>

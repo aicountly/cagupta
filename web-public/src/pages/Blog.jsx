@@ -4,7 +4,9 @@ import { Link } from 'react-router-dom';
 import Container from '../components/ui/Container.jsx';
 import { BLOG_POSTS } from '../content/blogPosts.js';
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+// In production both sites share the same origin, so /api is sufficient.
+// For local dev set VITE_API_BASE_URL=http://localhost:8080/api in web-public/.env
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '/api').replace(/\/$/, '');
 
 function formatDate(iso) {
   try {
@@ -42,7 +44,7 @@ export default function Blog() {
       return;
     }
 
-    fetch(`${API_BASE}/api/public/blogs`)
+    fetch(`${API_BASE}/public/blogs`)
       .then(r => r.json())
       .then(json => {
         const items = Array.isArray(json.data) ? json.data : [];
