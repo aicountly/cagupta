@@ -1,12 +1,24 @@
-import { ArrowRight, Building2, Calculator, FileText, Receipt, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Bot, BrainCircuit, Briefcase, Building2, Calculator, FileText, Landmark, Lightbulb, Monitor, Receipt, Scale, ShieldCheck, TrendingUp } from 'lucide-react';
 import Container from '../ui/Container.jsx';
 import Button from '../ui/Button.jsx';
 import { SITE } from '../../config/site.config.js';
 
-const VISUAL_SERVICES = [
+const CORE_SERVICES = [
   { Icon: FileText,  title: 'Income Tax & ITR',  sub: 'Filing, planning & notice handling' },
   { Icon: Receipt,   title: 'GST Compliance',    sub: 'GSTR-1, 3B, 9, 9C & audits' },
   { Icon: Building2, title: 'ROC & Advisory',    sub: 'Incorporation & MCA filings' },
+];
+
+const ADVANCED_SERVICES = [
+  { Icon: Monitor,      title: 'IT Consultancy' },
+  { Icon: Briefcase,    title: 'Mgmt. Consultancy' },
+  { Icon: TrendingUp,   title: 'Investor Funding' },
+  { Icon: Landmark,     title: 'Govt. Subsidies' },
+  { Icon: Scale,        title: 'Tax Litigations' },
+  { Icon: Lightbulb,    title: 'Problem Solver' },
+  { Icon: BrainCircuit, title: 'AI Audit' },
+  { Icon: Bot,          title: 'AI Consultancy' },
+  { Icon: Monitor,      title: 'AI Implementation' },
 ];
 
 export default function Hero() {
@@ -51,20 +63,32 @@ export default function Hero() {
           <div className="hero__visual" aria-hidden="true">
             {/* Top service strip */}
             <div className="hero__visual-strip">
-              <Calculator size={18} /> Tax · Audit · GST · ROC · Advisory
+              <Calculator size={18} /> Tax · Audit · GST · ROC · IT · Advisory
             </div>
 
-            {/* Middle: service cards + stats */}
+            {/* Middle: service cards + advanced chips + stats */}
             <div className="hero__visual-mid">
-              {VISUAL_SERVICES.map(({ Icon, title, sub }, i) => (
+              {CORE_SERVICES.map(({ Icon, title, sub }, i) => (
                 <div className="hero__svc-card" key={title} style={{ animationDelay: `${i * 1.4}s` }}>
-                  <span className="hero__svc-icon"><Icon size={18} /></span>
+                  <span className="hero__svc-icon"><Icon size={16} /></span>
                   <div>
                     <strong>{title}</strong>
                     <span>{sub}</span>
                   </div>
                 </div>
               ))}
+
+              <div className="hero__adv-section">
+                <div className="hero__adv-label">Advanced Practice Areas</div>
+                <div className="hero__adv-grid">
+                  {ADVANCED_SERVICES.map(({ Icon, title }) => (
+                    <div className="hero__adv-chip" key={title}>
+                      <Icon size={12} />
+                      <span>{title}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
 
               <div className="hero__stat-strip">
                 {SITE.stats.map((s) => (

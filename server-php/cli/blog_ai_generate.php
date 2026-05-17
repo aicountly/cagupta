@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * blog_ai_generate.php — Daily AI Blog Draft Generator
  *
- * Uses GPT-4o to generate blog topics and full drafts, then DALL-E 3
+ * Uses GPT-5.5 to generate blog topics and full drafts, then DALL-E 3
  * to create cover images.  All drafts are stored as "pending" in
  * blog_ai_drafts and appear in the staff app for human review.
  *
@@ -65,7 +65,7 @@ echo '[blog-ai] Starting at ' . date('Y-m-d H:i:s') . PHP_EOL;
 // ── Validate env ─────────────────────────────────────────────────────────────
 
 $openAiKey  = (string)(getenv('OPENAI_API_KEY') ?: '');
-$textModel  = (string)(getenv('OPENAI_MODEL') ?: 'gpt-4o');
+$textModel  = (string)(getenv('OPENAI_MODEL') ?: 'gpt-5.5');
 $imageModel = (string)(getenv('OPENAI_IMAGE_MODEL') ?: 'dall-e-3');
 
 if ($openAiKey === '') {
@@ -91,12 +91,12 @@ if (!is_dir($uploadDir)) {
 
 // ── OpenAI helpers ────────────────────────────────────────────────────────────
 
-function openaiChat(string $apiKey, string $model, array $messages, int $maxTokens = 2000): ?string
+function openaiChat(string $apiKey, string $model, array $messages, int $maxCompletionTokens = 2000): ?string
 {
     $payload = json_encode([
-        'model'      => $model,
-        'messages'   => $messages,
-        'max_tokens' => $maxTokens,
+        'model'                 => $model,
+        'messages'              => $messages,
+        'max_completion_tokens' => $maxCompletionTokens,
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 
     $ch = curl_init('https://api.openai.com/v1/chat/completions');
