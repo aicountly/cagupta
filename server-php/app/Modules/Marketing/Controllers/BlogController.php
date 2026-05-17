@@ -31,6 +31,7 @@ use App\Libraries\BrevoMailer;
  * Public (no auth):
  *   GET    /api/public/blogs                      — published posts (for marketing site)
  *   GET    /api/public/blogs/:slug                — single published post
+ *   GET    /api/public/blog-covers/:file          — cover image bytes (storage outside public_html)
  */
 class BlogController extends BaseController
 {
@@ -42,6 +43,38 @@ class BlogController extends BaseController
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    /**
+     * Absolute directory for blog cover files on disk (BLOG_UPLOADS_PATH or server-php/blog_uploads).
+     */
+    private function blogUploadDir(): string
+    {
+        $configured = (string)(getenv('BLOG_UPLOADS_PATH') ?: ($_ENV['BLOG_UPLOADS_PATH'] ?? ''));
+        if ($configured !== '') {
+            return rtrim($configured, '/\\');
+        }
+
+        return dirname(__DIR__, 4) . DIRECTORY_SEPARATOR . 'blog_uploads';
+    }
+
+    /**
+     * Public URL for a cover file stored in blog_uploads/.
+     * Honors BASE_URL when it already ends with /api (production subdirectory installs).
+     */
+    private function blogCoverPublicUrl(string $filename): string
+    {
+        $base = rtrim((string)($_ENV['BASE_URL'] ?? 'http://localhost:8080'), '/');
+        $file = basename($filename);
+        if ($file === '') {
+            return '';
+        }
+        $suffix = '/public/blog-covers/' . rawurlencode($file);
+        if (str_ends_with($base, '/api')) {
+            return $base . $suffix;
+        }
+
+        return $base . '/api' . $suffix;
+    }
 
     private function slugify(string $text): string
     {
@@ -76,9 +109,20 @@ class BlogController extends BaseController
 
     private function coverImageUrl(string $path): string
     {
-        if ($path === '') return '';
+        if ($path === '') {
+            return '';
+        }
+        $path = str_replace('\\', '/', $path);
+        if (str_contains($path, '..')) {
+            return '';
+        }
+        // Stored under BLOG_UPLOADS_PATH — served via public API (not direct filesystem URL).
+        if (str_starts_with($path, 'blog_uploads/')) {
+            return $this->blogCoverPublicUrl(basename($path));
+        }
+        // Legacy: files that lived under web public/uploads/blog/
         $baseUrl = rtrim((string)($_ENV['BASE_URL'] ?? 'http://localhost:8080'), '/');
-        return "{$baseUrl}/{$path}";
+        return "{$baseUrl}/" . ltrim($path, '/');
     }
 
     private function formatPost(array $row): array
@@ -397,7 +441,7 @@ class BlogController extends BaseController
             $this->error('Image must be under 5 MB.', 422);
         }
 
-        $uploadDir  = dirname(__DIR__, 4) . '/public/uploads/blog/';
+        $uploadDir = $this->blogUploadDir();
         if (!is_dir($uploadDir)) {
             mkdir($uploadDir, 0755, true);
         }
@@ -410,17 +454,50 @@ class BlogController extends BaseController
             default      => 'jpg',
         };
         $filename = 'cover_' . uniqid('', true) . '.' . $ext;
-        $destPath = $uploadDir . $filename;
+        $destPath = $uploadDir . DIRECTORY_SEPARATOR . $filename;
 
         if (!move_uploaded_file($file['tmp_name'], $destPath)) {
             $this->error('Failed to save uploaded image.', 500);
         }
 
-        $relativePath = 'uploads/blog/' . $filename;
+        $relativePath = 'blog_uploads/' . $filename;
         $this->success([
             'path' => $relativePath,
             'url'  => $this->coverImageUrl($relativePath),
         ], 'Image uploaded', 201);
+    }
+
+    /**
+     * Stream a cover image from BLOG_UPLOADS_PATH (public — used by marketing site and email clients).
+     */
+    public function publicBlogCover(string $file): never
+    {
+        $file = basename($file);
+        if ($file === '' || !preg_match('/^[A-Za-z0-9._-]+$/', $file)) {
+            $this->error('Invalid file.', 400);
+        }
+
+        $uploadDir = $this->blogUploadDir();
+        $absPath   = $uploadDir . DIRECTORY_SEPARATOR . $file;
+
+        $realDir = is_dir($uploadDir) ? realpath($uploadDir) : false;
+        $realFile = is_file($absPath) ? realpath($absPath) : false;
+        if ($realDir === false || $realFile === false || !str_starts_with($realFile, $realDir)) {
+            $this->error('Not found.', 404);
+        }
+
+        $mime = mime_content_type($realFile);
+        if ($mime === false) {
+            $mime = 'application/octet-stream';
+        }
+
+        header('Access-Control-Allow-Origin: *');
+        header('Content-Type: ' . $mime, true);
+        header('Content-Length: ' . (string) filesize($realFile));
+        header('Cache-Control: public, max-age=86400');
+        header('X-Content-Type-Options: nosniff');
+        readfile($realFile);
+        exit;
     }
 
     // ── Public API (no auth — for marketing site) ────────────────────────────

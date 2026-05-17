@@ -82,11 +82,19 @@ try {
     exit(1);
 }
 
-// ── Upload dir ────────────────────────────────────────────────────────────────
+// ── Upload dir (same as BlogController: BLOG_UPLOADS_PATH) ────────────────────
 
-$uploadDir = $scriptDir . '/public/uploads/blog/';
-if (!is_dir($uploadDir)) {
-    mkdir($uploadDir, 0755, true);
+$blogUploadDir = (static function (string $serverPhpRoot): string {
+    $configured = (string)(getenv('BLOG_UPLOADS_PATH') ?: ($_ENV['BLOG_UPLOADS_PATH'] ?? ''));
+    if ($configured !== '') {
+        return rtrim($configured, '/\\');
+    }
+
+    return $serverPhpRoot . DIRECTORY_SEPARATOR . 'blog_uploads';
+})($scriptDir);
+
+if (!is_dir($blogUploadDir)) {
+    mkdir($blogUploadDir, 0755, true);
 }
 
 // ── OpenAI helpers ────────────────────────────────────────────────────────────
@@ -179,10 +187,10 @@ function openaiGenerateImage(string $apiKey, string $model, string $prompt, stri
     }
 
     $filename = 'cover_ai_' . uniqid('', true) . '.png';
-    $fullPath = $uploadDir . $filename;
+    $fullPath = rtrim($uploadDir, '/\\') . DIRECTORY_SEPARATOR . $filename;
     file_put_contents($fullPath, $imgData);
 
-    return 'uploads/blog/' . $filename;
+    return 'blog_uploads/' . $filename;
 }
 
 // ── Category configs ──────────────────────────────────────────────────────────
@@ -282,7 +290,7 @@ PROMPT;
         $coverPath = null;
         if (!$dryRun) {
             $imagePromptFull = $config['imagePrompt'] . " Topic context: {$draftTitle}";
-            $coverPath = openaiGenerateImage($openAiKey, $imageModel, $imagePromptFull, $uploadDir);
+            $coverPath = openaiGenerateImage($openAiKey, $imageModel, $imagePromptFull, $blogUploadDir);
             if ($coverPath === null) {
                 echo "[blog-ai]   Cover image generation failed — proceeding without cover." . PHP_EOL;
             } else {

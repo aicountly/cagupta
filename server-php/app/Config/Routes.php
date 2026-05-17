@@ -2192,6 +2192,12 @@ class Routes
             // ── Public Blog API (no auth — for marketing site) ────────────────
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/public/blog-covers/:slug',
+                'handler'    => 'Admin\BlogController@publicBlogCover',
+                'middleware' => [],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/public/blogs',
                 'handler'    => 'Admin\BlogController@publicBlogs',
                 'middleware' => [],
