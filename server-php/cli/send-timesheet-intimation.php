@@ -42,7 +42,7 @@ if (is_readable($envFile)) {
 
 require_once $scriptDir . '/app/Config/Database.php';
 require_once $scriptDir . '/app/Libraries/BrevoMailer.php';
-require_once $scriptDir . '/app/Models/TimeEntryModel.php';
+require_once $scriptDir . '/app/Modules/Operations/Models/TimeEntryModel.php';
 
 use App\Libraries\BrevoMailer;
 use App\Models\TimeEntryModel;
