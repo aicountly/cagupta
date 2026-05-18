@@ -694,14 +694,12 @@ class TxnModel
         }
 
         foreach ($entityRows as &$er) {
-            $er['rowTotal'] = 0.0;
+            $closingSum = 0.0;
             foreach ($classes as $lc) {
                 $slot = $lc === LedgerDimensions::CLASS_REGULAR ? 'regular' : ($lc === LedgerDimensions::CLASS_MEMORANDUM ? 'memorandum' : 'optional');
-                foreach (['fees', 'taxes', 'reimbursement'] as $f) {
-                    $er['rowTotal'] += (float)($er[$slot][$f] ?? 0);
-                }
+                $closingSum += (float)($er[$slot]['ledgerClosing'] ?? 0);
             }
-            $er['rowTotal'] = round($er['rowTotal'], 2);
+            $er['rowTotal'] = round($closingSum, 2);
         }
         unset($er);
 

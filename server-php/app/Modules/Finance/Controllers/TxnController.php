@@ -1765,8 +1765,13 @@ class TxnController extends BaseController
      */
     public function recoveryByGroup(): never
     {
-        $payload = $this->txn->getRecoveryByGroupReport();
-        $this->success($payload, 'Recovery by group');
+        try {
+            $payload = $this->txn->getRecoveryByGroupReport();
+            $this->success($payload, 'Recovery by group');
+        } catch (\Throwable $e) {
+            error_log('[recoveryByGroup] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine() . "\n" . $e->getTraceAsString());
+            $this->error('Recovery list failed: ' . $e->getMessage(), 500);
+        }
     }
 
     /**

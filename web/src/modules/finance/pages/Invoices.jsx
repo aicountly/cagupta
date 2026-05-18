@@ -3693,6 +3693,7 @@ export default function Invoices({ ledgerOnly = false }) {
 
   const [recoveryReport, setRecoveryReport] = useState(null);
   const [recoveryLoading, setRecoveryLoading] = useState(false);
+  const [recoveryError, setRecoveryError] = useState(null);
 
   const paymentExpenseFetchParams = useMemo(() => {
     const params = { txnType: 'payment_expense', perPage: 100 };
@@ -3906,13 +3907,20 @@ export default function Invoices({ ledgerOnly = false }) {
   useEffect(() => {
     if (tab !== 'recovery_list') return undefined;
     setRecoveryLoading(true);
+    setRecoveryError(null);
     let cancelled = false;
     getRecoveryByGroup()
       .then((data) => {
-        if (!cancelled) setRecoveryReport(data);
+        if (!cancelled) {
+          setRecoveryError(null);
+          setRecoveryReport(data);
+        }
       })
-      .catch(() => {
-        if (!cancelled) setRecoveryReport(null);
+      .catch((e) => {
+        if (!cancelled) {
+          setRecoveryError(e?.message || 'Unknown error loading recovery list');
+          setRecoveryReport(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setRecoveryLoading(false);
@@ -5862,7 +5870,21 @@ export default function Invoices({ ledgerOnly = false }) {
                   </td>
                 </tr>
               )}
-              {!recoveryLoading && (!recoveryReport?.groups || recoveryReport.groups.length === 0) && (
+              {!recoveryLoading && recoveryError && (
+                <tr>
+                  <td colSpan={11} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#dc2626', background: '#fef2f2' }}>
+                    ⚠ Failed to load recovery list: {recoveryError}
+                  </td>
+                </tr>
+              )}
+              {!recoveryLoading && !recoveryError && (!recoveryReport?.groups || recoveryReport.groups.length === 0) && (recoveryReport?.kpiTotalReceivable ?? 0) > 0.01 && (
+                <tr>
+                  <td colSpan={11} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#92400e', background: '#fffbeb' }}>
+                    Dashboard KPI shows ₹{(recoveryReport.kpiTotalReceivable).toLocaleString('en-IN', { minimumFractionDigits: 2 })} receivable but no records are displaying — please contact support or reload.
+                  </td>
+                </tr>
+              )}
+              {!recoveryLoading && !recoveryError && (!recoveryReport?.groups || recoveryReport.groups.length === 0) && (recoveryReport?.kpiTotalReceivable ?? 0) <= 0.01 && (
                 <tr>
                   <td colSpan={11} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
                     No receivable balances to show (or no client / org ledger data yet).

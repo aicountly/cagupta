@@ -416,7 +416,10 @@ export async function getBillSettlementReport({
 export async function getRecoveryByGroup() {
   const res = await fetch(`${API_BASE}/admin/txn/recovery-by-group`, { headers: authHeaders() });
   const data = await parseResponse(res);
-  return data.data || { groups: [], totals: {}, kpiTotalReceivable: 0 };
+  if (!data.data) {
+    throw new Error(data.message || 'No data returned from server');
+  }
+  return data.data;
 }
 
 /** GET /api/admin/txn/receipts-with-unallocated — receipts with unallocated_advance > 0 */
