@@ -1577,6 +1577,8 @@ class ServiceController extends BaseController
                 'service_id'         => (int)$service['id'],
                 'created_by'         => $actorId,
             ]);
+
+            $this->services->syncRelevantPeriodFromRegister((int)$service['id']);
         } catch (\Throwable $e) {
             error_log('[ServiceController] Register sync on completion failed: ' . $e->getMessage());
         }

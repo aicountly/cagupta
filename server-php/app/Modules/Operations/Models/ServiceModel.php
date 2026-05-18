@@ -105,6 +105,8 @@ SQL;
             $row['master_service_name'] = null;
         }
 
+        $row = $this->hydrateRelevantPeriodFromRegisters([$row])[0];
+
         return $row;
     }
 
@@ -218,6 +220,7 @@ SQL;
         foreach ($rows as $i => $r) {
             $rows[$i] = $this->attachAssigneeFields($r);
         }
+        $rows = $this->hydrateRelevantPeriodFromRegisters($rows);
 
         return ['total' => $total, 'services' => $rows];
     }
@@ -343,6 +346,167 @@ SQL;
         $row['assignee_names'] = $namesAgg;
 
         return $row;
+    }
+
+    private function relevantPeriodLabelEmpty(?string $v): bool
+    {
+        return $v === null || trim($v) === '';
+    }
+
+    /**
+     * Latest register row per service (by period_end, then id) for compliance period display.
+     *
+     * @param array<int> $serviceIds
+     *
+     * @return array<int, array{period_label: string|null, period_start: string|null, period_end: string|null}>
+     */
+    private function fetchPrimaryRegisterPeriodsByServiceIds(array $serviceIds): array
+    {
+        $ids = [];
+        foreach ($serviceIds as $id) {
+            $n = (int)$id;
+            if ($n > 0) {
+                $ids[] = $n;
+            }
+        }
+        $ids = array_values(array_unique($ids));
+        if ($ids === []) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, \count($ids), '?'));
+        $sql          = "SELECT DISTINCT ON (r.service_id)
+                r.service_id,
+                r.period_label,
+                r.period_start,
+                r.period_end
+            FROM registers r
+            WHERE r.service_id IN ({$placeholders})
+            ORDER BY r.service_id, r.period_end DESC NULLS LAST, r.id DESC";
+
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute($ids);
+
+        $out = [];
+        while ($row = $stmt->fetch()) {
+            $sid = (int)$row['service_id'];
+            $out[$sid] = [
+                'period_label' => $row['period_label'] !== null ? (string)$row['period_label'] : null,
+                'period_start' => $row['period_start'] !== null ? (string)$row['period_start'] : null,
+                'period_end'   => $row['period_end'] !== null ? (string)$row['period_end'] : null,
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Fill relevant_period_* from linked registers when the service row has no manual period.
+     *
+     * @param array<int, array<string, mixed>> $rows
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    private function hydrateRelevantPeriodFromRegisters(array $rows): array
+    {
+        if ($rows === []) {
+            return $rows;
+        }
+        $collectIds = [];
+        foreach ($rows as $r) {
+            if (isset($r['id'])) {
+                $collectIds[] = (int)$r['id'];
+            }
+        }
+        $map = $this->fetchPrimaryRegisterPeriodsByServiceIds($collectIds);
+        if ($map === []) {
+            return $rows;
+        }
+
+        foreach ($rows as $i => $r) {
+            $sid = isset($r['id']) ? (int)$r['id'] : 0;
+            if ($sid <= 0 || !isset($map[$sid])) {
+                continue;
+            }
+            $reg = $map[$sid];
+            if ($this->relevantPeriodLabelEmpty(isset($r['relevant_period_label']) ? (string)$r['relevant_period_label'] : null)
+                && $reg['period_label'] !== null && trim($reg['period_label']) !== '') {
+                $rows[$i]['relevant_period_label'] = trim($reg['period_label']);
+            }
+            if (empty($r['relevant_period_from']) && $reg['period_start'] !== null && $reg['period_start'] !== '') {
+                $rows[$i]['relevant_period_from'] = $reg['period_start'];
+            }
+            if (empty($r['relevant_period_to']) && $reg['period_end'] !== null && $reg['period_end'] !== '') {
+                $rows[$i]['relevant_period_to'] = $reg['period_end'];
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Copy compliance period from the primary linked register into empty service columns
+     * (does not overwrite user-entered relevant period).
+     */
+    public function syncRelevantPeriodFromRegister(int $serviceId): void
+    {
+        if ($serviceId <= 0) {
+            return;
+        }
+
+        $regStmt = $this->db->prepare(
+            'SELECT period_label, period_start, period_end
+             FROM registers
+             WHERE service_id = :sid
+             ORDER BY period_end DESC NULLS LAST, id DESC
+             LIMIT 1'
+        );
+        $regStmt->execute([':sid' => $serviceId]);
+        $reg = $regStmt->fetch();
+        if ($reg === false) {
+            return;
+        }
+
+        $label = isset($reg['period_label']) ? trim((string)$reg['period_label']) : '';
+        $ps    = $reg['period_start'] ?? null;
+        $pe    = $reg['period_end'] ?? null;
+        if ($label === '' && ($ps === null || $ps === '') && ($pe === null || $pe === '')) {
+            return;
+        }
+
+        $svcStmt = $this->db->prepare(
+            'SELECT relevant_period_label, relevant_period_from, relevant_period_to
+             FROM services WHERE id = :id LIMIT 1'
+        );
+        $svcStmt->execute([':id' => $serviceId]);
+        $svc = $svcStmt->fetch();
+        if ($svc === false) {
+            return;
+        }
+
+        $set    = [];
+        $params = [':id' => $serviceId];
+
+        if ($this->relevantPeriodLabelEmpty(isset($svc['relevant_period_label']) ? (string)$svc['relevant_period_label'] : null) && $label !== '') {
+            $set[]            = 'relevant_period_label = :pl';
+            $params[':pl']    = $label;
+        }
+        if (empty($svc['relevant_period_from']) && $ps !== null && $ps !== '') {
+            $set[]              = 'relevant_period_from = :pfrom';
+            $params[':pfrom']   = $ps;
+        }
+        if (empty($svc['relevant_period_to']) && $pe !== null && $pe !== '') {
+            $set[]            = 'relevant_period_to = :pto';
+            $params[':pto']   = $pe;
+        }
+        if ($set === []) {
+            return;
+        }
+
+        $set[] = 'updated_at = NOW()';
+        $sql   = 'UPDATE services SET ' . implode(', ', $set) . ' WHERE id = :id';
+        $upd   = $this->db->prepare($sql);
+        $upd->execute($params);
     }
 
     /**
@@ -874,6 +1038,7 @@ SQL;
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
         $rows = $stmt->fetchAll();
+        $rows = $this->hydrateRelevantPeriodFromRegisters($rows);
 
         return ['total' => $total, 'rows' => $rows];
     }

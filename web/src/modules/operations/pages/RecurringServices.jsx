@@ -527,6 +527,11 @@ function RecurringServiceModal({ editDef, onClose, onSaved }) {
               ))}
             </select>
           </Field>
+          <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 14px', lineHeight: 1.5 }}>
+            Generated register rows carry a <strong>period label</strong> for each compliance window (for example monthly &quot;Mar 2026&quot;,
+            or quarterly labels such as <em>Q4 FY 2024-25</em>). When you <strong>link a service</strong> to a register row, or mark work complete,
+            that period is copied to the engagement so it appears on <strong>Service billing</strong> and <strong>service listings</strong> alongside invoices.
+          </p>
 
           {/* Due day + offset */}
           <div style={{ display: 'flex', gap: 12 }}>

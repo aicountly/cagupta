@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Models\RegisterModel;
+use App\Models\ServiceModel;
 
 /**
  * RegisterController — CRUD for the `registers` compliance table.
@@ -19,10 +20,12 @@ use App\Models\RegisterModel;
 class RegisterController extends BaseController
 {
     private RegisterModel $registers;
+    private ServiceModel $services;
 
     public function __construct()
     {
         $this->registers = new RegisterModel();
+        $this->services  = new ServiceModel();
     }
 
     // ── GET /api/admin/registers ──────────────────────────────────────────────
@@ -152,6 +155,9 @@ class RegisterController extends BaseController
         }
 
         $updated = $this->registers->find($id);
+        if ($updated !== null && !empty($updated['service_id'])) {
+            $this->services->syncRelevantPeriodFromRegister((int)$updated['service_id']);
+        }
         $this->success($updated, 'Register entry updated');
     }
 
