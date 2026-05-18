@@ -80,7 +80,7 @@ class MarketingController extends BaseController
         return rtrim($_ENV['WA_BRIDGE_URL'] ?? 'http://localhost:3001', '/');
     }
 
-    private function httpPost(string $url, array $payload): array
+    private function httpPost(string $url, array $payload, int $timeout = 10): array
     {
         $ch = curl_init($url);
         curl_setopt_array($ch, [
@@ -88,7 +88,7 @@ class MarketingController extends BaseController
             CURLOPT_POST           => true,
             CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
             CURLOPT_POSTFIELDS     => json_encode($payload),
-            CURLOPT_TIMEOUT        => 10,
+            CURLOPT_TIMEOUT        => $timeout,
         ]);
         $body   = curl_exec($ch);
         $status = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -309,7 +309,7 @@ class MarketingController extends BaseController
             'message'    => $message,
         ];
 
-        $res = $this->httpPost("{$bridgeUrl}/send", $payload);
+        $res = $this->httpPost("{$bridgeUrl}/send", $payload, 30);
 
         $this->logMarketing([
             'channel'      => 'whatsapp',
@@ -322,7 +322,10 @@ class MarketingController extends BaseController
         if ($res['ok']) {
             $this->success([], 'Message sent');
         }
-        $this->error('Failed to send message via WA bridge.', 502);
+
+        // Surface the bridge error so the frontend can show why the send failed
+        $bridgeError = $res['body']['error'] ?? 'WA bridge returned an error.';
+        $this->error($bridgeError, 502);
     }
 
     // ── WA Native (Business API) ──────────────────────────────────────────────

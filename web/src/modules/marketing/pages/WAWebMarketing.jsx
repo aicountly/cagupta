@@ -214,6 +214,12 @@ export default function WAWebMarketing() {
   async function handleSend() {
     if (!message.trim() && attachments.length === 0) return;
     if (selectedTargets.length === 0) return;
+
+    if (sessionStatus !== SESSION_STATUS.CONNECTED) {
+      alert('WhatsApp is not connected. Please connect your session before sending.');
+      return;
+    }
+
     setIsSending(true);
     setSendProgress({ sent: 0, total: selectedTargets.length, failed: 0 });
     setSendLog([]);
@@ -241,6 +247,15 @@ export default function WAWebMarketing() {
           body: formData,
         });
         const ok = res.ok;
+        let errDetail = '';
+        if (!ok) {
+          try {
+            const errBody = await res.json();
+            errDetail = errBody.message || errBody.error || `HTTP ${res.status}`;
+          } catch {
+            errDetail = `HTTP ${res.status}`;
+          }
+        }
         setSendProgress((prev) => ({
           ...prev,
           sent: prev.sent + (ok ? 1 : 0),
@@ -248,11 +263,11 @@ export default function WAWebMarketing() {
         }));
         setSendLog((prev) => [...prev, {
           type: ok ? 'success' : 'error',
-          text: ok ? `✓ Sent to ${target.name}` : `✗ Failed: ${target.name}`,
+          text: ok ? `✓ Sent to ${target.name}` : `✗ Failed: ${target.name}${errDetail ? ` — ${errDetail}` : ''}`,
         }]);
-      } catch {
+      } catch (e) {
         setSendProgress((prev) => ({ ...prev, failed: prev.failed + 1 }));
-        setSendLog((prev) => [...prev, { type: 'error', text: `✗ Error sending to ${target.name}` }]);
+        setSendLog((prev) => [...prev, { type: 'error', text: `✗ Error sending to ${target.name} — ${e.message}` }]);
       }
     }
 
