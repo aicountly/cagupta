@@ -10,6 +10,7 @@ export const DATE_PRESETS = [
   { value: 'today',         label: 'Today' },
   { value: 'this_week',     label: 'This Week' },
   { value: 'yesterday',     label: 'Yesterday' },
+  { value: 'day_before_yesterday', label: 'Day Before Yesterday' },
   { value: 'last_week',     label: 'Last Week' },
   { value: 'last_7_days',   label: 'Last 7 Days' },
   { value: 'last_30_days',  label: 'Last 30 Days' },
@@ -32,6 +33,12 @@ export function getPresetDates(preset) {
     case 'yesterday': {
       const d = new Date(today);
       d.setDate(today.getDate() - 1);
+      return { from: toYmd(d), to: toYmd(d) };
+    }
+
+    case 'day_before_yesterday': {
+      const d = new Date(today);
+      d.setDate(today.getDate() - 2);
       return { from: toYmd(d), to: toYmd(d) };
     }
 

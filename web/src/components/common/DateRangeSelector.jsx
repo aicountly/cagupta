@@ -58,6 +58,17 @@ export default function DateRangeSelector({
     }
   }
 
+  /** Chromium-style date inputs only open the picker from the icon; opening on field click fixes that. */
+  function openDatePickerOnFieldClick(e) {
+    const el = e.currentTarget;
+    if (typeof el.showPicker !== 'function') return;
+    try {
+      el.showPicker();
+    } catch {
+      // Ignored — e.g. not allowed outside a user gesture
+    }
+  }
+
   return (
     <>
       <label style={labelStyle}>
@@ -80,6 +91,7 @@ export default function DateRangeSelector({
           value={dateFrom}
           disabled={!isCustom}
           onChange={(e) => onDateFromChange(e.target.value)}
+          onClick={isCustom ? openDatePickerOnFieldClick : undefined}
           style={isCustom ? inputStyle : disabledInputStyle}
           title={isCustom ? undefined : 'Select "Custom" to set a specific date'}
         />
@@ -92,6 +104,7 @@ export default function DateRangeSelector({
           value={dateTo}
           disabled={!isCustom}
           onChange={(e) => onDateToChange(e.target.value)}
+          onClick={isCustom ? openDatePickerOnFieldClick : undefined}
           style={isCustom ? inputStyle : disabledInputStyle}
           title={isCustom ? undefined : 'Select "Custom" to set a specific date'}
         />
