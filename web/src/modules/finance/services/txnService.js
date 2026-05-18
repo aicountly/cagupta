@@ -412,6 +412,13 @@ export async function getBillSettlementReport({
   return data.data || {};
 }
 
+/** GET /api/admin/txn/recovery-by-group — receivables by client group (fees / taxes / reimbursement per ledger class) */
+export async function getRecoveryByGroup() {
+  const res = await fetch(`${API_BASE}/admin/txn/recovery-by-group`, { headers: authHeaders() });
+  const data = await parseResponse(res);
+  return data.data || { groups: [], totals: {}, kpiTotalReceivable: 0 };
+}
+
 /** GET /api/admin/txn/receipts-with-unallocated — receipts with unallocated_advance > 0 */
 export async function getReceiptsWithUnallocated({
   clientId,

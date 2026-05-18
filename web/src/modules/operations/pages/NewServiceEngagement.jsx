@@ -11,6 +11,7 @@ import { useNotification } from '../../../context/NotificationContext';
 import { getApprovedAffiliates } from '../../../services/affiliateAdminService';
 import DateInput from '../../../components/common/DateInput';
 import { localDateKey, engagementDueDateKey } from '../../../utils/serviceKpiFilters';
+import RelevantPeriodSelector from '../../../components/common/RelevantPeriodSelector';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -240,6 +241,7 @@ export default function NewServiceEngagement() {
 
   // Other fields
   const [fy, setFy] = useState(currentFY());
+  const [relevantPeriod, setRelevantPeriod] = useState({ frequency: '', from: '', to: '', label: '' });
   const [assignedTo, setAssignedTo] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [status, setStatus] = useState('not_started');
@@ -393,6 +395,10 @@ export default function NewServiceEngagement() {
       engagementTypeName: selectedEngagementType.name,
       type: `${selectedCategory.name} – ${selectedEngagementType.name}`,
       financialYear: fy,
+      relevantPeriodFrequency: relevantPeriod.frequency || null,
+      relevantPeriodFrom: relevantPeriod.from || null,
+      relevantPeriodTo: relevantPeriod.to || null,
+      relevantPeriodLabel: relevantPeriod.label || null,
       assignedTo,
       dueDate,
       status,
@@ -572,6 +578,17 @@ export default function NewServiceEngagement() {
 
           {/* ── Section: Engagement Details ─────────────────────────────── */}
           <FormSection title="Engagement Details">
+            <div style={{ marginBottom: 14 }}>
+              <FieldLabel label="Relevant Period" />
+              <RelevantPeriodSelector
+                frequency={relevantPeriod.frequency}
+                periodFrom={relevantPeriod.from}
+                periodTo={relevantPeriod.to}
+                periodLabel={relevantPeriod.label}
+                onChange={setRelevantPeriod}
+              />
+            </div>
+
             <div style={twoCol}>
               <div>
                 <FieldLabel label="Financial Year" />

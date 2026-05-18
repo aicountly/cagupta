@@ -8,6 +8,7 @@ use App\Models\AdminAuditLogModel;
 use App\Libraries\InvoiceLineCommission;
 use App\Libraries\LedgerDimensions;
 use App\Libraries\LedgerPresentation;
+use App\Libraries\LedgerRecoveryAggregator;
 use App\Libraries\TxnReceiptAllocationService;
 use PDO;
 
@@ -584,6 +585,278 @@ class TxnModel
         );
 
         return (float)$stmt->fetchColumn();
+    }
+
+    /**
+     * Recovery list: receivable split by client group, entity, and ledger class.
+     *
+     * @return array{
+     *   groups: list<array{groupKey:string,groupLabel:string,groupTotal:float,entities:list<array<string,mixed>}>,
+     *   totals: array{regular:array{fees:float,taxes:float,reimbursement:float},
+     *     memorandum:array{fees:float,taxes:float,reimbursement:float},
+     *     optional:array{fees:float,taxes:float,reimbursement:float}, grand:float},
+     *   kpiTotalReceivable: float
+     * }
+     */
+    public function getRecoveryByGroupReport(): array
+    {
+        $stmt = $this->db->query(
+            'SELECT t.*
+             FROM txn t
+             WHERE ' . self::sqlTxnVisibleOnEntityLedger('t') . '
+               AND (t.client_id IS NOT NULL OR t.organization_id IS NOT NULL)
+             ORDER BY t.client_id NULLS LAST, t.organization_id NULLS LAST,
+               LOWER(t.ledger_class), t.txn_date ASC, t.txn_type ASC, t.id ASC'
+        );
+        $all = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($all as &$row) {
+            $this->decodeJsonbInvoiceFields($row);
+        }
+        unset($row);
+
+        /** @var array<string, list<array<string, mixed>>> $byEntityClass */
+        $byEntityClass = [];
+        foreach ($all as $row) {
+            $cid = isset($row['client_id']) ? (int)$row['client_id'] : 0;
+            $oid = isset($row['organization_id']) ? (int)$row['organization_id'] : 0;
+            $lc  = LedgerDimensions::normalizeLedgerClass($row['ledger_class'] ?? null);
+            if ($cid > 0) {
+                $key = 'client:' . $cid . ':' . $lc;
+            } elseif ($oid > 0) {
+                $key = 'organization:' . $oid . ':' . $lc;
+            } else {
+                continue;
+            }
+            if (!isset($byEntityClass[$key])) {
+                $byEntityClass[$key] = [];
+            }
+            $byEntityClass[$key][] = $row;
+        }
+
+        $clientIds = [];
+        $orgIds    = [];
+        foreach (array_keys($byEntityClass) as $key) {
+            if (preg_match('/^client:(\d+):/', $key, $m)) {
+                $clientIds[(int)$m[1]] = true;
+            } elseif (preg_match('/^organization:(\d+):/', $key, $m)) {
+                $orgIds[(int)$m[1]] = true;
+            }
+        }
+
+        $clientMeta = $this->fetchRecoveryEntityMetaClients(array_map('intval', array_keys($clientIds)));
+        $orgMeta    = $this->fetchRecoveryEntityMetaOrganizations(array_map('intval', array_keys($orgIds)));
+
+        $classes = [
+            LedgerDimensions::CLASS_REGULAR,
+            LedgerDimensions::CLASS_MEMORANDUM,
+            LedgerDimensions::CLASS_OPTIONAL,
+        ];
+
+        /** @var array<string, array<string, mixed>> $entityRows */
+        $entityRows = [];
+
+        foreach (array_keys($clientIds) as $cid) {
+            $ek    = 'c:' . $cid;
+            $meta  = $clientMeta[$cid] ?? ['displayName' => 'Contact #' . $cid, 'groupName' => ''];
+            $entityRows[$ek] = $this->makeEmptyRecoveryEntityRow('client', $cid, $meta);
+        }
+        foreach (array_keys($orgIds) as $oid) {
+            $ek   = 'o:' . $oid;
+            $meta = $orgMeta[$oid] ?? ['displayName' => 'Organization #' . $oid, 'groupName' => ''];
+            $entityRows[$ek] = $this->makeEmptyRecoveryEntityRow('organization', $oid, $meta);
+        }
+
+        foreach ($byEntityClass as $key => $rows) {
+            if (!preg_match('/^(client|organization):(\d+):(regular|memorandum|optional)$/', $key, $m)) {
+                continue;
+            }
+            $type  = $m[1];
+            $eid   = (int)$m[2];
+            $lcRaw = $m[3];
+            $ek    = $type === 'client' ? 'c:' . $eid : 'o:' . $eid;
+            if (!isset($entityRows[$ek])) {
+                continue;
+            }
+            $agg = LedgerRecoveryAggregator::compute($rows);
+            if ($lcRaw === LedgerDimensions::CLASS_REGULAR) {
+                $slot = 'regular';
+            } elseif ($lcRaw === LedgerDimensions::CLASS_MEMORANDUM) {
+                $slot = 'memorandum';
+            } else {
+                $slot = 'optional';
+            }
+            $entityRows[$ek][$slot] = [
+                'fees'            => $agg['fees'],
+                'taxes'           => $agg['taxes'],
+                'reimbursement'   => $agg['reimbursement'],
+                'ledgerClosing'   => $agg['consolidated_closing'],
+            ];
+        }
+
+        foreach ($entityRows as &$er) {
+            $er['rowTotal'] = 0.0;
+            foreach ($classes as $lc) {
+                $slot = $lc === LedgerDimensions::CLASS_REGULAR ? 'regular' : ($lc === LedgerDimensions::CLASS_MEMORANDUM ? 'memorandum' : 'optional');
+                foreach (['fees', 'taxes', 'reimbursement'] as $f) {
+                    $er['rowTotal'] += (float)($er[$slot][$f] ?? 0);
+                }
+            }
+            $er['rowTotal'] = round($er['rowTotal'], 2);
+        }
+        unset($er);
+
+        /** @var array<string, list<array<string, mixed>>> $grouped */
+        $grouped = [];
+        foreach ($entityRows as $er) {
+            if ($er['rowTotal'] <= 0) {
+                continue;
+            }
+            $gLabel = (string)($er['groupName'] ?? '');
+            if ($gLabel === '') {
+                $gLabel = 'Ungrouped';
+            }
+            if (!isset($grouped[$gLabel])) {
+                $grouped[$gLabel] = [];
+            }
+            $grouped[$gLabel][] = $er;
+        }
+
+        $groupTotals = [];
+        foreach ($grouped as $gLabel => $list) {
+            $sum = 0.0;
+            foreach ($list as $r) {
+                $sum += (float)$r['rowTotal'];
+            }
+            $groupTotals[$gLabel] = round($sum, 2);
+        }
+        uksort($grouped, static function (string $a, string $b) use ($groupTotals): int {
+            $ta = $groupTotals[$a] ?? 0;
+            $tb = $groupTotals[$b] ?? 0;
+            if ($ta === $tb) {
+                return strcmp($a, $b);
+            }
+
+            return $tb <=> $ta;
+        });
+
+        $outGroups = [];
+        foreach ($grouped as $gLabel => $list) {
+            usort($list, static function (array $x, array $y): int {
+                return ((float)$y['rowTotal']) <=> ((float)$x['rowTotal']);
+            });
+            $outGroups[] = [
+                'groupKey'   => $gLabel,
+                'groupLabel' => $gLabel,
+                'groupTotal' => $groupTotals[$gLabel] ?? 0,
+                'entities'   => array_values($list),
+            ];
+        }
+
+        $totals = [
+            'regular' => ['fees' => 0.0, 'taxes' => 0.0, 'reimbursement' => 0.0],
+            'memorandum' => ['fees' => 0.0, 'taxes' => 0.0, 'reimbursement' => 0.0],
+            'optional' => ['fees' => 0.0, 'taxes' => 0.0, 'reimbursement' => 0.0],
+            'grand'   => 0.0,
+        ];
+        foreach ($entityRows as $er) {
+            if ($er['rowTotal'] <= 0) {
+                continue;
+            }
+            foreach (['regular', 'memorandum', 'optional'] as $slot) {
+                foreach (['fees', 'taxes', 'reimbursement'] as $f) {
+                    $totals[$slot][$f] += (float)($er[$slot][$f] ?? 0);
+                }
+            }
+            $totals['grand'] += $er['rowTotal'];
+        }
+        foreach (['regular', 'memorandum', 'optional'] as $slot) {
+            foreach (['fees', 'taxes', 'reimbursement'] as $f) {
+                $totals[$slot][$f] = round($totals[$slot][$f], 2);
+            }
+        }
+        $totals['grand'] = round($totals['grand'], 2);
+
+        return [
+            'groups'              => $outGroups,
+            'totals'              => $totals,
+            'kpiTotalReceivable'  => $this->getTotalReceivable(),
+        ];
+    }
+
+    /**
+     * @param list<int> $ids
+     * @return array<int, array{displayName: string, groupName: string}>
+     */
+    private function fetchRecoveryEntityMetaClients(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt         = $this->db->prepare(
+            "SELECT c.id, c.name, cg.name AS group_name
+             FROM clients c
+             LEFT JOIN client_groups cg ON cg.id = c.group_id
+             WHERE c.id IN ({$placeholders})"
+        );
+        $stmt->execute($ids);
+        $out = [];
+        while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $out[(int)$r['id']] = [
+                'displayName' => (string)($r['name'] ?? ''),
+                'groupName'   => (string)($r['group_name'] ?? ''),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param list<int> $ids
+     * @return array<int, array{displayName: string, groupName: string}>
+     */
+    private function fetchRecoveryEntityMetaOrganizations(array $ids): array
+    {
+        if ($ids === []) {
+            return [];
+        }
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt         = $this->db->prepare(
+            "SELECT o.id, o.name, cg.name AS group_name
+             FROM organizations o
+             LEFT JOIN client_groups cg ON cg.id = o.group_id
+             WHERE o.id IN ({$placeholders})"
+        );
+        $stmt->execute($ids);
+        $out = [];
+        while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $out[(int)$r['id']] = [
+                'displayName' => (string)($r['name'] ?? ''),
+                'groupName'   => (string)($r['group_name'] ?? ''),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param array{displayName: string, groupName: string} $meta
+     * @return array<string, mixed>
+     */
+    private function makeEmptyRecoveryEntityRow(string $entityType, int $entityId, array $meta): array
+    {
+        $empty = ['fees' => 0.0, 'taxes' => 0.0, 'reimbursement' => 0.0, 'ledgerClosing' => 0.0];
+
+        return [
+            'entityType'    => $entityType,
+            'entityId'      => $entityId,
+            'displayName'   => $meta['displayName'],
+            'groupName'     => $meta['groupName'],
+            'regular'       => $empty,
+            'memorandum'    => $empty,
+            'optional'      => $empty,
+            'rowTotal'      => 0.0,
+        ];
     }
 
     // ── Create helpers by type ────────────────────────────────────────────────

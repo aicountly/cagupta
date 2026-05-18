@@ -1760,6 +1760,16 @@ class TxnController extends BaseController
     }
 
     /**
+     * GET /api/admin/txn/recovery-by-group
+     * Receivables grouped by client group with fees / taxes / reimbursement by ledger class.
+     */
+    public function recoveryByGroup(): never
+    {
+        $payload = $this->txn->getRecoveryByGroupReport();
+        $this->success($payload, 'Recovery by group');
+    }
+
+    /**
      * GET /api/admin/txn/receipts-with-unallocated
      * Query: client_id or organization_id (one required), ledger_class, ledger_movement_kind
      */

@@ -337,7 +337,7 @@ export default function ServicesEngagementTableBlock({
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  {['Client', 'Service', 'FY', 'Assigned To', 'Due Date', 'Fee', 'Status', 'Actions'].map((h) => (
+                  {['Client', 'Service', 'Period', 'Assigned To', 'Due Date', 'Fee', 'Status', 'Actions'].map((h) => (
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
@@ -366,7 +366,7 @@ export default function ServicesEngagementTableBlock({
                         </div>
                       </td>
                       <td style={tdStyle}><span style={serviceTag}>{s.type}</span></td>
-                      <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12, color: '#64748b' }}>{s.financialYear}</td>
+                      <td style={{ ...tdStyle, fontSize: 12, color: '#64748b' }}>{s.relevantPeriodLabel || s.financialYear || '—'}</td>
                       <td style={tdStyle}>{s.assignedTo}</td>
                       <td style={{ ...tdStyle, color: isOverdue ? '#ef4444' : '#334155', fontWeight: isOverdue ? 600 : 400 }}>
                         {s.dueDate}
@@ -427,7 +427,7 @@ export default function ServicesEngagementTableBlock({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 15, color: '#0B1F3B' }}>{selectedService.type}</div>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{selectedService.clientName} · {selectedService.financialYear}</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{selectedService.clientName} · {selectedService.relevantPeriodLabel || selectedService.financialYear || '—'}</div>
               </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <button
@@ -481,6 +481,13 @@ export default function ServicesEngagementTableBlock({
               </div>
               {timerError ? <div style={{ fontSize: 11, color: '#dc2626', marginTop: 8 }}>{timerError}</div> : null}
             </div>
+
+            {selectedService.notes && (
+              <div style={{ marginBottom: 14, padding: '10px 12px', background: '#FFFBF5', border: '1px solid #FDE8D0', borderRadius: 8 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#C25A0A', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Notes</div>
+                <div style={{ fontSize: 12, color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>{selectedService.notes}</div>
+              </div>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <span style={{ fontWeight: 700, fontSize: 13, color: '#0B1F3B' }}>Tasks</span>

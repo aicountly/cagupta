@@ -1,8 +1,8 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createTds, finalizeTds,
-  getTdsEntries, createRebate, createCreditNote, getLedger, getBillSettlementReport,
+  getTdsEntries, createRebate, createCreditNote, getLedger, getBillSettlementReport, getRecoveryByGroup,
   getOpeningBalance, setOpeningBalance,
   updateTxn, requestInvoiceModifyOtp,
   requestLedgerDeleteOtp, bulkDeleteTxns,
@@ -3587,7 +3587,7 @@ function OpeningBalanceModal({
 // ── Main Invoices page ────────────────────────────────────────────────────────
 
 const INVOICE_TABS = new Set(['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note']);
-const LEDGER_TABS  = new Set(['ledger', 'bill_settlement', 'service_billing']);
+const LEDGER_TABS  = new Set(['ledger', 'bill_settlement', 'service_billing', 'recovery_list']);
 
 export default function Invoices({ ledgerOnly = false }) {
   const { hasPermission } = useAuth();
@@ -3609,6 +3609,16 @@ export default function Invoices({ ledgerOnly = false }) {
     const allowedSet = ledgerOnly ? LEDGER_TABS : INVOICE_TABS;
     if (allowedSet.has(t)) setTab(t);
   }, [searchParams, ledgerOnly]);
+
+  useEffect(() => {
+    if (!ledgerOnly) return undefined;
+    const cur = searchParams.get('tab');
+    if (cur === tab) return undefined;
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', tab);
+    setSearchParams(next, { replace: true });
+    return undefined;
+  }, [tab, ledgerOnly, searchParams, setSearchParams]);
 
   // ── Invoice tab state ───────────────────────────────────────────────────────
   const [statusFilter, setStatusFilter]         = useState('all');
@@ -3680,6 +3690,9 @@ export default function Invoices({ ledgerOnly = false }) {
   const [ledgerReconcileLoading, setLedgerReconcileLoading] = useState(false);
   const [ledgerReconcilePayload, setLedgerReconcilePayload] = useState(null);
   const [ledgerReconcileError, setLedgerReconcileError] = useState('');
+
+  const [recoveryReport, setRecoveryReport] = useState(null);
+  const [recoveryLoading, setRecoveryLoading] = useState(false);
 
   const paymentExpenseFetchParams = useMemo(() => {
     const params = { txnType: 'payment_expense', perPage: 100 };
@@ -3889,6 +3902,23 @@ export default function Invoices({ ledgerOnly = false }) {
       .catch(() => setBillReport(null))
       .finally(() => setBillLoading(false));
   }, [tab, ledgerClientId, ledgerEntityType, ledgerLedgerClass, ledgerLedgerView, ledgerFilterDateFrom, ledgerFilterDateTo]);
+
+  useEffect(() => {
+    if (tab !== 'recovery_list') return undefined;
+    setRecoveryLoading(true);
+    let cancelled = false;
+    getRecoveryByGroup()
+      .then((data) => {
+        if (!cancelled) setRecoveryReport(data);
+      })
+      .catch(() => {
+        if (!cancelled) setRecoveryReport(null);
+      })
+      .finally(() => {
+        if (!cancelled) setRecoveryLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [tab]);
 
   useEffect(() => {
     setLedgerFilterDateFrom('');
@@ -4495,6 +4525,7 @@ export default function Invoices({ ledgerOnly = false }) {
     { key:'ledger',         label:'📒 Ledger' },
     { key:'bill_settlement',label:'📑 Bill by bill' },
     { key:'service_billing',label:'📋 Service billing' },
+    { key:'recovery_list',  label:'📊 Recovery list' },
   ];
   const visibleTabSet = ledgerOnly ? LEDGER_TABS : INVOICE_TABS;
   const TABS = ALL_TABS.filter((t) => visibleTabSet.has(t.key));
@@ -5790,6 +5821,127 @@ export default function Invoices({ ledgerOnly = false }) {
         </div>
       )}
 
+      {tab === 'recovery_list' && (
+        <div style={{ ...cardStyle, overflowX: 'auto' }}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9' }}>
+            <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>Recovery list</div>
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: 6, maxWidth: 860 }}>
+              Receivables by client group (fees, taxes, and reimbursement pre–cost-recovery base). Groups with the highest total due appear first. Matches the dashboard outstanding KPI when totals align.
+            </div>
+            {recoveryReport && typeof recoveryReport.kpiTotalReceivable === 'number'
+              && typeof recoveryReport.totals?.grand === 'number'
+              && Math.abs(recoveryReport.totals.grand - recoveryReport.kpiTotalReceivable) > 0.02 && (
+              <div style={{ marginTop: 8, fontSize: 11, color: '#b45309' }}>
+                Note: Report grand total (₹{recoveryReport.totals.grand.toLocaleString('en-IN')}) differs slightly from KPI receivable
+                (₹{recoveryReport.kpiTotalReceivable.toLocaleString('en-IN')}) — usually rounding on split allocations.
+              </div>
+            )}
+          </div>
+          <table style={{ ...tableStyle, minWidth: 960 }}>
+            <thead>
+              <tr>
+                <th rowSpan={2} style={thStyle}>Entity</th>
+                <th colSpan={3} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Regular</th>
+                <th colSpan={3} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Memorandum</th>
+                <th colSpan={3} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Optional</th>
+                <th rowSpan={2} style={{ ...thStyle, textAlign: 'right', borderLeft: '1px solid #e2e8f0' }}>Total</th>
+              </tr>
+              <tr>
+                {['regular', 'memorandum', 'optional'].flatMap((k) => (
+                  ['Fees', 'Taxes', 'Reimb.'].map((h) => (
+                    <th key={`${k}-${h}`} style={{ ...thStyle, textAlign: 'right', fontSize: 11, borderLeft: '1px solid #e2e8f0' }}>{h}</th>
+                  ))
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {recoveryLoading && (
+                <tr>
+                  <td colSpan={11} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
+                    Loading recovery list…
+                  </td>
+                </tr>
+              )}
+              {!recoveryLoading && (!recoveryReport?.groups || recoveryReport.groups.length === 0) && (
+                <tr>
+                  <td colSpan={11} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
+                    No receivable balances to show (or no client / org ledger data yet).
+                  </td>
+                </tr>
+              )}
+              {!recoveryLoading && recoveryReport?.groups?.map((g) => {
+                const sr = recoverySumSlot(g.entities, 'regular');
+                const sm = recoverySumSlot(g.entities, 'memorandum');
+                const so = recoverySumSlot(g.entities, 'optional');
+                return (
+                  <Fragment key={g.groupKey}>
+                    <tr style={{ background: '#eef2ff' }}>
+                      <td colSpan={11} style={{ ...tdStyle, fontWeight: 700, color: '#312e81' }}>
+                        {g.groupLabel}
+                        <span style={{ fontWeight: 500, color: '#6366f1', marginLeft: 8 }}>
+                          — Group total ₹{g.groupTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </span>
+                      </td>
+                    </tr>
+                    {g.entities.map((ent) => (
+                      <tr key={`${ent.entityType}-${ent.entityId}`} style={trStyle}>
+                        <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 220 }}>
+                          <div style={{ fontWeight: 600 }}>{ent.displayName || '—'}</div>
+                          <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                            {ent.entityType === 'organization' ? 'Organization' : 'Contact'}
+                          </div>
+                        </td>
+                        {(['regular', 'memorandum', 'optional']).map((slot) => (
+                          <Fragment key={slot}>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(ent[slot]?.fees)}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(ent[slot]?.taxes)}</td>
+                            <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(ent[slot]?.reimbursement)}</td>
+                          </Fragment>
+                        ))}
+                        <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>
+                          {recoveryMoney(ent.rowTotal)}
+                        </td>
+                      </tr>
+                    ))}
+                    <tr style={{ background: '#f8fafc', fontWeight: 600 }}>
+                      <td style={{ ...tdStyle, fontStyle: 'italic', color: '#475569' }}>Subtotal — {g.groupLabel}</td>
+                      {[sr, sm, so].map((s, i) => (
+                        <Fragment key={i}>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(s.fees)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(s.taxes)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(s.reimbursement)}</td>
+                        </Fragment>
+                      ))}
+                      <td style={{ ...tdStyle, textAlign: 'right' }}>
+                        {recoveryMoney(g.groupTotal)}
+                      </td>
+                    </tr>
+                  </Fragment>
+                );
+              })}
+              {!recoveryLoading && recoveryReport?.totals && (
+                <tr style={{ background: '#fef2f2', fontWeight: 700 }}>
+                  <td style={tdStyle}>Grand total</td>
+                  {(['regular', 'memorandum', 'optional']).map((slot) => {
+                    const t = recoveryReport.totals[slot] || {};
+                    return (
+                      <Fragment key={slot}>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(t.fees)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(t.taxes)}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(t.reimbursement)}</td>
+                      </Fragment>
+                    );
+                  })}
+                  <td style={{ ...tdStyle, textAlign: 'right', color: '#dc2626' }}>
+                    {recoveryMoney(recoveryReport.totals.grand)}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* ── Tab: Bill by bill settlement ─────────────────────────────────────── */}
       {tab === 'bill_settlement' && (
         <div style={cardStyle}>
@@ -6037,7 +6189,7 @@ export default function Invoices({ ledgerOnly = false }) {
           <table style={tableStyle}>
             <thead>
               <tr>
-                {['#', 'Client', 'Engagement', 'Badges', 'Billed (₹)', 'Invoices', 'Status', 'Actions'].map((h) => (
+                {['#', 'Client', 'Engagement', 'Period', 'Badges', 'Billed (₹)', 'Invoices', 'Status', 'Actions'].map((h) => (
                   <th key={h} style={thStyle}>{h}</th>
                 ))}
               </tr>
@@ -6045,13 +6197,13 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {billingLoading ? (
                 <tr>
-                  <td colSpan={8} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>
+                  <td colSpan={9} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>
                     Loading service billing…
                   </td>
                 </tr>
               ) : billingRows.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>
+                  <td colSpan={9} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>
                     No rows for this filter. Completed engagements or all tasks done enter the queue when billing is open.
                   </td>
                 </tr>
@@ -6077,6 +6229,9 @@ export default function Invoices({ ledgerOnly = false }) {
                           </div>
                         </div>
                       )}
+                    </td>
+                    <td style={{ ...tdStyle, fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>
+                      {row.relevantPeriodLabel || row.financialYear || '—'}
                     </td>
                     <td style={{ ...tdStyle, fontSize: 11 }}>
                       {row.isMasterService && (
@@ -6185,6 +6340,25 @@ export default function Invoices({ ledgerOnly = false }) {
         </div>
       )}
     </div>
+  );
+}
+
+function recoveryMoney(n) {
+  const v = Number(n) || 0;
+  if (Math.abs(v) < 0.005) return '—';
+  return `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function recoverySumSlot(entities, slotKey) {
+  return entities.reduce(
+    (acc, e) => {
+      const s = e[slotKey] || {};
+      acc.fees += Number(s.fees) || 0;
+      acc.taxes += Number(s.taxes) || 0;
+      acc.reimbursement += Number(s.reimbursement) || 0;
+      return acc;
+    },
+    { fees: 0, taxes: 0, reimbursement: 0 },
   );
 }
 

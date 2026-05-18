@@ -121,6 +121,11 @@ function normalizeEngagement(s) {
     notes:              s.notes               || '',
     tasks:              parseTasks(s.tasks),
     createdAt:          s.created_at          || '',
+    // Relevant period fields
+    relevantPeriodFrequency: s.relevant_period_frequency || '',
+    relevantPeriodFrom:      s.relevant_period_from      || '',
+    relevantPeriodTo:        s.relevant_period_to        || '',
+    relevantPeriodLabel:     s.relevant_period_label     || '',
     // Master Service fields
     isMasterService:    Boolean(s.is_master_service),
     masterServiceId:    s.master_service_id != null ? Number(s.master_service_id) : null,
@@ -261,6 +266,10 @@ export async function createEngagement(payload) {
     engagement_type_name: payload.engagementTypeName  || null,
     service_type:         payload.type                || null,
     financial_year:       payload.financialYear       || null,
+    relevant_period_frequency: payload.relevantPeriodFrequency || null,
+    relevant_period_from:      payload.relevantPeriodFrom      || null,
+    relevant_period_to:        payload.relevantPeriodTo        || null,
+    relevant_period_label:     payload.relevantPeriodLabel     || null,
     assigned_to:          positiveIntOrNull(payload.assignedTo),
     due_date:             payload.dueDate             || null,
     status:               payload.status              || 'not_started',
@@ -310,6 +319,10 @@ export async function updateEngagement(id, payload, { superadminOtp } = {}) {
   if ('tasks' in payload) body.tasks = Array.isArray(payload.tasks) ? payload.tasks : [];
   if ('type' in payload) body.service_type = payload.type || null;
   if ('financialYear' in payload) body.financial_year = payload.financialYear || null;
+  if ('relevantPeriodFrequency' in payload) body.relevant_period_frequency = payload.relevantPeriodFrequency || null;
+  if ('relevantPeriodFrom' in payload) body.relevant_period_from = payload.relevantPeriodFrom || null;
+  if ('relevantPeriodTo' in payload) body.relevant_period_to = payload.relevantPeriodTo || null;
+  if ('relevantPeriodLabel' in payload) body.relevant_period_label = payload.relevantPeriodLabel || null;
   if ('clientFacingRestricted' in payload) body.client_facing_restricted = Boolean(payload.clientFacingRestricted);
 
   const headers = { ...authHeaders() };
@@ -441,6 +454,8 @@ function normalizeBillingReportRow(r) {
     organizationId: r.organization_id || null,
     clientName: r.client_name || r.display_client_name || 'Unknown',
     serviceType: r.service_type || '',
+    financialYear: r.financial_year || '',
+    relevantPeriodLabel: r.relevant_period_label || '',
     status: r.status || '',
     billingClosure: r.billing_closure || null,
     billingBuiltAt: r.billing_built_at || null,

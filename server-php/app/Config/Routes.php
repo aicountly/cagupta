@@ -1253,6 +1253,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/recovery-by-group',
+                'handler'    => 'Admin\TxnController@recoveryByGroup',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/receipts-with-unallocated',
                 'handler'    => 'Admin\TxnController@receiptsWithUnallocated',
                 'middleware' => ['auth', 'permission:invoices.view'],

@@ -13,7 +13,7 @@ const METRIC_CARD_CONFIG = [
   { key: 'activeServices', label: 'Active Services', icon: '📋', color: '#7c3aed', bg: '#F5F3FF', to: '/services' },
   { key: 'unbilledServices', label: 'Unbilled (due)', icon: '🧾', color: '#c2410c', bg: '#FFF7ED', sub: 'billing open — raise invoice', to: '/invoices?tab=service_billing' },
   { key: 'pendingTasks', label: 'Pending Tasks', icon: '✅', color: '#d97706', bg: '#FFFBEB', sub: 'across all engagements', to: '/services' },
-  { key: 'outstandingAmount', label: 'Outstanding Amount', icon: '💰', color: '#dc2626', bg: '#FEF2F2', sub: 'total receivable (txn ledger)', to: '/invoices' },
+  { key: 'outstandingAmount', label: 'Outstanding Amount', icon: '💰', color: '#dc2626', bg: '#FEF2F2', sub: 'receivables by group', to: '/invoices/ledgers?tab=recovery_list' },
   { key: 'documentsThisMonth', label: 'Documents This Month', icon: '📂', color: '#0891b2', bg: '#ECFEFF', to: '/documents' },
   { key: 'appointmentsToday', label: 'Appointments Today', icon: '📅', color: '#16a34a', bg: '#F0FDF4', to: '/calendar' },
 ];

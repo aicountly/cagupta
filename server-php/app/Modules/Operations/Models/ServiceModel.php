@@ -364,7 +364,8 @@ SQL;
                 engagement_type_id, engagement_type_name,
                 tasks,
                 referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted,
-                source_support_ticket_id
+                source_support_ticket_id,
+                relevant_period_frequency, relevant_period_from, relevant_period_to, relevant_period_label
              ) VALUES (
                 :client_id, :organization_id, :service_type, :description,
                 :financial_year, :due_date, :status, :priority, :assigned_to,
@@ -375,7 +376,8 @@ SQL;
                 :engagement_type_id, :engagement_type_name,
                 :tasks,
                 :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted,
-                :source_support_ticket_id
+                :source_support_ticket_id,
+                :relevant_period_frequency, :relevant_period_from, :relevant_period_to, :relevant_period_label
              ) RETURNING id'
         );
         $params = [
@@ -407,6 +409,10 @@ SQL;
             ':client_facing_restricted' => !empty($data['client_facing_restricted']) ? 'true' : 'false',
             ':source_support_ticket_id' => isset($data['source_support_ticket_id']) && (int)$data['source_support_ticket_id'] > 0
                 ? (int)$data['source_support_ticket_id'] : null,
+            ':relevant_period_frequency' => $data['relevant_period_frequency'] ?? null,
+            ':relevant_period_from'      => $data['relevant_period_from']      ?? null,
+            ':relevant_period_to'        => $data['relevant_period_to']        ?? null,
+            ':relevant_period_label'     => $data['relevant_period_label']     ?? null,
         ];
         $stmt->execute($params);
         return (int)$stmt->fetchColumn();
@@ -425,6 +431,7 @@ SQL;
         $allowed = [
             'status', 'assigned_to', 'due_date', 'fees', 'notes', 'priority', 'service_type', 'financial_year',
             'standard_fee_override', 'standard_allowable_hours_override',
+            'relevant_period_frequency', 'relevant_period_from', 'relevant_period_to', 'relevant_period_label',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {

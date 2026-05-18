@@ -66,10 +66,105 @@ function formatLinkedOrgsSubtitle(names) {
   return `Organizations: ${part}${tail}`;
 }
 
-// ── Client / Org search ───────────────────────────────────────────────────────
+// ── Multi-Client / Org search ─────────────────────────────────────────────────
 
-/** `presetLabel` + key remount: hydrate edit/create and client/org toggle cleanly. */
-function ClientOrgSearch({ clientType, clientId, orgId, onChange, presetLabel = '' }) {
+function MultiClientOrgSearch({ clientType, selectedItems, onChange }) {
+  const [q, setQ]             = useState('');
+  const [results, setResults] = useState([]);
+  const [open, setOpen]       = useState(false);
+  const [searching, setSearching] = useState(false);
+
+  useEffect(() => {
+    if (q.length < 2) { setResults([]); return; }
+    setSearching(true);
+    const fn = clientType === 'contact' ? getContactsForSearch : getOrganizationsForSearch;
+    fn(q, 30)
+      .then(data => {
+        const list = Array.isArray(data) ? data : (data?.data ?? data?.contacts ?? data?.organizations ?? []);
+        setResults(list);
+        setOpen(true);
+      })
+      .catch(() => setResults([]))
+      .finally(() => setSearching(false));
+  }, [q, clientType]);
+
+  const selectedIds = new Set(selectedItems.map(i => String(i.id)));
+
+  function toggleItem(item) {
+    const id = String(item.id);
+    if (selectedIds.has(id)) {
+      onChange(selectedItems.filter(i => String(i.id) !== id));
+    } else {
+      onChange([...selectedItems, { id: item.id, name: pickSearchLabel(item) }]);
+    }
+  }
+
+  function removeItem(id) {
+    onChange(selectedItems.filter(i => String(i.id) !== String(id)));
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: selectedItems.length > 0 ? 8 : 0 }}>
+        {selectedItems.map(item => (
+          <span key={item.id} style={selectedChipStyle}>
+            {item.name}
+            <button type="button" onClick={() => removeItem(item.id)} style={chipRemoveStyle}>×</button>
+          </span>
+        ))}
+      </div>
+      <input
+        type="text"
+        value={q}
+        onChange={e => setQ(e.target.value)}
+        placeholder={clientType === 'contact' ? 'Search contacts to add…' : 'Search organisations to add…'}
+        style={{ ...inputStyle, width: '100%' }}
+        onFocus={() => results.length > 0 && setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 200)}
+      />
+      {searching && (
+        <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 3 }}>Searching…</div>
+      )}
+      {open && results.length > 0 && (
+        <div style={dropdownStyle}>
+          {results.map((r) => {
+            const isSelected = selectedIds.has(String(r.id));
+            const orgLine = clientType === 'contact' ? formatLinkedOrgsSubtitle(r.linkedOrgNames) : '';
+            return (
+              <div
+                key={r.id}
+                onMouseDown={() => toggleItem(r)}
+                style={{ ...dropdownItemStyle, background: isSelected ? '#eff6ff' : undefined }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 16, height: 16, borderRadius: 3, border: '2px solid', borderColor: isSelected ? '#2563eb' : '#cbd5e1', background: isSelected ? '#2563eb' : '#fff', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff', flexShrink: 0 }}>
+                    {isSelected ? '✓' : ''}
+                  </span>
+                  <div>
+                    <span style={{ fontWeight: 600 }}>{pickSearchLabel(r)}</span>
+                    {r.pan ? <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 6 }}>{r.pan}</span> : null}
+                    {r.gstin ? <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 6 }}>{r.gstin}</span> : null}
+                    {orgLine ? (
+                      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, fontWeight: 400 }}>{orgLine}</div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {selectedItems.length > 0 && (
+        <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+          {selectedItems.length} {clientType === 'contact' ? 'contact' : 'organisation'}{selectedItems.length !== 1 ? 's' : ''} selected
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Single client search (for edit mode)
+function SingleClientOrgSearch({ clientType, clientId, orgId, onChange, presetLabel = '' }) {
   const [q, setQ]             = useState(presetLabel || '');
   const [results, setResults] = useState([]);
   const [selected, setSelected] = useState(() =>
@@ -131,14 +226,9 @@ function ClientOrgSearch({ clientType, clientId, orgId, onChange, presetLabel = 
       {open && results.length > 0 && (
         <div style={dropdownStyle}>
           {results.map((r) => {
-            const orgLine =
-              clientType === 'contact' ? formatLinkedOrgsSubtitle(r.linkedOrgNames) : '';
+            const orgLine = clientType === 'contact' ? formatLinkedOrgsSubtitle(r.linkedOrgNames) : '';
             return (
-              <div
-                key={r.id}
-                onMouseDown={() => handleSelect(r)}
-                style={dropdownItemStyle}
-              >
+              <div key={r.id} onMouseDown={() => handleSelect(r)} style={dropdownItemStyle}>
                 <span style={{ fontWeight: 600 }}>{pickSearchLabel(r)}</span>
                 {r.pan ? <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 6 }}>{r.pan}</span> : null}
                 {r.gstin ? <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 6 }}>{r.gstin}</span> : null}
@@ -154,65 +244,67 @@ function ClientOrgSearch({ clientType, clientId, orgId, onChange, presetLabel = 
   );
 }
 
-// ── Engagement type picker ────────────────────────────────────────────────────
+// ── Cascading Service Catalog Selector ────────────────────────────────────────
 
-function EngagementTypePicker({ value, onChange, filterCategory }) {
+function ServiceCatalogSelector({ categoryId, subcategoryId, engagementTypeId, onCategoryChange, onSubcategoryChange, onEngagementTypeChange }) {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading]       = useState(true);
 
   useEffect(() => {
     getCategories()
-      .then(cats => setCategories(cats))
+      .then(cats => setCategories(Array.isArray(cats) ? cats : []))
       .catch(() => setCategories([]))
       .finally(() => setLoading(false));
   }, []);
 
-  // Flatten all engagement types across categories / subcategories
-  const allTypes = [];
-  for (const cat of categories) {
-    const subs = cat.subcategories || [];
-    if (subs.length === 0) {
-      for (const et of (cat.engagement_types || [])) {
-        allTypes.push({
-          ...et,
-          group: cat.name,
-          register_category: et.register_category ?? null,
-        });
-      }
-    } else {
-      for (const sub of subs) {
-        for (const et of (sub.engagement_types || [])) {
-          allTypes.push({
-            ...et,
-            group: `${cat.name} / ${sub.name}`,
-            register_category: et.register_category ?? null,
-          });
-        }
-      }
-    }
-  }
-
-  const filtered = filterCategory
-    ? allTypes.filter(et => et.register_category === filterCategory)
-    : allTypes;
+  const selectedCategory = categories.find(c => String(c.id) === String(categoryId));
+  const subcategories = selectedCategory?.subcategories ?? [];
+  const selectedSubcategory = subcategories.find(s => String(s.id) === String(subcategoryId));
+  const engagementTypes = selectedSubcategory?.engagementTypes ?? [];
 
   if (loading) {
-    return <select style={inputStyle} disabled><option>Loading…</option></select>;
+    return <div style={{ fontSize: 12, color: '#94a3b8' }}>Loading catalog…</div>;
   }
 
   return (
-    <select
-      value={value}
-      onChange={e => onChange(e.target.value)}
-      style={inputStyle}
-    >
-      <option value="">— Select engagement type —</option>
-      {filtered.map(et => (
-        <option key={et.id} value={et.id}>
-          {et.name} {et.register_category ? `[${CAT_LABEL[et.register_category] || et.register_category}]` : ''}
-        </option>
-      ))}
-    </select>
+    <>
+      <Field label="Category *">
+        <select
+          value={categoryId}
+          onChange={e => { onCategoryChange(e.target.value); onSubcategoryChange(''); onEngagementTypeChange(''); }}
+          style={inputStyle}
+        >
+          <option value="">Select category…</option>
+          {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Subcategory *">
+        <select
+          value={subcategoryId}
+          onChange={e => { onSubcategoryChange(e.target.value); onEngagementTypeChange(''); }}
+          style={inputStyle}
+          disabled={!categoryId}
+        >
+          <option value="">{categoryId ? 'Select subcategory…' : '← Select a category first'}</option>
+          {subcategories.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Engagement Type *">
+        <select
+          value={engagementTypeId}
+          onChange={e => onEngagementTypeChange(e.target.value)}
+          style={inputStyle}
+          disabled={!subcategoryId}
+        >
+          <option value="">{subcategoryId ? 'Select engagement type…' : '← Select a subcategory first'}</option>
+          {engagementTypes.map(et => (
+            <option key={et.id} value={et.id}>{et.name}</option>
+          ))}
+        </select>
+      </Field>
+    </>
   );
 }
 
@@ -222,7 +314,14 @@ function RecurringServiceModal({ editDef, onClose, onSaved }) {
   const [form, setForm]     = useState(() => editDef ? defToForm(editDef) : { ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
   const [error, setError]   = useState('');
-  const [catFilter, setCatFilter] = useState('');
+  const [saveProgress, setSaveProgress] = useState('');
+
+  // Multi-client state (only for create mode)
+  const [multiClients, setMultiClients] = useState([]);
+
+  // Catalog cascade state
+  const [categoryId, setCategoryId]       = useState('');
+  const [subcategoryId, setSubcategoryId] = useState('');
 
   function defToForm(d) {
     return {
@@ -251,38 +350,80 @@ function RecurringServiceModal({ editDef, onClose, onSaved }) {
 
   async function handleSave() {
     setError('');
+    setSaveProgress('');
     if (!form.engagement_type_id) { setError('Please select an engagement type.'); return; }
     if (!form.start_date)         { setError('Start date is required.'); return; }
-    if (form.client_type === 'contact'      && !form.client_id)       { setError('Please select a client/contact.'); return; }
-    if (form.client_type === 'organization' && !form.organization_id) { setError('Please select an organisation.'); return; }
+
+    const isEdit = Boolean(editDef);
+
+    if (isEdit) {
+      if (form.client_type === 'contact' && !form.client_id)       { setError('Please select a client/contact.'); return; }
+      if (form.client_type === 'organization' && !form.organization_id) { setError('Please select an organisation.'); return; }
+    } else {
+      if (multiClients.length === 0) { setError('Please select at least one client/organisation.'); return; }
+    }
 
     setSaving(true);
     try {
-      const payload = {
-        engagement_type_id: Number(form.engagement_type_id),
-        client_id:          form.client_type === 'contact'      ? Number(form.client_id)      : null,
-        organization_id:    form.client_type === 'organization' ? Number(form.organization_id): null,
-        frequency:          form.frequency,
-        due_day:            Number(form.due_day)           || 20,
-        due_offset_months:  Number(form.due_offset_months) || 0,
-        return_type:        form.return_type,
-        start_date:         form.start_date,
-        end_date:           form.end_date || null,
-        is_active:          form.is_active,
-        notes:              form.notes || null,
-      };
-
-      let result;
-      if (editDef) {
-        result = await updateRecurringService(editDef.id, payload);
+      if (isEdit) {
+        const payload = {
+          engagement_type_id: Number(form.engagement_type_id),
+          client_id:          form.client_type === 'contact'      ? Number(form.client_id)      : null,
+          organization_id:    form.client_type === 'organization' ? Number(form.organization_id): null,
+          frequency:          form.frequency,
+          due_day:            Number(form.due_day)           || 20,
+          due_offset_months:  Number(form.due_offset_months) || 0,
+          return_type:        form.return_type,
+          start_date:         form.start_date,
+          end_date:           form.end_date || null,
+          is_active:          form.is_active,
+          notes:              form.notes || null,
+        };
+        const result = await updateRecurringService(editDef.id, payload);
+        onSaved(result);
       } else {
-        result = await createRecurringService(payload);
+        // Bulk create for multiple clients
+        const results = [];
+        const errors = [];
+        for (let i = 0; i < multiClients.length; i++) {
+          const client = multiClients[i];
+          setSaveProgress(`Creating ${i + 1} of ${multiClients.length}…`);
+          const payload = {
+            engagement_type_id: Number(form.engagement_type_id),
+            client_id:          form.client_type === 'contact'      ? Number(client.id) : null,
+            organization_id:    form.client_type === 'organization' ? Number(client.id) : null,
+            frequency:          form.frequency,
+            due_day:            Number(form.due_day)           || 20,
+            due_offset_months:  Number(form.due_offset_months) || 0,
+            return_type:        form.return_type,
+            start_date:         form.start_date,
+            end_date:           form.end_date || null,
+            is_active:          form.is_active,
+            notes:              form.notes || null,
+          };
+          try {
+            const result = await createRecurringService(payload);
+            results.push(result);
+          } catch (e) {
+            errors.push(`${client.name}: ${e.message || 'Failed'}`);
+          }
+        }
+        if (errors.length > 0 && results.length === 0) {
+          setError('All creations failed:\n' + errors.join('\n'));
+          setSaveProgress('');
+          setSaving(false);
+          return;
+        }
+        if (errors.length > 0) {
+          setError(`${results.length} created, ${errors.length} failed: ${errors.join('; ')}`);
+        }
+        onSaved(results.length === 1 ? results[0] : results[results.length - 1], results.length);
       }
-      onSaved(result);
     } catch (e) {
       setError(e.message || 'Failed to save');
     } finally {
       setSaving(false);
+      setSaveProgress('');
     }
   }
 
@@ -290,7 +431,7 @@ function RecurringServiceModal({ editDef, onClose, onSaved }) {
     <>
       <div onClick={onClose} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,.25)', zIndex: 999 }} />
       <div style={{
-        position: 'fixed', top: 0, right: 0, height: '100vh', width: 480,
+        position: 'fixed', top: 0, right: 0, height: '100vh', width: 520,
         background: '#fff', boxShadow: '-4px 0 20px rgba(0,0,0,.12)',
         zIndex: 1000, display: 'flex', flexDirection: 'column',
       }}>
@@ -311,7 +452,7 @@ function RecurringServiceModal({ editDef, onClose, onSaved }) {
                 <button
                   key={t}
                   type="button"
-                  onClick={() => { set('client_type', t); set('client_id', ''); set('organization_id', ''); }}
+                  onClick={() => { set('client_type', t); set('client_id', ''); set('organization_id', ''); setMultiClients([]); }}
                   style={{
                     flex: 1, padding: '7px 0', border: '2px solid',
                     borderColor: form.client_type === t ? '#2563eb' : '#e2e8f0',
@@ -321,47 +462,51 @@ function RecurringServiceModal({ editDef, onClose, onSaved }) {
                     cursor: 'pointer',
                   }}
                 >
-                  {t === 'contact' ? '👤 Contact' : '🏢 Organisation'}
+                  {t === 'contact' ? 'Contact' : 'Organisation'}
                 </button>
               ))}
             </div>
           </Field>
 
-          {/* Client / Org search */}
-          <Field label={form.client_type === 'contact' ? 'Contact / Client' : 'Organisation'}>
-            <ClientOrgSearch
-              key={`${editDef?.id ?? 'create'}-${form.client_type}`}
-              clientType={form.client_type}
-              clientId={form.client_id}
-              orgId={form.organization_id}
-              onChange={handleClientOrgChange}
-              presetLabel={
-                editDef &&
-                ((form.client_type === 'contact' && editDef.client_id) ||
-                  (form.client_type === 'organization' && editDef.organization_id))
-                  ? (editDef.client_name || '')
-                  : ''
-              }
-            />
+          {/* Client / Org search — multi for create, single for edit */}
+          <Field label={editDef
+            ? (form.client_type === 'contact' ? 'Contact / Client' : 'Organisation')
+            : (form.client_type === 'contact' ? 'Contacts / Clients (multi-select)' : 'Organisations (multi-select)')
+          }>
+            {editDef ? (
+              <SingleClientOrgSearch
+                key={`${editDef.id}-${form.client_type}`}
+                clientType={form.client_type}
+                clientId={form.client_id}
+                orgId={form.organization_id}
+                onChange={handleClientOrgChange}
+                presetLabel={
+                  editDef &&
+                  ((form.client_type === 'contact' && editDef.client_id) ||
+                    (form.client_type === 'organization' && editDef.organization_id))
+                    ? (editDef.client_name || '')
+                    : ''
+                }
+              />
+            ) : (
+              <MultiClientOrgSearch
+                key={form.client_type}
+                clientType={form.client_type}
+                selectedItems={multiClients}
+                onChange={setMultiClients}
+              />
+            )}
           </Field>
 
-          {/* Category filter for engagement type */}
-          <Field label="Filter engagement types by category">
-            <select value={catFilter} onChange={e => setCatFilter(e.target.value)} style={inputStyle}>
-              {REGISTER_CATEGORIES.map(c => (
-                <option key={c.value} value={c.value}>{c.label}</option>
-              ))}
-            </select>
-          </Field>
-
-          {/* Engagement type */}
-          <Field label="Engagement Type *">
-            <EngagementTypePicker
-              value={form.engagement_type_id}
-              onChange={v => set('engagement_type_id', v)}
-              filterCategory={catFilter}
-            />
-          </Field>
+          {/* Service Catalog — Category / Subcategory / Engagement Type */}
+          <ServiceCatalogSelector
+            categoryId={categoryId}
+            subcategoryId={subcategoryId}
+            engagementTypeId={form.engagement_type_id}
+            onCategoryChange={setCategoryId}
+            onSubcategoryChange={setSubcategoryId}
+            onEngagementTypeChange={v => set('engagement_type_id', v)}
+          />
 
           {/* Return type label */}
           <Field label="Return Type Label (e.g. GSTR-3B, 26Q, ITR-6)">
@@ -452,17 +597,18 @@ function RecurringServiceModal({ editDef, onClose, onSaved }) {
           </Field>
 
           {error && (
-            <div style={{ padding: '10px 12px', background: '#fef2f2', color: '#dc2626', borderRadius: 6, fontSize: 13 }}>
+            <div style={{ padding: '10px 12px', background: '#fef2f2', color: '#dc2626', borderRadius: 6, fontSize: 13, whiteSpace: 'pre-wrap' }}>
               {error}
             </div>
           )}
         </div>
 
         {/* Footer */}
-        <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+        <div style={{ padding: '16px 24px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
+          {saveProgress && <span style={{ fontSize: 12, color: '#64748b', marginRight: 'auto' }}>{saveProgress}</span>}
           <button type="button" onClick={onClose} style={cancelBtnStyle}>Cancel</button>
           <button type="button" onClick={handleSave} disabled={saving} style={saveBtnStyle(saving)}>
-            {saving ? 'Saving…' : editDef ? 'Save Changes' : 'Create Schedule'}
+            {saving ? 'Saving…' : editDef ? 'Save Changes' : multiClients.length > 1 ? `Create ${multiClients.length} Schedules` : 'Create Schedule'}
           </button>
         </div>
       </div>
@@ -617,19 +763,24 @@ export default function RecurringServices() {
     }
   }
 
-  function handleSaved(def) {
+  function handleSaved(def, bulkCount) {
     if (!def) return;
     setShowAdd(false);
     setEditDef(null);
-    setRows(prev => {
-      const idx = prev.findIndex(r => r.id === def.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx]  = def;
-        return next;
-      }
-      return [def, ...prev];
-    });
+    if (bulkCount && bulkCount > 1) {
+      // Bulk creation — reload the list
+      load(1, true);
+    } else {
+      setRows(prev => {
+        const idx = prev.findIndex(r => r.id === def.id);
+        if (idx >= 0) {
+          const next = [...prev];
+          next[idx]  = def;
+          return next;
+        }
+        return [def, ...prev];
+      });
+    }
   }
 
   return (
@@ -940,6 +1091,17 @@ const dropdownItemStyle = {
   padding: '8px 12px', cursor: 'pointer', fontSize: 13, color: '#334155',
   borderBottom: '1px solid #f8fafc',
   ':hover': { background: '#f8fafc' },
+};
+
+const selectedChipStyle = {
+  display: 'inline-flex', alignItems: 'center', gap: 4,
+  padding: '3px 8px', background: '#eff6ff', border: '1px solid #bfdbfe',
+  borderRadius: 12, fontSize: 12, fontWeight: 600, color: '#1d4ed8',
+};
+
+const chipRemoveStyle = {
+  background: 'none', border: 'none', cursor: 'pointer',
+  color: '#64748b', fontSize: 14, padding: 0, lineHeight: 1,
 };
 
 const clearBtnStyle = {

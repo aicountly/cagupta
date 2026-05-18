@@ -223,6 +223,10 @@ class ServiceController extends BaseController
             'client_name'          => $body['client_name']          ?? null,
             'service_type'         => $serviceType,
             'financial_year'       => $body['financial_year']       ?? null,
+            'relevant_period_frequency' => $body['relevant_period_frequency'] ?? null,
+            'relevant_period_from'      => $body['relevant_period_from']      ?? null,
+            'relevant_period_to'        => $body['relevant_period_to']        ?? null,
+            'relevant_period_label'     => $body['relevant_period_label']     ?? null,
             'due_date'             => $body['due_date']             ?? null,
             'status'               => $body['status']               ?? 'not_started',
             'assigned_to'          => $assignedTo,
@@ -589,6 +593,7 @@ class ServiceController extends BaseController
 
         $allowed = [
             'status', 'assigned_to', 'due_date', 'fees', 'notes', 'priority', 'service_type', 'financial_year',
+            'relevant_period_frequency', 'relevant_period_from', 'relevant_period_to', 'relevant_period_label',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $body)) {
