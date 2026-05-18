@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, Plus, CheckSquare, Square, Trash2, FolderOpen, History, Pencil, ChevronDown } from 'lucide-react';
 import ServiceLogPanel from '../../../components/services/ServiceLogPanel';
 import DateInput from '../../../components/common/DateInput';
+import RelevantPeriodSelector from '../../../components/common/RelevantPeriodSelector';
 import { localDateKey, engagementDueDateKey } from '../../../utils/serviceKpiFilters';
 import { useStaffUsers } from '../../../hooks/useStaffUsers';
 import { useAuth } from '../../../auth/AuthContext';
@@ -93,6 +94,7 @@ export default function ServiceEngagementManage() {
 
   const [serviceType, setServiceType] = useState('');
   const [fy, setFy] = useState('');
+  const [relevantPeriod, setRelevantPeriod] = useState({ frequency: '', from: '', to: '', label: '' });
   const [status, setStatus] = useState('not_started');
   const [clientName, setClientName] = useState('');
   const [assigneeUserIds, setAssigneeUserIds] = useState([]);
@@ -244,6 +246,12 @@ export default function ServiceEngagementManage() {
         setClientName(eng.clientName || '');
         setServiceType(eng.type || '');
         setFy(eng.financialYear || '');
+        setRelevantPeriod({
+          frequency: eng.relevantPeriodFrequency || '',
+          from: eng.relevantPeriodFrom || '',
+          to: eng.relevantPeriodTo || '',
+          label: eng.relevantPeriodLabel || '',
+        });
         setStatus(eng.status || 'not_started');
         const ids = Array.isArray(eng.assigneeUserIds) && eng.assigneeUserIds.length > 0
           ? eng.assigneeUserIds.map(Number)
@@ -403,6 +411,10 @@ export default function ServiceEngagementManage() {
         tasks,
         type: serviceType.trim(),
         financialYear: fy.trim(),
+        relevantPeriodFrequency: relevantPeriod.frequency || null,
+        relevantPeriodFrom: relevantPeriod.from || null,
+        relevantPeriodTo: relevantPeriod.to || null,
+        relevantPeriodLabel: relevantPeriod.label || null,
       };
       const cfrChange = clientFacingRestricted !== initialClientFacing;
       if (cfrChange) {
@@ -1061,6 +1073,16 @@ export default function ServiceEngagementManage() {
             Service type / description
             <input value={serviceType} onChange={e => setServiceType(e.target.value)} style={inputStyle} placeholder="e.g. ITR filing" />
           </label>
+          <div style={{ ...fieldLabel, marginTop: 14 }}>
+            Relevant period
+            <RelevantPeriodSelector
+              frequency={relevantPeriod.frequency}
+              periodFrom={relevantPeriod.from}
+              periodTo={relevantPeriod.to}
+              periodLabel={relevantPeriod.label}
+              onChange={setRelevantPeriod}
+            />
+          </div>
           <label style={{ ...fieldLabel, marginTop: 14 }}>
             Financial year
             <input value={fy} onChange={e => setFy(e.target.value)} style={inputStyle} placeholder="e.g. 2025-26" />
