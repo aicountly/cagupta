@@ -792,7 +792,9 @@ class TxnModel
         }
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
         $stmt         = $this->db->prepare(
-            "SELECT c.id, c.name, cg.name AS group_name
+            "SELECT c.id,
+                    TRIM(COALESCE(c.first_name, '') || ' ' || COALESCE(c.last_name, '')) AS name,
+                    cg.name AS group_name
              FROM clients c
              LEFT JOIN client_groups cg ON cg.id = c.group_id
              WHERE c.id IN ({$placeholders})"
