@@ -504,6 +504,16 @@ export default function ServiceEngagementManage() {
 
   // ── Master Service handlers ─────────────────────────────────────────────────
 
+  function handleAddChildService() {
+    navigate('/engagements/new', {
+      state: {
+        parentServiceId: id,
+        parentServiceName: serviceType || `Service #${id}`,
+        parentIsMaster: isMasterService,
+      },
+    });
+  }
+
   async function handleToggleMaster(newValue) {
     if (!id || !canEditService) return;
     setMasterError('');
@@ -1273,6 +1283,13 @@ export default function ServiceEngagementManage() {
                   />
                   {masterToggleSaving ? 'Saving…' : 'Mark as Master Service'}
                 </label>
+                <button
+                  type="button"
+                  style={{ ...btnSecondary, fontSize: 12, padding: '4px 10px' }}
+                  onClick={handleAddChildService}
+                >
+                  <Plus size={12} /> Add Child Service
+                </button>
               </div>
               {masterServicesList.length > 0 && (
                 <div>
@@ -1324,6 +1341,13 @@ export default function ServiceEngagementManage() {
                     {linkedServicesSummary.completed}/{linkedServicesSummary.total} linked services completed
                   </span>
                 )}
+                <button
+                  type="button"
+                  style={{ ...btnSecondary, fontSize: 12, padding: '4px 10px', marginLeft: 'auto' }}
+                  onClick={handleAddChildService}
+                >
+                  <Plus size={12} /> Add Child Service
+                </button>
               </div>
 
               {/* Billing warning */}

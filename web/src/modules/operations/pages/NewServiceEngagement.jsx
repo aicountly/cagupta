@@ -254,6 +254,7 @@ export default function NewServiceEngagement() {
   const [fee, setFee] = useState('');
   const [notes, setNotes] = useState('');
   const [createChecklist, setCreateChecklist] = useState(false);
+  const [markAsMaster, setMarkAsMaster] = useState(false);
 
   const [masterClient, setMasterClient] = useState(null);
   const [approvedAffiliates, setApprovedAffiliates] = useState([]);
@@ -427,6 +428,15 @@ export default function NewServiceEngagement() {
           } catch (linkErr) {
             addNotification('New service engagement created', 'service');
             setToast('Service created, but linking failed: ' + (linkErr.message || 'Unknown error'));
+          }
+        } else if (markAsMaster && newEngagement?.id) {
+          try {
+            await toggleMasterService(newEngagement.id, true);
+            addNotification('New master service engagement created', 'service');
+            setToast('Engagement created as Master Service');
+          } catch {
+            addNotification('New service engagement created', 'service');
+            setToast('Engagement created (could not mark as master)');
           }
         } else {
           addNotification('New service engagement created', 'service');
@@ -725,6 +735,31 @@ export default function NewServiceEngagement() {
                     <span style={{ fontSize: 12, color: '#334155' }}>{task}</span>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Mark as Master Service toggle — hidden when this is already being created as a child */}
+            {!parentServiceId && (
+              <div
+                style={{ ...checklistToggle, marginTop: 8 }}
+                onClick={() => setMarkAsMaster(v => !v)}
+                role="checkbox"
+                aria-checked={markAsMaster}
+                tabIndex={0}
+                onKeyDown={e => e.key === ' ' && setMarkAsMaster(v => !v)}
+              >
+                {markAsMaster
+                  ? <CheckSquare size={18} color="#F37920" />
+                  : <Square size={18} color="#94a3b8" />
+                }
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#0B1F3B' }}>
+                    Mark as Master Service
+                  </div>
+                  <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                    This service will act as an umbrella for other related child services
+                  </div>
+                </div>
               </div>
             )}
           </FormSection>
