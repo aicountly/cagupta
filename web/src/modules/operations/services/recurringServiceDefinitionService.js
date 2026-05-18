@@ -52,7 +52,7 @@ function buildQuery(params = {}) {
  * @returns {Promise<{rows: Array, pagination: Object}>}
  */
 export async function getRecurringServices(params = {}) {
-  const res  = await fetch(`${API_BASE}/api/admin/recurring-services${buildQuery(params)}`, {
+  const res  = await fetch(`${API_BASE}/admin/recurring-services${buildQuery(params)}`, {
     headers: authHeaders(),
   });
   const json = await parseResponse(res);
@@ -65,7 +65,7 @@ export async function getRecurringServices(params = {}) {
 // ── GET single ────────────────────────────────────────────────────────────────
 
 export async function getRecurringService(id) {
-  const res  = await fetch(`${API_BASE}/api/admin/recurring-services/${id}`, {
+  const res  = await fetch(`${API_BASE}/admin/recurring-services/${id}`, {
     headers: authHeaders(),
   });
   const json = await parseResponse(res);
@@ -79,7 +79,7 @@ export async function getRecurringService(id) {
  * @returns {Promise<Object>}
  */
 export async function createRecurringService(data) {
-  const res  = await fetch(`${API_BASE}/api/admin/recurring-services`, {
+  const res  = await fetch(`${API_BASE}/admin/recurring-services`, {
     method:  'POST',
     headers: authHeaders(),
     body:    JSON.stringify(data),
@@ -96,7 +96,7 @@ export async function createRecurringService(data) {
  * @returns {Promise<Object>}
  */
 export async function updateRecurringService(id, data) {
-  const res  = await fetch(`${API_BASE}/api/admin/recurring-services/${id}`, {
+  const res  = await fetch(`${API_BASE}/admin/recurring-services/${id}`, {
     method:  'PUT',
     headers: authHeaders(),
     body:    JSON.stringify(data),
@@ -108,7 +108,7 @@ export async function updateRecurringService(id, data) {
 // ── DELETE ────────────────────────────────────────────────────────────────────
 
 export async function deleteRecurringService(id) {
-  const res  = await fetch(`${API_BASE}/api/admin/recurring-services/${id}`, {
+  const res  = await fetch(`${API_BASE}/admin/recurring-services/${id}`, {
     method:  'DELETE',
     headers: authHeaders(),
   });
@@ -125,7 +125,7 @@ export async function deleteRecurringService(id) {
  */
 export async function generatePeriods(id, upToDate) {
   const body = upToDate ? { up_to_date: upToDate } : {};
-  const res  = await fetch(`${API_BASE}/api/admin/recurring-services/${id}/generate`, {
+  const res  = await fetch(`${API_BASE}/admin/recurring-services/${id}/generate`, {
     method:  'POST',
     headers: authHeaders(),
     body:    JSON.stringify(body),
