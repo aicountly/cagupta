@@ -1680,6 +1680,7 @@ class TxnController extends BaseController
 
         $ledgerClass = LedgerDimensions::normalizeLedgerClass($this->query('ledger_class', ''));
         $viewRaw     = trim((string)$this->query('ledger_view', 'consolidated'));
+        $limit       = max(0, (int)$this->query('limit', 0));
         try {
             $ledgerView = LedgerDimensions::assertLedgerView($viewRaw !== '' ? $viewRaw : 'consolidated');
         } catch (\InvalidArgumentException $e) {
@@ -1687,9 +1688,9 @@ class TxnController extends BaseController
         }
 
         if ($orgId > 0) {
-            $entries = $this->txn->getLedgerByOrganization($orgId, $ledgerClass, $ledgerView);
+            $entries = $this->txn->getLedgerByOrganization($orgId, $ledgerClass, $ledgerView, $limit);
         } else {
-            $entries = $this->txn->getLedgerByClient($clientId, $ledgerClass, $ledgerView);
+            $entries = $this->txn->getLedgerByClient($clientId, $ledgerClass, $ledgerView, $limit);
         }
         $this->success($entries, 'Ledger retrieved');
     }

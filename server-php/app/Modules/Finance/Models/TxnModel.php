@@ -5,6 +5,7 @@ namespace App\Models;
 
 use App\Config\Database;
 use App\Models\AdminAuditLogModel;
+use App\Models\RecoveryLogModel;
 use App\Libraries\InvoiceLineCommission;
 use App\Libraries\LedgerDimensions;
 use App\Libraries\LedgerPresentation;
@@ -376,8 +377,9 @@ class TxnModel
      *
      * @return array<int, array<string, mixed>>
      */
-    public function getLedgerByClient(int $clientId, string $ledgerClass = LedgerDimensions::CLASS_REGULAR, string $ledgerView = LedgerDimensions::VIEW_CONSOLIDATED): array
+    public function getLedgerByClient(int $clientId, string $ledgerClass = LedgerDimensions::CLASS_REGULAR, string $ledgerView = LedgerDimensions::VIEW_CONSOLIDATED, int $limit = 0): array
     {
+        $limitSql = $limit > 0 ? ' LIMIT :limit' : '';
         $stmt = $this->db->prepare(
             'SELECT t.*
              FROM txn t
@@ -385,11 +387,16 @@ class TxnModel
                AND ' . self::sqlTxnVisibleOnEntityLedger('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
+            . $limitSql
         );
-        $stmt->execute([
-            ':client_id'     => $clientId,
+        $params = [
+            ':client_id'    => $clientId,
             ':ledger_class' => LedgerDimensions::normalizeLedgerClass($ledgerClass),
-        ]);
+        ];
+        if ($limit > 0) {
+            $params[':limit'] = $limit;
+        }
+        $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         foreach ($rows as &$row) {
             $this->decodeJsonbInvoiceFields($row);
@@ -404,8 +411,9 @@ class TxnModel
      *
      * @return array<int, array<string, mixed>>
      */
-    public function getLedgerByOrganization(int $orgId, string $ledgerClass = LedgerDimensions::CLASS_REGULAR, string $ledgerView = LedgerDimensions::VIEW_CONSOLIDATED): array
+    public function getLedgerByOrganization(int $orgId, string $ledgerClass = LedgerDimensions::CLASS_REGULAR, string $ledgerView = LedgerDimensions::VIEW_CONSOLIDATED, int $limit = 0): array
     {
+        $limitSql = $limit > 0 ? ' LIMIT :limit' : '';
         $stmt = $this->db->prepare(
             'SELECT t.*
              FROM txn t
@@ -413,11 +421,16 @@ class TxnModel
                AND ' . self::sqlTxnVisibleOnEntityLedger('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
+            . $limitSql
         );
-        $stmt->execute([
-            ':org_id'        => $orgId,
+        $params = [
+            ':org_id'       => $orgId,
             ':ledger_class' => LedgerDimensions::normalizeLedgerClass($ledgerClass),
-        ]);
+        ];
+        if ($limit > 0) {
+            $params[':limit'] = $limit;
+        }
+        $stmt->execute($params);
         $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
         foreach ($rows as &$row) {
             $this->decodeJsonbInvoiceFields($row);
@@ -700,6 +713,18 @@ class TxnModel
                 $closingSum += (float)($er[$slot]['ledgerClosing'] ?? 0);
             }
             $er['rowTotal'] = round($closingSum, 2);
+        }
+        unset($er);
+
+        // Attach the latest recovery log (due date, next follow-up) per entity.
+        $entityPairs = [];
+        foreach ($entityRows as $ek => $er) {
+            $entityPairs[] = [$er['entityType'], (int)$er['entityId']];
+        }
+        $logMap = (new RecoveryLogModel())->latestPerEntity($entityPairs);
+        foreach ($entityRows as $ek => &$er) {
+            $logKey       = $er['entityType'] . ':' . $er['entityId'];
+            $er['latestLog'] = $logMap[$logKey] ?? null;
         }
         unset($er);
 

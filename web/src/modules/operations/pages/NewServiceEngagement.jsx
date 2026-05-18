@@ -1,8 +1,8 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { ChevronRight, User, Building2, Search, X, CheckSquare, Square, Loader2 } from 'lucide-react';
 import { getCategories } from '../../../services/serviceCategoryService';
-import { createEngagement, ApiError } from '../../../services/engagementService';
+import { createEngagement, toggleMasterService, linkService, ApiError } from '../../../services/engagementService';
 import OpenEngagementConflictModal from '../../../components/services/OpenEngagementConflictModal';
 import { getContact, getContactsForSearch } from '../../../services/contactService';
 import { getOrganization, getOrganizationsForSearch } from '../../../services/organizationService';
@@ -201,7 +201,13 @@ const COMMISSION_MODE_LABELS = {
 
 export default function NewServiceEngagement() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { addNotification } = useNotification();
+
+  // Parent service context — set when navigated from "Add Child Service"
+  const parentServiceId = location.state?.parentServiceId ?? null;
+  const parentServiceName = location.state?.parentServiceName ?? null;
+  const parentIsMaster = location.state?.parentIsMaster ?? false;
 
   // Catalog loaded from API
   const [categories, setCategories] = useState([]);
@@ -409,9 +415,23 @@ export default function NewServiceEngagement() {
 
     setSaving(true);
     createEngagement(engagement)
-      .then(() => {
-        addNotification('New service engagement created', 'service');
-        setToast('Engagement created');
+      .then(async (newEngagement) => {
+        if (parentServiceId && newEngagement?.id) {
+          try {
+            if (!parentIsMaster) {
+              await toggleMasterService(parentServiceId, true);
+            }
+            await linkService(parentServiceId, newEngagement.id);
+            addNotification('Child service created and linked to master', 'service');
+            setToast('Child service created and linked');
+          } catch (linkErr) {
+            addNotification('New service engagement created', 'service');
+            setToast('Service created, but linking failed: ' + (linkErr.message || 'Unknown error'));
+          }
+        } else {
+          addNotification('New service engagement created', 'service');
+          setToast('Engagement created');
+        }
         setTimeout(() => navigate('/services'), 1200);
       })
       .catch(err => {
@@ -448,6 +468,14 @@ export default function NewServiceEngagement() {
       </div>
 
       <div style={pageTitle}>New Service Engagement</div>
+
+      {parentServiceId && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 16, background: '#FEF0E6', border: '1px solid rgba(243,121,32,0.35)', borderRadius: 8 }}>
+          <span style={{ fontSize: 13, color: '#C25A0A', fontWeight: 600 }}>Creating as child service of:</span>
+          <span style={{ fontSize: 13, color: '#0B1F3B', fontWeight: 700 }}>{parentServiceName || `Service #${parentServiceId}`}</span>
+          <span style={{ fontSize: 11, color: '#64748b', marginLeft: 'auto' }}>The parent will be marked as master and this service will be linked to it on save.</span>
+        </div>
+      )}
 
       {catalogStatus === 'loading' && (
         <div style={{ ...emptyCatalogCard, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>

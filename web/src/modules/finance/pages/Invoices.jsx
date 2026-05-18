@@ -12,6 +12,9 @@ import {
   getLedgerReconciliation,
   normalizeLedgerClassForApi,
 } from '../services/txnService';
+import {
+  getRecoveryLogs, createRecoveryLog, updateRecoveryLog,
+} from '../services/recoveryLogService';
 import { LastUpdatedByCell, TxnAuditLogModal } from '../../../components/finance/TxnAuditActivity';
 import { useAuth } from '../../../auth/AuthContext';
 import { getContact } from '../../../services/contactService';
@@ -178,6 +181,12 @@ const LEDGER_CLASS_OPTIONS = [
   { value: 'regular', label: 'Regular' },
   { value: 'memorandum', label: 'Memorandum' },
   { value: 'optional', label: 'Optional' },
+];
+
+// Extended options for the Ledger tab only — includes "All classes" consolidated view
+const LEDGER_CLASS_OPTIONS_WITH_ALL = [
+  { value: 'all', label: 'All classes' },
+  ...LEDGER_CLASS_OPTIONS,
 ];
 
 function ledgerClassLabel(value) {
@@ -3695,6 +3704,20 @@ export default function Invoices({ ledgerOnly = false }) {
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [recoveryError, setRecoveryError] = useState(null);
 
+  // ── Recovery Log modal state ─────────────────────────────────────────────────
+  const [recoveryLogModal, setRecoveryLogModal] = useState({ open: false, entityType: '', entityId: 0, displayName: '' });
+  const [recoveryLogEntries, setRecoveryLogEntries] = useState([]);
+  const [recoveryLogLoading, setRecoveryLogLoading] = useState(false);
+  const [recoveryLogSaving, setRecoveryLogSaving] = useState(false);
+  const [recoveryLogForm, setRecoveryLogForm] = useState({
+    log_date: '', followup_details: '', client_response: '',
+    next_followup_date: '', next_followup_details: '', revised_due_date: '',
+  });
+
+  // ── Ledger "all classes" + limit state ───────────────────────────────────────
+  const [ledgerLimit, setLedgerLimit] = useState(0);
+  const [ledgerAllClasses, setLedgerAllClasses] = useState(null);
+
   const paymentExpenseFetchParams = useMemo(() => {
     const params = { txnType: 'payment_expense', perPage: 100 };
     if (paymentsFilterByLedger && ledgerClientId) {
@@ -3726,6 +3749,88 @@ export default function Invoices({ ledgerOnly = false }) {
     else if (mk === 'fees') setLedgerLedgerView('fees');
     else setLedgerLedgerView('consolidated');
     setTab('ledger');
+  }
+
+  function openLedgerFromRecovery(ent) {
+    setLedgerEntityType(ent.entityType === 'organization' ? 'organization' : 'contact');
+    setLedgerClientId(String(ent.entityId));
+    setLedgerClientName(ent.displayName || '');
+    setLedgerLedgerClass('all');
+    setLedgerLedgerView('consolidated');
+    setLedgerLimit(50);
+    setLedgerAllClasses(null);
+    setTab('ledger');
+  }
+
+  function openRecoveryLogModal(ent) {
+    const today = new Date().toISOString().slice(0, 10);
+    setRecoveryLogForm({
+      log_date: today, followup_details: '', client_response: '',
+      next_followup_date: '', next_followup_details: '', revised_due_date: '',
+    });
+    setRecoveryLogEntries([]);
+    setRecoveryLogModal({ open: true, entityType: ent.entityType, entityId: ent.entityId, displayName: ent.displayName || '' });
+    setRecoveryLogLoading(true);
+    getRecoveryLogs({ entityType: ent.entityType, entityId: ent.entityId })
+      .then(setRecoveryLogEntries)
+      .catch(() => {})
+      .finally(() => setRecoveryLogLoading(false));
+  }
+
+  function closeRecoveryLogModal() {
+    setRecoveryLogModal({ open: false, entityType: '', entityId: 0, displayName: '' });
+  }
+
+  async function submitRecoveryLog(e) {
+    e.preventDefault();
+    setRecoveryLogSaving(true);
+    try {
+      const payload = {
+        entity_type:           recoveryLogModal.entityType,
+        entity_id:             recoveryLogModal.entityId,
+        log_date:              recoveryLogForm.log_date || new Date().toISOString().slice(0, 10),
+        followup_details:      recoveryLogForm.followup_details || null,
+        client_response:       recoveryLogForm.client_response || null,
+        next_followup_date:    recoveryLogForm.next_followup_date || null,
+        next_followup_details: recoveryLogForm.next_followup_details || null,
+        revised_due_date:      recoveryLogForm.revised_due_date || null,
+      };
+      const newLog = await createRecoveryLog(payload);
+      setRecoveryLogEntries((prev) => [newLog, ...prev]);
+      // Update the due date in the recovery report locally
+      if (recoveryReport) {
+        const entityKey = `${recoveryLogModal.entityType}:${recoveryLogModal.entityId}`;
+        setRecoveryReport((prev) => {
+          if (!prev) return prev;
+          const groups = prev.groups.map((g) => ({
+            ...g,
+            entities: g.entities.map((ent) => {
+              const ek = `${ent.entityType}:${ent.entityId}`;
+              if (ek !== entityKey) return ent;
+              return {
+                ...ent,
+                latestLog: {
+                  id: newLog.id,
+                  revised_due_date: newLog.revised_due_date,
+                  next_followup_date: newLog.next_followup_date,
+                  log_date: newLog.log_date,
+                },
+              };
+            }),
+          }));
+          return { ...prev, groups };
+        });
+      }
+      const today = new Date().toISOString().slice(0, 10);
+      setRecoveryLogForm({
+        log_date: today, followup_details: '', client_response: '',
+        next_followup_date: '', next_followup_details: '', revised_due_date: '',
+      });
+    } catch (err) {
+      alert('Failed to save: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setRecoveryLogSaving(false);
+    }
   }
 
   // ── Service billing tab ─────────────────────────────────────────────────────
@@ -3852,34 +3957,53 @@ export default function Invoices({ ledgerOnly = false }) {
   useEffect(() => {
     if ((tab !== 'ledger' && tab !== 'bill_settlement') || !ledgerClientId) return;
     setLedgerLoading(true);
-    const ledgerParam = ledgerEntityType === 'organization'
-      ? {
-        organizationId: ledgerClientId,
-        ledgerClass:    ledgerLedgerClass,
-        ledgerView:     ledgerLedgerView,
-      }
-      : {
-        clientId:    ledgerClientId,
+    setLedgerAllClasses(null);
+
+    const isAll = ledgerLedgerClass === 'all';
+    const entityBase = ledgerEntityType === 'organization'
+      ? { organizationId: ledgerClientId }
+      : { clientId: ledgerClientId };
+
+    const obPromise = getOpeningBalance(entityBase).catch(() => []);
+
+    if (isAll) {
+      // Fetch all three ledger classes in parallel
+      const classes = ['regular', 'memorandum', 'optional'];
+      const fetches = classes.map((lc) =>
+        getLedger({ ...entityBase, ledgerClass: lc, ledgerView: ledgerLedgerView, limit: ledgerLimit || undefined }).catch(() => [])
+      );
+      Promise.all([Promise.all(fetches), obPromise]).then(([[regular, memorandum, optional], obs]) => {
+        setLedgerAllClasses({ regular, memorandum, optional });
+        setLedger(regular); // keep regular as primary for FY selector
+        setOpeningBalances(obs);
+        setLedgerFyStartYear((prev) => {
+          const allEntries = [...regular, ...memorandum, ...optional];
+          const fys = collectIndianFYStartYearsWithFallback(allEntries);
+          if (prev != null && fys.includes(prev)) return prev;
+          return fys[fys.length - 1];
+        });
+      }).finally(() => setLedgerLoading(false));
+    } else {
+      const ledgerParam = {
+        ...entityBase,
         ledgerClass: ledgerLedgerClass,
         ledgerView:  ledgerLedgerView,
+        ...(ledgerLimit > 0 ? { limit: ledgerLimit } : {}),
       };
-    Promise.all([
-      getLedger(ledgerParam).catch(() => []),
-      getOpeningBalance(
-        ledgerEntityType === 'organization'
-          ? { organizationId: ledgerClientId }
-          : { clientId: ledgerClientId },
-      ).catch(() => []),
-    ]).then(([entries, obs]) => {
-      setLedger(entries);
-      setOpeningBalances(obs);
-      setLedgerFyStartYear((prev) => {
-        const fys = collectIndianFYStartYearsWithFallback(entries);
-        if (prev != null && fys.includes(prev)) return prev;
-        return fys[fys.length - 1];
-      });
-    }).finally(() => setLedgerLoading(false));
-  }, [tab, ledgerClientId, ledgerEntityType, ledgerLedgerClass, ledgerLedgerView]);
+      Promise.all([
+        getLedger(ledgerParam).catch(() => []),
+        obPromise,
+      ]).then(([entries, obs]) => {
+        setLedger(entries);
+        setOpeningBalances(obs);
+        setLedgerFyStartYear((prev) => {
+          const fys = collectIndianFYStartYearsWithFallback(entries);
+          if (prev != null && fys.includes(prev)) return prev;
+          return fys[fys.length - 1];
+        });
+      }).finally(() => setLedgerLoading(false));
+    }
+  }, [tab, ledgerClientId, ledgerEntityType, ledgerLedgerClass, ledgerLedgerView, ledgerLimit]);
 
   useEffect(() => {
     if (tab !== 'bill_settlement' || !ledgerClientId) {
@@ -4648,6 +4772,97 @@ export default function Invoices({ ledgerOnly = false }) {
       {txnAuditModalTxn && (
         <TxnAuditLogModal key={txnAuditModalTxn.id} txn={txnAuditModalTxn} onClose={() => setTxnAuditModalTxn(null)} />
       )}
+
+      {/* ── Recovery Log Modal ────────────────────────────────────────────────── */}
+      {recoveryLogModal.open && (
+        <div
+          style={{ ...overlayStyle, zIndex: 1200, alignItems: 'flex-start', paddingTop: 40, paddingBottom: 40, overflowY: 'auto' }}
+          role="presentation"
+          onClick={closeRecoveryLogModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 680, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', overflow: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#f8fafc' }}>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>Recovery Log</div>
+                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{recoveryLogModal.displayName} · {recoveryLogModal.entityType === 'organization' ? 'Organization' : 'Contact'}</div>
+              </div>
+              <button type="button" onClick={closeRecoveryLogModal} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#64748b', lineHeight: 1 }}>×</button>
+            </div>
+
+            {/* New entry form */}
+            <form onSubmit={submitRecoveryLog} style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 12 }}>Add follow-up entry</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px', marginBottom: 10 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#475569' }}>
+                  Log date *
+                  <input type="date" value={recoveryLogForm.log_date} onChange={(e) => setRecoveryLogForm((p) => ({ ...p, log_date: e.target.value }))} required style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#475569' }}>
+                  Revised due date
+                  <input type="date" value={recoveryLogForm.revised_due_date} onChange={(e) => setRecoveryLogForm((p) => ({ ...p, revised_due_date: e.target.value }))} style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#475569' }}>
+                  Next follow-up date
+                  <input type="date" value={recoveryLogForm.next_followup_date} onChange={(e) => setRecoveryLogForm((p) => ({ ...p, next_followup_date: e.target.value }))} style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13 }} />
+                </label>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#475569' }}>
+                  Follow-up details
+                  <textarea rows={2} value={recoveryLogForm.followup_details} onChange={(e) => setRecoveryLogForm((p) => ({ ...p, followup_details: e.target.value }))} placeholder="What was discussed in this follow-up?" style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, resize: 'vertical' }} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#475569' }}>
+                  Client response
+                  <textarea rows={2} value={recoveryLogForm.client_response} onChange={(e) => setRecoveryLogForm((p) => ({ ...p, client_response: e.target.value }))} placeholder="What did the client say?" style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, resize: 'vertical' }} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#475569' }}>
+                  Next follow-up details
+                  <textarea rows={2} value={recoveryLogForm.next_followup_details} onChange={(e) => setRecoveryLogForm((p) => ({ ...p, next_followup_details: e.target.value }))} placeholder="What to do in the next follow-up?" style={{ padding: '6px 8px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, resize: 'vertical' }} />
+                </label>
+              </div>
+              <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button type="button" onClick={closeRecoveryLogModal} style={{ padding: '7px 18px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', color: '#475569', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+                <button type="submit" disabled={recoveryLogSaving} style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: '#4f46e5', color: '#fff', cursor: recoveryLogSaving ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13 }}>
+                  {recoveryLogSaving ? 'Saving…' : 'Save entry'}
+                </button>
+              </div>
+            </form>
+
+            {/* History */}
+            <div style={{ padding: '14px 20px', maxHeight: 340, overflowY: 'auto' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: '#334155', marginBottom: 10 }}>History</div>
+              {recoveryLogLoading ? (
+                <div style={{ color: '#94a3b8', fontSize: 13 }}>Loading…</div>
+              ) : recoveryLogEntries.length === 0 ? (
+                <div style={{ color: '#94a3b8', fontSize: 13 }}>No entries yet. Add the first one above.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {recoveryLogEntries.map((log) => (
+                    <div key={log.id} style={{ border: '1px solid #e2e8f0', borderRadius: 8, padding: '10px 14px', background: '#f8fafc' }}>
+                      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 6, fontSize: 11, color: '#64748b' }}>
+                        <span><strong style={{ color: '#0f172a' }}>Date:</strong> {log.log_date}</span>
+                        {log.revised_due_date && <span><strong style={{ color: '#dc2626' }}>Due:</strong> {log.revised_due_date}</span>}
+                        {log.next_followup_date && <span><strong style={{ color: '#0284c7' }}>Next follow-up:</strong> {log.next_followup_date}</span>}
+                        {log.created_by_name && <span>by {log.created_by_name}</span>}
+                      </div>
+                      {log.followup_details && <div style={{ fontSize: 12, color: '#334155', marginBottom: 4 }}><strong>Follow-up:</strong> {log.followup_details}</div>}
+                      {log.client_response && <div style={{ fontSize: 12, color: '#334155', marginBottom: 4 }}><strong>Client response:</strong> {log.client_response}</div>}
+                      {log.next_followup_details && <div style={{ fontSize: 12, color: '#334155' }}><strong>Next action:</strong> {log.next_followup_details}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {ledgerReconcileModalOpen && (
         <div
           style={{ ...overlayStyle, zIndex: 1100 }}
@@ -5616,11 +5831,11 @@ export default function Invoices({ ledgerOnly = false }) {
                 <div style={ledgerToolbarGroupStyle}>
                   <span style={ledgerToolbarLabelStyle}>Ledger type:</span>
                   <select
-                    style={{ ...ledgerToolbarSelectStyle, minWidth: 116 }}
+                    style={{ ...ledgerToolbarSelectStyle, minWidth: 130 }}
                     value={ledgerLedgerClass}
-                    onChange={(e) => setLedgerLedgerClass(e.target.value)}
+                    onChange={(e) => { setLedgerLedgerClass(e.target.value); setLedgerLimit(0); }}
                   >
-                    {LEDGER_CLASS_OPTIONS.map((o) => (
+                    {LEDGER_CLASS_OPTIONS_WITH_ALL.map((o) => (
                       <option key={o.value} value={o.value}>{o.label}</option>
                     ))}
                   </select>
@@ -5753,6 +5968,19 @@ export default function Invoices({ ledgerOnly = false }) {
                 >
                   Ledger reconciliation
                 </button>
+                {ledgerClientId && (
+                  <button
+                    type="button"
+                    style={{ ...btnSecondary, fontSize:12, padding:'6px 12px', whiteSpace:'nowrap', borderColor: '#6366f1', color: '#4338ca' }}
+                    onClick={() => openRecoveryLogModal({
+                      entityType: ledgerEntityType === 'organization' ? 'organization' : 'client',
+                      entityId: parseInt(ledgerClientId, 10),
+                      displayName: ledgerClientName,
+                    })}
+                  >
+                    Recovery Log
+                  </button>
+                )}
               </div>
             )}
             </div>
@@ -5786,9 +6014,68 @@ export default function Invoices({ ledgerOnly = false }) {
               )}
             </div>
           )}
+          {ledgerClientId && ledgerLimit > 0 && (
+            <div style={{ padding: '6px 16px', background: '#fffbeb', borderBottom: '1px solid #fde68a', fontSize: 12, color: '#92400e', display: 'flex', alignItems: 'center', gap: 12 }}>
+              Showing last {ledgerLimit} transactions.
+              <button type="button" onClick={() => setLedgerLimit(0)} style={{ fontSize: 11, padding: '2px 10px', borderRadius: 5, border: '1px solid #b45309', background: 'none', color: '#b45309', cursor: 'pointer' }}>
+                View all
+              </button>
+            </div>
+          )}
           {!ledgerClientId ? (
             <div style={{ padding:32, textAlign:'center', color:'#94a3b8', fontSize:13 }}>
               Search for a client above to view their ledger.
+            </div>
+          ) : ledgerLedgerClass === 'all' ? (
+            // ── All-classes consolidated view ──────────────────────────────────
+            <div>
+              {ledgerLoading ? (
+                <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>Loading ledger…</div>
+              ) : (['regular', 'memorandum', 'optional'].map((cls) => {
+                const clsRows = ledgerAllClasses?.[cls] || [];
+                return (
+                  <div key={cls}>
+                    <div style={{ padding: '8px 16px', background: '#f1f5f9', borderBottom: '1px solid #e2e8f0', fontWeight: 700, fontSize: 13, color: '#334155', display: 'flex', alignItems: 'center', gap: 10 }}>
+                      {cls.charAt(0).toUpperCase() + cls.slice(1)} Ledger
+                      <span style={{ fontWeight: 400, fontSize: 11, color: '#64748b' }}>({clsRows.length} entries)</span>
+                    </div>
+                    {clsRows.length === 0 ? (
+                      <div style={{ padding: '12px 16px', color: '#94a3b8', fontSize: 12 }}>No entries in this ledger class.</div>
+                    ) : (
+                      <table style={{ ...tableStyle, marginBottom: 0 }}>
+                        <thead>
+                          <tr>
+                            {['Date','Entry Type','Narration','Details','Billing Profile','Debit (Dr)','Credit (Cr)','Balance'].map(h=>(
+                              <th key={h} style={thStyle}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {clsRows.map((e, i) => (
+                            <tr
+                              key={e.synthetic ? e.id : `${e.id ?? 'row'}-${i}`}
+                              style={{
+                                ...trStyle,
+                                ...(e.txnType === 'opening_balance' ? { background: '#fffbeb' } : {}),
+                                ...(e.txnType === 'brought_forward' ? { background: '#f1f5f9' } : {}),
+                              }}
+                            >
+                              <td style={tdStyle}>{e.txnDate || e.date || '—'}</td>
+                              <td style={tdStyle}><TxnTypeBadge type={e.txnType} /></td>
+                              <td style={{ ...tdStyle, fontStyle: e.txnType === 'opening_balance' || e.txnType === 'brought_forward' ? 'italic' : 'normal' }}>{e.narration || '—'}</td>
+                              <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 280, fontSize: 12, color: '#64748b' }}>{buildLedgerDetailLine(e) || '—'}</td>
+                              <td style={tdStyle}><BillingProfileBadge code={e.billingProfileCode} /></td>
+                              <td style={{ ...tdStyle, color:'#dc2626', fontWeight: e.debit?600:400 }}>{e.debit ? `₹${parseFloat(e.debit).toLocaleString('en-IN')}` : '—'}</td>
+                              <td style={{ ...tdStyle, color:'#16a34a', fontWeight: e.credit?600:400 }}>{e.credit ? `₹${parseFloat(e.credit).toLocaleString('en-IN')}` : '—'}</td>
+                              <td style={{ ...tdStyle, fontWeight:700 }}>₹{parseFloat(e.balance || 0).toLocaleString('en-IN')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                );
+              }))}
             </div>
           ) : (
             <table style={tableStyle}>
@@ -5845,7 +6132,7 @@ export default function Invoices({ ledgerOnly = false }) {
               </div>
             )}
           </div>
-          <table style={{ ...tableStyle, minWidth: 960 }}>
+          <table style={{ ...tableStyle, minWidth: 1100 }}>
             <thead>
               <tr>
                 <th rowSpan={2} style={thStyle}>Entity</th>
@@ -5853,6 +6140,8 @@ export default function Invoices({ ledgerOnly = false }) {
                 <th colSpan={3} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Memorandum</th>
                 <th colSpan={3} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Optional</th>
                 <th rowSpan={2} style={{ ...thStyle, textAlign: 'right', borderLeft: '1px solid #e2e8f0' }}>Total</th>
+                <th rowSpan={2} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Due Date</th>
+                <th rowSpan={2} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Actions</th>
               </tr>
               <tr>
                 {['regular', 'memorandum', 'optional'].flatMap((k) => (
@@ -5865,28 +6154,28 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {recoveryLoading && (
                 <tr>
-                  <td colSpan={11} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
+                  <td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
                     Loading recovery list…
                   </td>
                 </tr>
               )}
               {!recoveryLoading && recoveryError && (
                 <tr>
-                  <td colSpan={11} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#dc2626', background: '#fef2f2' }}>
+                  <td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#dc2626', background: '#fef2f2' }}>
                     ⚠ Failed to load recovery list: {recoveryError}
                   </td>
                 </tr>
               )}
               {!recoveryLoading && !recoveryError && (!recoveryReport?.groups || recoveryReport.groups.length === 0) && (recoveryReport?.kpiTotalReceivable ?? 0) > 0.01 && (
                 <tr>
-                  <td colSpan={11} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#92400e', background: '#fffbeb' }}>
+                  <td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#92400e', background: '#fffbeb' }}>
                     Dashboard KPI shows ₹{(recoveryReport.kpiTotalReceivable).toLocaleString('en-IN', { minimumFractionDigits: 2 })} receivable but no records are displaying — please contact support or reload.
                   </td>
                 </tr>
               )}
               {!recoveryLoading && !recoveryError && (!recoveryReport?.groups || recoveryReport.groups.length === 0) && (recoveryReport?.kpiTotalReceivable ?? 0) <= 0.01 && (
                 <tr>
-                  <td colSpan={11} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
+                  <td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
                     No receivable balances to show (or no client / org ledger data yet).
                   </td>
                 </tr>
@@ -5898,7 +6187,7 @@ export default function Invoices({ ledgerOnly = false }) {
                 return (
                   <Fragment key={g.groupKey}>
                     <tr style={{ background: '#eef2ff' }}>
-                      <td colSpan={11} style={{ ...tdStyle, fontWeight: 700, color: '#312e81' }}>
+                      <td colSpan={13} style={{ ...tdStyle, fontWeight: 700, color: '#312e81' }}>
                         {g.groupLabel}
                         <span style={{ fontWeight: 500, color: '#6366f1', marginLeft: 8 }}>
                           — Group total ₹{g.groupTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -5906,7 +6195,11 @@ export default function Invoices({ ledgerOnly = false }) {
                       </td>
                     </tr>
                     {g.entities.map((ent) => (
-                      <tr key={`${ent.entityType}-${ent.entityId}`} style={trStyle}>
+                      <tr
+                        key={`${ent.entityType}-${ent.entityId}`}
+                        style={{ ...trStyle, cursor: 'pointer' }}
+                        onClick={() => openLedgerFromRecovery(ent)}
+                      >
                         <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 220 }}>
                           <div style={{ fontWeight: 600 }}>{ent.displayName || '—'}</div>
                           <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
@@ -5923,6 +6216,22 @@ export default function Invoices({ ledgerOnly = false }) {
                         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>
                           {recoveryMoney(ent.rowTotal)}
                         </td>
+                        <td style={{ ...tdStyle, textAlign: 'center', whiteSpace: 'nowrap', color: ent.latestLog?.revised_due_date ? '#0f172a' : '#94a3b8', fontSize: 12 }}>
+                          {ent.latestLog?.revised_due_date
+                            ? new Date(ent.latestLog.revised_due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                            : '—'}
+                        </td>
+                        <td
+                          style={{ ...tdStyle, textAlign: 'center' }}
+                          onClick={(e) => { e.stopPropagation(); openRecoveryLogModal(ent); }}
+                        >
+                          <button
+                            type="button"
+                            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, border: '1px solid #6366f1', background: '#eef2ff', color: '#4338ca', cursor: 'pointer', fontWeight: 600 }}
+                          >
+                            Log
+                          </button>
+                        </td>
                       </tr>
                     ))}
                     <tr style={{ background: '#f8fafc', fontWeight: 600 }}>
@@ -5937,6 +6246,7 @@ export default function Invoices({ ledgerOnly = false }) {
                       <td style={{ ...tdStyle, textAlign: 'right' }}>
                         {recoveryMoney(g.groupTotal)}
                       </td>
+                      <td colSpan={2} style={tdStyle} />
                     </tr>
                   </Fragment>
                 );
@@ -5957,6 +6267,7 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={{ ...tdStyle, textAlign: 'right', color: '#dc2626' }}>
                     {recoveryMoney(recoveryReport.totals.grand)}
                   </td>
+                  <td colSpan={2} style={tdStyle} />
                 </tr>
               )}
             </tbody>

@@ -1198,6 +1198,26 @@ class Routes
                 'middleware' => ['auth', 'permission:settings.view'],
             ],
 
+            // ── Admin — Recovery Logs ────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/recovery-logs',
+                'handler'    => 'Admin\RecoveryLogController@index',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/recovery-logs',
+                'handler'    => 'Admin\RecoveryLogController@store',
+                'middleware' => ['auth', 'permission:invoices.edit'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/recovery-logs/:id',
+                'handler'    => 'Admin\RecoveryLogController@update',
+                'middleware' => ['auth', 'permission:invoices.edit'],
+            ],
+
             // ── Admin — Opening Balances ──────────────────────────────────────
             [
                 'method'     => 'GET',

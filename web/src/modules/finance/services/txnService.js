@@ -365,6 +365,7 @@ export async function getLedger(clientIdOrObj) {
     if (clientIdOrObj.organizationId) params.set('organization_id', clientIdOrObj.organizationId);
     if (clientIdOrObj.ledgerClass)    params.set('ledger_class', clientIdOrObj.ledgerClass);
     if (clientIdOrObj.ledgerView)     params.set('ledger_view', clientIdOrObj.ledgerView);
+    if (clientIdOrObj.limit)          params.set('limit', String(clientIdOrObj.limit));
   } else if (clientIdOrObj) {
     // backward-compatible: plain number/string treated as clientId
     params.set('client_id', clientIdOrObj);

@@ -165,6 +165,17 @@ export default function ServicesEngagementTableBlock({
     getTimeEntries(selectedService.id).then(setServiceTimeEntries).catch(() => setServiceTimeEntries([]));
   }, [selectedService?.id]);
 
+  function handleAddChildService() {
+    if (!selectedService) return;
+    navigate('/engagements/new', {
+      state: {
+        parentServiceId: selectedService.id,
+        parentServiceName: selectedService.serviceType || selectedService.type || `Service #${selectedService.id}`,
+        parentIsMaster: selectedService.isMasterService,
+      },
+    });
+  }
+
   function handleAddTask(taskData) {
     if (!selectedService) return;
     createTask(selectedService.id, taskData)
@@ -641,7 +652,10 @@ export default function ServicesEngagementTableBlock({
 
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <span style={{ fontWeight: 700, fontSize: 13, color: '#0B1F3B' }}>Tasks</span>
-              <button type="button" style={btnSecondary} onClick={() => setShowAddTask(true)}><Plus size={12} /> Add Task</button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button type="button" style={btnSecondary} onClick={() => setShowAddTask(true)}><Plus size={12} /> Add Task</button>
+                <button type="button" style={btnSecondary} onClick={handleAddChildService}><Plus size={12} /> Add Child Service</button>
+              </div>
             </div>
 
             {serviceTasks.length === 0 && (
