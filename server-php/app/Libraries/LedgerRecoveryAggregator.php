@@ -36,11 +36,22 @@ final class LedgerRecoveryAggregator
         self::accumulateFeesView($rows, $invoiceById, $fees, $tax);
         self::accumulateReimbursementView($rows, $invoiceById, $reimbursement, $tax);
 
+        $fees          = round($fees, 2);
+        $tax           = round($tax, 2);
+        $reimbursement = round($reimbursement, 2);
+        $split         = round($fees + $tax + $reimbursement, 2);
+        // Dashboard receivable uses raw debit−credit closing. The split above needs structured
+        // invoice line_items; legacy or header-only invoices can yield split ≈ 0 while closing
+        // is still positive. Attribute the gap to professional fees so recovery rows and KPI align.
+        if ($consolidated > 0.02 && $split + 0.02 < $consolidated) {
+            $fees = round($fees + ($consolidated - $split), 2);
+        }
+
         return [
             'consolidated_closing' => $consolidated,
-            'fees'                 => round($fees, 2),
-            'taxes'                => round($tax, 2),
-            'reimbursement'        => round($reimbursement, 2),
+            'fees'                 => $fees,
+            'taxes'                => $tax,
+            'reimbursement'        => $reimbursement,
         ];
     }
 
