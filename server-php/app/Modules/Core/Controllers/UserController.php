@@ -53,14 +53,7 @@ class UserController extends BaseController
 
         $result = $this->users->paginate($page, $perPage, $search, $role, $status, $delegatorId);
 
-        $users = array_map(static function (array $u): array {
-            $u['shift_target_disabled'] = UserController::coerceBool($u['shift_target_disabled'] ?? false);
-            if (isset($u['shift_target_minutes'])) {
-                $u['shift_target_minutes'] = (int)$u['shift_target_minutes'];
-            }
-
-            return $u;
-        }, $result['users']);
+        $users = array_map(fn (array $u): array => $this->formatUserRow($u), $result['users']);
 
         $this->success($users, 'Users retrieved', 200, [
             'pagination' => [
@@ -468,11 +461,21 @@ class UserController extends BaseController
         if ($user === null) {
             return [];
         }
+
+        $roleName = $user['role_name'] ?? null;
+        if ($this->isSuperAdminEmail((string)($user['email'] ?? ''))) {
+            $roleName = 'super_admin';
+        }
+
         return [
             'id'           => (int)$user['id'],
             'name'         => $user['name'],
             'email'        => $user['email'],
-            'role'         => $user['role_name'] ?? null,
+            'role_id'      => isset($user['role_id']) && $user['role_id'] !== null && $user['role_id'] !== ''
+                ? (int)$user['role_id']
+                : null,
+            'role'         => $roleName,
+            'role_name'    => $roleName,
             'role_display' => $user['role_display_name'] ?? null,
             'is_active'    => (bool)$user['is_active'],
             'is_email_verified' => (bool)$user['is_email_verified'],

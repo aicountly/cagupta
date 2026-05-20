@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { getLeads, createLead, updateLead } from '../services/leadService';
 import { createContact } from '../services/contactService';
-import { getOrganizations, createOrganization } from '../services/organizationService';
+import { createOrganization } from '../services/organizationService';
 import ClientSearchDropdown from '../../../components/common/ClientSearchDropdown';
+import OrganizationSearchDropdown from '../../../components/common/OrganizationSearchDropdown';
 import DateInput from '../../../components/common/DateInput';
 import { useStaffUsers } from '../../../hooks/useStaffUsers';
 import StatusBadge from '../../../components/common/StatusBadge';
@@ -43,7 +44,6 @@ export default function Leads() {
   const [tab, setTab] = useState('pipeline');
   const [selected, setSelected] = useState(null);
   const [leads, setLeads] = useState([]);
-  const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showNewLeadModal, setShowNewLeadModal] = useState(false);
   const [editLeadId, setEditLeadId] = useState(null);
@@ -72,9 +72,6 @@ export default function Leads() {
       .then(data => setLeads(data))
       .catch(() => setLeads([]))
       .finally(() => setLoading(false));
-    getOrganizations()
-      .then(data => setOrganizations(data))
-      .catch(() => setOrganizations([]));
     getQuotationDefaults()
       .then(rows => setEngTypes([...rows].sort((a, b) =>
         `${a.category_name} ${a.engagement_type_name}`.localeCompare(`${b.category_name} ${b.engagement_type_name}`),
@@ -182,10 +179,6 @@ export default function Leads() {
 
   function openEditModal(l) {
     const ct = leadClientTypeFromRow(l);
-    const orgName =
-      ct === 'organization' && l.organizationId
-        ? organizations.find(o => o.id === l.organizationId)?.displayName || ''
-        : '';
     setForm({
       clientType: ct,
       contactId: ct === 'contact' ? l.contactId || null : null,
@@ -195,7 +188,7 @@ export default function Leads() {
       organizationMode: 'existing',
       newOrgName: '', newOrgEmail: '', newOrgPhone: '',
       organizationId: ct === 'organization' ? l.organizationId || null : null,
-      organizationName: orgName,
+      organizationName: ct === 'organization' ? l.organizationName || '' : '',
       company: l.company || '', email: l.email || '', phone: l.phone || '',
       source: l.source, stage: l.stage,
       estimatedValue: l.estimatedValue || '',
@@ -215,10 +208,6 @@ export default function Leads() {
     const l = leads.find(x => String(x.id) === String(raw));
     if (l) {
       const ct = leadClientTypeFromRow(l);
-      const orgName =
-        ct === 'organization' && l.organizationId
-          ? organizations.find(o => o.id === l.organizationId)?.displayName || ''
-          : '';
       setForm({
         clientType: ct,
         contactId: ct === 'contact' ? l.contactId || null : null,
@@ -228,7 +217,7 @@ export default function Leads() {
         organizationMode: 'existing',
         newOrgName: '', newOrgEmail: '', newOrgPhone: '',
         organizationId: ct === 'organization' ? l.organizationId || null : null,
-        organizationName: orgName,
+        organizationName: ct === 'organization' ? l.organizationName || '' : '',
         company: l.company || '', email: l.email || '', phone: l.phone || '',
         source: l.source, stage: l.stage,
         estimatedValue: l.estimatedValue || '',
@@ -244,7 +233,7 @@ export default function Leads() {
     const next = new URLSearchParams(searchParams);
     next.delete('openLead');
     setSearchParams(next, { replace: true });
-  }, [searchParams, leads, organizations, setSearchParams]);
+  }, [searchParams, leads, setSearchParams]);
 
   function setLeadClientType(next) {
     setForm(v => {
@@ -312,19 +301,13 @@ export default function Leads() {
           });
           organizationId = newOrg.id;
           contactNameForApi = newOrg.displayName;
-          setOrganizations(prev =>
-            prev.some(o => o.id === newOrg.id) ? prev : [...prev, newOrg],
-          );
         } catch {
           addNotification('Could not create the organization. Fix any errors and try again.', 'warning');
           return;
         }
       } else {
         organizationId = form.organizationId;
-        contactNameForApi =
-          form.organizationName ||
-          organizations.find(o => o.id === form.organizationId)?.displayName ||
-          '';
+        contactNameForApi = form.organizationName || '';
       }
     } else {
       contactId = form.contactId || null;
@@ -357,21 +340,20 @@ export default function Leads() {
       estimatedValue: Number(form.estimatedValue) || 0,
     };
 
-    if (editLeadId) {
-      updateLead(editLeadId, payload)
-        .then(updated => {
-          setLeads(prev => prev.map(l => l.id === editLeadId ? updated : l));
-        })
-        .catch(() => {});
-    } else {
-      createLead({ ...payload, probability: 50 })
-        .then(newLead => {
-          setLeads(prev => [...prev, newLead]);
-          addNotification('New lead: ' + contactNameForApi, 'lead');
-        })
-        .catch(() => {});
+    try {
+      if (editLeadId) {
+        const updated = await updateLead(editLeadId, payload);
+        setLeads(prev => prev.map(l => l.id === editLeadId ? updated : l));
+        addNotification('Lead updated', 'lead');
+      } else {
+        const newLead = await createLead({ ...payload, probability: 50 });
+        setLeads(prev => [...prev, newLead]);
+        addNotification('New lead: ' + contactNameForApi, 'lead');
+      }
+      setShowNewLeadModal(false);
+    } catch (err) {
+      addNotification(err.message || 'Could not save lead. Please try again.', 'warning');
     }
-    setShowNewLeadModal(false);
   }
 
   return (
@@ -687,24 +669,17 @@ export default function Leads() {
                     </button>
                   </div>
                   {form.organizationMode === 'existing' ? (
-                    <select
-                      value={form.organizationId || ''}
-                      onChange={e => {
-                        const id = e.target.value ? Number(e.target.value) : null;
-                        const org = id ? organizations.find(o => o.id === id) : null;
-                        setForm(v => ({
-                          ...v,
-                          organizationId: id,
-                          organizationName: org?.displayName || '',
-                        }));
-                      }}
-                      style={inputStyle}
-                    >
-                      <option value="">— Select organization —</option>
-                      {organizations.map(o => (
-                        <option key={o.id} value={o.id}>{o.displayName}</option>
-                      ))}
-                    </select>
+                    <OrganizationSearchDropdown
+                      value={form.organizationId}
+                      displayValue={form.organizationName}
+                      placeholder="Search organization by name…"
+                      onChange={org => setForm(v => ({
+                        ...v,
+                        organizationId: org.id,
+                        organizationName: org.displayName,
+                      }))}
+                      style={{ width: '100%' }}
+                    />
                   ) : (
                     <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px, 1fr))', gap:8 }}>
                       <div>

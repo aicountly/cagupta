@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Models\LeadModel;
+use App\Models\OrganizationModel;
 
 /**
  * LeadController — CRUD for the `leads` table.
@@ -14,10 +15,29 @@ use App\Models\LeadModel;
 class LeadController extends BaseController
 {
     private LeadModel $leads;
+    private OrganizationModel $orgs;
 
     public function __construct()
     {
         $this->leads = new LeadModel();
+        $this->orgs  = new OrganizationModel();
+    }
+
+    /**
+     * Validate that organization_id refers to an existing organization.
+     */
+    private function validateOrganizationId(mixed $orgId): void
+    {
+        if ($orgId === null || $orgId === '' || $orgId === 0) {
+            return;
+        }
+        $id = (int)$orgId;
+        if ($id <= 0) {
+            $this->error('Invalid organization_id.', 422);
+        }
+        if ($this->orgs->find($id) === null) {
+            $this->error('Organization not found.', 422);
+        }
     }
 
     // ── GET /api/admin/leads ─────────────────────────────────────────────────
@@ -63,6 +83,8 @@ class LeadController extends BaseController
         if ($name === '') {
             $this->error('name (contact name) is required.', 422);
         }
+
+        $this->validateOrganizationId($body['organization_id'] ?? null);
 
         $actingUser = $this->authUser();
 
@@ -130,6 +152,10 @@ class LeadController extends BaseController
             if (array_key_exists($field, $body)) {
                 $data[$field] = $body[$field];
             }
+        }
+
+        if (array_key_exists('organization_id', $body)) {
+            $this->validateOrganizationId($body['organization_id']);
         }
 
         $this->leads->update($id, $data);

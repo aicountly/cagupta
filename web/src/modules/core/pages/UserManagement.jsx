@@ -57,6 +57,18 @@ function StatusBadge({ active }) {
   );
 }
 
+/** Resolve role_id from API row (list rows historically omitted role_id). */
+function resolveUserRoleId(user, roles) {
+  if (!roles?.length) return '';
+  if (user?.role_id != null && user.role_id !== '') return Number(user.role_id);
+  const roleName = user?.role || user?.role_name;
+  if (roleName) {
+    const match = roles.find((r) => r.name === roleName);
+    if (match) return match.id;
+  }
+  return roles[0]?.id ?? '';
+}
+
 /* ─── Add / Edit User Modal ──────────────────────────────────────────────── */
 
 function UserModal({ mode, user, roles, onClose, onSave }) {
@@ -65,13 +77,21 @@ function UserModal({ mode, user, roles, onClose, onSave }) {
     name:                   user?.name     || '',
     email:                  user?.email    || '',
     password:               '',
-    role_id:                user?.role_id  || (roles[0]?.id ?? ''),
+    role_id:                resolveUserRoleId(user, roles),
     is_active:              user?.is_active !== false,
     shift_target_minutes:   user?.shift_target_minutes ?? 510,
     shift_target_disabled:  user?.shift_target_disabled === true,
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (mode !== 'edit' || !user) return;
+    setForm((prev) => ({
+      ...prev,
+      role_id: resolveUserRoleId(user, roles),
+    }));
+  }, [mode, user, roles]);
 
   function set(field, value) {
     setForm(prev => ({ ...prev, [field]: value }));

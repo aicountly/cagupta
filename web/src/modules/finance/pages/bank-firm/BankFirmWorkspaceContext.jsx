@@ -3,6 +3,7 @@ import { useAuth } from '../../../../auth/AuthContext';
 import {
   listFirmBankAccounts,
   createFirmBankAccount,
+  updateFirmBankAccount,
   deleteFirmBankAccount,
 } from '../../../../services/firmBankAccountService';
 import {
@@ -17,6 +18,7 @@ const BankFirmWorkspaceContext = createContext(null);
 export function BankFirmWorkspaceProvider({ children }) {
   const { hasPermission } = useAuth();
   const canSettings = hasPermission('settings.view');
+  const canEditOpeningBalance = hasPermission('invoices.edit');
 
   const [firmCode, setFirmCode] = useState('');
   const [accounts, setAccounts] = useState([]);
@@ -49,6 +51,10 @@ export function BankFirmWorkspaceProvider({ children }) {
   const [newOpenDate, setNewOpenDate] = useState('');
   const [deleteAccountId, setDeleteAccountId] = useState(null);
   const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
+  const [editAccountId, setEditAccountId] = useState(null);
+  const [editOpen, setEditOpen] = useState('');
+  const [editOpenDate, setEditOpenDate] = useState('');
+  const [editAccountBusy, setEditAccountBusy] = useState(false);
 
   const flash = useCallback((text, type = 'info') => {
     setMsg({ text, type });
@@ -164,6 +170,44 @@ export function BankFirmWorkspaceProvider({ children }) {
     setDeleteAccountId(id);
   }, [canSettings]);
 
+  const promptEditOpeningBalance = useCallback(
+    (account) => {
+      if (!canEditOpeningBalance || !account) return;
+      setEditAccountId(account.id);
+      setEditOpen(String(account.openingBalance ?? 0));
+      setEditOpenDate(account.openingBalanceDate ? String(account.openingBalanceDate).slice(0, 10) : '');
+    },
+    [canEditOpeningBalance],
+  );
+
+  const closeEditOpeningBalanceModal = useCallback(() => {
+    if (!editAccountBusy) {
+      setEditAccountId(null);
+      setEditOpen('');
+      setEditOpenDate('');
+    }
+  }, [editAccountBusy]);
+
+  const saveEditOpeningBalance = useCallback(async () => {
+    if (!canEditOpeningBalance || editAccountId == null) return;
+    setEditAccountBusy(true);
+    try {
+      await updateFirmBankAccount(editAccountId, {
+        opening_balance: parseFloat(editOpen) || 0,
+        opening_balance_date: editOpenDate || null,
+      });
+      flash('Opening balance updated', 'success');
+      setEditAccountId(null);
+      setEditOpen('');
+      setEditOpenDate('');
+      refreshAccounts();
+    } catch (err) {
+      flash(err.message || 'Update failed', 'error');
+    } finally {
+      setEditAccountBusy(false);
+    }
+  }, [canEditOpeningBalance, editAccountId, editOpen, editOpenDate, flash, refreshAccounts]);
+
   const confirmRemoveBankAccount = useCallback(async () => {
     if (!canSettings || deleteAccountId == null) return;
     setDeleteAccountBusy(true);
@@ -186,6 +230,7 @@ export function BankFirmWorkspaceProvider({ children }) {
   const value = useMemo(
     () => ({
       canSettings,
+      canEditOpeningBalance,
       firmCode,
       setFirmCode,
       accounts,
@@ -240,9 +285,19 @@ export function BankFirmWorkspaceProvider({ children }) {
       deleteAccountBusy,
       confirmRemoveBankAccount,
       closeDeleteModal,
+      editAccountId,
+      editOpen,
+      setEditOpen,
+      editOpenDate,
+      setEditOpenDate,
+      editAccountBusy,
+      promptEditOpeningBalance,
+      closeEditOpeningBalanceModal,
+      saveEditOpeningBalance,
     }),
     [
       canSettings,
+      canEditOpeningBalance,
       firmCode,
       accounts,
       loading,
@@ -278,6 +333,13 @@ export function BankFirmWorkspaceProvider({ children }) {
       deleteAccountBusy,
       confirmRemoveBankAccount,
       closeDeleteModal,
+      editAccountId,
+      editOpen,
+      editOpenDate,
+      editAccountBusy,
+      promptEditOpeningBalance,
+      closeEditOpeningBalanceModal,
+      saveEditOpeningBalance,
     ],
   );
 

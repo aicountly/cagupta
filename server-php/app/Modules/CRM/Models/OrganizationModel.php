@@ -310,7 +310,8 @@ class OrganizationModel
         $stmt = $this->db->prepare(
             "SELECT id, name, pan, gstin, cin, email, phone
              FROM organizations
-             WHERE is_active = TRUE
+             WHERE (organization_status IN ('active', 'prospect')
+                    OR (organization_status IS NULL AND is_active = TRUE))
                AND (name ILIKE :q OR pan ILIKE :q OR gstin ILIKE :q OR cin ILIKE :q OR email ILIKE :q)
              ORDER BY name ASC
              LIMIT :limit"

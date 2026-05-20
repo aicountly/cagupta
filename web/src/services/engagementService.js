@@ -465,6 +465,9 @@ function normalizeBillingReportRow(r) {
     invoiceCount: Number(r.invoice_count) || 0,
     amountBilled: Number(r.amount_billed) || 0,
     hasInvoice: Boolean(r.has_invoice),
+    notes: r.notes || '',
+    description: r.description || '',
+    feeAgreed: r.fees != null ? Number(r.fees) : null,
     completionFlags: {
       engagementCompleted: Boolean(flags.engagement_completed ?? r.engagement_completed),
       allTasksDone: Boolean(flags.all_tasks_done ?? r.all_tasks_done),

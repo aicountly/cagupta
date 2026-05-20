@@ -34,6 +34,7 @@ function normalizeLead(l) {
     contactName:     l.name             || l.contact_name || 'Unknown',
     contactId:       l.contact_id       || null,
     organizationId:  l.organization_id  || null,
+    organizationName: l.org_name || l.organization_name || '',
     company:         l.company          || '',
     email:           l.email            || '',
     phone:           l.phone            || '',

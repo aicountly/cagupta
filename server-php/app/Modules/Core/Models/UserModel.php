@@ -128,7 +128,7 @@ class UserModel
         $total = (int)$countStmt->fetchColumn();
 
         $stmt = $this->db->prepare(
-            "SELECT u.id, u.name, u.email, u.is_active, u.is_email_verified,
+            "SELECT u.id, u.name, u.email, u.role_id, u.is_active, u.is_email_verified,
                     u.avatar_url, u.last_login_at, u.login_provider, u.created_at,
                     u.planned_billable_rate_per_hour, u.shift_target_minutes, u.shift_target_disabled,
                     r.name AS role_name, r.display_name AS role_display_name

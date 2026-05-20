@@ -62,6 +62,12 @@ final class FirmBankAccountController extends BaseController
             $this->error('Bank account not found.', 404);
         }
         $body = $this->getJsonBody();
+        if (!$this->canManageFirmBankAccounts()) {
+            $body = $this->openingBalanceOnlyBody($body);
+            if ($body === []) {
+                $this->error('Access denied. You may only update opening balance.', 403);
+            }
+        }
         $data = [];
         if (isset($body['name'])) {
             $data['name'] = trim((string)$body['name']);
@@ -109,6 +115,45 @@ final class FirmBankAccountController extends BaseController
         }
         $this->model->delete($id);
         $this->success(null, 'Deleted');
+    }
+
+    /** Staff with invoices.edit may adjust opening balance only; settings.view may change any field. */
+    private function canManageFirmBankAccounts(): bool
+    {
+        return $this->userHasPermission($this->authUser(), 'settings.view');
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     * @return array<string, mixed>
+     */
+    private function openingBalanceOnlyBody(array $body): array
+    {
+        $allowed = [];
+        if (array_key_exists('opening_balance', $body) || array_key_exists('openingBalance', $body)) {
+            $allowed['opening_balance'] = $body['opening_balance'] ?? $body['openingBalance'];
+        }
+        if (array_key_exists('opening_balance_date', $body) || array_key_exists('openingBalanceDate', $body)) {
+            $allowed['opening_balance_date'] = $body['opening_balance_date'] ?? $body['openingBalanceDate'];
+        }
+
+        return $allowed;
+    }
+
+    /**
+     * @param array<string, mixed>|null $acting
+     */
+    private function userHasPermission(?array $acting, string $permission): bool
+    {
+        if ($acting === null) {
+            return false;
+        }
+        $permissions = $acting['role_permissions_array'] ?? [];
+        if (in_array('*', $permissions, true)) {
+            return true;
+        }
+
+        return in_array($permission, $permissions, true);
     }
 
     /** @param array<string, mixed> $row */

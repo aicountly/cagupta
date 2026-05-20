@@ -1189,7 +1189,7 @@ class Routes
                 'method'     => 'PUT',
                 'pattern'    => '/api/admin/firm-bank-accounts/:id',
                 'handler'    => 'Admin\FirmBankAccountController@update',
-                'middleware' => ['auth', 'permission:settings.view'],
+                'middleware' => ['auth', 'permission_any:settings.view,invoices.edit'],
             ],
             [
                 'method'     => 'DELETE',

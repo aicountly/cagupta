@@ -1,0 +1,182 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { getOrganizationsForSearch } from '../../modules/crm/services/organizationService';
+
+const MIN_QUERY_LENGTH = 2;
+const SEARCH_LIMIT = 50;
+const DEBOUNCE_MS = 300;
+
+/**
+ * OrganizationSearchDropdown
+ *
+ * Debounced autocomplete for searching organizations by name, PAN, GSTIN, etc.
+ * Excludes inactive organizations (active + prospect only).
+ *
+ * Props:
+ *   value         {number|string}  Currently selected organization ID.
+ *   displayValue  {string}         Currently selected organization display name.
+ *   onChange      {function}       Called with ({ id, displayName }) when selected.
+ *   placeholder   {string}         Input placeholder text.
+ *   style         {object}         Extra styles for the input element.
+ */
+export default function OrganizationSearchDropdown({
+  value,
+  displayValue = '',
+  onChange,
+  placeholder = 'Search organization by name…',
+  style = {},
+}) {
+  const [query, setQuery] = useState(displayValue || '');
+  const [suggestions, setSuggestions] = useState([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const debounceRef = useRef(null);
+  const containerRef = useRef(null);
+
+  useEffect(() => {
+    setQuery(displayValue || '');
+  }, [displayValue]);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  const doSearch = useCallback(async (q) => {
+    const trimmed = q.trim();
+    if (!trimmed || trimmed.length < MIN_QUERY_LENGTH) {
+      setSuggestions([]);
+      setOpen(trimmed.length > 0);
+      return;
+    }
+    setLoading(true);
+    try {
+      const rows = await getOrganizationsForSearch(trimmed, SEARCH_LIMIT);
+      const filtered = rows.filter(o => o.status !== 'inactive');
+      setSuggestions(filtered.map(o => ({
+        id: o.id,
+        displayName: o.displayName,
+      })));
+      setOpen(true);
+    } catch {
+      setSuggestions([]);
+      setOpen(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  function handleInput(e) {
+    const val = e.target.value;
+    setQuery(val);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => doSearch(val), DEBOUNCE_MS);
+    if (!val.trim()) {
+      setSuggestions([]);
+      setOpen(false);
+    }
+  }
+
+  function handleFocus() {
+    const t = query.trim();
+    if (t.length >= MIN_QUERY_LENGTH) {
+      doSearch(query);
+    } else {
+      setOpen(true);
+    }
+  }
+
+  function handleSelect(org) {
+    setQuery(org.displayName);
+    setSuggestions([]);
+    setOpen(false);
+    if (onChange) onChange(org);
+  }
+
+  const inputStyle = {
+    padding: '8px 10px',
+    border: '1px solid #e2e8f0',
+    borderRadius: 6,
+    fontSize: 13,
+    color: '#334155',
+    outline: 'none',
+    width: '100%',
+    boxSizing: 'border-box',
+    ...style,
+  };
+
+  const dropdownStyle = {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    zIndex: 9999,
+    background: '#fff',
+    border: '1px solid #e2e8f0',
+    borderRadius: 6,
+    boxShadow: '0 4px 16px rgba(0,0,0,0.12)',
+    maxHeight: 240,
+    overflowY: 'auto',
+    marginTop: 2,
+  };
+
+  const itemStyle = {
+    padding: '8px 12px',
+    cursor: 'pointer',
+    fontSize: 13,
+    color: '#334155',
+    background: '#fff',
+    borderBottom: '1px solid #f8fafc',
+  };
+
+  const trimmedQuery = query.trim();
+  const showHint = open && !loading && trimmedQuery.length < MIN_QUERY_LENGTH;
+  const showEmpty = open && !loading && trimmedQuery.length >= MIN_QUERY_LENGTH && suggestions.length === 0;
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative' }}>
+      <input
+        type="text"
+        value={query}
+        onChange={handleInput}
+        onFocus={handleFocus}
+        placeholder={placeholder}
+        style={inputStyle}
+        autoComplete="off"
+      />
+      {loading && (
+        <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#94a3b8' }}>…</span>
+      )}
+      {open && (
+        <div style={dropdownStyle}>
+          {showHint && (
+            <div style={{ padding: '8px 12px', fontSize: 12, color: '#94a3b8' }}>
+              Type at least {MIN_QUERY_LENGTH} characters to search organizations…
+            </div>
+          )}
+          {showEmpty && (
+            <div style={{ padding: '8px 12px', fontSize: 12, color: '#94a3b8' }}>No organizations found</div>
+          )}
+          {suggestions.map(o => (
+            <div
+              key={o.id}
+              style={{
+                ...itemStyle,
+                background: String(o.id) === String(value) ? '#f0f4ff' : '#fff',
+              }}
+              onMouseEnter={e => { if (String(o.id) !== String(value)) e.currentTarget.style.background = '#f0f4ff'; }}
+              onMouseLeave={e => { if (String(o.id) !== String(value)) e.currentTarget.style.background = '#fff'; }}
+              onMouseDown={() => handleSelect(o)}
+            >
+              {o.displayName}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

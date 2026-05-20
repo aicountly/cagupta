@@ -16,6 +16,7 @@ import {
   getRecoveryLogs, createRecoveryLog, updateRecoveryLog,
 } from '../services/recoveryLogService';
 import { LastUpdatedByCell, TxnAuditLogModal } from '../../../components/finance/TxnAuditActivity';
+import ServiceBillingDetailModal from '../../../components/finance/ServiceBillingDetailModal';
 import { useAuth } from '../../../auth/AuthContext';
 import { getContact } from '../../../services/contactService';
 import { getOrganization } from '../../../services/organizationService';
@@ -3604,6 +3605,7 @@ export default function Invoices({ ledgerOnly = false }) {
   const canDeleteInvoice = hasPermission('invoices.delete');
   const canCreateInvoice = hasPermission('invoices.create');
   const canBillingClosure = hasPermission('services.edit') || hasPermission('invoices.edit');
+  const canViewServices = hasPermission('services.view');
   const [searchParams, setSearchParams] = useSearchParams();
   const [tab, setTab] = useState(() => {
     const t = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('tab') : null;
@@ -3845,6 +3847,7 @@ export default function Invoices({ ledgerOnly = false }) {
   const [billingHistoryServiceId, setBillingHistoryServiceId] = useState(null);
   const [billingHistoryRows, setBillingHistoryRows]     = useState([]);
   const [billingHistoryLoading, setBillingHistoryLoading] = useState(false);
+  const [billingDetailRow, setBillingDetailRow]         = useState(null);
 
   function reloadInvoices() {
     setInvLoading(true);
@@ -4611,7 +4614,7 @@ export default function Invoices({ ledgerOnly = false }) {
     };
   }
 
-  function handleBillingMarkBuilt(row) {
+  function handleBillingMarkBuilt(row, { onSuccess } = {}) {
     if (!canBillingClosure) return;
     if (!window.confirm(`Mark engagement #${row.id} as billed? It will leave the pending billing queue.`)) return;
     patchBillingClosure(row.id, { closure: 'built' })
@@ -4634,16 +4637,20 @@ export default function Invoices({ ledgerOnly = false }) {
           );
         }
         refreshBillingReport();
+        onSuccess?.();
       })
       .catch((e) => window.alert(e?.message || 'Could not update.'));
   }
 
-  function handleBillingNonBillable(row) {
+  function handleBillingNonBillable(row, { onSuccess } = {}) {
     if (!canBillingClosure) return;
     const reason = window.prompt('Optional reason (non-billable):', '');
     if (reason === null) return;
     patchBillingClosure(row.id, { closure: 'non_billable', reason })
-      .then(() => refreshBillingReport())
+      .then(() => {
+        refreshBillingReport();
+        onSuccess?.();
+      })
       .catch((e) => window.alert(e?.message || 'Could not update.'));
   }
 
@@ -4718,6 +4725,23 @@ export default function Invoices({ ledgerOnly = false }) {
             </div>
           </div>
         </div>
+      )}
+      {billingDetailRow && (
+        <ServiceBillingDetailModal
+          row={billingDetailRow}
+          closureFilter={billingClosureFilter}
+          canCreateInvoice={canCreateInvoice}
+          canBillingClosure={canBillingClosure}
+          canViewServices={canViewServices}
+          onClose={() => setBillingDetailRow(null)}
+          onRaiseInvoice={(row) => {
+            setRaiseInvoicePrefill(billingPrefillFromRow(row));
+            setShowRaiseInvoice(true);
+            setBillingDetailRow(null);
+          }}
+          onMarkBuilt={(row) => handleBillingMarkBuilt(row, { onSuccess: () => setBillingDetailRow(null) })}
+          onNonBillable={(row) => handleBillingNonBillable(row, { onSuccess: () => setBillingDetailRow(null) })}
+        />
       )}
       {viewInvoiceTxn && (
         <InvoiceViewModal
@@ -6542,7 +6566,14 @@ export default function Invoices({ ledgerOnly = false }) {
                 </tr>
               ) : (
                 billingRows.map((row) => (
-                  <tr key={row.id} style={trStyle}>
+                  <tr
+                    key={row.id}
+                    style={{ ...trStyle, cursor: 'pointer' }}
+                    title="Click row for service details and team activity"
+                    onClick={() => setBillingDetailRow(row)}
+                    onMouseEnter={(e) => { e.currentTarget.style.background = '#f8fafc'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = ''; }}
+                  >
                     <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{row.id}</td>
                     <td style={{ ...tdStyle, maxWidth: 200, whiteSpace: 'normal' }}>{row.clientName}</td>
                     <td style={{ ...tdStyle, maxWidth: 220, whiteSpace: 'normal' }}>
@@ -6610,7 +6641,7 @@ export default function Invoices({ ledgerOnly = false }) {
                         </span>
                       )}
                     </td>
-                    <td style={{ ...tdStyle, whiteSpace: 'normal' }}>
+                    <td style={{ ...tdStyle, whiteSpace: 'normal' }} onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
                         style={iconBtn}

@@ -12,7 +12,7 @@ import {
   MessageSquare, Smartphone, Share2, Megaphone,
   Mail, CheckSquare, Inbox, Zap, BarChart2, Sparkles,
 } from 'lucide-react';
-import { ROLES } from '../../../constants/roles';
+import { ROLES, ROLE_LABELS } from '../../../constants/roles';
 
 const navSections = [
   {
@@ -97,6 +97,7 @@ export default function Sidebar() {
   const displayName = user?.name || 'CA Rahul Gupta';
   const initials = user?.initials || getInitials(displayName);
   const roleName = user?.role || '';
+  const roleLabel = ROLE_LABELS[roleName] || roleName || 'User';
 
   useEffect(() => {
     if (!hasPermission('services.view')) return;
@@ -288,7 +289,7 @@ export default function Sidebar() {
         <div style={styles.avatar}>{initials}</div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 13, color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</div>
-          <div style={{ fontSize: 11, color: '#94a3b8', textTransform: 'capitalize' }}>{roleName || 'User'}</div>
+          <div style={{ fontSize: 11, color: '#94a3b8' }}>{roleLabel}</div>
         </div>
         <div style={styles.onlineDot} />
       </div>
