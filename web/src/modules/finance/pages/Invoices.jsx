@@ -26,6 +26,7 @@ import {
   getBillingReport,
   getServiceBillingInvoices,
   patchBillingClosure,
+  billingReturnServiceToTeam,
 } from '../../../services/engagementService';
 import { EXPENSE_PURPOSE_OPTIONS, expensePurposeLabel } from '../../../constants/expensePurposes';
 import { buildLedgerDetailLine } from '../../../utils/ledgerTxnDetails';
@@ -4741,6 +4742,16 @@ export default function Invoices({ ledgerOnly = false }) {
           }}
           onMarkBuilt={(row) => handleBillingMarkBuilt(row, { onSuccess: () => setBillingDetailRow(null) })}
           onNonBillable={(row) => handleBillingNonBillable(row, { onSuccess: () => setBillingDetailRow(null) })}
+          onReturnToTeam={async (row, { reason }) => {
+            try {
+              await billingReturnServiceToTeam(row.id, { reason });
+              refreshBillingReport();
+              setBillingDetailRow(null);
+            } catch (e) {
+              window.alert(e?.message || 'Could not return service to team.');
+              throw e;
+            }
+          }}
         />
       )}
       {viewInvoiceTxn && (

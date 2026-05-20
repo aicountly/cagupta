@@ -990,6 +990,8 @@ SQL;
 
         $whereClause = implode(' AND ', $where);
         $offset      = ($page - 1) * $perPage;
+        $aid         = self::SQL_ASSIGNEE_IDS_JSON;
+        $an          = self::SQL_ASSIGNEE_NAMES_AGG;
 
         $from = "FROM services s
             LEFT JOIN clients c ON c.id = s.client_id
@@ -1025,7 +1027,9 @@ SQL;
                     s.client_name,
                     'Unknown') AS display_client_name,
                 (SELECT COUNT(*) FROM services cs WHERE cs.master_service_id = s.id) AS linked_total,
-                (SELECT COUNT(*) FROM services cs WHERE cs.master_service_id = s.id AND cs.status = 'completed') AS linked_completed
+                (SELECT COUNT(*) FROM services cs WHERE cs.master_service_id = s.id AND cs.status = 'completed') AS linked_completed,
+                {$aid} AS assignee_user_ids_json,
+                {$an} AS assignee_names_agg
             {$from}
             ORDER BY s.updated_at DESC NULLS LAST, s.id DESC
             LIMIT :limit OFFSET :offset";
@@ -1038,6 +1042,7 @@ SQL;
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
         $rows = $stmt->fetchAll();
+        $rows = array_map(fn($row) => $this->attachAssigneeFields($row), $rows);
         $rows = $this->hydrateRelevantPeriodFromRegisters($rows);
 
         return ['total' => $total, 'rows' => $rows];

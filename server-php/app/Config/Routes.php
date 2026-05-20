@@ -565,6 +565,12 @@ class Routes
                 'middleware' => ['auth', 'permission_any:services.edit,invoices.edit'],
             ],
             [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/services/:id/billing-return-to-team',
+                'handler'    => 'Admin\ServiceController@billingReturnToTeam',
+                'middleware' => ['auth', 'permission_any:services.edit,invoices.edit'],
+            ],
+            [
                 'method'     => 'PATCH',
                 'pattern'    => '/api/admin/services/:id/toggle-master',
                 'handler'    => 'Admin\ServiceController@toggleMaster',

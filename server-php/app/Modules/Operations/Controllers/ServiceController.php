@@ -8,6 +8,7 @@ use App\Controllers\BaseController;
 use App\Libraries\WorkHoldGate;
 use App\Libraries\BrevoMailer;
 use App\Libraries\OtpService;
+use App\Libraries\ServiceBillingReturnNotifier;
 use App\Models\AdminAuditLogModel;
 use App\Models\ClientModel;
 use App\Models\EngagementTypeModel;
@@ -505,6 +506,110 @@ class ServiceController extends BaseController
         }
 
         $this->success($updated, 'Billing closure updated', 200, $meta);
+    }
+
+    // ── POST /api/admin/services/:id/billing-return-to-team ──────────────────
+
+    /**
+     * Finance returns a completed engagement from the billing queue to the ops team.
+     *
+     * Body: { reason: string (required), status?: not_started|in_progress|pending_info|review }
+     */
+    public function billingReturnToTeam(int $id): never
+    {
+        $service = $this->services->find($id);
+        if ($service === null) {
+            $this->error('Service not found.', 404);
+        }
+
+        $currentStatus = strtolower(trim((string)($service['status'] ?? '')));
+        if ($currentStatus !== 'completed') {
+            $this->error('Only completed engagements can be returned to the team from billing.', 422);
+        }
+
+        $billingClosure = strtolower(trim((string)($service['billing_closure'] ?? '')));
+        if ($billingClosure !== 'open') {
+            $this->error('Service must be in the pending billing queue (billing_closure = open).', 422);
+        }
+
+        $body   = $this->getJsonBody();
+        $status = strtolower(trim((string)($body['status'] ?? 'in_progress')));
+        $reason = trim((string)($body['reason'] ?? ''));
+        $allowedStatuses = ['not_started', 'in_progress', 'pending_info', 'review'];
+        if (!in_array($status, $allowedStatuses, true)) {
+            $this->error('status must be one of: not_started, in_progress, pending_info, review.', 422);
+        }
+        if ($reason === '') {
+            $this->error('Finance remarks (reason) are required.', 422);
+        }
+
+        $beforeSnap = $this->serviceAuditSnapshot($service);
+        $this->services->update($id, ['status' => $status]);
+        $updated   = $this->services->find($id);
+        if ($updated === null) {
+            $this->error('Service not found after update.', 500);
+        }
+        $afterSnap = $this->serviceAuditSnapshot($updated);
+
+        $actor     = $this->authUser();
+        $actorId   = $actor ? (int)$actor['id'] : null;
+        $actorName = $actor ? (string)($actor['name'] ?? 'Finance team') : 'Finance team';
+        $toLabel   = ucwords(str_replace('_', ' ', $status));
+
+        try {
+            $this->audit->insert(
+                $actorId,
+                'service.billing_return',
+                'service',
+                $id,
+                [
+                    'reason'      => $reason,
+                    'from_status' => $currentStatus,
+                    'to_status'   => $status,
+                    'source'      => 'billing',
+                ],
+                $beforeSnap,
+                $afterSnap
+            );
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Audit log failed: ' . $e->getMessage());
+        }
+
+        $financeMessage = "Finance billing review — returned to team by {$actorName}.\n\nReason: {$reason}";
+        $statusMessage  = "Engagement reopened from billing (set to \"{$toLabel}\") by {$actorName}. Reason: {$reason}";
+
+        try {
+            $this->serviceLogs->insert([
+                'service_id'  => $id,
+                'log_type'    => 'internal_message',
+                'message'     => $financeMessage,
+                'visibility'  => 'internal',
+                'created_by'  => $actorId,
+            ]);
+            $this->serviceLogs->insert([
+                'service_id'  => $id,
+                'log_type'    => 'status_change',
+                'message'     => $statusMessage,
+                'visibility'  => 'internal',
+                'created_by'  => $actorId,
+            ]);
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Billing return log failed: ' . $e->getMessage());
+        }
+
+        try {
+            ServiceBillingReturnNotifier::notify(
+                $updated,
+                $reason,
+                $actor,
+                $currentStatus,
+                $status
+            );
+        } catch (\Throwable $e) {
+            error_log('[ServiceController] Billing return notify failed: ' . $e->getMessage());
+        }
+
+        $this->success($updated, 'Service returned to team');
     }
 
     // ── GET /api/admin/services/:id ──────────────────────────────────────────

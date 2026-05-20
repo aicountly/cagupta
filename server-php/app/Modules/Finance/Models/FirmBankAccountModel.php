@@ -10,6 +10,21 @@ final class FirmBankAccountModel
 {
     private PDO $db;
 
+    public static function normalizeOpeningBalanceType(?string $type): string
+    {
+        $t = strtolower(trim((string)$type));
+        return $t === 'credit' ? 'credit' : 'debit';
+    }
+
+    /** Signed balance for ledger math: Dr = positive (funds in account), Cr = negative (overdraft). */
+    public static function signedOpeningBalance(array $row): float
+    {
+        $amount = abs((float)($row['opening_balance'] ?? 0));
+        $type   = self::normalizeOpeningBalanceType($row['opening_balance_type'] ?? 'debit');
+
+        return $type === 'credit' ? -$amount : $amount;
+    }
+
     public function __construct()
     {
         $this->db = Database::getConnection();
@@ -55,15 +70,15 @@ final class FirmBankAccountModel
         return $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
     }
 
-    /** @param array{billing_firm_code:string, name:string, account_type:string, currency?:string, is_active?:bool, opening_balance?:float, opening_balance_date?:string|null, account_number_last4?:string, ifsc?:string, notes?:string} $data */
+    /** @param array{billing_firm_code:string, name:string, account_type:string, currency?:string, is_active?:bool, opening_balance?:float, opening_balance_type?:string, opening_balance_date?:string|null, account_number_last4?:string, ifsc?:string, notes?:string} $data */
     public function create(array $data): array
     {
         $stmt = $this->db->prepare(
             'INSERT INTO firm_bank_accounts (
                 billing_firm_code, name, account_type, currency, is_active,
-                opening_balance, opening_balance_date, account_number_last4, ifsc, notes
+                opening_balance, opening_balance_type, opening_balance_date, account_number_last4, ifsc, notes
              ) VALUES (
-                :bf, :name, :atype, :cur, :active, :obal, :odate, :last4, :ifsc, :notes
+                :bf, :name, :atype, :cur, :active, :obal, :obtype, :odate, :last4, :ifsc, :notes
              ) RETURNING *'
         );
         $stmt->execute([
@@ -73,6 +88,7 @@ final class FirmBankAccountModel
             ':cur'   => $data['currency'] ?? 'INR',
             ':active'=> isset($data['is_active']) ? ($data['is_active'] ? true : false) : true,
             ':obal'  => $data['opening_balance'] ?? 0,
+            ':obtype'=> self::normalizeOpeningBalanceType($data['opening_balance_type'] ?? 'debit'),
             ':odate' => $data['opening_balance_date'] ?? null,
             ':last4' => $data['account_number_last4'] ?? null,
             ':ifsc'  => $data['ifsc'] ?? null,
@@ -104,6 +120,10 @@ final class FirmBankAccountModel
         if (array_key_exists('opening_balance', $data)) {
             $sets[] = 'opening_balance = :obal';
             $params[':obal'] = $data['opening_balance'];
+        }
+        if (array_key_exists('opening_balance_type', $data)) {
+            $sets[] = 'opening_balance_type = :obtype';
+            $params[':obtype'] = self::normalizeOpeningBalanceType($data['opening_balance_type']);
         }
         if (array_key_exists('opening_balance_date', $data)) {
             $sets[] = 'opening_balance_date = :odate';

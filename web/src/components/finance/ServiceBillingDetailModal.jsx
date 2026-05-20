@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import ServiceLogPanel from '../services/ServiceLogPanel';
 
@@ -71,6 +72,17 @@ const btnSecondary = {
   alignItems: 'center',
 };
 
+const btnWarning = {
+  padding: '8px 16px',
+  background: '#fff7ed',
+  color: '#c2410c',
+  border: '1px solid #fed7aa',
+  borderRadius: 8,
+  cursor: 'pointer',
+  fontSize: 13,
+  fontWeight: 600,
+};
+
 function formatMoney(n) {
   const v = Number(n);
   if (!Number.isFinite(v)) return '—';
@@ -81,6 +93,10 @@ function showDescription(row) {
   const notes = String(row.notes || '').trim();
   const desc = String(row.description || '').trim();
   return desc !== '' && desc !== notes;
+}
+
+function canReturnToTeam(row) {
+  return row.status === 'completed' || Boolean(row.completionFlags?.engagementCompleted);
 }
 
 /**
@@ -96,13 +112,39 @@ export default function ServiceBillingDetailModal({
   onRaiseInvoice,
   onMarkBuilt,
   onNonBillable,
+  onReturnToTeam,
 }) {
+  const [financeRemarks, setFinanceRemarks] = useState('');
+  const [returning, setReturning] = useState(false);
+  const [returnError, setReturnError] = useState('');
+
   if (!row) return null;
 
   const period = row.relevantPeriodLabel || row.financialYear || '—';
   const notesText = String(row.notes || '').trim();
   const descriptionText = String(row.description || '').trim();
   const showPendingActions = closureFilter === 'pending';
+  const returnAllowed = canReturnToTeam(row);
+  const assigneeLabel = String(row.assigneeNames || '').trim() || '—';
+  const remarksTrimmed = financeRemarks.trim();
+
+  async function handleReturnToTeam() {
+    if (!returnAllowed || !remarksTrimmed || returning) return;
+    if (!window.confirm(
+      'Return this engagement to the assigned team? It will be reopened and assignees will be notified with your remarks.',
+    )) {
+      return;
+    }
+    setReturning(true);
+    setReturnError('');
+    try {
+      await onReturnToTeam?.(row, { reason: remarksTrimmed });
+    } catch (e) {
+      setReturnError(e?.message || 'Could not return service to team.');
+    } finally {
+      setReturning(false);
+    }
+  }
 
   return (
     <div style={overlayStyle} role="presentation" onClick={onClose}>
@@ -166,6 +208,30 @@ export default function ServiceBillingDetailModal({
             </div>
           )}
 
+          {canBillingClosure && showPendingActions && (
+            <div style={{ marginBottom: 16 }}>
+              <div style={sectionLabel}>Finance remarks</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>
+                Assigned team: <strong style={{ color: '#334155' }}>{assigneeLabel}</strong>
+              </div>
+              <textarea
+                value={financeRemarks}
+                onChange={(e) => setFinanceRemarks(e.target.value)}
+                placeholder="Explain what action is missing before billing can proceed…"
+                rows={4}
+                style={remarksInput}
+              />
+              {!returnAllowed && (
+                <div style={helperText}>
+                  Return to team is available only when the engagement is marked Completed. Open the full engagement to request changes from ops.
+                </div>
+              )}
+              {returnError ? (
+                <div style={{ fontSize: 12, color: '#dc2626', marginTop: 8 }}>{returnError}</div>
+              ) : null}
+            </div>
+          )}
+
           <div>
             <div style={sectionLabel}>Team activity</div>
             {canViewServices ? (
@@ -181,6 +247,16 @@ export default function ServiceBillingDetailModal({
             Open full engagement
           </Link>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginLeft: 'auto' }}>
+            {canBillingClosure && showPendingActions && returnAllowed && (
+              <button
+                type="button"
+                style={{ ...btnWarning, opacity: !remarksTrimmed || returning ? 0.6 : 1 }}
+                disabled={!remarksTrimmed || returning}
+                onClick={handleReturnToTeam}
+              >
+                {returning ? 'Returning…' : 'Return to team'}
+              </button>
+            )}
             {canBillingClosure && showPendingActions && (
               <>
                 <button type="button" style={btnSecondary} onClick={() => onNonBillable?.(row)}>
@@ -276,6 +352,27 @@ const emptyBox = {
   borderRadius: 8,
   fontSize: 13,
   color: '#94a3b8',
+};
+
+const remarksInput = {
+  width: '100%',
+  boxSizing: 'border-box',
+  padding: '10px 12px',
+  border: '1px solid #e2e8f0',
+  borderRadius: 8,
+  fontSize: 13,
+  color: '#334155',
+  lineHeight: 1.5,
+  resize: 'vertical',
+  minHeight: 88,
+  fontFamily: 'inherit',
+};
+
+const helperText = {
+  marginTop: 8,
+  fontSize: 12,
+  color: '#64748b',
+  lineHeight: 1.5,
 };
 
 const footerStyle = {

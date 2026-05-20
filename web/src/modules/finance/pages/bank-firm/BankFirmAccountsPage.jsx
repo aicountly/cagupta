@@ -1,5 +1,6 @@
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { useBankFirmWorkspace } from './BankFirmWorkspaceContext';
+import { formatBankOpeningBalance } from './bankFirmConstants';
 import {
   badge,
   btnDanger,
@@ -35,6 +36,8 @@ export default function BankFirmAccountsPage() {
     setNewType,
     newOpen,
     setNewOpen,
+    newOpenType,
+    setNewOpenType,
     newOpenDate,
     setNewOpenDate,
     addAccount,
@@ -42,6 +45,8 @@ export default function BankFirmAccountsPage() {
     editAccountId,
     editOpen,
     setEditOpen,
+    editOpenType,
+    setEditOpenType,
     editOpenDate,
     setEditOpenDate,
     editAccountBusy,
@@ -92,7 +97,7 @@ export default function BankFirmAccountsPage() {
                         </span>
                       </td>
                       <td style={tdStyle}>
-                        ₹{Number(a.openingBalance || 0).toLocaleString('en-IN')}
+                        {formatBankOpeningBalance(a.openingBalance, a.openingBalanceType)}
                         {a.openingBalanceDate && (
                           <span style={{ display: 'block', fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
                             as of {String(a.openingBalanceDate).slice(0, 10)}
@@ -156,7 +161,20 @@ export default function BankFirmAccountsPage() {
               </div>
               <div>
                 <label style={labelStyle}>Opening balance</label>
-                <input style={inputStyle} type="number" value={newOpen} onChange={(e) => setNewOpen(e.target.value)} />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    style={{ ...inputStyle, flex: 1 }}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={newOpen}
+                    onChange={(e) => setNewOpen(e.target.value)}
+                  />
+                  <select style={{ ...inputStyle, width: 72 }} value={newOpenType} onChange={(e) => setNewOpenType(e.target.value)}>
+                    <option value="debit">Dr</option>
+                    <option value="credit">Cr</option>
+                  </select>
+                </div>
               </div>
               <div>
                 <label style={labelStyle}>OB date</label>
@@ -210,14 +228,26 @@ export default function BankFirmAccountsPage() {
             <div style={{ display: 'grid', gap: 12 }}>
               <div>
                 <label style={labelStyle}>Opening balance (₹)</label>
-                <input
-                  style={inputStyle}
-                  type="number"
-                  step="0.01"
-                  value={editOpen}
-                  onChange={(e) => setEditOpen(e.target.value)}
-                  disabled={editAccountBusy}
-                />
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <input
+                    style={{ ...inputStyle, flex: 1 }}
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editOpen}
+                    onChange={(e) => setEditOpen(e.target.value)}
+                    disabled={editAccountBusy}
+                  />
+                  <select
+                    style={{ ...inputStyle, width: 72 }}
+                    value={editOpenType}
+                    onChange={(e) => setEditOpenType(e.target.value)}
+                    disabled={editAccountBusy}
+                  >
+                    <option value="debit">Dr</option>
+                    <option value="credit">Cr</option>
+                  </select>
+                </div>
               </div>
               <div>
                 <label style={labelStyle}>OB date</label>

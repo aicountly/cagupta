@@ -40,13 +40,15 @@ final class FirmBankAccountController extends BaseController
         if (!in_array($type, ['bank', 'cash'], true)) {
             $this->error('account_type must be bank or cash.', 422);
         }
+        [$obAmount, $obType] = self::parseOpeningBalanceFields($body);
         $row = $this->model->create([
             'billing_firm_code'     => strtoupper($bf),
             'name'                  => $name,
             'account_type'          => $type,
             'currency'              => (string)($body['currency'] ?? 'INR'),
             'is_active'             => !isset($body['is_active']) || !empty($body['is_active']) || !empty($body['isActive']),
-            'opening_balance'       => (float)($body['opening_balance'] ?? $body['openingBalance'] ?? 0),
+            'opening_balance'       => $obAmount,
+            'opening_balance_type'  => $obType,
             'opening_balance_date'  => $body['opening_balance_date'] ?? $body['openingBalanceDate'] ?? null,
             'account_number_last4'  => $body['account_number_last4'] ?? $body['accountNumberLast4'] ?? null,
             'ifsc'                  => $body['ifsc'] ?? null,
@@ -58,12 +60,13 @@ final class FirmBankAccountController extends BaseController
     /** PUT /api/admin/firm-bank-accounts/:id */
     public function update(int $id): never
     {
-        if ($this->model->find($id) === null) {
+        $existing = $this->model->find($id);
+        if ($existing === null) {
             $this->error('Bank account not found.', 404);
         }
         $body = $this->getJsonBody();
         if (!$this->canManageFirmBankAccounts()) {
-            $body = $this->openingBalanceOnlyBody($body);
+            $body = $this->openingBalanceOnlyBody($body, $existing);
             if ($body === []) {
                 $this->error('Access denied. You may only update opening balance.', 403);
             }
@@ -82,8 +85,10 @@ final class FirmBankAccountController extends BaseController
         if (array_key_exists('is_active', $body) || array_key_exists('isActive', $body)) {
             $data['is_active'] = !empty($body['is_active']) || !empty($body['isActive']);
         }
-        if (array_key_exists('opening_balance', $body) || array_key_exists('openingBalance', $body)) {
-            $data['opening_balance'] = (float)($body['opening_balance'] ?? $body['openingBalance']);
+        if (self::bodyHasOpeningBalanceFields($body)) {
+            [$obAmount, $obType] = self::parseOpeningBalanceFields($body, $existing);
+            $data['opening_balance']      = $obAmount;
+            $data['opening_balance_type'] = $obType;
         }
         if (array_key_exists('opening_balance_date', $body) || array_key_exists('openingBalanceDate', $body)) {
             $data['opening_balance_date'] = $body['opening_balance_date'] ?? $body['openingBalanceDate'];
@@ -127,17 +132,59 @@ final class FirmBankAccountController extends BaseController
      * @param array<string, mixed> $body
      * @return array<string, mixed>
      */
-    private function openingBalanceOnlyBody(array $body): array
+    private function openingBalanceOnlyBody(array $body, array $existing): array
     {
         $allowed = [];
-        if (array_key_exists('opening_balance', $body) || array_key_exists('openingBalance', $body)) {
-            $allowed['opening_balance'] = $body['opening_balance'] ?? $body['openingBalance'];
+        if (self::bodyHasOpeningBalanceFields($body)) {
+            [$obAmount, $obType] = self::parseOpeningBalanceFields($body, $existing);
+            $allowed['opening_balance']      = $obAmount;
+            $allowed['opening_balance_type'] = $obType;
         }
         if (array_key_exists('opening_balance_date', $body) || array_key_exists('openingBalanceDate', $body)) {
             $allowed['opening_balance_date'] = $body['opening_balance_date'] ?? $body['openingBalanceDate'];
         }
 
         return $allowed;
+    }
+
+    /** @param array<string, mixed> $body */
+    private static function bodyHasOpeningBalanceFields(array $body): bool
+    {
+        return array_key_exists('opening_balance', $body)
+            || array_key_exists('openingBalance', $body)
+            || array_key_exists('opening_balance_type', $body)
+            || array_key_exists('openingBalanceType', $body)
+            || array_key_exists('type', $body);
+    }
+
+    /**
+     * @param array<string, mixed>      $body
+     * @param array<string, mixed>|null $existing
+     * @return array{0: float, 1: string}
+     */
+    private static function parseOpeningBalanceFields(array $body, ?array $existing = null): array
+    {
+        $hasAmount = array_key_exists('opening_balance', $body) || array_key_exists('openingBalance', $body);
+        $hasType   = array_key_exists('opening_balance_type', $body)
+            || array_key_exists('openingBalanceType', $body)
+            || array_key_exists('type', $body);
+
+        if ($existing !== null) {
+            $amount = $hasAmount
+                ? abs((float)($body['opening_balance'] ?? $body['openingBalance']))
+                : abs((float)($existing['opening_balance'] ?? 0));
+            $typeRaw = $hasType
+                ? ($body['opening_balance_type'] ?? $body['openingBalanceType'] ?? $body['type'])
+                : ($existing['opening_balance_type'] ?? 'debit');
+        } else {
+            $amount  = abs((float)($body['opening_balance'] ?? $body['openingBalance'] ?? 0));
+            $typeRaw = $body['opening_balance_type']
+                ?? $body['openingBalanceType']
+                ?? $body['type']
+                ?? 'debit';
+        }
+
+        return [$amount, FirmBankAccountModel::normalizeOpeningBalanceType((string)$typeRaw)];
     }
 
     /**
@@ -167,7 +214,8 @@ final class FirmBankAccountController extends BaseController
             'accountType'         => (string)$row['account_type'],
             'currency'            => (string)($row['currency'] ?? 'INR'),
             'isActive'            => (bool)($row['is_active'] ?? true),
-            'openingBalance'      => (float)($row['opening_balance'] ?? 0),
+            'openingBalance'      => abs((float)($row['opening_balance'] ?? 0)),
+            'openingBalanceType'  => FirmBankAccountModel::normalizeOpeningBalanceType($row['opening_balance_type'] ?? 'debit'),
             'openingBalanceDate'  => $row['opening_balance_date'] ?? null,
             'accountNumberLast4'  => $row['account_number_last4'] ?? null,
             'ifsc'                => $row['ifsc'] ?? null,

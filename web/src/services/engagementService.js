@@ -468,6 +468,8 @@ function normalizeBillingReportRow(r) {
     notes: r.notes || '',
     description: r.description || '',
     feeAgreed: r.fees != null ? Number(r.fees) : null,
+    assigneeNames: r.assignee_names || '',
+    assigneeUserIds: Array.isArray(r.assignee_user_ids) ? r.assignee_user_ids : [],
     completionFlags: {
       engagementCompleted: Boolean(flags.engagement_completed ?? r.engagement_completed),
       allTasksDone: Boolean(flags.all_tasks_done ?? r.all_tasks_done),
@@ -540,6 +542,22 @@ export async function patchBillingClosure(serviceId, { closure, reason }) {
     body: JSON.stringify(body),
   });
   return parseResponse(res);
+}
+
+/**
+ * Finance returns a completed engagement from billing to the ops team.
+ * @param {number|string} serviceId
+ * @param {{ reason: string, status?: string }} payload
+ * @returns {Promise<object>}
+ */
+export async function billingReturnServiceToTeam(serviceId, { reason, status = 'in_progress' }) {
+  const res = await fetch(`${API_BASE}/admin/services/${serviceId}/billing-return-to-team`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({ reason: String(reason).trim(), status }),
+  });
+  const data = await parseResponse(res);
+  return normalizeEngagement(data.data);
 }
 
 // ── Master Service API helpers ────────────────────────────────────────────────

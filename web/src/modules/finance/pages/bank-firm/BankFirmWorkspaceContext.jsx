@@ -48,11 +48,13 @@ export function BankFirmWorkspaceProvider({ children }) {
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState('bank');
   const [newOpen, setNewOpen] = useState('0');
+  const [newOpenType, setNewOpenType] = useState('debit');
   const [newOpenDate, setNewOpenDate] = useState('');
   const [deleteAccountId, setDeleteAccountId] = useState(null);
   const [deleteAccountBusy, setDeleteAccountBusy] = useState(false);
   const [editAccountId, setEditAccountId] = useState(null);
   const [editOpen, setEditOpen] = useState('');
+  const [editOpenType, setEditOpenType] = useState('debit');
   const [editOpenDate, setEditOpenDate] = useState('');
   const [editAccountBusy, setEditAccountBusy] = useState(false);
 
@@ -153,17 +155,19 @@ export function BankFirmWorkspaceProvider({ children }) {
         billing_firm_code: firmCode,
         name: newName.trim(),
         account_type: newType,
-        opening_balance: parseFloat(newOpen) || 0,
+        opening_balance: Math.abs(parseFloat(newOpen) || 0),
+        opening_balance_type: newOpenType,
         opening_balance_date: newOpenDate || null,
       });
       setNewName('');
       setNewOpen('0');
+      setNewOpenType('debit');
       flash('Account created', 'success');
       refreshAccounts();
     } catch (err) {
       flash(err.message || 'Create failed', 'error');
     }
-  }, [canSettings, firmCode, newName, newType, newOpen, newOpenDate, flash, refreshAccounts]);
+  }, [canSettings, firmCode, newName, newType, newOpen, newOpenType, newOpenDate, flash, refreshAccounts]);
 
   const promptRemoveAccount = useCallback((id) => {
     if (!canSettings) return;
@@ -174,7 +178,8 @@ export function BankFirmWorkspaceProvider({ children }) {
     (account) => {
       if (!canEditOpeningBalance || !account) return;
       setEditAccountId(account.id);
-      setEditOpen(String(account.openingBalance ?? 0));
+      setEditOpen(String(Math.abs(Number(account.openingBalance) || 0)));
+      setEditOpenType(account.openingBalanceType === 'credit' ? 'credit' : 'debit');
       setEditOpenDate(account.openingBalanceDate ? String(account.openingBalanceDate).slice(0, 10) : '');
     },
     [canEditOpeningBalance],
@@ -184,6 +189,7 @@ export function BankFirmWorkspaceProvider({ children }) {
     if (!editAccountBusy) {
       setEditAccountId(null);
       setEditOpen('');
+      setEditOpenType('debit');
       setEditOpenDate('');
     }
   }, [editAccountBusy]);
@@ -193,12 +199,14 @@ export function BankFirmWorkspaceProvider({ children }) {
     setEditAccountBusy(true);
     try {
       await updateFirmBankAccount(editAccountId, {
-        opening_balance: parseFloat(editOpen) || 0,
+        opening_balance: Math.abs(parseFloat(editOpen) || 0),
+        opening_balance_type: editOpenType,
         opening_balance_date: editOpenDate || null,
       });
       flash('Opening balance updated', 'success');
       setEditAccountId(null);
       setEditOpen('');
+      setEditOpenType('debit');
       setEditOpenDate('');
       refreshAccounts();
     } catch (err) {
@@ -206,7 +214,7 @@ export function BankFirmWorkspaceProvider({ children }) {
     } finally {
       setEditAccountBusy(false);
     }
-  }, [canEditOpeningBalance, editAccountId, editOpen, editOpenDate, flash, refreshAccounts]);
+  }, [canEditOpeningBalance, editAccountId, editOpen, editOpenType, editOpenDate, flash, refreshAccounts]);
 
   const confirmRemoveBankAccount = useCallback(async () => {
     if (!canSettings || deleteAccountId == null) return;
@@ -277,6 +285,8 @@ export function BankFirmWorkspaceProvider({ children }) {
       setNewType,
       newOpen,
       setNewOpen,
+      newOpenType,
+      setNewOpenType,
       newOpenDate,
       setNewOpenDate,
       addAccount,
@@ -288,6 +298,8 @@ export function BankFirmWorkspaceProvider({ children }) {
       editAccountId,
       editOpen,
       setEditOpen,
+      editOpenType,
+      setEditOpenType,
       editOpenDate,
       setEditOpenDate,
       editAccountBusy,
@@ -326,6 +338,7 @@ export function BankFirmWorkspaceProvider({ children }) {
       newName,
       newType,
       newOpen,
+      newOpenType,
       newOpenDate,
       addAccount,
       promptRemoveAccount,
@@ -335,6 +348,7 @@ export function BankFirmWorkspaceProvider({ children }) {
       closeDeleteModal,
       editAccountId,
       editOpen,
+      editOpenType,
       editOpenDate,
       editAccountBusy,
       promptEditOpeningBalance,

@@ -1918,7 +1918,9 @@ class TxnModel
         if ($acc === null) {
             return [];
         }
-        $opening = (float)($acc['opening_balance'] ?? 0);
+        $obAmount = abs((float)($acc['opening_balance'] ?? 0));
+        $obType   = FirmBankAccountModel::normalizeOpeningBalanceType($acc['opening_balance_type'] ?? 'debit');
+        $opening  = FirmBankAccountModel::signedOpeningBalance($acc);
         $openDate = (string)($acc['opening_balance_date'] ?? '');
 
         $where  = ['t.firm_bank_account_id = :aid', "t.status = 'active'"];
@@ -1944,13 +1946,13 @@ class TxnModel
 
         $balance = $opening;
         $out     = [];
-        if ($opening !== 0.0 || $openDate !== '') {
+        if ($obAmount !== 0.0 || $openDate !== '') {
             $out[] = [
                 'row_type'       => 'opening',
                 'txn_date'       => $openDate !== '' ? $openDate : null,
                 'narration'      => 'Opening balance',
-                'debit'          => 0.0,
-                'credit'         => 0.0,
+                'debit'          => $obType === 'debit' ? $obAmount : 0.0,
+                'credit'         => $obType === 'credit' ? $obAmount : 0.0,
                 'movement'       => 0.0,
                 'balance'        => $opening,
                 'txn_type'       => null,
