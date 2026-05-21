@@ -11,31 +11,50 @@ final class BlogAiGenerator
     /** Set when the last openaiChat() call fails; appended to the generator log next to ERROR lines. */
     private static ?string $lastOpenAiChatFailure = null;
 
+    /** Shared system instructions — topic and article calls both use this. */
+    private const SYSTEM_PROMPT = <<<'SYS'
+You help draft educational blog content for CA Rahul Gupta's Indian CA firm. Readers are business owners and individual taxpayers who rely on this firm's reputation for accurate, conservative advice.
+
+ACCURACY (non-negotiable):
+- Never invent laws, notifications, circular or notification numbers, Gazette references, court orders, scheme names, programme codes, subsidy amounts, eligibility criteria, portal URLs, or effective dates.
+- Do not describe anything as "new", "recent", "just announced", or "effective from [date]" unless you are certain — prefer timeless educational topics and explainers.
+- Do not state specific rupee limits, percentages, or statutory deadlines unless they are stable and you are highly confident; otherwise use qualitative wording and tell readers to verify current figures on the official portal or with their CA.
+- When uncertain, omit the detail or use "may", "typically", "subject to conditions", and "confirm with your chartered accountant".
+- These drafts are reviewed by a human CA before publish — omission is better than fabrication.
+SYS;
+
+    /** Appended to every category topic user prompt. */
+    private const TOPIC_USER_SUFFIX = <<<'SUFFIX'
+
+Pick a topic suitable for a general educational article — not breaking news and not one that requires citing a specific notification number, circular date, or FY-specific budget change you cannot verify.
+Return ONLY the topic title — no extra text, no numbering, no quotes.
+SUFFIX;
+
     /** @var array<string, array{label: string, topicPrompt: string, imagePrompt: string}> */
     private const CATEGORY_CONFIG = [
         'laws' => [
             'label'       => 'New Laws & Provisions',
-            'topicPrompt' => 'You are an expert Indian chartered accountant. Suggest one highly specific, timely blog topic about a recent Indian tax law, provision, SEBI regulation, RBI circular, or GST amendment that would be most useful and engaging for business owners and individual taxpayers right now in 2026. Return ONLY the topic title — no extra text, no numbering, no quotes.',
+            'topicPrompt' => 'Suggest one blog topic title about a well-established area of Indian income tax, GST, or corporate/compliance law that business owners commonly misunderstand. The article should be a general explainer of concepts and obligations — not a report on a particular new amendment or circular.',
             'imagePrompt' => 'Professional, clean illustration for a CA firm blog about Indian tax law and regulations. Abstract legal/financial imagery, muted blues and oranges, courthouse columns, legal documents, no text, modern flat style.',
         ],
         'tax_saving' => [
             'label'       => 'Tax Saving & Tax Planning',
-            'topicPrompt' => 'You are an expert Indian chartered accountant. Suggest one highly specific, actionable blog topic about a lesser-known or underutilised tax-saving strategy, deduction, exemption, or investment that Indian taxpayers and business owners can use in FY 2025-26 or FY 2026-27. Return ONLY the topic title — no extra text, no numbering, no quotes.',
+            'topicPrompt' => 'Suggest one blog topic title about a widely recognised tax-saving or tax-planning concept under Indian law (deductions, exemptions, structure, or record-keeping) that many taxpayers overlook. Focus on principles and planning discipline — not guaranteed savings, product pitches, or FY-specific limits that may change.',
             'imagePrompt' => 'Professional, clean illustration for a CA firm blog about tax planning and savings. Abstract financial imagery — coins, piggy bank, growing plant, calculator, muted greens and oranges, no text, modern flat style.',
         ],
         'ai_promotions' => [
             'label'       => 'AI Promotions',
-            'topicPrompt' => 'You are an expert Indian chartered accountant and business consultant. Suggest one highly specific, practical blog topic about how Indian businesses, startups, or professionals can leverage AI tools, automation, or government AI initiatives to improve productivity, reduce costs, or unlock new revenue in 2026. Return ONLY the topic title — no extra text, no numbering, no quotes.',
+            'topicPrompt' => 'Suggest one blog topic title about practical, responsible use of AI tools by Indian businesses or professionals (productivity, documentation, compliance support) — general guidance only, not endorsements of specific vendors or unverified government AI programmes.',
             'imagePrompt' => 'Professional, clean illustration for a CA firm blog about AI adoption in Indian business. Abstract tech imagery — neural network nodes, digital gears, glowing circuits, muted purples and greys, no text, modern flat style.',
         ],
         'subsidies_promotions' => [
             'label'       => 'Subsidies Promotions',
-            'topicPrompt' => 'You are an expert Indian chartered accountant and government scheme advisor. Suggest one highly specific, actionable blog topic about a central or state government subsidy, grant, or incentive scheme available to Indian MSMEs, startups, or individuals in 2026 that most businesses are unaware of or underutilise. Return ONLY the topic title — no extra text, no numbering, no quotes.',
+            'topicPrompt' => 'Suggest one blog topic title explaining how Indian MSMEs or startups should approach discovering and evaluating government subsidies or incentives — eligibility mindset, documentation, and compliance — without naming a specific scheme unless it is long-established and widely known (e.g. general MSME registration benefits).',
             'imagePrompt' => 'Professional, clean illustration for a CA firm blog about government subsidies and grants in India. Abstract imagery — government building, handshake, growth chart, Indian rupee coins, muted greens and blues, no text, modern flat style.',
         ],
         'funding_promotions' => [
             'label'       => 'Funding Promotions',
-            'topicPrompt' => 'You are an expert Indian chartered accountant and startup funding advisor. Suggest one highly specific, actionable blog topic about fundraising options, investor funding rounds, venture debt, angel networks, or government-backed funding schemes available to Indian startups and SMEs in 2026. Return ONLY the topic title — no extra text, no numbering, no quotes.',
+            'topicPrompt' => 'Suggest one blog topic title about fundraising readiness for Indian startups and SMEs — types of capital, governance, and financial hygiene — as educational guidance, not promises of funding or references to specific investor names, ticket sizes, or schemes you cannot verify.',
             'imagePrompt' => 'Professional, clean illustration for a CA firm blog about startup and business funding in India. Abstract financial imagery — rocket launch, seed money, growth arrows, investor handshake, muted oranges and greens, no text, modern flat style.',
         ],
     ];
@@ -116,7 +135,8 @@ final class BlogAiGenerator
                     $openAiKey,
                     $textModel,
                     [
-                        ['role' => 'user', 'content' => $config['topicPrompt']],
+                        ['role' => 'system', 'content' => self::SYSTEM_PROMPT],
+                        ['role' => 'user', 'content' => $config['topicPrompt'] . self::TOPIC_USER_SUFFIX],
                     ],
                     320,
                     false,
@@ -135,44 +155,14 @@ final class BlogAiGenerator
                 $topic = trim(strip_tags($topic));
                 $add("[blog-ai]   Topic: {$topic}");
 
-                $blogPrompt = <<<PROMPT
-You are a senior Indian chartered accountant writing a professional blog article for CA Rahul Gupta's firm website.
-Write a comprehensive, well-researched article on this topic:
-
-Topic: {$topic}
-Category: {$catLabel}
-
-Return ONE valid JSON object with these keys — no prose before or after:
-{
-  "title": "Clear, SEO-friendly article title",
-  "excerpt": "2–3 sentence plain-text summary for listing cards (NO HTML tags here)",
-  "content": "Full article body as clean semantic HTML (see rules below)"
-}
-
-Content HTML rules (these are strict):
-- Start with an engaging introductory <p> paragraph — do NOT start with a heading
-- Use <h2> for 3–5 main section headings spread throughout the article
-- Use <p> for every paragraph of body text
-- Use <strong> to emphasise key terms, section numbers (e.g. Section 80C), amounts, deadlines
-- Use <em> sparingly for definitions or asides
-- Use <ul><li> for bullet lists and <ol><li> for numbered steps
-- Do NOT include <html>, <head>, <body>, <h1>, <style>, or <script> tags
-- Do NOT use markdown syntax (##, **, -, ```, etc.) — only HTML tags
-- All tags must be properly opened and closed
-
-Writing style:
-- Clear, simple English that business owners and individual taxpayers can easily understand
-- 600–900 words
-- Include real Indian tax provisions, section references, and practical examples where relevant
-- End with a short, actionable conclusion section under an <h2>
-
-PROMPT;
+                $blogPrompt = self::buildArticlePrompt($topic, $catLabel);
 
                 self::ensureOpenAiSpacing($afterLastAi, $minInterval, $add);
                 $draftJson = self::openaiChat(
                     $openAiKey,
                     $textModel,
                     [
+                        ['role' => 'system', 'content' => self::SYSTEM_PROMPT],
                         ['role' => 'user', 'content' => $blogPrompt],
                     ],
                     $draftMaxTok,
@@ -198,7 +188,9 @@ PROMPT;
 
                 $draftTitle   = substr(trim((string)$draft['title']), 0, 490);
                 $draftExcerpt = substr(trim((string)($draft['excerpt'] ?? '')), 0, 500);
-                $draftContent = self::normalizeContent(trim((string)$draft['content']));
+                $draftContent = self::ensureDisclaimer(
+                    self::normalizeContent(trim((string)$draft['content'])),
+                );
 
                 $add("[blog-ai]   Title: {$draftTitle}");
 
@@ -264,6 +256,67 @@ PROMPT;
         $add('[blog-ai] Finished at ' . date('Y-m-d H:i:s') . " — {$totalGenerated} draft(s) generated.");
 
         return ['total_generated' => $totalGenerated, 'log' => $log];
+    }
+
+    private static function buildArticlePrompt(string $topic, string $catLabel): string
+    {
+        return <<<PROMPT
+Write a professional educational blog article for CA Rahul Gupta's firm website.
+
+Topic: {$topic}
+Category: {$catLabel}
+
+Return ONE valid JSON object with these keys — no prose before or after:
+{
+  "title": "Clear, SEO-friendly article title (accurate; no sensational claims)",
+  "excerpt": "2–3 sentence plain-text summary for listing cards (NO HTML tags here)",
+  "content": "Full article body as clean semantic HTML (see rules below)"
+}
+
+ACCURACY AND TRUST (mandatory — any violation makes the draft unusable):
+- Write as calm, conservative guidance from a senior Indian chartered accountant — not breaking news or legal advice for a specific reader.
+- NEVER invent: section/sub-section numbers, Act names, Finance Act claims, CBDT/CBIC/GST notification numbers, circular dates, Gazette references, court cases, scheme or programme names, portal URLs, subsidy or loan amounts, or government deadlines.
+- You MAY mention only widely known, stable concepts (e.g. "income tax return filing", "GST registration", "Section 80C" as a category) without stating specific rupee caps or dates unless you are highly confident they are still current.
+- Do NOT claim any rule is "new", "recent", or tied to FY 2025-26 / 2026 unless you are certain; prefer timeless explainers.
+- Use hedged language ("may", "typically", "subject to conditions") for anything that varies by facts or by notification.
+- Where numbers or deadlines matter, tell readers to verify the current figure on the official government portal (Income Tax, GST, MCA, RBI, SEBI, or relevant ministry) or with their chartered accountant — do not guess.
+- Do not recommend specific financial products, lenders, or AI tools by brand unless essential; focus on process and principles.
+- Practical examples must be clearly hypothetical ("For example, a manufacturing MSME might…") — not presented as real client outcomes.
+
+Content HTML rules (strict):
+- Start with an introductory <p> — do NOT start with a heading
+- Use <h2> for 3–5 main section headings
+- Use <p> for body text; <strong> for emphasis; <em> sparingly
+- Use <ul><li> and <ol><li> where helpful
+- Do NOT include <html>, <head>, <body>, <h1>, <style>, or <script>
+- Do NOT use markdown — only HTML tags; all tags properly closed
+
+Writing style:
+- Clear, simple English for business owners and individual taxpayers
+- 600–900 words
+- End with an <h2>Important disclaimer</h2> section: a <p> stating this is general information only, not personalised professional advice, rules and figures change, and readers must confirm current law and their facts with a qualified chartered accountant before acting
+
+PROMPT;
+    }
+
+    /**
+     * Ensures every published-bound draft carries a disclaimer even if the model omitted it.
+     */
+    private static function ensureDisclaimer(string $html): string
+    {
+        $html = trim($html);
+        if ($html === '') {
+            return $html;
+        }
+
+        if (preg_match('/important\s+disclaimer|general\s+information\s+only|not\s+(?:personal(?:ised|ized)?\s+)?professional\s+advice/i', $html)) {
+            return $html;
+        }
+
+        return $html . "\n<h2>Important disclaimer</h2>\n"
+            . '<p>This article is general information only and does not constitute personalised professional advice. '
+            . 'Tax laws, government schemes, rates, and deadlines change frequently. '
+            . 'Please confirm the current position and how it applies to your situation with a qualified chartered accountant before acting.</p>';
     }
 
     private static function resolveBlogUploadDir(string $serverPhpRoot): string
@@ -519,6 +572,7 @@ PROMPT;
                 'model'                 => $model,
                 'messages'              => $messages,
                 'max_completion_tokens' => $maxCompletionTokens,
+                'temperature'           => $jsonObject ? 0.25 : 0.35,
                 'stream'                => true,
             ];
             if ($jsonObject) {
@@ -678,6 +732,7 @@ PROMPT;
                 'model'                 => $model,
                 'messages'              => $messages,
                 'max_completion_tokens' => $maxCompletionTokens,
+                'temperature'           => $jsonObject ? 0.25 : 0.35,
             ];
             if ($jsonObject) {
                 $body['response_format'] = ['type' => 'json_object'];
