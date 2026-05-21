@@ -79,6 +79,18 @@ class TxnModel
             . " AND {$alias}.txn_type NOT IN ({$types})";
     }
 
+    /** Txn row owned exclusively by a contact (matches recovery list client attribution). */
+    public static function sqlTxnOwnedExclusivelyByClient(string $alias = 't'): string
+    {
+        return "COALESCE({$alias}.organization_id, 0) = 0";
+    }
+
+    /** Txn row owned exclusively by an organization (matches recovery list org attribution). */
+    public static function sqlTxnOwnedExclusivelyByOrganization(string $alias = 't'): string
+    {
+        return "COALESCE({$alias}.client_id, 0) = 0";
+    }
+
     private PDO $db;
 
     public function __construct()
@@ -420,6 +432,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
+               AND ' . self::sqlTxnOwnedExclusivelyByClient('t') . '
                AND ' . self::sqlTxnCountsTowardClientReceivable('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
@@ -454,6 +467,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.organization_id = :org_id
+               AND ' . self::sqlTxnOwnedExclusivelyByOrganization('t') . '
                AND ' . self::sqlTxnCountsTowardClientReceivable('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
@@ -487,6 +501,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
+               AND ' . self::sqlTxnOwnedExclusivelyByClient('t') . '
                AND ' . self::sqlTxnCountsTowardClientReceivable('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
@@ -513,6 +528,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.organization_id = :org_id
+               AND ' . self::sqlTxnOwnedExclusivelyByOrganization('t') . '
                AND ' . self::sqlTxnCountsTowardClientReceivable('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
@@ -659,6 +675,7 @@ class TxnModel
                 'SELECT COALESCE(SUM(t.debit - t.credit), 0)
                  FROM txn t
                  WHERE t.client_id = :entity_id
+                   AND ' . self::sqlTxnOwnedExclusivelyByClient('t') . '
                    AND ' . self::sqlTxnCountsTowardClientReceivable('t')
             );
         } else {
@@ -666,7 +683,7 @@ class TxnModel
                 'SELECT COALESCE(SUM(t.debit - t.credit), 0)
                  FROM txn t
                  WHERE t.organization_id = :entity_id
-                   AND t.client_id IS NULL
+                   AND ' . self::sqlTxnOwnedExclusivelyByOrganization('t') . '
                    AND ' . self::sqlTxnCountsTowardClientReceivable('t')
             );
         }
