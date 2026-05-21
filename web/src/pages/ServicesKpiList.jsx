@@ -58,7 +58,7 @@ export default function ServicesKpiList() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search client or service…"
-            style={searchInput}
+            style={searchInputStyle}
           />
         </div>
       </div>
@@ -92,4 +92,4 @@ const toolbar = {
   border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', maxWidth: 420,
 };
 const searchBox = { display: 'flex', alignItems: 'center', gap: 8, background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 8, padding: '6px 10px', flex: 1, width: '100%' };
-const searchInput = { border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: '#334155', width: '100%' };
+const searchInputStyle = { border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: '#334155', width: '100%' };

@@ -241,7 +241,7 @@ export default function Services() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search client or service…"
-                style={searchInput}
+                style={searchInputStyle}
               />
             </div>
             {isSuperAdmin && (
@@ -419,7 +419,7 @@ const tempBadge = {
 };
 
 const searchBox = { display: 'flex', alignItems: 'center', gap: 8, background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 8, padding: '6px 10px', maxWidth: 260 };
-const searchInput = { border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: '#334155', width: '100%' };
+const searchInputStyle = { border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: '#334155', width: '100%' };
 
 const selectStyle = { padding: '7px 12px', border: '1px solid #E6E8F0', borderRadius: 8, fontSize: 13, background: '#fff', color: '#334155', outline: 'none', cursor: 'pointer' };
 const btnPrimary = { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, boxShadow: '0 2px 8px rgba(243,121,32,0.30)' };
