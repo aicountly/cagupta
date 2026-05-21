@@ -30,6 +30,7 @@ import {
   approveLedgerTxnChange,
   rejectLedgerTxnChange,
   actionLabel as ledgerActionLabel,
+  txnTypeLabelForApproval,
 } from '../services/ledgerTxnChangeApprovalService';
 
 const FILTER_OPTIONS = [
@@ -248,7 +249,7 @@ function LedgerTxnChangeCard({ row, busy, onApprove, onReject }) {
             {isBulkCancel
               ? `Cancel ${ids.length} ledger records`
               : row.txn_id
-                ? `Txn #${row.txn_id} · ${snap.txn_type || '—'}`
+                ? `Txn #${row.txn_id} · ${txnTypeLabelForApproval(snap.txn_type)}`
                 : 'Bulk ledger cancel'}
           </div>
         </div>

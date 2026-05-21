@@ -91,6 +91,38 @@ class TxnModel
         return "COALESCE({$alias}.client_id, 0) = 0";
     }
 
+    /**
+     * Sum of positive ledger-class closings for recovery list row totals.
+     * Regular, memorandum, optional, and parked are independent — a credit in one
+     * class must not hide receivable in another.
+     *
+     * @param array<string, mixed> $entityRow
+     */
+    private static function recoveryPositiveRowTotal(array $entityRow): float
+    {
+        $sum = 0.0;
+        foreach (['regular', 'memorandum', 'optional', 'parked'] as $slot) {
+            $sum += max(0.0, (float)($entityRow[$slot]['ledgerClosing'] ?? 0));
+        }
+
+        return round($sum, 2);
+    }
+
+    /**
+     * Net closing across all ledger classes (may be negative when credits exceed debits).
+     *
+     * @param array<string, mixed> $entityRow
+     */
+    private static function recoveryNetRowTotal(array $entityRow): float
+    {
+        $sum = 0.0;
+        foreach (['regular', 'memorandum', 'optional', 'parked'] as $slot) {
+            $sum += (float)($entityRow[$slot]['ledgerClosing'] ?? 0);
+        }
+
+        return round($sum, 2);
+    }
+
     private PDO $db;
 
     public function __construct()
@@ -627,9 +659,9 @@ class TxnModel
      *
      * For each ledger entity, closing balance is SUM(debit − credit) on rows visible on the entity ledger
      * (excludes cancelled/deleted only), same as {@see getLedgerByClient()} / {@see getLedgerByOrganization()}.
-     * Only positive balances (client owes the firm) are summed. Each txn row is
-     * attributed to a single bucket: client_id when set, otherwise organization_id,
-     * so rows with both IDs are not double-counted.
+     * Only positive balances (client owes the firm) are summed, per ledger class independently
+     * (regular / memorandum / optional / parked). Each txn row is attributed to a single bucket:
+     * client_id when set, otherwise organization_id, so rows with both IDs are not double-counted.
      */
     public function getTotalReceivable(): float
     {
@@ -639,13 +671,15 @@ class TxnModel
                  SELECT
                      CASE WHEN t.client_id IS NOT NULL THEN 'client' ELSE 'organization' END AS entity_type,
                      COALESCE(t.client_id, t.organization_id) AS entity_id,
+                     COALESCE(NULLIF(TRIM(t.ledger_class), ''), 'regular') AS ledger_class,
                      SUM(t.debit - t.credit) AS balance
                  FROM txn t
                  WHERE " . self::sqlTxnCountsTowardClientReceivable('t') . "
                    AND (t.client_id IS NOT NULL OR t.organization_id IS NOT NULL)
                  GROUP BY
                      CASE WHEN t.client_id IS NOT NULL THEN 'client' ELSE 'organization' END,
-                     COALESCE(t.client_id, t.organization_id)
+                     COALESCE(t.client_id, t.organization_id),
+                     COALESCE(NULLIF(TRIM(t.ledger_class), ''), 'regular')
              ) per
              WHERE NOT EXISTS (
                  SELECT 1
@@ -659,7 +693,7 @@ class TxnModel
     }
 
     /**
-     * Consolidated receivable balance for one ledger entity (all ledger classes).
+     * Recoverable balance for one ledger entity: sum of positive closings per ledger class.
      */
     public function getEntityReceivableBalance(string $entityType, int $entityId): float
     {
@@ -672,24 +706,34 @@ class TxnModel
 
         if ($entityType === 'client') {
             $stmt = $this->db->prepare(
-                'SELECT COALESCE(SUM(t.debit - t.credit), 0)
-                 FROM txn t
-                 WHERE t.client_id = :entity_id
-                   AND ' . self::sqlTxnOwnedExclusivelyByClient('t') . '
-                   AND ' . self::sqlTxnCountsTowardClientReceivable('t')
+                'SELECT COALESCE(SUM(GREATEST(per.balance, 0)), 0)
+                 FROM (
+                     SELECT COALESCE(NULLIF(TRIM(t.ledger_class), \'\'), \'regular\') AS ledger_class,
+                            SUM(t.debit - t.credit) AS balance
+                     FROM txn t
+                     WHERE t.client_id = :entity_id
+                       AND ' . self::sqlTxnOwnedExclusivelyByClient('t') . '
+                       AND ' . self::sqlTxnCountsTowardClientReceivable('t') . '
+                     GROUP BY COALESCE(NULLIF(TRIM(t.ledger_class), \'\'), \'regular\')
+                 ) per'
             );
         } else {
             $stmt = $this->db->prepare(
-                'SELECT COALESCE(SUM(t.debit - t.credit), 0)
-                 FROM txn t
-                 WHERE t.organization_id = :entity_id
-                   AND ' . self::sqlTxnOwnedExclusivelyByOrganization('t') . '
-                   AND ' . self::sqlTxnCountsTowardClientReceivable('t')
+                'SELECT COALESCE(SUM(GREATEST(per.balance, 0)), 0)
+                 FROM (
+                     SELECT COALESCE(NULLIF(TRIM(t.ledger_class), \'\'), \'regular\') AS ledger_class,
+                            SUM(t.debit - t.credit) AS balance
+                     FROM txn t
+                     WHERE t.organization_id = :entity_id
+                       AND ' . self::sqlTxnOwnedExclusivelyByOrganization('t') . '
+                       AND ' . self::sqlTxnCountsTowardClientReceivable('t') . '
+                     GROUP BY COALESCE(NULLIF(TRIM(t.ledger_class), \'\'), \'regular\')
+                 ) per'
             );
         }
         $stmt->execute([':entity_id' => $entityId]);
 
-        return round(max(0.0, (float)$stmt->fetchColumn()), 2);
+        return round((float)$stmt->fetchColumn(), 2);
     }
 
     /**
@@ -804,11 +848,8 @@ class TxnModel
         }
 
         foreach ($entityRows as &$er) {
-            $closingSum = 0.0;
-            foreach (['regular', 'memorandum', 'optional', 'parked'] as $slot) {
-                $closingSum += (float)($er[$slot]['ledgerClosing'] ?? 0);
-            }
-            $er['rowTotal'] = round($closingSum, 2);
+            $er['rowNet']   = self::recoveryNetRowTotal($er);
+            $er['rowTotal'] = self::recoveryPositiveRowTotal($er);
         }
         unset($er);
 
@@ -895,6 +936,9 @@ class TxnModel
                 continue;
             }
             foreach (['regular', 'memorandum', 'optional', 'parked'] as $slot) {
+                if ((float)($er[$slot]['ledgerClosing'] ?? 0) <= 0) {
+                    continue;
+                }
                 foreach (['fees', 'taxes', 'reimbursement'] as $f) {
                     $totals[$slot][$f] += (float)($er[$slot][$f] ?? 0);
                 }
@@ -2147,6 +2191,132 @@ class TxnModel
     }
 
     /**
+     * Resolve both legs of a firm bank transfer pair (out + in).
+     *
+     * @return list<int>
+     */
+    public function resolveFirmTransferPairIds(int $txnId): array
+    {
+        $row = $this->find($txnId);
+        if ($row === null || (string)($row['txn_type'] ?? '') !== 'firm_bank_transfer') {
+            return $txnId > 0 ? [$txnId] : [];
+        }
+        $linked = (int)($row['linked_txn_id'] ?? 0);
+        $debit  = (float)($row['debit'] ?? 0);
+        if ($debit > 0) {
+            $outId = $txnId;
+            $inId  = $linked > 0 ? $linked : $txnId;
+        } else {
+            $inId  = $txnId;
+            $outId = $linked > 0 ? $linked : $txnId;
+        }
+
+        $ids = [];
+        foreach ([$outId, $inId] as $n) {
+            if ($n > 0) {
+                $ids[$n] = $n;
+            }
+        }
+
+        return array_values($ids);
+    }
+
+    /**
+     * Update both legs of a firm bank transfer pair atomically.
+     *
+     * @param array<string, mixed> $data  from_firm_bank_account_id, to_firm_bank_account_id, amount, txn_date, narration
+     */
+    public function updateFirmBankTransferPair(int $anchorTxnId, array $data, ?int $updatedByUserId = null): void
+    {
+        $pairIds = $this->resolveFirmTransferPairIds($anchorTxnId);
+        if ($pairIds === []) {
+            throw new \InvalidArgumentException('Transfer transaction not found.');
+        }
+        $outId = $pairIds[0];
+        $inId  = $pairIds[1] ?? $pairIds[0];
+
+        $from = (int)($data['from_firm_bank_account_id'] ?? $data['firm_bank_account_id'] ?? 0);
+        $to   = (int)($data['to_firm_bank_account_id'] ?? $data['counterparty_firm_bank_account_id'] ?? 0);
+        if ($from <= 0 || $to <= 0) {
+            $outRow = $this->find($outId);
+            if ($outRow !== null) {
+                $from = (int)($outRow['firm_bank_account_id'] ?? 0);
+                $to   = (int)($outRow['counterparty_firm_bank_account_id'] ?? 0);
+            }
+        }
+        $amount = isset($data['amount']) ? (float)$data['amount'] : 0.0;
+        if ($amount <= 0) {
+            $outRow = $this->find($outId);
+            $amount = (float)($outRow['debit'] ?? $outRow['amount'] ?? 0);
+        }
+        if ($from <= 0 || $to <= 0 || $from === $to) {
+            throw new \InvalidArgumentException('from and to bank accounts must differ and be valid.');
+        }
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('amount must be greater than zero.');
+        }
+
+        $banks = new FirmBankAccountModel();
+        $aFrom = $banks->find($from);
+        $aTo   = $banks->find($to);
+        if ($aFrom === null || $aTo === null || empty($aFrom['is_active']) || empty($aTo['is_active'])) {
+            throw new \InvalidArgumentException('Invalid or inactive bank account(s).');
+        }
+
+        $billingFrom = (string)$aFrom['billing_firm_code'];
+        $billingTo   = (string)$aTo['billing_firm_code'];
+        $scope       = trim((string)($data['transfer_scope'] ?? ''));
+        if ($scope === 'intra' && $billingFrom !== $billingTo) {
+            throw new \InvalidArgumentException('Intra transfer requires both accounts to belong to the same billing firm.');
+        }
+        if ($scope === 'inter' && $billingFrom === $billingTo) {
+            throw new \InvalidArgumentException('Inter transfer requires accounts from different billing firms.');
+        }
+
+        $date = (string)($data['txn_date'] ?? date('Y-m-d'));
+        $narr = trim((string)($data['narration'] ?? ''));
+        if ($narr !== '') {
+            $narr = preg_replace('/\s*\(out\)\s*$/i', '', $narr);
+            $narr = preg_replace('/\s*\(in\)\s*$/i', '', $narr);
+        }
+        if ($narr === '') {
+            $narr = 'Bank transfer';
+        }
+
+        $this->db->beginTransaction();
+        try {
+            $this->update($outId, [
+                'billing_profile_code'              => $billingFrom,
+                'txn_date'                          => $date,
+                'narration'                         => $narr . ' (out)',
+                'debit'                             => $amount,
+                'credit'                            => 0,
+                'amount'                            => $amount,
+                'firm_bank_account_id'              => $from,
+                'counterparty_firm_bank_account_id' => $to,
+            ], $updatedByUserId);
+            $this->update($inId, [
+                'billing_profile_code'              => $billingTo,
+                'txn_date'                          => $date,
+                'narration'                         => $narr . ' (in)',
+                'debit'                             => 0,
+                'credit'                            => $amount,
+                'amount'                            => $amount,
+                'firm_bank_account_id'              => $to,
+                'counterparty_firm_bank_account_id' => $from,
+                'linked_txn_id'                     => $outId,
+            ], $updatedByUserId);
+            if ($outId !== $inId) {
+                $this->update($outId, ['linked_txn_id' => $inId], $updatedByUserId);
+            }
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            $this->db->rollBack();
+            throw $e;
+        }
+    }
+
+    /**
      * Bank / cash book with running balance (opening_balance + movement).
      *
      * @return array<int, array<string, mixed>>
@@ -2243,15 +2413,31 @@ class TxnModel
         $where  = ["t.status = 'active'", "t.client_id IS NULL", "t.organization_id IS NULL"];
         $params = [];
         $kind   = strtolower(trim($kind));
+        $joins  = ' LEFT JOIN firm_bank_accounts fba ON fba.id = t.firm_bank_account_id'
+            . ' LEFT JOIN firm_bank_accounts cpa ON cpa.id = t.counterparty_firm_bank_account_id';
+
         if ($kind === 'expense') {
             $where[] = "t.txn_type = 'firm_expense'";
-        } elseif ($kind === 'contra') {
-            $where[] = "t.txn_type = 'firm_bank_transfer'";
         } elseif ($kind === 'inflow') {
             $where[] = "t.txn_type = 'firm_inflow'";
+        } elseif ($kind === 'contra') {
+            $where[] = "t.txn_type = 'firm_bank_transfer'";
+            $where[] = 'COALESCE(t.debit, 0) > 0';
+        } elseif ($kind === 'intra_transfer') {
+            $where[] = "t.txn_type = 'firm_bank_transfer'";
+            $where[] = 'COALESCE(t.debit, 0) > 0';
+            $where[] = 'fba.id IS NOT NULL AND cpa.id IS NOT NULL';
+            $where[] = 'fba.billing_firm_code = cpa.billing_firm_code';
+        } elseif ($kind === 'inter_transfer') {
+            $where[] = "t.txn_type = 'firm_bank_transfer'";
+            $where[] = 'COALESCE(t.debit, 0) > 0';
+            $where[] = 'fba.id IS NOT NULL AND cpa.id IS NOT NULL';
+            $where[] = 'fba.billing_firm_code <> cpa.billing_firm_code';
         } else {
-            $where[] = "t.txn_type IN ('firm_expense', 'firm_bank_transfer', 'firm_inflow')";
+            $where[] = "(t.txn_type IN ('firm_expense', 'firm_inflow')"
+                . " OR (t.txn_type = 'firm_bank_transfer' AND COALESCE(t.debit, 0) > 0))";
         }
+
         if ($dateFrom !== '') {
             $where[]       = 't.txn_date >= :df';
             $params[':df'] = $dateFrom;
@@ -2263,12 +2449,21 @@ class TxnModel
         $whereClause = implode(' AND ', $where);
         $offset      = ($page - 1) * $perPage;
 
-        $cnt = $this->db->prepare("SELECT COUNT(*) FROM txn t WHERE {$whereClause}");
+        $fromClause = 'txn t' . $joins;
+        $selectExtra = ", CASE WHEN t.txn_type = 'firm_bank_transfer' AND fba.id IS NOT NULL AND cpa.id IS NOT NULL"
+            . " AND fba.billing_firm_code = cpa.billing_firm_code THEN 'intra'"
+            . " WHEN t.txn_type = 'firm_bank_transfer' AND fba.id IS NOT NULL AND cpa.id IS NOT NULL"
+            . " THEN 'inter' ELSE NULL END AS transfer_scope,"
+            . " t.linked_txn_id AS pair_txn_id,"
+            . " fba.name AS firm_bank_account_name,"
+            . " cpa.name AS counterparty_bank_account_name";
+
+        $cnt = $this->db->prepare("SELECT COUNT(*) FROM {$fromClause} WHERE {$whereClause}");
         $cnt->execute($params);
         $total = (int)$cnt->fetchColumn();
 
         $stmt = $this->db->prepare(
-            "SELECT t.* FROM txn t
+            "SELECT t.*{$selectExtra} FROM {$fromClause}
              WHERE {$whereClause}
              ORDER BY t.txn_date DESC, t.id DESC
              LIMIT :lim OFFSET :off"

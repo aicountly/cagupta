@@ -12,6 +12,8 @@ import {
   createFirmBankTransfer,
   createFirmExpenseTxn,
   createFirmInflowTxn,
+  updateTxn,
+  deleteTxn,
 } from '../../services/txnService';
 
 const BankFirmWorkspaceContext = createContext(null);
@@ -20,6 +22,7 @@ export function BankFirmWorkspaceProvider({ children }) {
   const { hasPermission } = useAuth();
   const canSettings = hasPermission('settings.view');
   const canEditOpeningBalance = hasPermission('invoices.edit');
+  const canEditFirmTxn = hasPermission('invoices.edit');
 
   const [firmCode, setFirmCode] = useState('');
   const [accounts, setAccounts] = useState([]);
@@ -61,6 +64,11 @@ export function BankFirmWorkspaceProvider({ children }) {
 
   const [reportKind, setReportKind] = useState('all');
   const [reportRows, setReportRows] = useState([]);
+  const [editTxn, setEditTxn] = useState(null);
+  const [editBusy, setEditBusy] = useState(false);
+  const [deleteTxnRow, setDeleteTxnRow] = useState(null);
+  const [deleteTxnBusy, setDeleteTxnBusy] = useState(false);
+  const [auditTxn, setAuditTxn] = useState(null);
 
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState('bank');
@@ -358,10 +366,102 @@ export function BankFirmWorkspaceProvider({ children }) {
     if (!deleteAccountBusy) setDeleteAccountId(null);
   }, [deleteAccountBusy]);
 
+  const openEditFirmTxn = useCallback((row) => {
+    if (!canEditFirmTxn || !row) return;
+    setEditTxn({ ...row });
+  }, [canEditFirmTxn]);
+
+  const closeEditFirmTxn = useCallback(() => {
+    if (!editBusy) setEditTxn(null);
+  }, [editBusy]);
+
+  const saveEditFirmTxn = useCallback(
+    async (form) => {
+      if (!editTxn?.id || !canEditFirmTxn) return;
+      setEditBusy(true);
+      try {
+        const type = editTxn.txnType;
+        let payload = {};
+        if (type === 'firm_bank_transfer') {
+          const scope = form.transferScope || editTxn.transferScope || 'intra';
+          payload = {
+            txn_date: form.txnDate,
+            amount: parseFloat(form.amount),
+            narration: form.narration,
+            from_firm_bank_account_id: parseInt(form.fromAccountId, 10),
+            to_firm_bank_account_id: parseInt(form.toAccountId, 10),
+            transfer_scope: scope,
+          };
+        } else {
+          payload = {
+            txn_date: form.txnDate,
+            amount: parseFloat(form.amount),
+            narration: form.narration,
+            firm_bank_account_id: parseInt(form.bankAccountId, 10),
+            firm_expense_category: form.category,
+          };
+        }
+        const result = await updateTxn(editTxn.id, payload);
+        if (result?.pendingLedgerChange) {
+          flash(result.queuedMessage || 'Change submitted for Super Admin approval.', 'success');
+        } else {
+          flash('Transaction updated.', 'success');
+        }
+        setEditTxn(null);
+        loadReport();
+        refreshAccounts();
+      } catch (err) {
+        flash(err.message || 'Update failed', 'error');
+      } finally {
+        setEditBusy(false);
+      }
+    },
+    [editTxn, canEditFirmTxn, flash, loadReport, refreshAccounts],
+  );
+
+  const promptDeleteFirmTxn = useCallback(
+    (row) => {
+      if (!canEditFirmTxn || !row) return;
+      setDeleteTxnRow(row);
+    },
+    [canEditFirmTxn],
+  );
+
+  const closeDeleteFirmTxnModal = useCallback(() => {
+    if (!deleteTxnBusy) setDeleteTxnRow(null);
+  }, [deleteTxnBusy]);
+
+  const confirmDeleteFirmTxn = useCallback(async () => {
+    if (!deleteTxnRow?.id || !canEditFirmTxn) return;
+    setDeleteTxnBusy(true);
+    try {
+      const result = await deleteTxn(deleteTxnRow.id);
+      if (result?.pendingLedgerChange) {
+        flash(result.queuedMessage || 'Cancel submitted for Super Admin approval.', 'success');
+      } else {
+        flash('Transaction cancelled.', 'success');
+      }
+      setDeleteTxnRow(null);
+      loadReport();
+      refreshAccounts();
+    } catch (err) {
+      flash(err.message || 'Delete failed', 'error');
+    } finally {
+      setDeleteTxnBusy(false);
+    }
+  }, [deleteTxnRow, canEditFirmTxn, flash, loadReport, refreshAccounts]);
+
+  const openAuditFirmTxn = useCallback((row) => {
+    if (row?.id) setAuditTxn(row);
+  }, []);
+
+  const closeAuditFirmTxn = useCallback(() => setAuditTxn(null), []);
+
   const value = useMemo(
     () => ({
       canSettings,
       canEditOpeningBalance,
+      canEditFirmTxn,
       firmCode,
       setFirmCode,
       accounts,
@@ -430,6 +530,19 @@ export function BankFirmWorkspaceProvider({ children }) {
       setReportKind,
       reportRows,
       loadReport,
+      editTxn,
+      editBusy,
+      openEditFirmTxn,
+      closeEditFirmTxn,
+      saveEditFirmTxn,
+      deleteTxnRow,
+      deleteTxnBusy,
+      promptDeleteFirmTxn,
+      closeDeleteFirmTxnModal,
+      confirmDeleteFirmTxn,
+      auditTxn,
+      openAuditFirmTxn,
+      closeAuditFirmTxn,
       newName,
       setNewName,
       newType,
@@ -461,6 +574,7 @@ export function BankFirmWorkspaceProvider({ children }) {
     [
       canSettings,
       canEditOpeningBalance,
+      canEditFirmTxn,
       firmCode,
       accounts,
       loading,
@@ -502,6 +616,19 @@ export function BankFirmWorkspaceProvider({ children }) {
       reportKind,
       reportRows,
       loadReport,
+      editTxn,
+      editBusy,
+      openEditFirmTxn,
+      closeEditFirmTxn,
+      saveEditFirmTxn,
+      deleteTxnRow,
+      deleteTxnBusy,
+      promptDeleteFirmTxn,
+      closeDeleteFirmTxnModal,
+      confirmDeleteFirmTxn,
+      auditTxn,
+      openAuditFirmTxn,
+      closeAuditFirmTxn,
       newName,
       newType,
       newOpen,

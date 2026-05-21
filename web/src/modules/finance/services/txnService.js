@@ -187,7 +187,23 @@ function normalizeTxn(t) {
     parkedTransferReversal: normalizeParkedTransferSummary(t.parked_transfer_reversal),
     parkedTransferSource: normalizeParkedTransferSummary(t.parked_transfer_source),
     pendingLedgerChange: normalizePendingLedgerChange(t.pending_ledger_change),
+    transferScope: t.transfer_scope || '',
+    pairTxnId: t.pair_txn_id != null ? parseInt(t.pair_txn_id, 10) || null : null,
+    firmBankAccountName: t.firm_bank_account_name || '',
+    counterpartyBankAccountName: t.counterparty_bank_account_name || '',
   };
+}
+
+/** Human-readable label for firm internal transaction types. */
+export function firmTxnTypeLabel(txnType, transferScope = '') {
+  if (txnType === 'firm_bank_transfer') {
+    if (transferScope === 'inter') return 'Inter transfer';
+    if (transferScope === 'intra') return 'Intra transfer';
+    return 'Bank transfer';
+  }
+  if (txnType === 'firm_expense') return 'Firm expense';
+  if (txnType === 'firm_inflow') return 'Firm inflow';
+  return String(txnType || '').replace(/_/g, ' ') || '—';
 }
 
 function normalizeParkedTransferSummary(raw) {

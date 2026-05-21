@@ -273,6 +273,7 @@ final class LedgerTxnChangeService
             'tds_status', 'tds_section', 'tds_rate',
             'linked_txn_id', 'notes', 'status', 'public_ref',
             'ledger_class', 'ledger_movement_kind', 'client_id', 'organization_id',
+            'firm_bank_account_id', 'counterparty_firm_bank_account_id', 'firm_expense_category',
         ];
         $out = [];
         foreach ($keys as $k) {

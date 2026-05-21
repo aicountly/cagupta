@@ -607,10 +607,11 @@ class TxnController extends BaseController
         $actingUser = $this->authUser();
         $actorId    = $actingUser ? (int)$actingUser['id'] : null;
         $type = (string)($row['txn_type'] ?? '');
-        if ($this->txnRequiresLedgerModifyOtp($type) && !$this->isSuperAdminActor($actingUser)) {
-            $intercept = LedgerTxnChangeService::queueUpdate($id, $body, $actingUser);
+        if ($this->txnRequiresTeamApproval($type) && !$this->isSuperAdminActor($actingUser)) {
+            $queueBody = $this->normalizeFirmUpdatePayloadForQueue($row, $body);
+            $intercept = LedgerTxnChangeService::queueUpdate($id, $queueBody, $actingUser);
             if ($intercept !== null) {
-                $this->respondLedgerChangeQueued($intercept, $row);
+                $this->respondLedgerChangeQueued($intercept, $row, $actingUser);
             }
         }
 
@@ -633,6 +634,13 @@ class TxnController extends BaseController
             case 'tds_final':
                 $this->applyTdsTxnUpdate($id, $row, $body, $actorId);
                 break;
+            case 'firm_expense':
+            case 'firm_inflow':
+                $this->applyFirmSimpleTxnUpdate($id, $row, $body, $actorId);
+                break;
+            case 'firm_bank_transfer':
+                $this->applyFirmBankTransferPairUpdate($id, $body, $actorId);
+                break;
             default:
                 $this->txn->update($id, $body, $actorId);
         }
@@ -641,7 +649,8 @@ class TxnController extends BaseController
         $beforeSnap = $this->txnAuditCompactSnapshot($row);
         $afterSnap  = $this->txnAuditCompactSnapshot($updated ?? []);
         if ($updated !== null && $beforeSnap !== $afterSnap) {
-            $this->auditTxnLog($actorId, 'txn.updated', $id, ['txn_type' => $type], $beforeSnap, $afterSnap);
+            $via = $this->isSuperAdminActor($actingUser) ? 'super_admin' : 'direct';
+            $this->auditTxnLog($actorId, 'txn.updated', $id, ['txn_type' => $type, 'via' => $via], $beforeSnap, $afterSnap);
         }
         if ($type === 'invoice') {
             (new CommissionSyncService())->syncInvoiceSafe($id);
@@ -662,6 +671,125 @@ class TxnController extends BaseController
     private function txnRequiresLedgerModifyOtp(string $txnType): bool
     {
         return in_array($txnType, $this->txnTypesRequiringLedgerModifyOtp(), true);
+    }
+
+    /** @return list<string> */
+    private function txnTypesFirmTeamApproval(): array
+    {
+        return ['firm_expense', 'firm_inflow', 'firm_bank_transfer'];
+    }
+
+    /** @return list<string> */
+    private function txnTypesRequiringTeamApproval(): array
+    {
+        return array_values(array_unique(array_merge(
+            $this->txnTypesRequiringLedgerModifyOtp(),
+            $this->txnTypesFirmTeamApproval()
+        )));
+    }
+
+    private function txnRequiresTeamApproval(string $txnType): bool
+    {
+        return in_array($txnType, $this->txnTypesRequiringTeamApproval(), true);
+    }
+
+    private function txnRequiresFirmTeamApproval(string $txnType): bool
+    {
+        return in_array($txnType, $this->txnTypesFirmTeamApproval(), true);
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     *
+     * @return list<int>
+     */
+    private function expandCancelIdsForFirmRow(int $id, array $row): array
+    {
+        $type = (string)($row['txn_type'] ?? '');
+        if ($type === 'firm_bank_transfer') {
+            return $this->txn->resolveFirmTransferPairIds($id);
+        }
+
+        return [$id];
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $body
+     *
+     * @return array<string, mixed>
+     */
+    private function normalizeFirmUpdatePayloadForQueue(array $row, array $body): array
+    {
+        $type = (string)($row['txn_type'] ?? '');
+        if ($type !== 'firm_bank_transfer') {
+            return $body;
+        }
+        $pairIds = $this->txn->resolveFirmTransferPairIds((int)($row['id'] ?? 0));
+        $outId   = $pairIds[0] ?? (int)($row['id'] ?? 0);
+        $outRow  = $this->txn->find($outId) ?? $row;
+        $from    = (int)($body['from_firm_bank_account_id'] ?? $body['firm_bank_account_id'] ?? $outRow['firm_bank_account_id'] ?? 0);
+        $to      = (int)($body['to_firm_bank_account_id'] ?? $body['counterparty_firm_bank_account_id'] ?? $outRow['counterparty_firm_bank_account_id'] ?? 0);
+        $normalized = $body;
+        $normalized['from_firm_bank_account_id'] = $from;
+        $normalized['to_firm_bank_account_id']   = $to;
+        $normalized['pair_txn_ids']              = $pairIds;
+
+        return $normalized;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $body
+     */
+    private function applyFirmSimpleTxnUpdate(int $id, array $row, array $body, ?int $actorId): void
+    {
+        $type   = (string)($row['txn_type'] ?? '');
+        $amount = isset($body['amount']) ? (float)$body['amount'] : (float)($row['amount'] ?? 0);
+        if ($amount <= 0) {
+            $this->error('amount must be greater than zero.', 422);
+        }
+        $bankId = (int)($body['firm_bank_account_id'] ?? $row['firm_bank_account_id'] ?? 0);
+        if ($bankId <= 0) {
+            $this->error('firm_bank_account_id is required.', 422);
+        }
+        $banks = new FirmBankAccountModel();
+        $acc   = $banks->find($bankId);
+        if ($acc === null || empty($acc['is_active'])) {
+            $this->error('Invalid or inactive bank account.', 422);
+        }
+        $cat = trim((string)($body['firm_expense_category'] ?? $row['firm_expense_category'] ?? ''));
+        if ($cat === '') {
+            $this->error('firm_expense_category is required.', 422);
+        }
+        $patch = [
+            'txn_date'               => $body['txn_date'] ?? $row['txn_date'],
+            'narration'              => $body['narration'] ?? $row['narration'],
+            'amount'                 => $amount,
+            'firm_bank_account_id'   => $bankId,
+            'firm_expense_category'  => $cat,
+            'billing_profile_code'   => (string)$acc['billing_firm_code'],
+        ];
+        if ($type === 'firm_expense') {
+            $patch['debit']  = $amount;
+            $patch['credit'] = 0;
+        } else {
+            $patch['debit']  = 0;
+            $patch['credit'] = $amount;
+        }
+        $this->txn->update($id, $patch, $actorId);
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function applyFirmBankTransferPairUpdate(int $id, array $body, ?int $actorId): void
+    {
+        try {
+            $this->txn->updateFirmBankTransferPair($id, $body, $actorId);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
     }
 
     /**
@@ -1186,11 +1314,33 @@ class TxnController extends BaseController
             if (!$this->isSuperAdminActor($acting)) {
                 $intercept = LedgerTxnChangeService::queueCancel([$id], $acting);
                 if ($intercept !== null) {
-                    $this->respondLedgerChangeQueued($intercept, $row);
+                    $this->respondLedgerChangeQueued($intercept, $row, $acting);
                 }
             }
             $delActor = $acting ? (int)$acting['id'] : null;
             $this->performTxnDelete($row, $delActor);
+            $this->success(null, 'Transaction cancelled.');
+        }
+
+        if ($this->txnRequiresFirmTeamApproval($type)) {
+            if (!$this->userHasPermission($this->authUser(), 'invoices.edit')) {
+                $this->error('Access denied. Required permission: invoices.edit.', 403);
+            }
+            $acting    = $this->authUser();
+            $cancelIds = $this->expandCancelIdsForFirmRow($id, $row);
+            if (!$this->isSuperAdminActor($acting)) {
+                $intercept = LedgerTxnChangeService::queueCancel($cancelIds, $acting);
+                if ($intercept !== null) {
+                    $this->respondLedgerChangeQueued($intercept, $row, $acting);
+                }
+            }
+            $delActor = $acting ? (int)$acting['id'] : null;
+            foreach ($cancelIds as $cid) {
+                $r = $this->txn->find($cid);
+                if ($r !== null && !in_array((string)($r['status'] ?? ''), ['cancelled', 'deleted'], true)) {
+                    $this->performTxnDelete($r, $delActor);
+                }
+            }
             $this->success(null, 'Transaction cancelled.');
         }
 
@@ -1199,17 +1349,7 @@ class TxnController extends BaseController
         }
 
         $actorDel = $this->authUser() ? (int)$this->authUser()['id'] : null;
-        $beforeSnap = $this->txnAuditCompactSnapshot($row);
-        $this->txn->softCancelForAudit($id, $actorDel);
-        $afterRow = $this->txn->find($id);
-        $this->auditTxnLog(
-            $actorDel,
-            'txn.cancelled',
-            $id,
-            ['txn_type' => $type],
-            $beforeSnap,
-            $afterRow !== null ? $this->txnAuditCompactSnapshot($afterRow) : null
-        );
+        $this->performTxnDelete($row, $actorDel);
         $this->success(null, 'Transaction cancelled.');
     }
 
@@ -2328,7 +2468,7 @@ class TxnController extends BaseController
 
     // ── GET /api/admin/txn/firm-internal ──────────────────────────────────────
 
-    /** Query: kind all|contra|expense, page, per_page, date_from, date_to */
+    /** Query: kind all|contra|expense|inflow|intra_transfer|inter_transfer, page, per_page, date_from, date_to */
     public function firmInternal(): never
     {
         $page    = max(1, (int)$this->query('page', 1));
@@ -2336,7 +2476,11 @@ class TxnController extends BaseController
         $kind    = trim((string)$this->query('kind', 'all'));
         $df      = trim((string)$this->query('date_from', ''));
         $dt      = trim((string)$this->query('date_to', ''));
-        $res     = $this->txn->paginateFirmInternal($page, $perPage, $kind, $df, $dt);
+        $res = $this->txn->paginateFirmInternal($page, $perPage, $kind, $df, $dt);
+        foreach ($res['rows'] as &$firmRow) {
+            LedgerTxnChangeService::attachPendingToTxnRow($firmRow);
+        }
+        unset($firmRow);
         $this->success($res['rows'], 'Firm internal transactions', 200, [
             'pagination' => [
                 'page'      => $page,
@@ -2411,6 +2555,7 @@ class TxnController extends BaseController
             'tds_status', 'tds_section', 'tds_rate',
             'linked_txn_id', 'notes', 'status', 'public_ref',
             'ledger_class', 'ledger_movement_kind',
+            'firm_bank_account_id', 'counterparty_firm_bank_account_id', 'firm_expense_category',
         ];
         $out = [];
         foreach ($keys as $k) {
@@ -2629,7 +2774,7 @@ class TxnController extends BaseController
             $this->error('Transaction not found.', 404);
         }
         $type = (string)($row['txn_type'] ?? '');
-        if (!$this->txnRequiresLedgerModifyOtp($type)) {
+        if (!$this->txnRequiresTeamApproval($type)) {
             $this->error('This transaction type cannot be updated through ledger approval.', 422);
         }
 
@@ -2653,6 +2798,13 @@ class TxnController extends BaseController
             case 'tds_provisional':
             case 'tds_final':
                 $this->applyTdsTxnUpdate($txnId, $row, $body, $decidedByActorId);
+                break;
+            case 'firm_expense':
+            case 'firm_inflow':
+                $this->applyFirmSimpleTxnUpdate($txnId, $row, $body, $decidedByActorId);
+                break;
+            case 'firm_bank_transfer':
+                $this->applyFirmBankTransferPairUpdate($txnId, $body, $decidedByActorId);
                 break;
             default:
                 $this->txn->update($txnId, $body, $decidedByActorId);
@@ -2832,8 +2984,8 @@ class TxnController extends BaseController
                 );
             }
             $tt = (string)($row['txn_type'] ?? '');
-            if (!$this->txnRequiresSuperadminDelete($tt)) {
-                $this->error('Bulk delete is not allowed for transaction type: ' . $tt, 422);
+            if (!$this->txnRequiresSuperadminDelete($tt) && !$this->txnRequiresFirmTeamApproval($tt)) {
+                $this->error('Cancel approval is not allowed for transaction type: ' . $tt, 422);
             }
             $rows[] = $row;
         }
@@ -2916,7 +3068,10 @@ class TxnController extends BaseController
      * @param array{type: string, summary: array<string, mixed>} $intercept
      * @param array<string, mixed>|null $row
      */
-    private function respondLedgerChangeQueued(array $intercept, ?array $row): never
+    /**
+     * @param array<string, mixed>|null $actor
+     */
+    private function respondLedgerChangeQueued(array $intercept, ?array $row, ?array $actor = null): never
     {
         if (($intercept['type'] ?? '') === 'blocked') {
             $this->error(
@@ -2931,7 +3086,23 @@ class TxnController extends BaseController
         $approvalId = (int)($intercept['summary']['approval_id'] ?? 0);
         $action     = (string)($intercept['summary']['action'] ?? '');
         $label      = LedgerTxnChangeService::actionLabel($action);
-        $msg        = $label . ' submitted for Super Admin approval (Approval #' . $approvalId . ').';
+        $txnId      = $row !== null ? (int)($row['id'] ?? 0) : 0;
+        if ($txnId > 0) {
+            $actorId = $actor ? (int)($actor['id'] ?? 0) : null;
+            $this->auditTxnLog(
+                $actorId,
+                'txn.change_requested',
+                $txnId,
+                [
+                    'approval_id' => $approvalId,
+                    'action'      => $action,
+                    'txn_type'    => (string)($row['txn_type'] ?? ''),
+                ],
+                $this->txnAuditCompactSnapshot($row),
+                null
+            );
+        }
+        $msg = $label . ' submitted for Super Admin approval (Approval #' . $approvalId . ').';
         $this->success($row, $msg, 200, ['pending_ledger_change' => $intercept['summary']]);
     }
 

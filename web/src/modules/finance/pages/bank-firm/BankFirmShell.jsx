@@ -21,7 +21,7 @@ const tabs = [
   { to: `${BASE}/inter-transfer`, label: 'Inter Transfer' },
   { to: `${BASE}/expense`, label: 'Firm expense' },
   { to: `${BASE}/inflow`, label: 'Firm inflow' },
-  { to: `${BASE}/report`, label: 'Contra & expenses' },
+  { to: `${BASE}/report`, label: 'Reports' },
 ];
 
 /** Shell expects `BankFirmWorkspaceProvider` as an ancestor. Renders `<Outlet />` below workspace chrome. */

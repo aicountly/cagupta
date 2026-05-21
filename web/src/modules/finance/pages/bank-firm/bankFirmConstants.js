@@ -17,3 +17,11 @@ export const EXPENSE_CATS = [
 export const INFLOW_CATS = [
   { value: 'fund_infusion', label: 'Fund infusion' },
 ];
+
+export const REPORT_KINDS = [
+  { value: 'all', label: 'All' },
+  { value: 'intra_transfer', label: 'Intra transfers' },
+  { value: 'inter_transfer', label: 'Inter transfers' },
+  { value: 'expense', label: 'Expenses' },
+  { value: 'inflow', label: 'Inflows' },
+];

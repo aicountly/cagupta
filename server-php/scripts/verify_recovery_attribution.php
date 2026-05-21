@@ -72,4 +72,23 @@ $keyFixed = recoveryEntityKey([
 ]);
 assertTrue($keyFixed === 'organization:23:regular', 'fixed org OB → organization bucket');
 
+/** Ekaiva scenario: regular receivable + memorandum credit → still recoverable on regular. */
+function recoveryPositiveRowTotal(array $entityRow): float
+{
+    $sum = 0.0;
+    foreach (['regular', 'memorandum', 'optional', 'parked'] as $slot) {
+        $sum += max(0.0, (float)($entityRow[$slot]['ledgerClosing'] ?? 0));
+    }
+
+    return round($sum, 2);
+}
+
+$ekaivaRow = [
+    'regular'    => ['ledgerClosing' => 40702.0],
+    'memorandum' => ['ledgerClosing' => -95493.0],
+    'optional'   => ['ledgerClosing' => 0.0],
+    'parked'     => ['ledgerClosing' => 0.0],
+];
+assertTrue(recoveryPositiveRowTotal($ekaivaRow) === 40702.0, 'positive regular + negative memorandum → rowTotal 40702');
+
 echo "\nAll recovery attribution checks passed.\n";

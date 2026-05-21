@@ -292,6 +292,16 @@ function ledgerClassLabel(value) {
   return LEDGER_CLASS_OPTIONS.find((o) => o.value === v)?.label || v;
 }
 
+/** Active parked receipt/payment that can still be moved to a final client ledger. */
+function isParkedLedgerEntryUnparkable(entry) {
+  if (!entry || entry.synthetic) return false;
+  const tt = entry.txnType || '';
+  if (tt === 'opening_balance' || tt === 'brought_forward') return false;
+  if (entry.status && entry.status !== 'active') return false;
+  if (entry.parkedTransferTargetTxnId) return false;
+  return tt === 'receipt' || tt === 'payment_expense';
+}
+
 const LEDGER_MOVEMENT_OPTIONS = [
   { value: 'fees', label: 'Fees (professional)' },
   { value: 'reimbursement', label: 'Reimbursement (tax challans & reimbursements)' },
@@ -1397,7 +1407,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
       onSaved?.({});
       onClose();
     } catch (e) {
-      setErr(e.message || 'Assign to client failed.');
+      setErr(e.message || 'Unpark failed.');
     } finally {
       setAssigning(false);
     }
@@ -1894,7 +1904,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
               )}
               {!isCompensatingReversalRow && isParkedAssignable && (
               <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 16, paddingTop: 14 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Assign to client</div>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Unpark</div>
                 <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px', lineHeight: 1.45 }}>
                   Reverses this parked entry on today&apos;s date and recreates it on the target client with the original transaction date (full unallocated advance).
                 </p>
@@ -1940,7 +1950,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                   disabled={assigning || loading || !row}
                   onClick={handleAssignParked}
                 >
-                  {assigning ? 'Assigning…' : 'Assign to client'}
+                  {assigning ? 'Unparking…' : 'Unpark'}
                 </button>
               </div>
               )}
@@ -7082,7 +7092,8 @@ export default function Invoices({ ledgerOnly = false }) {
                       <table style={{ ...tableStyle, marginBottom: 0 }}>
                         <thead>
                           <tr>
-                            {['Date','Entry Type','Narration','Details','Billing Profile','Debit (Dr)','Credit (Cr)','Balance'].map(h=>(
+                            {(['Date','Entry Type','Narration','Details','Billing Profile','Debit (Dr)','Credit (Cr)','Balance']
+                              .concat(cls === 'parked' && canEditInvoice ? ['Actions'] : [])).map(h=>(
                               <th key={h} style={thStyle}>{h}</th>
                             ))}
                           </tr>
@@ -7105,6 +7116,22 @@ export default function Invoices({ ledgerOnly = false }) {
                               <td style={{ ...tdStyle, color:'#dc2626', fontWeight: e.debit?600:400 }}>{e.debit ? `₹${parseFloat(e.debit).toLocaleString('en-IN')}` : '—'}</td>
                               <td style={{ ...tdStyle, color:'#16a34a', fontWeight: e.credit?600:400 }}>{e.credit ? `₹${parseFloat(e.credit).toLocaleString('en-IN')}` : '—'}</td>
                               <td style={{ ...tdStyle, fontWeight:700 }}>₹{parseFloat(e.balance || 0).toLocaleString('en-IN')}</td>
+                              {cls === 'parked' && canEditInvoice && (
+                                <td style={tdStyle}>
+                                  {isParkedLedgerEntryUnparkable(e) ? (
+                                    <button
+                                      type="button"
+                                      style={iconBtn}
+                                      title="Move to final client ledger"
+                                      onClick={() => setEditLedgerTxnId(e.id)}
+                                    >
+                                      Unpark
+                                    </button>
+                                  ) : (
+                                    '—'
+                                  )}
+                                </td>
+                              )}
                             </tr>
                           ))}
                         </tbody>
@@ -7118,16 +7145,17 @@ export default function Invoices({ ledgerOnly = false }) {
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  {['Date','Entry Type','Narration','Details','Billing Profile','Debit (Dr)','Credit (Cr)','Balance'].map(h=>(
+                  {(['Date','Entry Type','Narration','Details','Billing Profile','Debit (Dr)','Credit (Cr)','Balance']
+                    .concat(ledgerLedgerClass === 'parked' && canEditInvoice ? ['Actions'] : [])).map(h=>(
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {ledgerLoading ? (
-                  <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading ledger…</td></tr>
+                  <tr><td colSpan={ledgerLedgerClass === 'parked' && canEditInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading ledger…</td></tr>
                 ) : ledger.length === 0 ? (
-                  <tr><td colSpan={8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No ledger entries for this client.</td></tr>
+                  <tr><td colSpan={ledgerLedgerClass === 'parked' && canEditInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No ledger entries for this client.</td></tr>
                 ) : ledgerDisplayRows.map((e, i) => (
                   <tr
                     key={e.synthetic ? e.id : `${e.id ?? 'row'}-${i}`}
@@ -7145,6 +7173,22 @@ export default function Invoices({ ledgerOnly = false }) {
                     <td style={{ ...tdStyle, color:'#dc2626', fontWeight: e.debit?600:400 }}>{e.debit ? `₹${parseFloat(e.debit).toLocaleString('en-IN')}` : '—'}</td>
                     <td style={{ ...tdStyle, color:'#16a34a', fontWeight: e.credit?600:400 }}>{e.credit ? `₹${parseFloat(e.credit).toLocaleString('en-IN')}` : '—'}</td>
                     <td style={{ ...tdStyle, fontWeight:700 }}>₹{parseFloat(e.balance || 0).toLocaleString('en-IN')}</td>
+                    {ledgerLedgerClass === 'parked' && canEditInvoice && (
+                      <td style={tdStyle}>
+                        {isParkedLedgerEntryUnparkable(e) ? (
+                          <button
+                            type="button"
+                            style={iconBtn}
+                            title="Move to final client ledger"
+                            onClick={() => setEditLedgerTxnId(e.id)}
+                          >
+                            Unpark
+                          </button>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>

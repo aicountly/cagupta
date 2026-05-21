@@ -55,3 +55,20 @@ export function actionLabel(action) {
   };
   return m[action] || action || 'Change';
 }
+
+/** Display label for txn_type on approval cards (includes firm bank/firm types). */
+export function txnTypeLabelForApproval(txnType) {
+  const t = String(txnType || '');
+  const m = {
+    firm_bank_transfer: 'Bank transfer',
+    firm_expense: 'Firm expense',
+    firm_inflow: 'Firm inflow',
+    invoice: 'Invoice',
+    receipt: 'Receipt',
+    payment_expense: 'On-behalf payment',
+    payment_client_cost: 'Client cost payment',
+    tds_provisional: 'TDS (provisional)',
+    tds_final: 'TDS (final)',
+  };
+  return m[t] || t.replace(/_/g, ' ') || '—';
+}
