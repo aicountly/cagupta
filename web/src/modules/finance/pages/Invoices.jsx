@@ -1357,7 +1357,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     if (needsReversalSuperOtpOnly) {
       const so = revSuperOtp.trim();
       if (!so) {
-        setErr('Enter the superadmin OTP to authorize reversal. Request a code using the button above if needed.');
+        setErr('Enter the superadmin OTP to authorize reversal. Request a code using the button in this section if needed.');
         return;
       }
       setRevReversing(true);
@@ -1415,7 +1415,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     if (needsCancelRevSuperOtpOnly) {
       const so = revSuperOtp.trim();
       if (!so) {
-        setErr('Enter the superadmin OTP to authorize cancel reversal. Request a code using the button above if needed.');
+        setErr('Enter the superadmin OTP to authorize cancel reversal. Request a code using the button in this section if needed.');
         return;
       }
       setRevCancelReversing(true);
@@ -1809,13 +1809,18 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                   </>
                 )}
                 {needsReversalSuperOtpOnly && (
-                  <label style={labelStyle}>
-                    Superadmin OTP (reversal) *
-                    <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={revSuperOtp} onChange={(e) => setRevSuperOtp(e.target.value.replace(/\s/g, ''))} />
-                    <span style={{ display: 'block', fontSize: 11, color: '#64748b', fontWeight: 400, marginTop: 4 }}>
-                      Request a code with the button above if you do not have one yet.
-                    </span>
-                  </label>
+                  <>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                      <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
+                        {requesting ? 'Sending…' : 'Request superadmin OTP'}
+                      </button>
+                      {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent to superadmin email</span>}
+                    </div>
+                    <label style={labelStyle}>
+                      Superadmin OTP (reversal) *
+                      <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={revSuperOtp} onChange={(e) => setRevSuperOtp(e.target.value.replace(/\s/g, ''))} />
+                    </label>
+                  </>
                 )}
                 <button
                   type="button"
@@ -1859,13 +1864,18 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                       </>
                     )}
                     {needsCancelRevSuperOtpOnly && (
-                      <label style={labelStyle}>
-                        Superadmin OTP (cancel reversal) *
-                        <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={revSuperOtp} onChange={(e) => setRevSuperOtp(e.target.value.replace(/\s/g, ''))} />
-                        <span style={{ display: 'block', fontSize: 11, color: '#64748b', fontWeight: 400, marginTop: 4 }}>
-                          Request a code with the button above if you do not have one yet.
-                        </span>
-                      </label>
+                      <>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                          <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
+                            {requesting ? 'Sending…' : 'Request superadmin OTP'}
+                          </button>
+                          {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent to superadmin email</span>}
+                        </div>
+                        <label style={labelStyle}>
+                          Superadmin OTP (cancel reversal) *
+                          <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={revSuperOtp} onChange={(e) => setRevSuperOtp(e.target.value.replace(/\s/g, ''))} />
+                        </label>
+                      </>
                     )}
                     <button
                       type="button"

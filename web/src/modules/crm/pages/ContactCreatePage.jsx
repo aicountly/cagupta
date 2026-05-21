@@ -16,6 +16,7 @@ import { useStaffUsers } from '../../../hooks/useStaffUsers';
 import { useAuth } from '../../../auth/AuthContext';
 import DateInput from '../../../components/common/DateInput';
 import NameCollisionModal from '../../../components/common/NameCollisionModal';
+import RecordSavePreviewModal from '../../../components/common/RecordSavePreviewModal';
 import WorkHoldSection from '../components/WorkHoldSection';
 import MasterChangeLogSection from '../components/MasterChangeLogSection';
 import PendingNameChangeBanner from '../components/PendingNameChangeBanner';
@@ -188,8 +189,10 @@ export default function ContactCreatePage() {
   const [activeTab, setActiveTab] = useState('details');
   const [pendingNameChange, setPendingNameChange] = useState(null);
   const [panDuplicateInfo, setPanDuplicateInfo] = useState(null);
-  /** Pending API payload when save is gated behind suspicious name confirmation. */
-  const pendingSaveRef = useRef(/** @type {null | { contact: object, mode: 'quit' | 'addNew' }} */ (null));
+  /** Pending save payload through name warning and preview confirmation. */
+  const pendingSaveRef = useRef(/** @type {null | { contact: object, mode: 'quit' | 'addNew', displayLabels: object }} */ (null));
+  const [previewSave, setPreviewSave] = useState(/** @type {null | { contact: object, mode: 'quit' | 'addNew', displayLabels: object }} */ (null));
+  const [previewSaveOpen, setPreviewSaveOpen] = useState(false);
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -444,7 +447,78 @@ export default function ContactCreatePage() {
     return true;
   }, []);
 
-  const executePendingSave = useCallback(async () => {
+  const buildContactDisplayLabels = useCallback((contact) => {
+    const group = groups.find((g) => String(g.id) === String(contact.groupId || ''));
+    const linkedNames = (contact.linkedOrgIds || [])
+      .map((oid) => linkedOrgNameById[oid] || linkedOrgNameById[Number(oid)] || `Organization #${oid}`)
+      .filter(Boolean);
+    const affiliate = approvedAffiliates.find((a) => String(a.id) === String(contact.referringAffiliateUserId || ''));
+    return {
+      groupName: group?.name || '',
+      assignedManager: contact.assignedManager || '',
+      linkedOrganizations: linkedNames.join(', '),
+      referringAffiliate: affiliate
+        ? `${affiliate.name} (${affiliate.email})`
+        : (contact.referringAffiliateUserId ? `User #${contact.referringAffiliateUserId}` : ''),
+    };
+  }, [groups, linkedOrgNameById, approvedAffiliates]);
+
+  const queueSavePreview = useCallback((contact, mode) => {
+    const data = {
+      contact,
+      mode,
+      displayLabels: buildContactDisplayLabels(contact),
+    };
+    pendingSaveRef.current = data;
+    setPreviewSave(data);
+    return data;
+  }, [buildContactDisplayLabels]);
+
+  const openSavePreview = useCallback((contact, mode) => {
+    queueSavePreview(contact, mode);
+    setPreviewSaveOpen(true);
+  }, [queueSavePreview]);
+
+  const closeSavePreview = useCallback(() => {
+    setPreviewSaveOpen(false);
+    setPreviewSave(null);
+    pendingSaveRef.current = null;
+  }, []);
+
+  const proceedAfterNameWarning = useCallback(() => {
+    setCollisionModal(null);
+    setPreviewSaveOpen(true);
+  }, []);
+
+  const handleSaveApiError = useCallback((err) => {
+    const data = err && typeof err === 'object' ? err.data : null;
+    const meta = err && typeof err === 'object' ? err.meta : null;
+    const pending = meta?.pending_name_change || data?.pending_name_change;
+    if (pending) {
+      setPendingNameChange(pending);
+    }
+    const c = data && data.conflict;
+    if (c) {
+      setPreviewSaveOpen(false);
+      pendingSaveRef.current = null;
+      setPreviewSave(null);
+      setCollisionModal({
+        profile: 'contact_pan_identical',
+        matches: [{
+          id: Number(c.id),
+          label: c.display_name || '—',
+          pan: c.pan != null ? String(c.pan) : '',
+          email: c.email != null ? String(c.email) : '',
+          mobile: c.phone != null ? String(c.phone) : '',
+        }],
+        blockingReason: 'save',
+      });
+      return;
+    }
+    setToast('Error: ' + (err.message || 'Failed to save contact.'));
+  }, []);
+
+  const executeConfirmedSave = useCallback(async () => {
     const p = pendingSaveRef.current;
     if (!p) return;
     setSaving(true);
@@ -454,15 +528,17 @@ export default function ContactCreatePage() {
           const result = await updateContactApi(contactId, p.contact);
           const canNavigate = applyUpdateResult(result);
           setDirty(false);
+          setPreviewSaveOpen(false);
           pendingSaveRef.current = null;
-          setCollisionModal(null);
+          setPreviewSave(null);
           if (canNavigate) setTimeout(() => navigate('/clients/contacts'), 900);
         } else {
           await createContact(p.contact);
           setToast('Contact saved successfully!');
           setDirty(false);
+          setPreviewSaveOpen(false);
           pendingSaveRef.current = null;
-          setCollisionModal(null);
+          setPreviewSave(null);
           setTimeout(() => navigate('/clients/contacts'), 900);
         }
       } else {
@@ -473,41 +549,26 @@ export default function ContactCreatePage() {
         setErrors({});
         setNameDuplicateInfo(null);
         setPanDuplicateInfo(null);
+        setPreviewSaveOpen(false);
         pendingSaveRef.current = null;
-        setCollisionModal(null);
+        setPreviewSave(null);
         setToast('Contact saved! Ready for another entry.');
       }
     } catch (err) {
-      const data = err && typeof err === 'object' ? err.data : null;
-      const c = data && data.conflict;
-      if (c) {
-        pendingSaveRef.current = null;
-        setCollisionModal({
-          profile: 'contact_pan_identical',
-          matches: [{
-            id: Number(c.id),
-            label: c.display_name || '—',
-            pan: c.pan != null ? String(c.pan) : '',
-            email: c.email != null ? String(c.email) : '',
-            mobile: c.phone != null ? String(c.phone) : '',
-          }],
-          blockingReason: 'save',
-        });
-        return;
-      }
-      setToast('Error: ' + (err.message || 'Failed to save contact.'));
+      handleSaveApiError(err);
     } finally {
       setSaving(false);
     }
-  }, [isEdit, contactId, navigate, form.assignedManager, applyUpdateResult]);
+  }, [isEdit, contactId, navigate, form.assignedManager, applyUpdateResult, handleSaveApiError]);
 
-  async function handleSaveQuit() {
+  async function initiateSave(mode) {
     const contact = doSave();
     if (!contact) return;
-    if (isEdit && !contactId) {
+    if (mode === 'quit' && isEdit && !contactId) {
       setToast('Error: Contact is not loaded. Refresh the page and try again.');
       return;
     }
+
     let nameDupForSave = null;
     const trimmedName = (contact.displayName || '').trim();
     if (trimmedName.length >= 2) {
@@ -547,138 +608,25 @@ export default function ContactCreatePage() {
     }
 
     if (nameDupForSave?.matches?.length) {
-      pendingSaveRef.current = { contact, mode: 'quit' };
+      queueSavePreview(contact, mode);
       setCollisionModal({
         profile: 'contact_name_duplicate',
         matches: nameDupForSave.matches,
         blockingReason: 'save',
-        confirmMode: 'quit',
+        confirmMode: mode,
       });
       return;
     }
 
-    setSaving(true);
-    try {
-      if (isEdit && contactId) {
-        const result = await updateContactApi(contactId, contact);
-        const canNavigate = applyUpdateResult(result);
-        setDirty(false);
-        if (canNavigate) setTimeout(() => navigate('/clients/contacts'), 900);
-      } else {
-        await createContact(contact);
-        setToast('Contact saved successfully!');
-        setDirty(false);
-        setTimeout(() => navigate('/clients/contacts'), 900);
-      }
-    } catch (err) {
-      const data = err && typeof err === 'object' ? err.data : null;
-      const meta = err && typeof err === 'object' ? err.meta : null;
-      const pending = meta?.pending_name_change || data?.pending_name_change;
-      if (pending) {
-        setPendingNameChange(pending);
-      }
-      const c = data && data.conflict;
-      if (c) {
-        setCollisionModal({
-          profile: 'contact_pan_identical',
-          matches: [{
-            id: Number(c.id),
-            label: c.display_name || '—',
-            pan: c.pan != null ? String(c.pan) : '',
-            email: c.email != null ? String(c.email) : '',
-            mobile: c.phone != null ? String(c.phone) : '',
-          }],
-          blockingReason: 'save',
-        });
-        return;
-      }
-      setToast('Error: ' + (err.message || 'Failed to save contact.'));
-    } finally {
-      setSaving(false);
-    }
+    openSavePreview(contact, mode);
   }
 
-  async function handleSaveAddNew() {
-    const contact = doSave();
-    if (!contact) return;
-    let nameDupForSave = null;
-    const trimmedName = (contact.displayName || '').trim();
-    if (trimmedName.length >= 2) {
-      try {
-        const rows = await getContactsForSearch(trimmedName, 50);
-        const dup = classifyContactNameDuplicates(trimmedName, rows || []);
-        setNameDuplicateInfo(dup);
-        nameDupForSave = dup;
-      } catch {
-        /* ignore */
-      }
-    }
+  function handleSaveQuit() {
+    void initiateSave('quit');
+  }
 
-    const panVal = (contact.pan || '').trim().toUpperCase();
-    if (panVal && validatePAN(panVal)) {
-      try {
-        const conflict = await checkContactPanConflict(panVal, null);
-        if (conflict) {
-          setCollisionModal({
-            profile: 'contact_pan_identical',
-            matches: [{
-              id: conflict.id,
-              label: conflict.label,
-              pan: conflict.pan,
-              email: conflict.email,
-              mobile: conflict.mobile,
-            }],
-            blockingReason: 'save',
-          });
-          return;
-        }
-      } catch {
-        /* continue */
-      }
-    }
-
-    if (nameDupForSave?.matches?.length) {
-      pendingSaveRef.current = { contact, mode: 'addNew' };
-      setCollisionModal({
-        profile: 'contact_name_duplicate',
-        matches: nameDupForSave.matches,
-        blockingReason: 'save',
-        confirmMode: 'addNew',
-      });
-      return;
-    }
-
-    setSaving(true);
-    try {
-      await createContact(contact);
-      setDirty(false);
-      setForm(emptyForm(form.assignedManager)); // keep manager prefilled
-      setLinkedOrgNameById({});
-      setErrors({});
-      setNameDuplicateInfo(null);
-      setPanDuplicateInfo(null);
-      setToast('Contact saved! Ready for another entry.');
-    } catch (err) {
-      const data = err && typeof err === 'object' ? err.data : null;
-      const c = data && data.conflict;
-      if (c) {
-        setCollisionModal({
-          profile: 'contact_pan_identical',
-          matches: [{
-            id: Number(c.id),
-            label: c.display_name || '—',
-            pan: c.pan != null ? String(c.pan) : '',
-            email: c.email != null ? String(c.email) : '',
-            mobile: c.phone != null ? String(c.phone) : '',
-          }],
-          blockingReason: 'save',
-        });
-        return;
-      }
-      setToast('Error: ' + (err.message || 'Failed to save contact.'));
-    } finally {
-      setSaving(false);
-    }
+  function handleSaveAddNew() {
+    void initiateSave('addNew');
   }
 
   function handleCancel() {
@@ -718,6 +666,7 @@ export default function ContactCreatePage() {
         open={Boolean(collisionModal?.matches?.length)}
         onClose={() => {
           pendingSaveRef.current = null;
+          setPreviewSave(null);
           setCollisionModal(null);
         }}
         kind="similar"
@@ -728,7 +677,7 @@ export default function ContactCreatePage() {
         blockingReason={collisionModal?.blockingReason ?? null}
         onConfirm={
           collisionModal?.profile === 'contact_name_duplicate' && collisionModal?.blockingReason === 'save'
-            ? () => { void executePendingSave(); }
+            ? proceedAfterNameWarning
             : undefined
         }
         confirmLabel={
@@ -736,7 +685,18 @@ export default function ContactCreatePage() {
             ? 'Confirm update'
             : 'Confirm save'
         }
-        confirmBusy={saving}
+        confirmBusy={false}
+      />
+      <RecordSavePreviewModal
+        open={previewSaveOpen && Boolean(previewSave?.contact)}
+        entityType="contact"
+        payload={previewSave?.contact}
+        displayLabels={previewSave?.displayLabels || {}}
+        mode={isEdit ? 'update' : 'create'}
+        saveMode={previewSave?.mode || 'quit'}
+        onConfirm={() => { void executeConfirmedSave(); }}
+        onCancel={closeSavePreview}
+        busy={saving}
       />
 
       {/* Breadcrumb */}

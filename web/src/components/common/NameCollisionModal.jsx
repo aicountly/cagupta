@@ -30,12 +30,14 @@ export default function NameCollisionModal({
   if (!open || !Array.isArray(matches) || matches.length === 0) return null;
 
   const isOrgIdentical = !collisionProfile && kind === 'identical';
+  const isOrgSimilar = !collisionProfile && kind === 'similar';
   const isContactNameDup = collisionProfile === 'contact_name_duplicate';
   const isContactPan = collisionProfile === 'contact_pan_identical';
 
   if (!collisionProfile && kind !== 'identical' && kind !== 'similar') return null;
 
-  const isBlocking = isOrgIdentical || isContactPan;
+  const isOrgIdenticalSaveConfirmable = isOrgIdentical && blockingReason === 'save' && typeof onConfirm === 'function';
+  const isBlocking = (isOrgIdentical && !isOrgIdenticalSaveConfirmable) || isContactPan;
   const titleColor = isBlocking ? '#991b1b' : '#92400e';
 
   let title = '';
@@ -113,10 +115,15 @@ export default function NameCollisionModal({
     if (isOrgIdentical && blockingReason === 'save') {
       return (
         <div style={{ margin: '10px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.55 }}>
-          <p style={{ margin: '0 0 8px', fontWeight: 700, color: '#991b1b' }}>Your changes were not saved.</p>
-          <p style={{ margin: 0 }}>
-            {`Another ${entityNoun} already uses this exact name. Use a different name in the form, or open an existing record below.`}
+          <p style={{ margin: '0 0 8px', fontWeight: 700, color: '#92400e' }}>Your changes are not saved yet.</p>
+          <p style={{ margin: '0 0 10px' }}>
+            {`Another ${entityNoun} already uses this exact name. Review the records below — this is not proof they are the same entity.`}
           </p>
+          {typeof onConfirm === 'function' ? (
+            <p style={{ margin: 0 }}>
+              If you have verified this is a genuinely different {entityNoun}, click <strong>{confirmLabel}</strong> below to continue.
+            </p>
+          ) : null}
         </div>
       );
     }
@@ -138,18 +145,18 @@ export default function NameCollisionModal({
     return (
       <p style={{ margin: '8px 0 0', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
         {isOrgIdentical
-          ? `Another ${entityNoun} already uses this exact name. Change the name before saving, or open the existing record.`
+          ? `Another ${entityNoun} already uses this exact name. Review the existing record below; you may still save if they are genuinely different parties.`
           : `Other ${entityNoun}s in the directory closely match this name (one contains the other). You may still save if they are genuinely different parties.`}
       </p>
     );
   }
 
-  const isOrgSimilar = !collisionProfile && kind === 'similar';
   const showConfirm =
     typeof onConfirm === 'function' &&
     !isContactPan &&
-    !isOrgIdentical &&
-    (isContactNameDup || (isOrgSimilar && blockingReason === 'save'));
+    (isContactNameDup ||
+      (isOrgSimilar && blockingReason === 'save') ||
+      isOrgIdenticalSaveConfirmable);
   const closeLabel = (() => {
     if (showConfirm) return 'Cancel';
     if (isBlocking && !isContactNameDup) return 'Close';

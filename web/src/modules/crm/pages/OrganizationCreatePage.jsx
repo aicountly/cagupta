@@ -18,6 +18,7 @@ import DateInput from '../../../components/common/DateInput';
 import ClientSearchDropdown from '../../../components/common/ClientSearchDropdown';
 import ContactMultiSelect from '../../../components/common/ContactMultiSelect';
 import NameCollisionModal from '../../../components/common/NameCollisionModal';
+import RecordSavePreviewModal from '../../../components/common/RecordSavePreviewModal';
 import WorkHoldSection from '../components/WorkHoldSection';
 import MasterChangeLogSection from '../components/MasterChangeLogSection';
 import PendingNameChangeBanner from '../components/PendingNameChangeBanner';
@@ -241,8 +242,10 @@ export default function OrganizationCreatePage() {
   /** Set to `'save'` when identical duplicate blocked a save attempt (modal copy). */
   const [nameCollisionBlockingReason, setNameCollisionBlockingReason] = useState(null);
   const nameCollisionSigRef = useRef('');
-  /** After user confirms similar-name modal, run this callback post successful API save. */
+  /** Pending save payload through name warning and preview confirmation. */
   const pendingOrgSaveRef = useRef(null);
+  const [previewSave, setPreviewSave] = useState(null);
+  const [previewSaveOpen, setPreviewSaveOpen] = useState(false);
 
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
@@ -440,43 +443,6 @@ export default function OrganizationCreatePage() {
     return true;
   }
 
-  async function executePendingSave() {
-    const pending = pendingOrgSaveRef.current;
-    if (!pending?.afterSave) return;
-    setSubmitting(true);
-    try {
-      if (isEdit && orgId) {
-        const result = await updateOrganizationApi(orgId, buildOrg(form));
-        const canContinue = applyOrgUpdateResult(result);
-        pendingOrgSaveRef.current = null;
-        setNameCollisionModalOpen(false);
-        setNameCollisionBlockingReason(null);
-        if (canContinue) pending.afterSave();
-      } else {
-        await createOrganization(buildOrg(form));
-        setToast({ message: '✅ Organization created successfully!', type: 'success' });
-      }
-      pendingOrgSaveRef.current = null;
-      setNameCollisionModalOpen(false);
-      setNameCollisionBlockingReason(null);
-      pending.afterSave();
-    } catch (err) {
-      pendingOrgSaveRef.current = null;
-      setNameCollisionModalOpen(false);
-      setNameCollisionBlockingReason(null);
-      if (err instanceof ApiError && err.status === 409 && err.body?.data?.existing) {
-        setDuplicateConflict({
-          fields: Array.isArray(err.body.data.fields) ? err.body.data.fields : [],
-          existing: err.body.data.existing,
-        });
-      } else {
-        setToast({ message: '❌ Error: ' + (err.message || 'Failed to save.'), type: 'error' });
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   function buildOrg(f) {
     return {
       displayName:  f.displayName.trim(),
@@ -505,7 +471,93 @@ export default function OrganizationCreatePage() {
     };
   }
 
-  async function handleSave(afterSave) {
+  function buildOrgDisplayLabels(org) {
+    const secondaryNames = (form.secondaryContactIds || [])
+      .map((cid) => secondaryContactNamesById[cid] || secondaryContactNamesById[Number(cid)] || `Contact #${cid}`)
+      .filter(Boolean);
+    const affiliate = approvedAffiliates.find((a) => String(a.id) === String(org.referringAffiliateUserId || ''));
+    return {
+      groupName: groupDisplayName || '',
+      primaryContact: primaryContactDisplayName || '',
+      secondaryContacts: secondaryNames.join(', '),
+      assignedManager: org.assignedManager || '',
+      referringAffiliate: affiliate
+        ? `${affiliate.name} (${affiliate.email})`
+        : (org.referringAffiliateUserId ? `User #${org.referringAffiliateUserId}` : ''),
+    };
+  }
+
+  function queueOrgSavePreview(afterSave, saveMode = 'quit') {
+    const org = buildOrg(form);
+    const data = {
+      org,
+      displayLabels: buildOrgDisplayLabels(org),
+      afterSave,
+      saveMode,
+    };
+    pendingOrgSaveRef.current = data;
+    setPreviewSave(data);
+    return data;
+  }
+
+  function openOrgSavePreview(afterSave, saveMode = 'quit') {
+    queueOrgSavePreview(afterSave, saveMode);
+    setPreviewSaveOpen(true);
+  }
+
+  function closeOrgSavePreview() {
+    setPreviewSaveOpen(false);
+    setPreviewSave(null);
+    pendingOrgSaveRef.current = null;
+  }
+
+  function proceedAfterNameWarning() {
+    setNameCollisionModalOpen(false);
+    setNameCollisionBlockingReason(null);
+    setPreviewSaveOpen(true);
+  }
+
+  async function executeConfirmedSave() {
+    const pending = previewSave || pendingOrgSaveRef.current;
+    if (!pending?.afterSave) return;
+    setSubmitting(true);
+    try {
+      if (isEdit && orgId) {
+        const result = await updateOrganizationApi(orgId, pending.org);
+        const canContinue = applyOrgUpdateResult(result);
+        setPreviewSaveOpen(false);
+        setPreviewSave(null);
+        pendingOrgSaveRef.current = null;
+        if (canContinue) pending.afterSave();
+      } else {
+        await createOrganization(pending.org);
+        setToast({ message: '✅ Organization created successfully!', type: 'success' });
+        setPreviewSaveOpen(false);
+        setPreviewSave(null);
+        pendingOrgSaveRef.current = null;
+        pending.afterSave();
+      }
+    } catch (err) {
+      setPreviewSaveOpen(false);
+      setPreviewSave(null);
+      pendingOrgSaveRef.current = null;
+      if (err instanceof ApiError && err.status === 409 && err.body?.data?.existing) {
+        setDuplicateConflict({
+          fields: Array.isArray(err.body.data.fields) ? err.body.data.fields : [],
+          existing: err.body.data.existing,
+        });
+      } else {
+        if (err instanceof ApiError && (err.meta?.pending_name_change || err.body?.data?.pending_name_change)) {
+          setPendingNameChange(err.meta?.pending_name_change || err.body?.data?.pending_name_change);
+        }
+        setToast({ message: '❌ Error: ' + (err.message || 'Failed to save.'), type: 'error' });
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleSave(afterSave, saveMode = 'quit') {
     const e = validate(form);
     if (Object.keys(e).length > 0) {
       setErrors(e);
@@ -513,7 +565,6 @@ export default function OrganizationCreatePage() {
       return;
     }
     setErrors({});
-    setSubmitting(true);
 
     const trimmedName = form.displayName.trim();
     if (trimmedName.length >= 2) {
@@ -539,19 +590,11 @@ export default function OrganizationCreatePage() {
         const others = [...mergedById.values()];
         const dup = classifyNameDuplicates(trimmedName, others);
         setNameDuplicateInfo(dup);
-        if (dup?.kind === 'identical') {
+        if (dup?.kind === 'identical' || dup?.kind === 'similar') {
+          queueOrgSavePreview(afterSave, saveMode);
           nameCollisionSigRef.current = nameDuplicateSignature(dup);
           setNameCollisionBlockingReason('save');
           setNameCollisionModalOpen(true);
-          setSubmitting(false);
-          return;
-        }
-        if (dup?.kind === 'similar') {
-          pendingOrgSaveRef.current = { afterSave };
-          nameCollisionSigRef.current = nameDuplicateSignature(dup);
-          setNameCollisionBlockingReason('save');
-          setNameCollisionModalOpen(true);
-          setSubmitting(false);
           return;
         }
       } catch {
@@ -566,65 +609,33 @@ export default function OrganizationCreatePage() {
           );
           const dup = classifyNameDuplicates(trimmedName, peers);
           setNameDuplicateInfo(dup);
-          if (dup?.kind === 'identical') {
+          if (dup?.kind === 'identical' || dup?.kind === 'similar') {
+            queueOrgSavePreview(afterSave, saveMode);
             nameCollisionSigRef.current = nameDuplicateSignature(dup);
             setNameCollisionBlockingReason('save');
             setNameCollisionModalOpen(true);
-            setSubmitting(false);
-            return;
-          }
-          if (dup?.kind === 'similar') {
-            pendingOrgSaveRef.current = { afterSave };
-            nameCollisionSigRef.current = nameDuplicateSignature(dup);
-            setNameCollisionBlockingReason('save');
-            setNameCollisionModalOpen(true);
-            setSubmitting(false);
             return;
           }
         }
       }
     }
 
-    try {
-      if (isEdit && orgId) {
-        const result = await updateOrganizationApi(orgId, buildOrg(form));
-        const canContinue = applyOrgUpdateResult(result);
-        if (canContinue) afterSave();
-      } else {
-        await createOrganization(buildOrg(form));
-        setToast({ message: '✅ Organization created successfully!', type: 'success' });
-        afterSave();
-      }
-    } catch (err) {
-      if (err instanceof ApiError && (err.meta?.pending_name_change || err.body?.data?.pending_name_change)) {
-        setPendingNameChange(err.meta?.pending_name_change || err.body?.data?.pending_name_change);
-      }
-      if (err instanceof ApiError && err.status === 409 && err.body?.data?.existing) {
-        setDuplicateConflict({
-          fields: Array.isArray(err.body.data.fields) ? err.body.data.fields : [],
-          existing: err.body.data.existing,
-        });
-      } else {
-        setToast({ message: '❌ Error: ' + (err.message || 'Failed to save.'), type: 'error' });
-      }
-    } finally {
-      setSubmitting(false);
-    }
+    openOrgSavePreview(afterSave, saveMode);
   }
 
   function handleSaveQuit() {
-    handleSave(() => setTimeout(() => navigate('/clients/organizations'), 800));
+    void handleSave(() => setTimeout(() => navigate('/clients/organizations'), 800), 'quit');
   }
 
   function handleSaveNew() {
     const manager = form.assignedManager;
-    handleSave(() => {
+    void handleSave(() => {
       setForm(blankForm(manager));
       setPrimaryContactDisplayName('');
       setSecondaryContactNamesById({});
       setGroupDisplayName('');
       setNameDuplicateInfo(null);
-    });
+    }, 'addNew');
   }
 
   function handleCancel() {
@@ -686,6 +697,7 @@ export default function OrganizationCreatePage() {
         open={nameCollisionModalOpen && Boolean(nameDuplicateInfo)}
         onClose={() => {
           pendingOrgSaveRef.current = null;
+          setPreviewSave(null);
           setNameCollisionModalOpen(false);
           setNameCollisionBlockingReason(null);
         }}
@@ -695,12 +707,23 @@ export default function OrganizationCreatePage() {
         onOpenRecord={(rid) => navigate(`/clients/organizations/${rid}/edit`)}
         blockingReason={nameCollisionBlockingReason}
         onConfirm={
-          nameDuplicateInfo?.kind === 'similar' && nameCollisionBlockingReason === 'save'
-            ? () => { void executePendingSave(); }
+          (nameDuplicateInfo?.kind === 'identical' || nameDuplicateInfo?.kind === 'similar') && nameCollisionBlockingReason === 'save'
+            ? proceedAfterNameWarning
             : undefined
         }
         confirmLabel={isEdit ? 'Confirm update' : 'Confirm save'}
-        confirmBusy={submitting}
+        confirmBusy={false}
+      />
+      <RecordSavePreviewModal
+        open={previewSaveOpen && Boolean(previewSave?.org)}
+        entityType="organization"
+        payload={previewSave?.org}
+        displayLabels={previewSave?.displayLabels || {}}
+        mode={isEdit ? 'update' : 'create'}
+        saveMode={previewSave?.saveMode || 'quit'}
+        onConfirm={() => { void executeConfirmedSave(); }}
+        onCancel={closeOrgSavePreview}
+        busy={submitting}
       />
 
       {/* Breadcrumb */}
@@ -800,7 +823,7 @@ export default function OrganizationCreatePage() {
                 }}
               >
                 {nameDuplicateInfo.kind === 'identical'
-                  ? 'View duplicate name — cannot save until resolved'
+                  ? 'View duplicate organization name(s)…'
                   : 'View similar organization name(s)…'}
               </button>
             )}
