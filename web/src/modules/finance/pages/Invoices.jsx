@@ -38,6 +38,7 @@ import ClientSearchDropdown from '../../../components/common/ClientSearchDropdow
 import EntitySearchDropdown from '../../../components/common/EntitySearchDropdown';
 import LineItemPresetCombobox from '../../../components/common/LineItemPresetCombobox';
 import DateInput from '../../../components/common/DateInput';
+import AmountInput from '../../../components/common/AmountInput';
 import BillingProfileSelect from '../../../components/common/BillingProfileSelect';
 import { getBillingProfiles, getBillingProfileByCode } from '../../../constants/billingProfiles';
 import { listFirmBankAccounts } from '../../../services/firmBankAccountService';
@@ -139,6 +140,59 @@ function txnFieldsIncludeQuery(query, fields) {
 
 /** Tabs under Invoices & Ledger that share the client-side list search bar. */
 const TXN_LIST_SEARCH_TABS = new Set(['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note']);
+
+/** Filter recovery list groups — group mode shows all ledgers in matching groups; ledger mode matches entities. */
+function filterRecoveryGroups(groups, query, mode) {
+  if (!Array.isArray(groups) || groups.length === 0) return [];
+  const q = String(query || '').trim();
+  if (!q) return groups;
+
+  if (mode === 'group') {
+    return groups.filter((g) => txnFieldsIncludeQuery(q, [g.groupLabel, g.groupKey]));
+  }
+
+  return groups
+    .map((g) => {
+      const entities = (g.entities || []).filter((ent) => txnFieldsIncludeQuery(q, [
+        ent.displayName,
+        ent.entityType === 'organization' ? 'Organization' : 'Contact',
+        ent.entityType,
+        ent.entityId,
+        ent.groupName,
+      ]));
+      if (entities.length === 0) return null;
+      const groupTotal = entities.reduce((sum, e) => sum + (Number(e.rowTotal) || 0), 0);
+      return { ...g, entities, groupTotal: Math.round(groupTotal * 100) / 100 };
+    })
+    .filter(Boolean);
+}
+
+function recoveryTotalsFromGroups(groups) {
+  const totals = {
+    regular: { fees: 0, taxes: 0, reimbursement: 0 },
+    memorandum: { fees: 0, taxes: 0, reimbursement: 0 },
+    optional: { fees: 0, taxes: 0, reimbursement: 0 },
+    grand: 0,
+  };
+  for (const g of groups) {
+    for (const ent of g.entities || []) {
+      for (const slot of ['regular', 'memorandum', 'optional']) {
+        const s = ent[slot] || {};
+        totals[slot].fees += Number(s.fees) || 0;
+        totals[slot].taxes += Number(s.taxes) || 0;
+        totals[slot].reimbursement += Number(s.reimbursement) || 0;
+      }
+      totals.grand += Number(ent.rowTotal) || 0;
+    }
+  }
+  for (const slot of ['regular', 'memorandum', 'optional']) {
+    for (const f of ['fees', 'taxes', 'reimbursement']) {
+      totals[slot][f] = Math.round(totals[slot][f] * 100) / 100;
+    }
+  }
+  totals.grand = Math.round(totals.grand * 100) / 100;
+  return totals;
+}
 
 const TDS_SECTIONS = ['194J','194C','194H','194I','194A','194Q','Other'];
 
@@ -542,10 +596,7 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
                         } : line)),
                       }))}
                     />
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
+                    <AmountInput
                       style={{ ...inputStyle, textAlign:'right' }}
                       placeholder="₹"
                       value={row.amount}
@@ -1029,7 +1080,7 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                     </label>
                     <label style={labelStyle}>
                       Amount (₹)
-                      <input type="number" style={inputStyle} min="0" step="0.01" value={line.amount} onChange={(e) => setLine(idx, 'amount', e.target.value)} />
+                      <AmountInput style={inputStyle} value={line.amount} onChange={(e) => setLine(idx, 'amount', e.target.value)} />
                     </label>
                     <button type="button" style={{ ...btnSecondary, height: 36 }} onClick={() => removeLine(idx)}>✕</button>
                   </div>
@@ -1522,7 +1573,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                     </label>
                     <label style={labelStyle}>
                       Amount (₹) *
-                      <input type="number" style={inputStyle} min="0" step="0.01" value={recAmount} onChange={(e) => setRecAmount(e.target.value)} />
+                      <AmountInput style={inputStyle} value={recAmount} onChange={(e) => setRecAmount(e.target.value)} />
                     </label>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -1585,7 +1636,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                           disabled={line.targetType === 'unallocated_advance'}
                           onChange={(e) => patchAllocLine(idx, { targetTxnId: e.target.value })}
                         />
-                        <input type="number" style={inputStyle} min="0" step="0.01" placeholder="₹" value={line.amount} onChange={(e) => patchAllocLine(idx, { amount: e.target.value })} />
+                        <AmountInput style={inputStyle} placeholder="₹" value={line.amount} onChange={(e) => patchAllocLine(idx, { amount: e.target.value })} />
                         <button type="button" style={{ ...iconBtn, alignSelf: 'start' }} onClick={() => removeAllocLineRow(idx)} title="Remove">−</button>
                       </div>
                     ))}
@@ -1601,7 +1652,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                     </label>
                     <label style={labelStyle}>
                       Amount (₹) *
-                      <input type="number" style={inputStyle} min="0" step="0.01" value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
+                      <AmountInput style={inputStyle} value={payAmount} onChange={(e) => setPayAmount(e.target.value)} />
                     </label>
                   </div>
                   <label style={labelStyle}>
@@ -1672,7 +1723,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                           disabled={line.targetType === 'unallocated_advance'}
                           onChange={(e) => patchSettleLine(idx, { targetTxnId: e.target.value })}
                         />
-                        <input type="number" style={inputStyle} min="0" step="0.01" placeholder="₹" value={line.amount} onChange={(e) => patchSettleLine(idx, { amount: e.target.value })} />
+                        <AmountInput style={inputStyle} placeholder="₹" value={line.amount} onChange={(e) => patchSettleLine(idx, { amount: e.target.value })} />
                         <button type="button" style={{ ...iconBtn, alignSelf: 'start' }} onClick={() => removeSettleLineRow(idx)} title="Remove">−</button>
                       </div>
                     ))}
@@ -1688,7 +1739,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                     </label>
                     <label style={labelStyle}>
                       Amount (₹) *
-                      <input type="number" style={inputStyle} min="0" step="0.01" value={tdsAmount} onChange={(e) => setTdsAmount(e.target.value)} />
+                      <AmountInput style={inputStyle} value={tdsAmount} onChange={(e) => setTdsAmount(e.target.value)} />
                     </label>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -1698,7 +1749,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                     </label>
                     <label style={labelStyle}>
                       Rate %
-                      <input type="number" style={inputStyle} min="0" step="0.01" value={tdsRate} onChange={(e) => setTdsRate(e.target.value)} />
+                      <AmountInput style={inputStyle} value={tdsRate} onChange={(e) => setTdsRate(e.target.value)} />
                     </label>
                   </div>
                   <label style={labelStyle}>
@@ -2074,7 +2125,7 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Amount (₹)
-              <input type="number" style={inputStyle} placeholder="e.g. 5900" value={form.amount} onChange={e=>set('amount',e.target.value)} />
+              <AmountInput style={inputStyle} placeholder="e.g. 5900" value={form.amount} onChange={e=>set('amount',e.target.value)} />
             </label>
             <label style={labelStyle}>
               Payment Date
@@ -2328,7 +2379,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Amount (₹)
-              <input type="number" style={inputStyle} placeholder="e.g. 2500" value={form.amount} onChange={(e) => set('amount', e.target.value)} />
+              <AmountInput style={inputStyle} placeholder="e.g. 2500" value={form.amount} onChange={(e) => set('amount', e.target.value)} />
             </label>
             <label style={labelStyle}>
               Payment date
@@ -2456,8 +2507,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
                     <span style={{ fontSize: 12, color: '#64748b', lineHeight: '38px' }}>No target — bill-by-bill uses unallocated advance</span>
                   )}
                 </div>
-                <input
-                  type="number"
+                <AmountInput
                   style={inputStyle}
                   placeholder="₹"
                   value={line.amount}
@@ -2813,7 +2863,7 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Amount (₹)
-              <input type="number" style={inputStyle} placeholder="e.g. 5900" value={form.amount} onChange={(e) => set('amount', e.target.value)} />
+              <AmountInput style={inputStyle} placeholder="e.g. 5900" value={form.amount} onChange={(e) => set('amount', e.target.value)} />
             </label>
             <label style={labelStyle}>
               Receipt Date
@@ -2924,8 +2974,7 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
                     <span style={{ fontSize: 12, color: '#64748b', lineHeight: '38px' }}>No target — advance held on ledger</span>
                   )}
                 </div>
-                <input
-                  type="number"
+                <AmountInput
                   style={inputStyle}
                   placeholder="₹"
                   value={line.amount}
@@ -3009,7 +3058,7 @@ function TdsModal({ onClose, onSave }) {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Amount (₹)
-              <input type="number" style={inputStyle} placeholder="e.g. 5000" value={form.amount} onChange={e=>set('amount',e.target.value)} />
+              <AmountInput style={inputStyle} placeholder="e.g. 5000" value={form.amount} onChange={e=>set('amount',e.target.value)} />
             </label>
             <label style={labelStyle}>
               TDS Date
@@ -3025,7 +3074,7 @@ function TdsModal({ onClose, onSave }) {
             </label>
             <label style={labelStyle}>
               TDS Rate (%)
-              <input type="number" style={inputStyle} placeholder="e.g. 10" value={form.tdsRate} onChange={e=>set('tdsRate',e.target.value)} />
+              <AmountInput style={inputStyle} placeholder="e.g. 10" value={form.tdsRate} onChange={e=>set('tdsRate',e.target.value)} />
             </label>
           </div>
           <label style={labelStyle}>
@@ -3108,7 +3157,7 @@ function RebateModal({ onClose, onSave }) {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Amount (₹)
-              <input type="number" style={inputStyle} placeholder="e.g. 1000" value={form.amount} onChange={e=>set('amount',e.target.value)} />
+              <AmountInput style={inputStyle} placeholder="e.g. 1000" value={form.amount} onChange={e=>set('amount',e.target.value)} />
             </label>
             <label style={labelStyle}>
               Date
@@ -3244,7 +3293,7 @@ function CreditNoteModal({ onClose, onSave, openInvoices, creditNotes }) {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Amount (₹)
-              <input type="number" style={inputStyle} placeholder="Partial or full amount" value={form.amount} onChange={e=>set('amount',e.target.value)} />
+              <AmountInput style={inputStyle} placeholder="Partial or full amount" value={form.amount} onChange={e=>set('amount',e.target.value)} />
             </label>
             <label style={labelStyle}>
               Date
@@ -3525,10 +3574,7 @@ function OpeningBalanceModal({
                 <div style={{ fontSize:12, fontWeight:700, color:'#475569' }}>{b.profileCode}</div>
                 <div style={{ fontSize:11, color:'#94a3b8' }}>{b.profileName}</div>
               </div>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <AmountInput
                 placeholder="0"
                 value={b.feesAmount}
                 onChange={(e) => setField(idx, 'feesAmount', e.target.value)}
@@ -3542,10 +3588,7 @@ function OpeningBalanceModal({
                 <option value="debit">Dr</option>
                 <option value="credit">Cr</option>
               </select>
-              <input
-                type="number"
-                min="0"
-                step="0.01"
+              <AmountInput
                 placeholder="0"
                 value={b.reimAmount}
                 onChange={(e) => setField(idx, 'reimAmount', e.target.value)}
@@ -3719,6 +3762,8 @@ export default function Invoices({ ledgerOnly = false }) {
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [recoveryError, setRecoveryError] = useState(null);
   const [recoveryBucket, setRecoveryBucket] = useState('active');
+  const [recoverySearch, setRecoverySearch] = useState('');
+  const [recoverySearchMode, setRecoverySearchMode] = useState('group');
 
   const [npaModal, setNpaModal] = useState({ open: false, entityType: '', entityId: 0, displayName: '' });
   const [npaReason, setNpaReason] = useState('');
@@ -4019,7 +4064,12 @@ export default function Invoices({ ledgerOnly = false }) {
 
   useEffect(() => {
     setTxnListSearchQuery('');
+    setRecoverySearch('');
   }, [tab]);
+
+  useEffect(() => {
+    setRecoverySearch('');
+  }, [recoveryBucket]);
 
   useEffect(() => {
     const raw = searchParams.get('openTxn');
@@ -4372,6 +4422,16 @@ export default function Invoices({ ledgerOnly = false }) {
       r.amount,
     ]));
   }, [rebates, txnListSearchQuery]);
+
+  const filteredRecoveryGroups = useMemo(
+    () => filterRecoveryGroups(recoveryReport?.groups, recoverySearch, recoverySearchMode),
+    [recoveryReport?.groups, recoverySearch, recoverySearchMode],
+  );
+
+  const recoveryDisplayTotals = useMemo(() => {
+    if (!recoverySearch.trim()) return recoveryReport?.totals ?? null;
+    return recoveryTotalsFromGroups(filteredRecoveryGroups);
+  }, [recoveryReport?.totals, recoverySearch, filteredRecoveryGroups]);
 
   const visibleCreditNotes = useMemo(() => {
     if (!txnListSearchQuery.trim()) return creditNotes;
@@ -6465,12 +6525,75 @@ export default function Invoices({ ledgerOnly = false }) {
             </div>
             {recoveryBucket === 'active' && recoveryReport && typeof recoveryReport.kpiTotalReceivable === 'number'
               && typeof recoveryReport.totals?.grand === 'number'
+              && !recoverySearch.trim()
               && Math.abs(recoveryReport.totals.grand - recoveryReport.kpiTotalReceivable) > 0.02 && (
               <div style={{ marginTop: 8, fontSize: 11, color: '#b45309' }}>
                 Note: Report grand total (₹{recoveryReport.totals.grand.toLocaleString('en-IN')}) differs slightly from KPI receivable
                 (₹{recoveryReport.kpiTotalReceivable.toLocaleString('en-IN')}) — usually rounding on split allocations.
               </div>
             )}
+            <div
+              style={{
+                marginTop: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                flexWrap: 'wrap',
+              }}
+            >
+              <label htmlFor="recovery-list-search" style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                Search
+              </label>
+              <input
+                id="recovery-list-search"
+                type="search"
+                value={recoverySearch}
+                onChange={(e) => setRecoverySearch(e.target.value)}
+                placeholder={
+                  recoverySearchMode === 'group'
+                    ? 'Client group name…'
+                    : 'Contact, organization, or entity #…'
+                }
+                style={{ ...inputStyle, flex: '1 1 180px', minWidth: 160, maxWidth: 360 }}
+                autoComplete="off"
+              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>Filter by</span>
+                {[
+                  { key: 'group', label: 'Group' },
+                  { key: 'ledger', label: 'Ledger' },
+                ].map((m) => (
+                  <label
+                    key={m.key}
+                    style={{
+                      fontSize: 12,
+                      color: recoverySearchMode === m.key ? '#4338ca' : '#475569',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 5,
+                      cursor: 'pointer',
+                      fontWeight: recoverySearchMode === m.key ? 600 : 500,
+                    }}
+                  >
+                    <input
+                      type="radio"
+                      name="recovery-search-mode"
+                      checked={recoverySearchMode === m.key}
+                      onChange={() => setRecoverySearchMode(m.key)}
+                    />
+                    {m.label}
+                  </label>
+                ))}
+              </div>
+              {recoverySearch.trim() && (
+                <span style={{ fontSize: 12, color: '#64748b' }}>
+                  {filteredRecoveryGroups.length} group{filteredRecoveryGroups.length === 1 ? '' : 's'}
+                  {recoverySearchMode === 'ledger'
+                    ? ` · ${filteredRecoveryGroups.reduce((n, g) => n + (g.entities?.length || 0), 0)} ledger${filteredRecoveryGroups.reduce((n, g) => n + (g.entities?.length || 0), 0) === 1 ? '' : 's'}`
+                    : ''}
+                </span>
+              )}
+            </div>
           </div>
           <table style={{ ...tableStyle, minWidth: 1100 }}>
             <thead>
@@ -6533,6 +6656,13 @@ export default function Invoices({ ledgerOnly = false }) {
                   </td>
                 </tr>
               )}
+              {!recoveryLoading && !recoveryError && recoveryReport?.groups?.length > 0 && filteredRecoveryGroups.length === 0 && recoverySearch.trim() && (
+                <tr>
+                  <td colSpan={recoveryColSpan} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
+                    No {recoverySearchMode === 'group' ? 'groups' : 'ledgers'} match &ldquo;{recoverySearch.trim()}&rdquo;.
+                  </td>
+                </tr>
+              )}
               {!recoveryLoading && !recoveryError && (!recoveryReport?.groups || recoveryReport.groups.length === 0) && (recoveryBucket !== 'active' || (recoveryReport?.kpiTotalReceivable ?? 0) <= 0.01) && (
                 <tr>
                   <td colSpan={recoveryColSpan} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
@@ -6542,7 +6672,7 @@ export default function Invoices({ ledgerOnly = false }) {
                   </td>
                 </tr>
               )}
-              {!recoveryLoading && recoveryReport?.groups?.map((g) => {
+              {!recoveryLoading && filteredRecoveryGroups.map((g) => {
                 const sr = recoverySumSlot(g.entities, 'regular');
                 const sm = recoverySumSlot(g.entities, 'memorandum');
                 const so = recoverySumSlot(g.entities, 'optional');
@@ -6662,11 +6792,13 @@ export default function Invoices({ ledgerOnly = false }) {
                   </Fragment>
                 );
               })}
-              {!recoveryLoading && recoveryReport?.totals && (
+              {!recoveryLoading && recoveryDisplayTotals && filteredRecoveryGroups.length > 0 && (
                 <tr style={{ background: '#fef2f2', fontWeight: 700 }}>
-                  <td style={tdStyle}>Grand total</td>
+                  <td style={tdStyle}>
+                    {recoverySearch.trim() ? 'Filtered total' : 'Grand total'}
+                  </td>
                   {(['regular', 'memorandum', 'optional']).map((slot) => {
-                    const t = recoveryReport.totals[slot] || {};
+                    const t = recoveryDisplayTotals[slot] || {};
                     return (
                       <Fragment key={slot}>
                         <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(t.fees)}</td>
@@ -6676,7 +6808,7 @@ export default function Invoices({ ledgerOnly = false }) {
                     );
                   })}
                   <td style={{ ...tdStyle, textAlign: 'right', color: '#dc2626' }}>
-                    {recoveryMoney(recoveryReport.totals.grand)}
+                    {recoveryMoney(recoveryDisplayTotals.grand)}
                   </td>
                   {recoveryBucket === 'bad_debt' ? (
                     <td colSpan={2} style={tdStyle} />

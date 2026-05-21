@@ -2000,7 +2000,8 @@ class TxnModel
         $stmt = $this->db->prepare(
             "SELECT t.*,
                     CASE
-                        WHEN t.client_id IS NOT NULL OR t.organization_id IS NOT NULL THEN
+                        WHEN COALESCE(t.client_id, pt.client_id) IS NOT NULL
+                          OR COALESCE(t.organization_id, pt.organization_id) IS NOT NULL THEN
                             COALESCE(
                                 NULLIF(TRIM(o.name), ''),
                                 NULLIF(TRIM(c.organization_name), ''),
@@ -2010,8 +2011,9 @@ class TxnModel
                         ELSE NULL
                     END AS client_name
              FROM txn t
-             LEFT JOIN clients c ON c.id = t.client_id
-             LEFT JOIN organizations o ON o.id = t.organization_id
+             LEFT JOIN txn pt ON pt.id = t.linked_txn_id
+             LEFT JOIN clients c ON c.id = COALESCE(t.client_id, pt.client_id)
+             LEFT JOIN organizations o ON o.id = COALESCE(t.organization_id, pt.organization_id)
              WHERE {$whereClause}
              ORDER BY t.txn_date ASC, t.id ASC"
         );
