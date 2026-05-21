@@ -4,6 +4,9 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
+use App\Libraries\ClientMasterAudit;
+use App\Libraries\ClientMasterNameChangeService;
+use App\Models\AdminAuditLogModel;
 use App\Models\ClientGroupModel;
 
 /**
@@ -15,10 +18,12 @@ use App\Models\ClientGroupModel;
 class ClientGroupController extends BaseController
 {
     private ClientGroupModel $groups;
+    private AdminAuditLogModel $audit;
 
     public function __construct()
     {
         $this->groups = new ClientGroupModel();
+        $this->audit  = new AdminAuditLogModel();
     }
 
     // ── GET /api/admin/client-groups/search ─────────────────────────────────
@@ -77,6 +82,21 @@ class ClientGroupController extends BaseController
             'created_by'  => $user['id']           ?? null,
         ]);
 
+        $actorId = $user ? (int)$user['id'] : null;
+        try {
+            $this->audit->insert(
+                $actorId,
+                'client_group.created',
+                'client_group',
+                (int)$group['id'],
+                [],
+                null,
+                ClientMasterAudit::clientGroupSnapshot($group)
+            );
+        } catch (\Throwable $e) {
+            error_log('[ClientGroupController] Audit log failed: ' . $e->getMessage());
+        }
+
         $this->success($group, 'Group created', 201);
     }
 
@@ -92,10 +112,27 @@ class ClientGroupController extends BaseController
             $this->error('Group not found.', 404);
         }
 
-        $members       = $this->groups->members($id);
-        $group['members'] = $members;
+        $members            = $this->groups->members($id);
+        $group['members']   = $members;
+        ClientMasterNameChangeService::attachPendingToRow('client_group', $id, $group);
 
         $this->success($group, 'Group retrieved');
+    }
+
+    // ── GET /api/admin/client-groups/:id/audit-log ─────────────────────────
+
+    public function auditLog(int $id): never
+    {
+        $group = $this->groups->find($id);
+        if ($group === null) {
+            $this->error('Group not found.', 404);
+        }
+
+        $limit  = min(100, max(1, (int)$this->query('limit', 50)));
+        $offset = max(0, (int)$this->query('offset', 0));
+
+        $rows = $this->audit->listForEntity('client_group', $id, $limit, $offset);
+        $this->success($rows, 'Audit log retrieved');
     }
 
     // ── PUT /api/admin/client-groups/:id ────────────────────────────────────
@@ -139,9 +176,54 @@ class ClientGroupController extends BaseController
             $this->error('No valid fields to update.', 422);
         }
 
-        $this->groups->update($id, $data);
+        $actingUser   = $this->authUser();
+        $isSuperAdmin = $this->isSuperAdminActor($actingUser);
+        $beforeSnap   = ClientMasterAudit::clientGroupSnapshot($group);
+        $pendingMeta  = null;
 
-        $this->success($this->groups->find($id), 'Group updated');
+        $intercept = ClientMasterNameChangeService::interceptNameChange(
+            'client_group',
+            $id,
+            $group,
+            $data,
+            $actingUser,
+            $isSuperAdmin
+        );
+        if ($intercept !== null) {
+            if ($intercept['type'] === 'blocked') {
+                $this->error(
+                    'A name change is already pending Super Admin approval (Approval #'
+                    . (int)$intercept['summary']['approval_id'] . ').',
+                    422,
+                    [],
+                    ['pending_name_change' => $intercept['summary']]
+                );
+            }
+            $pendingMeta = $intercept['summary'];
+        }
+
+        if ($data !== []) {
+            $this->groups->update($id, $data);
+        }
+
+        $updated   = $this->groups->find($id);
+        $afterSnap = ClientMasterAudit::clientGroupSnapshot($updated ?? []);
+        $actorId   = $actingUser ? (int)$actingUser['id'] : null;
+        try {
+            $this->audit->insert($actorId, 'client_group.updated', 'client_group', $id, [], $beforeSnap, $afterSnap);
+        } catch (\Throwable $e) {
+            error_log('[ClientGroupController] Audit log failed: ' . $e->getMessage());
+        }
+
+        $message = 'Group updated';
+        $meta    = [];
+        if ($pendingMeta !== null) {
+            $message = 'Group updated. Name change submitted for Super Admin approval (Approval #'
+                . (int)$pendingMeta['approval_id'] . ').';
+            $meta['pending_name_change'] = $pendingMeta;
+        }
+
+        $this->success($updated, $message, 200, $meta);
     }
 
     // ── DELETE /api/admin/client-groups/:id ─────────────────────────────────
@@ -167,7 +249,30 @@ class ClientGroupController extends BaseController
             );
         }
 
+        $beforeSnap = ClientMasterAudit::clientGroupSnapshot($group);
         $this->groups->delete($id);
+
+        $actor = $this->authUser();
+        $actorId = $actor ? (int)$actor['id'] : null;
+        try {
+            $this->audit->insert($actorId, 'client_group.deleted', 'client_group', $id, [], $beforeSnap, null);
+        } catch (\Throwable $e) {
+            error_log('[ClientGroupController] Audit log failed: ' . $e->getMessage());
+        }
+
         $this->success(null, 'Group deleted');
+    }
+
+    /** @param array<string, mixed>|null $actor */
+    private function isSuperAdminActor(?array $actor): bool
+    {
+        if ($actor === null) {
+            return false;
+        }
+        if ($this->isSuperAdminEmail((string)($actor['email'] ?? ''))) {
+            return true;
+        }
+
+        return ($actor['role_name'] ?? '') === 'super_admin';
     }
 }

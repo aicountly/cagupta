@@ -496,7 +496,7 @@ export default function Leads() {
             <h3 style={{ margin:0, fontSize:15, fontWeight:700 }}>{selected.contactName}</h3>
             <button onClick={()=>setSelected(null)} style={{ background:'none', border:'none', fontSize:20, cursor:'pointer' }}>✕</button>
           </div>
-          {[['Company',selected.company||'—'],['Email',selected.email],['Phone',selected.phone],['Source',selected.source],['Stage',<StatusBadge key="s" status={selected.stage} />],['Probability',`${selected.probability}%`],['Est. Value',`₹${selected.estimatedValue?.toLocaleString('en-IN')}`],['Assigned To',selected.assignedTo],['Follow-up',selected.nextFollowUp],['Engagement', selected.engagementTypeName || '—']].map(([k,v])=>(
+          {[['Company',selected.company||'—'],['Email',selected.email],['Phone',selected.phone],['Source',selected.source],['Stage',<StatusBadge key="s" status={selected.stage} />],['Probability',`${selected.probability}%`],['Est. Value',`₹${selected.estimatedValue?.toLocaleString('en-IN')}`],['Assigned To',selected.assignedTo],['Follow-up',selected.nextFollowUp],['Engagement', selected.engagementTypeName || '—'],['Notes', selected.notes || '—']].map(([k,v])=>(
             <div key={k} style={{ display:'flex', justifyContent:'space-between', padding:'8px 0', borderBottom:'1px solid #f1f5f9', fontSize:13 }}>
               <span style={{ color:'#64748b', fontWeight:600 }}>{k}</span>
               <span>{v}</span>
@@ -762,6 +762,15 @@ export default function Leads() {
                 <div style={{ gridColumn:'1/-1' }}>
                   <label style={labelStyle}>Next Follow-up</label>
                   <DateInput value={form.nextFollowUp} onChange={e=>setForm(v=>({...v,nextFollowUp:e.target.value}))} style={inputStyle} />
+                </div>
+                <div style={{ gridColumn:'1/-1' }}>
+                  <label style={labelStyle}>Notes</label>
+                  <textarea
+                    value={form.notes}
+                    onChange={e => setForm(v => ({ ...v, notes: e.target.value }))}
+                    placeholder="Optional notes about this lead…"
+                    style={{ ...inputStyle, minHeight: 80, resize: 'vertical' }}
+                  />
                 </div>
               </div>
               </div>

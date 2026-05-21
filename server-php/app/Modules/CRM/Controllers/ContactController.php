@@ -6,8 +6,11 @@ namespace App\Controllers\Admin;
 use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
+use App\Libraries\ClientMasterAudit;
+use App\Libraries\ClientMasterNameChangeService;
 use App\Libraries\DigestQueue;
 use App\Libraries\OtpService;
+use App\Models\AdminAuditLogModel;
 use App\Models\ClientModel;
 use App\Models\UserModel;
 
@@ -25,11 +28,13 @@ class ContactController extends BaseController
 {
     private ClientModel $clients;
     private UserModel $users;
+    private AdminAuditLogModel $audit;
 
     public function __construct()
     {
         $this->clients = new ClientModel();
         $this->users   = new UserModel();
+        $this->audit   = new AdminAuditLogModel();
     }
 
     // ── GET /api/admin/contacts/search ──────────────────────────────────────
@@ -200,6 +205,21 @@ class ContactController extends BaseController
         // ── Superadmin alert (best-effort) ────────────────────────────────────
         $this->sendSuperadminAlert('Created', $contact, $actingUser);
 
+        $actorId = $actingUser ? (int)$actingUser['id'] : null;
+        try {
+            $this->audit->insert(
+                $actorId,
+                'contact.created',
+                'contact',
+                $newId,
+                [],
+                null,
+                ClientMasterAudit::contactSnapshot($contact ?? [])
+            );
+        } catch (\Throwable $e) {
+            error_log('[ContactController] Audit log failed: ' . $e->getMessage());
+        }
+
         $this->success($contact, 'Contact created', 201);
     }
 
@@ -214,7 +234,24 @@ class ContactController extends BaseController
         if ($contact === null) {
             $this->error('Contact not found.', 404);
         }
+        ClientMasterNameChangeService::attachPendingToRow('contact', $id, $contact);
         $this->success($contact);
+    }
+
+    // ── GET /api/admin/contacts/:id/audit-log ────────────────────────────────
+
+    public function auditLog(int $id): never
+    {
+        $contact = $this->clients->find($id);
+        if ($contact === null) {
+            $this->error('Contact not found.', 404);
+        }
+
+        $limit  = min(100, max(1, (int)$this->query('limit', 50)));
+        $offset = max(0, (int)$this->query('offset', 0));
+
+        $rows = $this->audit->listForEntity('contact', $id, $limit, $offset);
+        $this->success($rows, 'Audit log retrieved');
     }
 
     // ── PUT /api/admin/contacts/:id ──────────────────────────────────────────
@@ -290,6 +327,32 @@ class ContactController extends BaseController
             $data['pan'] = $norm !== '' ? $norm : null;
         }
 
+        $actingUser   = $this->authUser();
+        $isSuperAdmin = $this->isSuperAdminActor($actingUser);
+        $beforeSnap   = ClientMasterAudit::contactSnapshot($contact);
+        $pendingMeta  = null;
+
+        $intercept = ClientMasterNameChangeService::interceptNameChange(
+            'contact',
+            $id,
+            $contact,
+            $data,
+            $actingUser,
+            $isSuperAdmin
+        );
+        if ($intercept !== null) {
+            if ($intercept['type'] === 'blocked') {
+                $this->error(
+                    'A name change is already pending Super Admin approval (Approval #'
+                    . (int)$intercept['summary']['approval_id'] . ').',
+                    422,
+                    [],
+                    ['pending_name_change' => $intercept['summary']]
+                );
+            }
+            $pendingMeta = $intercept['summary'];
+        }
+
         if ($data !== []) {
             try {
                 $this->clients->update($id, $data);
@@ -321,13 +384,28 @@ class ContactController extends BaseController
             }
         }
 
-        $updated    = $this->clients->find($id);
-        $actingUser = $this->authUser();
+        $updated = $this->clients->find($id);
 
         // ── Superadmin alert (best-effort) ────────────────────────────────────
         $this->sendSuperadminAlert('Updated', $updated, $actingUser);
 
-        $this->success($updated, 'Contact updated');
+        $afterSnap = ClientMasterAudit::contactSnapshot($updated ?? []);
+        $actorId   = $actingUser ? (int)$actingUser['id'] : null;
+        try {
+            $this->audit->insert($actorId, 'contact.updated', 'contact', $id, [], $beforeSnap, $afterSnap);
+        } catch (\Throwable $e) {
+            error_log('[ContactController] Audit log failed: ' . $e->getMessage());
+        }
+
+        $message = 'Contact updated';
+        $meta    = [];
+        if ($pendingMeta !== null) {
+            $message = 'Contact updated. Name change submitted for Super Admin approval (Approval #'
+                . (int)$pendingMeta['approval_id'] . ').';
+            $meta['pending_name_change'] = $pendingMeta;
+        }
+
+        $this->success($updated, $message, 200, $meta);
     }
 
     // ── PATCH /api/admin/contacts/:id/status ────────────────────────────────
@@ -355,10 +433,25 @@ class ContactController extends BaseController
         }
         $updated    = $this->clients->find($id);
         $actingUser = $this->authUser();
+        $actorId    = $actingUser ? (int)$actingUser['id'] : null;
 
         // ── Superadmin alert (best-effort) ────────────────────────────────────
         $statusLabel = $isActive ? 'Activated' : 'Deactivated';
         $this->sendSuperadminAlert("Status Changed ({$statusLabel})", $updated, $actingUser);
+
+        try {
+            $this->audit->insert(
+                $actorId,
+                'contact.status_changed',
+                'contact',
+                $id,
+                ['is_active' => $isActive],
+                ClientMasterAudit::contactSnapshot($contact),
+                ClientMasterAudit::contactSnapshot($updated ?? [])
+            );
+        } catch (\Throwable $e) {
+            error_log('[ContactController] Audit log failed: ' . $e->getMessage());
+        }
 
         $this->success($updated, 'Contact status updated');
     }
@@ -431,6 +524,7 @@ class ContactController extends BaseController
         }
 
         $actingUser = $this->authUser();
+        $beforeSnap = ClientMasterAudit::contactSnapshot($contact);
         $this->sendSuperadminAlert('Deleted', $contact, $actingUser);
 
         try {
@@ -439,6 +533,14 @@ class ContactController extends BaseController
             error_log('[ContactController] Delete failed for contact ' . $id . ': ' . $e->getMessage());
             $this->error('Failed to delete contact. Please try again.', 500);
         }
+
+        $actorId = $actingUser ? (int)$actingUser['id'] : null;
+        try {
+            $this->audit->insert($actorId, 'contact.deleted', 'contact', $id, [], $beforeSnap, null);
+        } catch (\Throwable $e) {
+            error_log('[ContactController] Audit log failed: ' . $e->getMessage());
+        }
+
         $this->success(null, 'Contact deleted');
     }
 
@@ -540,5 +642,18 @@ class ContactController extends BaseController
             actorName:   $actorName,
             actorEmail:  $actorEmail,
         );
+    }
+
+    /** @param array<string, mixed>|null $actor */
+    private function isSuperAdminActor(?array $actor): bool
+    {
+        if ($actor === null) {
+            return false;
+        }
+        if ($this->isSuperAdminEmail((string)($actor['email'] ?? ''))) {
+            return true;
+        }
+
+        return ($actor['role_name'] ?? '') === 'super_admin';
     }
 }

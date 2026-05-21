@@ -260,17 +260,17 @@ class RegisterModel
     ): void {
         $stmt = $this->db->prepare(
             'UPDATE registers
-             SET return_type = :new, updated_at = NOW()
+             SET return_type = LEFT(:new_label, 100), updated_at = NOW()
              WHERE engagement_type_id = :eid
                AND (
-                   return_type = :old
+                   return_type = :old_label
                    OR TRIM(COALESCE(return_type, \'\')) = \'\'
                )'
         );
         $stmt->execute([
-            ':new' => $newName,
-            ':eid' => $engagementTypeId,
-            ':old' => $oldName,
+            ':new_label' => $newName,
+            ':eid'       => $engagementTypeId,
+            ':old_label' => $oldName,
         ]);
     }
 

@@ -6,8 +6,11 @@ namespace App\Controllers\Admin;
 use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
+use App\Libraries\ClientMasterAudit;
+use App\Libraries\ClientMasterNameChangeService;
 use App\Libraries\DigestQueue;
 use App\Libraries\OtpService;
+use App\Models\AdminAuditLogModel;
 use App\Models\OrganizationModel;
 use App\Models\UserModel;
 
@@ -26,11 +29,13 @@ class OrganizationController extends BaseController
 {
     private OrganizationModel $orgs;
     private UserModel $users;
+    private AdminAuditLogModel $audit;
 
     public function __construct()
     {
         $this->orgs   = new OrganizationModel();
-        $this->users = new UserModel();
+        $this->users  = new UserModel();
+        $this->audit  = new AdminAuditLogModel();
     }
 
     // ── GET /api/admin/organizations/search ──────────────────────────────────
@@ -155,6 +160,21 @@ class OrganizationController extends BaseController
         // ── Superadmin alert (best-effort) ────────────────────────────────────
         $this->sendSuperadminAlert('Created', $org, $actingUser);
 
+        $actorId = $actingUser ? (int)$actingUser['id'] : null;
+        try {
+            $this->audit->insert(
+                $actorId,
+                'organization.created',
+                'organization',
+                $newId,
+                [],
+                null,
+                ClientMasterAudit::organizationSnapshot($org ?? [])
+            );
+        } catch (\Throwable $e) {
+            error_log('[OrganizationController] Audit log failed: ' . $e->getMessage());
+        }
+
         $this->success($org, 'Organization created', 201);
     }
 
@@ -169,7 +189,24 @@ class OrganizationController extends BaseController
         if ($org === null) {
             $this->error('Organization not found.', 404);
         }
+        ClientMasterNameChangeService::attachPendingToRow('organization', $id, $org);
         $this->success($org);
+    }
+
+    // ── GET /api/admin/organizations/:id/audit-log ───────────────────────────
+
+    public function auditLog(int $id): never
+    {
+        $org = $this->orgs->find($id);
+        if ($org === null) {
+            $this->error('Organization not found.', 404);
+        }
+
+        $limit  = min(100, max(1, (int)$this->query('limit', 50)));
+        $offset = max(0, (int)$this->query('offset', 0));
+
+        $rows = $this->audit->listForEntity('organization', $id, $limit, $offset);
+        $this->success($rows, 'Audit log retrieved');
     }
 
     // ── PUT /api/admin/organizations/:id ─────────────────────────────────────
@@ -262,6 +299,41 @@ class OrganizationController extends BaseController
             }
         }
 
+        $actingUser   = $this->authUser();
+        $isSuperAdmin = $this->isSuperAdminActor($actingUser);
+        $beforeSnap   = ClientMasterAudit::organizationSnapshot($org);
+        $pendingMeta  = null;
+
+        $intercept = ClientMasterNameChangeService::interceptNameChange(
+            'organization',
+            $id,
+            $org,
+            $data,
+            $actingUser,
+            $isSuperAdmin
+        );
+        if ($intercept !== null) {
+            if ($intercept['type'] === 'blocked') {
+                $this->error(
+                    'A name change is already pending Super Admin approval (Approval #'
+                    . (int)$intercept['summary']['approval_id'] . ').',
+                    422,
+                    [],
+                    ['pending_name_change' => $intercept['summary']]
+                );
+            }
+            $pendingMeta = $intercept['summary'];
+        }
+
+        if ($data === []) {
+            $updated = $this->orgs->find($id);
+            $message = $pendingMeta !== null
+                ? 'Name change submitted for Super Admin approval (Approval #' . (int)$pendingMeta['approval_id'] . ').'
+                : 'No changes to save.';
+            $meta = $pendingMeta !== null ? ['pending_name_change' => $pendingMeta] : [];
+            $this->success($updated, $message, 200, $meta);
+        }
+
         try {
             $this->orgs->update($id, $data);
         } catch (\PDOException $e) {
@@ -280,13 +352,28 @@ class OrganizationController extends BaseController
             ]);
         }
 
-        $updated    = $this->orgs->find($id);
-        $actingUser = $this->authUser();
+        $updated = $this->orgs->find($id);
 
         // ── Superadmin alert (best-effort) ────────────────────────────────────
         $this->sendSuperadminAlert('Updated', $updated, $actingUser);
 
-        $this->success($updated, 'Organization updated');
+        $afterSnap = ClientMasterAudit::organizationSnapshot($updated ?? []);
+        $actorId   = $actingUser ? (int)$actingUser['id'] : null;
+        try {
+            $this->audit->insert($actorId, 'organization.updated', 'organization', $id, [], $beforeSnap, $afterSnap);
+        } catch (\Throwable $e) {
+            error_log('[OrganizationController] Audit log failed: ' . $e->getMessage());
+        }
+
+        $message = 'Organization updated';
+        $meta    = [];
+        if ($pendingMeta !== null) {
+            $message = 'Organization updated. Name change submitted for Super Admin approval (Approval #'
+                . (int)$pendingMeta['approval_id'] . ').';
+            $meta['pending_name_change'] = $pendingMeta;
+        }
+
+        $this->success($updated, $message, 200, $meta);
     }
 
     // ── PATCH /api/admin/organizations/:id/status ────────────────────────────
@@ -309,10 +396,25 @@ class OrganizationController extends BaseController
         $this->orgs->updateStatus($id, $isActive);
         $updated    = $this->orgs->find($id);
         $actingUser = $this->authUser();
+        $actorId    = $actingUser ? (int)$actingUser['id'] : null;
 
         // ── Superadmin alert (best-effort) ────────────────────────────────────
         $statusLabel = $isActive ? 'Activated' : 'Deactivated';
         $this->sendSuperadminAlert("Status Changed ({$statusLabel})", $updated, $actingUser);
+
+        try {
+            $this->audit->insert(
+                $actorId,
+                'organization.status_changed',
+                'organization',
+                $id,
+                ['is_active' => $isActive],
+                ClientMasterAudit::organizationSnapshot($org),
+                ClientMasterAudit::organizationSnapshot($updated ?? [])
+            );
+        } catch (\Throwable $e) {
+            error_log('[OrganizationController] Audit log failed: ' . $e->getMessage());
+        }
 
         $this->success($updated, 'Organization status updated');
     }
@@ -385,9 +487,18 @@ class OrganizationController extends BaseController
         }
 
         $actingUser = $this->authUser();
+        $beforeSnap = ClientMasterAudit::organizationSnapshot($org);
         $this->sendSuperadminAlert('Deleted', $org, $actingUser);
 
         $this->orgs->delete($id);
+
+        $actorId = $actingUser ? (int)$actingUser['id'] : null;
+        try {
+            $this->audit->insert($actorId, 'organization.deleted', 'organization', $id, [], $beforeSnap, null);
+        } catch (\Throwable $e) {
+            error_log('[OrganizationController] Audit log failed: ' . $e->getMessage());
+        }
+
         $this->success(null, 'Organization deleted');
     }
 
@@ -533,5 +644,18 @@ class OrganizationController extends BaseController
             actorName:   $actorName,
             actorEmail:  $actorEmail,
         );
+    }
+
+    /** @param array<string, mixed>|null $actor */
+    private function isSuperAdminActor(?array $actor): bool
+    {
+        if ($actor === null) {
+            return false;
+        }
+        if ($this->isSuperAdminEmail((string)($actor['email'] ?? ''))) {
+            return true;
+        }
+
+        return ($actor['role_name'] ?? '') === 'super_admin';
     }
 }

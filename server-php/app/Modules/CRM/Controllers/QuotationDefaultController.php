@@ -7,24 +7,27 @@ use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
 use App\Libraries\OtpService;
+use App\Models\AdminAuditLogModel;
 use App\Models\EngagementTypeQuotationDefaultModel;
 use App\Models\LeadQuotationModel;
 use App\Models\UserModel;
 
 /**
- * Quotation defaults per engagement type — OTP-gated updates.
+ * Quotation defaults per engagement type — OTP-gated updates for non-admin roles.
  */
 class QuotationDefaultController extends BaseController
 {
     private EngagementTypeQuotationDefaultModel $defaults;
     private LeadQuotationModel $leadQuotations;
     private UserModel $users;
+    private AdminAuditLogModel $audit;
 
     public function __construct()
     {
         $this->defaults       = new EngagementTypeQuotationDefaultModel();
         $this->leadQuotations = new LeadQuotationModel();
         $this->users          = new UserModel();
+        $this->audit          = new AdminAuditLogModel();
     }
 
     // ── GET /api/admin/quotation-defaults ─────────────────────────────────────
@@ -134,18 +137,24 @@ class QuotationDefaultController extends BaseController
             $this->error('Engagement type not found.', 404);
         }
 
-        $body = $this->getJsonBody();
-        $otp  = trim((string)($body['otp'] ?? ''));
-        if ($otp === '') {
-            $this->error('otp is required.', 422);
-        }
+        $body   = $this->getJsonBody();
+        $acting = $this->authUser();
+        $bypass = $this->canBypassQuotationSetupOtp($acting);
+        $otpVerified = false;
 
-        $acting    = $this->authUser();
-        $recipient = trim((string)($body['otp_recipient'] ?? 'super_admin'));
-        $otpUserId = $this->resolveOtpUserId($acting, $recipient);
+        if (!$bypass) {
+            $otp = trim((string)($body['otp'] ?? ''));
+            if ($otp === '') {
+                $this->error('otp is required.', 422);
+            }
 
-        if (!OtpService::verify($otpUserId, $otp)) {
-            $this->error('Invalid or expired OTP.', 403);
+            $recipient = trim((string)($body['otp_recipient'] ?? 'super_admin'));
+            $otpUserId = $this->resolveOtpUserId($acting, $recipient);
+
+            if (!OtpService::verify($otpUserId, $otp)) {
+                $this->error('Invalid or expired OTP.', 403);
+            }
+            $otpVerified = true;
         }
 
         $docs = $this->normalizeDocuments($body['documents_required'] ?? []);
@@ -160,12 +169,30 @@ class QuotationDefaultController extends BaseController
         $this->defaults->upsert($engagementTypeId, $price, $docs, $actorId);
 
         $after = $this->defaults->findByEngagementTypeId($engagementTypeId);
+        $this->logQuotationDefaultChange($actorId, $engagementTypeId, $before, $after, $acting, $bypass, $otpVerified);
         $this->sendSuperadminSuccessAlert($before, $after, $engagementTypeId, $acting);
 
         $this->success($this->formatDefaultRow($engagementTypeId, $after), 'Quotation default saved.');
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
+
+    /**
+     * @param array<string, mixed>|null $acting
+     */
+    private function canBypassQuotationSetupOtp(?array $acting): bool
+    {
+        if ($acting === null) {
+            return false;
+        }
+        $role = (string)($acting['role_name'] ?? '');
+        if (in_array($role, ['admin', 'super_admin'], true)) {
+            return true;
+        }
+
+        return strtolower((string)($acting['email'] ?? ''))
+            === strtolower(AuthConfig::SUPER_ADMIN_EMAIL);
+    }
 
     private function requireQuotationSetupPermission(): void
     {
@@ -307,6 +334,138 @@ class QuotationDefaultController extends BaseController
             }
         }
         return false;
+    }
+
+    /**
+     * @param array<string, mixed>|null $row
+     * @return array<string, mixed>
+     */
+    private function quotationDefaultSnapshot(int $engagementTypeId, ?array $row): array
+    {
+        if ($row === null) {
+            return [
+                'engagement_type_id' => $engagementTypeId,
+                'default_price'      => null,
+                'documents_required' => [],
+            ];
+        }
+
+        return [
+            'engagement_type_id' => $engagementTypeId,
+            'default_price'      => isset($row['default_price']) && $row['default_price'] !== null
+                ? (float)$row['default_price'] : null,
+            'documents_required' => $this->normalizeDocuments($row['documents_required'] ?? []),
+        ];
+    }
+
+    /**
+     * @param array<string, mixed>|null $before
+     * @param array<string, mixed>|null $after
+     * @param array<string, mixed>|null $acting
+     */
+    private function logQuotationDefaultChange(
+        ?int $actorId,
+        int $engagementTypeId,
+        ?array $before,
+        ?array $after,
+        ?array $acting,
+        bool $otpBypassed,
+        bool $otpVerified
+    ): void {
+        $beforeSnap = $this->quotationDefaultSnapshot($engagementTypeId, $before);
+        $afterSnap  = $this->quotationDefaultSnapshot($engagementTypeId, $after);
+
+        $baseMeta = [
+            'engagement_type_id' => $engagementTypeId,
+            'otp_bypassed'       => $otpBypassed,
+            'otp_verified'       => $otpVerified,
+            'actor_email'        => $acting['email'] ?? null,
+            'actor_name'         => $acting['name'] ?? null,
+        ];
+
+        try {
+            if ($before === null) {
+                $this->audit->insert(
+                    $actorId,
+                    'quotation_default.created',
+                    'quotation_default',
+                    $engagementTypeId,
+                    $baseMeta,
+                    null,
+                    $afterSnap
+                );
+            } else {
+                $this->audit->insert(
+                    $actorId,
+                    'quotation_default.updated',
+                    'quotation_default',
+                    $engagementTypeId,
+                    $baseMeta,
+                    $beforeSnap,
+                    $afterSnap
+                );
+            }
+        } catch (\Throwable $e) {
+            error_log('[QuotationDefaultController] Audit log failed: ' . $e->getMessage());
+        }
+
+        $beforePrice = $beforeSnap['default_price'];
+        $afterPrice  = $afterSnap['default_price'];
+        if ($beforePrice !== $afterPrice) {
+            try {
+                $this->audit->insert(
+                    $actorId,
+                    'quotation_default.price_changed',
+                    'quotation_default',
+                    $engagementTypeId,
+                    array_merge($baseMeta, [
+                        'before_price' => $beforePrice,
+                        'after_price'  => $afterPrice,
+                    ]),
+                    null,
+                    null
+                );
+            } catch (\Throwable $e) {
+                error_log('[QuotationDefaultController] Audit log (price) failed: ' . $e->getMessage());
+            }
+        }
+
+        $beforeDocs = $beforeSnap['documents_required'];
+        $afterDocs  = $afterSnap['documents_required'];
+        $added      = array_values(array_diff($afterDocs, $beforeDocs));
+        $removed    = array_values(array_diff($beforeDocs, $afterDocs));
+
+        foreach ($added as $index => $document) {
+            try {
+                $this->audit->insert(
+                    $actorId,
+                    'quotation_default.document_added',
+                    'quotation_default',
+                    $engagementTypeId,
+                    array_merge($baseMeta, ['document' => $document, 'index' => $index]),
+                    null,
+                    null
+                );
+            } catch (\Throwable $e) {
+                error_log('[QuotationDefaultController] Audit log (document_added) failed: ' . $e->getMessage());
+            }
+        }
+
+        foreach ($removed as $document) {
+            try {
+                $this->audit->insert(
+                    $actorId,
+                    'quotation_default.document_removed',
+                    'quotation_default',
+                    $engagementTypeId,
+                    array_merge($baseMeta, ['document' => $document]),
+                    null,
+                    null
+                );
+            } catch (\Throwable $e) {
+                error_log('[QuotationDefaultController] Audit log (document_removed) failed: ' . $e->getMessage());
+            }
+        }
     }
 
     private function maskEmail(string $email): string

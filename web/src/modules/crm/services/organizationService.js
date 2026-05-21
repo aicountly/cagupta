@@ -35,7 +35,9 @@ function authHeaders() {
 async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(json.message || `Request failed (${res.status})`, res.status, json);
+    const err = new ApiError(json.message || `Request failed (${res.status})`, res.status, json);
+    if (json.meta) err.meta = json.meta;
+    throw err;
   }
   return json;
 }
@@ -96,6 +98,7 @@ function normalizeOrg(o) {
     referralStartDate: o.referral_start_date || '',
     commissionMode: o.commission_mode || 'referral_only',
     clientFacingRestricted: Boolean(o.client_facing_restricted),
+    pendingNameChange: o.pending_name_change || null,
   };
 }
 
@@ -266,7 +269,13 @@ export async function updateOrganization(id, payload) {
     body:    JSON.stringify(body),
   });
   const data = await parseResponse(res);
-  return normalizeOrg(data.data);
+  return {
+    organization: normalizeOrg(data.data),
+    message: data.message || 'Organization updated',
+    meta: {
+      pending_name_change: data.pending_name_change || data.meta?.pending_name_change || null,
+    },
+  };
 }
 
 /** POST — super admin receives OTP email to authorize organization delete */

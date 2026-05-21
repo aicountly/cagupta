@@ -511,7 +511,7 @@ function ServiceCatalogRenameModal({ target, draft, onDraftChange, busy, error, 
             onChange={(e) => onDraftChange(e.target.value)}
             style={inputStyle}
             autoFocus
-            onKeyDown={(e) => { if (e.key === 'Enter') onSave(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter' && !busy) onSave(); }}
           />
           {error && (
             <div style={{ marginTop:12, color:'#dc2626', fontSize:13, background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 12px' }}>
@@ -581,6 +581,11 @@ export default function Settings() {
   /** Same roles as API `role:super_admin,admin` on service category / engagement type mutations. */
   const canManageServiceCatalog =
     user?.role === ROLES.SUPER_ADMIN || user?.role === ROLES.ADMIN;
+  const canBypassQuoteOtp =
+    user?.role_name === ROLES.ADMIN ||
+    user?.role_name === ROLES.SUPER_ADMIN ||
+    user?.role === ROLES.SUPER_ADMIN ||
+    user?.role === ROLES.ADMIN;
   const [tab, setTab] = useState(null);
   const [cronJobs, setCronJobs] = useState([]);
   const [cronJobsLoading, setCronJobsLoading] = useState(false);
@@ -637,6 +642,8 @@ export default function Settings() {
   const [quoteOtpBusy, setQuoteOtpBusy] = useState(false);
   const [quoteOtpMsg, setQuoteOtpMsg] = useState('');
   const [quoteRowDrafts, setQuoteRowDrafts] = useState({});
+  const [quoteSaveBusy, setQuoteSaveBusy] = useState({});
+  const [quoteSaveMsg, setQuoteSaveMsg] = useState('');
 
   const [svcStructDeleteModal, setSvcStructDeleteModal] = useState(null);
   const [svcStructDeleteBusy, setSvcStructDeleteBusy] = useState(false);
@@ -816,6 +823,32 @@ export default function Settings() {
     setQuoteOtpCode('');
     setQuoteOtpRecipient('super_admin');
     setQuoteOtpModal({ row, draft });
+  }
+
+  async function handleQuoteSaveDirect(row, draft) {
+    const eid = row.engagement_type_id;
+    setQuoteSaveBusy(prev => ({ ...prev, [eid]: true }));
+    setQuoteSaveMsg('');
+    setQuotationError('');
+    try {
+      const docs = (draft.documentsText || '')
+        .split(/\r?\n/)
+        .map(s => s.trim())
+        .filter(Boolean);
+      await saveQuotationDefault(eid, {
+        defaultPrice: draft.price,
+        documentsRequired: docs,
+      });
+      const refreshed = await getQuotationDefaults();
+      setQuotationRows(refreshed);
+      const pending = await getQuotationPendingSummary();
+      setQuotationPending(pending);
+      setQuoteSaveMsg('Quotation default saved.');
+    } catch (e) {
+      setQuotationError(e.message || 'Save failed.');
+    } finally {
+      setQuoteSaveBusy(prev => ({ ...prev, [eid]: false }));
+    }
   }
 
   async function handleSendQuoteOtp() {
@@ -1036,7 +1069,7 @@ export default function Settings() {
 
   async function confirmSvcCatalogRename() {
     const m = svcCatalogRenameModal;
-    if (!m) return;
+    if (!m || svcCatalogRenameBusy) return;
     const name = svcCatalogRenameDraft.trim();
     if (!name) {
       setSvcCatalogRenameErr('Name is required.');
@@ -2384,6 +2417,9 @@ export default function Settings() {
           {quotationError && (
             <div style={{ color:'#dc2626', background:'#fef2f2', padding:'8px 12px', borderRadius:6, fontSize:13, marginBottom:12 }}>{quotationError}</div>
           )}
+          {quoteSaveMsg && (
+            <div style={{ color:'#15803d', background:'#f0fdf4', padding:'8px 12px', borderRadius:6, fontSize:13, marginBottom:12 }}>{quoteSaveMsg}</div>
+          )}
           {quotationLoading && <div style={{ color:'#64748b', fontSize:13 }}>Loading quotation defaults…</div>}
           {!quotationLoading && quotationRows.length > 0 && (
             <div style={{ overflowX:'auto' }}>
@@ -2453,9 +2489,16 @@ export default function Settings() {
                             <button
                               type="button"
                               style={btnPrimary}
-                              onClick={() => openQuoteSaveModal(r, quoteRowDrafts[r.engagement_type_id] || draft)}
+                              disabled={!!quoteSaveBusy[r.engagement_type_id]}
+                              onClick={() => (
+                                canBypassQuoteOtp
+                                  ? handleQuoteSaveDirect(r, quoteRowDrafts[r.engagement_type_id] || draft)
+                                  : openQuoteSaveModal(r, quoteRowDrafts[r.engagement_type_id] || draft)
+                              )}
                             >
-                              Save…
+                              {quoteSaveBusy[r.engagement_type_id]
+                                ? 'Saving…'
+                                : (canBypassQuoteOtp ? 'Save' : 'Save…')}
                             </button>
                           ) : (
                             <span style={{ fontSize:12, color:'#94a3b8' }}>View only</span>

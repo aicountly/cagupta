@@ -17,6 +17,8 @@ import { useAuth } from '../../../auth/AuthContext';
 import DateInput from '../../../components/common/DateInput';
 import NameCollisionModal from '../../../components/common/NameCollisionModal';
 import WorkHoldSection from '../components/WorkHoldSection';
+import MasterChangeLogSection from '../components/MasterChangeLogSection';
+import PendingNameChangeBanner from '../components/PendingNameChangeBanner';
 
 // ── Country / State data ──────────────────────────────────────────────────────
 const COUNTRIES = [
@@ -184,6 +186,7 @@ export default function ContactCreatePage() {
   /** @type {null | { profile: 'contact_name_duplicate' | 'contact_pan_identical', matches: object[], blockingReason?: string | null, confirmMode?: 'quit' | 'addNew' }} */
   const [collisionModal, setCollisionModal] = useState(null);
   const [activeTab, setActiveTab] = useState('details');
+  const [pendingNameChange, setPendingNameChange] = useState(null);
   const [panDuplicateInfo, setPanDuplicateInfo] = useState(null);
   /** Pending API payload when save is gated behind suspicious name confirmation. */
   const pendingSaveRef = useRef(/** @type {null | { contact: object, mode: 'quit' | 'addNew' }} */ (null));
@@ -256,6 +259,7 @@ export default function ContactCreatePage() {
           commissionMode: existing.commissionMode || 'referral_only',
           clientFacingRestricted: Boolean(existing.clientFacingRestricted),
         });
+        setPendingNameChange(existing.pendingNameChange || null);
       })
       .catch(err => {
         if (cancelled) return;
@@ -425,6 +429,21 @@ export default function ContactCreatePage() {
     return contact;
   }, [form, isEdit]);
 
+  const applyUpdateResult = useCallback((result) => {
+    const pending = result?.meta?.pending_name_change || null;
+    if (pending) {
+      setPendingNameChange(pending);
+      if (pending.current_name) {
+        setForm((prev) => ({ ...prev, displayName: pending.current_name }));
+      }
+      setToast(result.message || `Name change submitted for Super Admin approval (Approval #${pending.approval_id}).`);
+      return false;
+    }
+    setPendingNameChange(null);
+    setToast(result?.message || 'Contact updated successfully!');
+    return true;
+  }, []);
+
   const executePendingSave = useCallback(async () => {
     const p = pendingSaveRef.current;
     if (!p) return;
@@ -432,16 +451,20 @@ export default function ContactCreatePage() {
     try {
       if (p.mode === 'quit') {
         if (isEdit && contactId) {
-          await updateContactApi(contactId, p.contact);
-          setToast('Contact updated successfully!');
+          const result = await updateContactApi(contactId, p.contact);
+          const canNavigate = applyUpdateResult(result);
+          setDirty(false);
+          pendingSaveRef.current = null;
+          setCollisionModal(null);
+          if (canNavigate) setTimeout(() => navigate('/clients/contacts'), 900);
         } else {
           await createContact(p.contact);
           setToast('Contact saved successfully!');
+          setDirty(false);
+          pendingSaveRef.current = null;
+          setCollisionModal(null);
+          setTimeout(() => navigate('/clients/contacts'), 900);
         }
-        setDirty(false);
-        pendingSaveRef.current = null;
-        setCollisionModal(null);
-        setTimeout(() => navigate('/clients/contacts'), 900);
       } else {
         await createContact(p.contact);
         setDirty(false);
@@ -476,7 +499,7 @@ export default function ContactCreatePage() {
     } finally {
       setSaving(false);
     }
-  }, [isEdit, contactId, navigate, form.assignedManager]);
+  }, [isEdit, contactId, navigate, form.assignedManager, applyUpdateResult]);
 
   async function handleSaveQuit() {
     const contact = doSave();
@@ -537,16 +560,24 @@ export default function ContactCreatePage() {
     setSaving(true);
     try {
       if (isEdit && contactId) {
-        await updateContactApi(contactId, contact);
-        setToast('Contact updated successfully!');
+        const result = await updateContactApi(contactId, contact);
+        const canNavigate = applyUpdateResult(result);
+        setDirty(false);
+        if (canNavigate) setTimeout(() => navigate('/clients/contacts'), 900);
       } else {
         await createContact(contact);
         setToast('Contact saved successfully!');
+        setDirty(false);
+        setTimeout(() => navigate('/clients/contacts'), 900);
       }
-      setDirty(false);
-      setTimeout(() => navigate('/clients/contacts'), 900);
     } catch (err) {
       const data = err && typeof err === 'object' ? err.data : null;
+      const meta = err && typeof err === 'object' ? err.meta : null;
+      const data = err && typeof err === 'object' ? err.data : null;
+      const pending = meta?.pending_name_change || data?.pending_name_change;
+      if (pending) {
+        setPendingNameChange(pending);
+      }
       const c = data && data.conflict;
       if (c) {
         setCollisionModal({
@@ -749,6 +780,12 @@ export default function ContactCreatePage() {
               Work hold
             </button>
           )}
+          <button
+            style={activeTab === 'change_log' ? tabActive : tabInactive}
+            onClick={() => setActiveTab('change_log')}
+          >
+            Change log
+          </button>
         </div>
       )}
 
@@ -761,8 +798,13 @@ export default function ContactCreatePage() {
         <WorkHoldSection variant="contact" entityId={parseInt(id, 10)} canMutate={canWorkHoldAdmin} />
       )}
 
-      {/* Form card — hidden (not unmounted) when on the documents tab so form state is preserved */}
-      <div style={(activeTab === 'documents' || activeTab === 'work_hold') && isEdit ? { display: 'none' } : cardStyle}>
+      {isEdit && activeTab === 'change_log' && (
+        <MasterChangeLogSection entityType="contact" entityId={parseInt(id, 10)} />
+      )}
+
+      {/* Form card — hidden (not unmounted) when on non-details tabs so form state is preserved */}
+      <div style={(activeTab !== 'details') && isEdit ? { display: 'none' } : cardStyle}>
+        <PendingNameChangeBanner pending={pendingNameChange} />
         {/* ── Section: Basic Info ── */}
         <SectionHeader title="Basic Information" />
         <div style={gridStyle}>
@@ -820,8 +862,13 @@ export default function ContactCreatePage() {
             <input
               value={form.displayName}
               onChange={e => update('displayName', e.target.value)}
+              disabled={Boolean(pendingNameChange)}
               placeholder="e.g. Ramesh Agarwal"
-              style={{ ...inputStyle, borderColor: errors.displayName ? '#dc2626' : '#E6E8F0' }}
+              style={{
+                ...inputStyle,
+                borderColor: errors.displayName ? '#dc2626' : '#E6E8F0',
+                ...(pendingNameChange ? { background: '#F8FAFC', cursor: 'not-allowed' } : {}),
+              }}
             />
             <FieldError msg={errors.displayName} />
             {nameDuplicateInfo && !collisionModal && (

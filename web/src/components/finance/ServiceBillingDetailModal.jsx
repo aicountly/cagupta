@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ServiceLogPanel from '../services/ServiceLogPanel';
+import { postInvoiceCostAnalysisPreview } from '../../modules/finance/services/txnService';
 
 const overlayStyle = {
   position: 'fixed',
@@ -99,6 +100,83 @@ function canReturnToTeam(row) {
   return row.status === 'completed' || Boolean(row.completionFlags?.engagementCompleted);
 }
 
+function formatMoneyDetailed(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return '—';
+  return `₹${v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Cost benchmarks panel (same data as Raise Invoice modal). */
+function BillingCostBenchmarks({ analysis, loading, amountBilled, feeAgreed }) {
+  if (loading) {
+    return (
+      <div style={benchmarksBox}>
+        <div style={sectionLabel}>Billing benchmarks</div>
+        <div style={{ fontSize: 13, color: '#94a3b8' }}>Loading benchmarks…</div>
+      </div>
+    );
+  }
+  if (!analysis) return null;
+
+  const threshold = analysis.threshold != null ? Number(analysis.threshold) : null;
+  const billed = Number(amountBilled) || 0;
+  const remainingBenchmark = threshold != null ? Math.max(0, threshold - billed) : null;
+  const agreed = feeAgreed != null && Number.isFinite(Number(feeAgreed)) ? Number(feeAgreed) : null;
+  const remainingAgreed = agreed != null ? Math.max(0, agreed - billed) : null;
+  const calcHours = Number(analysis.calculated_hours_fees ?? 0)
+    || (Number(analysis.billed_hours_fees || 0) + Number(analysis.unbilled_hours_fees || 0));
+
+  return (
+    <div style={benchmarksBox}>
+      <div style={sectionLabel}>Billing benchmarks</div>
+      <div style={benchmarksInner}>
+        <div>
+          Standard fees (catalog / override):{' '}
+          {analysis.standard_fees != null
+            ? formatMoneyDetailed(analysis.standard_fees)
+            : '— not set'}
+        </div>
+        <div>
+          Billed hours value (planned ₹/hr × billable time):{' '}
+          {formatMoneyDetailed(analysis.billed_hours_fees || 0)}
+        </div>
+        <div>
+          Unbilled hours value (planned ₹/hr × non-billable time):{' '}
+          {formatMoneyDetailed(analysis.unbilled_hours_fees || 0)}
+        </div>
+        {calcHours > 0 && (
+          <div>
+            Total hours-based value: {formatMoneyDetailed(calcHours)}
+          </div>
+        )}
+        {Number(analysis.linked_services_count) > 0 && (
+          <div style={{ color: '#64748b', fontSize: 11 }}>
+            Includes time from {analysis.linked_services_count} linked service(s) under this master.
+          </div>
+        )}
+        <div style={{ marginTop: 8, fontWeight: 700, color: '#0f172a' }}>
+          Suggested amount (max of standard and hours-based):{' '}
+          {threshold != null ? formatMoneyDetailed(threshold) : '—'}
+        </div>
+        {threshold != null && (
+          <div style={{ marginTop: 4, color: '#0369a1', fontWeight: 600 }}>
+            Remaining vs benchmark (after ₹{billed.toLocaleString('en-IN')} already billed):{' '}
+            {formatMoneyDetailed(remainingBenchmark)}
+          </div>
+        )}
+        {agreed != null && (
+          <div style={{ marginTop: 4, color: '#64748b' }}>
+            Remaining vs agreed fee: {formatMoneyDetailed(remainingAgreed)}
+          </div>
+        )}
+        <div style={{ marginTop: 6, fontSize: 11, color: '#64748b' }}>
+          Use these figures when entering the invoice amount in Raise invoice.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Service billing detail modal — notes, description, team activity, billing actions.
  */
@@ -117,6 +195,29 @@ export default function ServiceBillingDetailModal({
   const [financeRemarks, setFinanceRemarks] = useState('');
   const [returning, setReturning] = useState(false);
   const [returnError, setReturnError] = useState('');
+  const [costPreview, setCostPreview] = useState(null);
+  const [costLoading, setCostLoading] = useState(false);
+
+  useEffect(() => {
+    if (!row?.id || !canCreateInvoice) {
+      setCostPreview(null);
+      setCostLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    setCostLoading(true);
+    postInvoiceCostAnalysisPreview({ service_id: row.id, line_items: [] })
+      .then((data) => {
+        if (!cancelled) setCostPreview(data?.analysis || null);
+      })
+      .catch(() => {
+        if (!cancelled) setCostPreview(null);
+      })
+      .finally(() => {
+        if (!cancelled) setCostLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [row?.id, canCreateInvoice]);
 
   if (!row) return null;
 
@@ -191,6 +292,13 @@ export default function ServiceBillingDetailModal({
               </span>
             )}
           </div>
+
+          <BillingCostBenchmarks
+            analysis={costPreview}
+            loading={costLoading && canCreateInvoice}
+            amountBilled={row.amountBilled}
+            feeAgreed={row.feeAgreed}
+          />
 
           <div style={{ marginBottom: 16 }}>
             <div style={sectionLabel}>Notes</div>
@@ -313,6 +421,20 @@ const summaryStrip = {
 const summaryItem = { minWidth: 0 };
 const summaryLabel = { fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.04em' };
 const summaryValue = { fontSize: 14, fontWeight: 700, color: '#0f172a' };
+
+const benchmarksBox = {
+  marginBottom: 16,
+};
+
+const benchmarksInner = {
+  padding: '12px 14px',
+  background: '#f8fafc',
+  borderRadius: 8,
+  border: '1px solid #e2e8f0',
+  fontSize: 12,
+  color: '#334155',
+  lineHeight: 1.55,
+};
 
 const sectionLabel = {
   fontSize: 12,

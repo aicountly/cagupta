@@ -1,8 +1,8 @@
 import { BookOpen } from 'lucide-react';
+import DateInput from '../../../../components/common/DateInput';
 import { useBankFirmWorkspace } from './BankFirmWorkspaceContext';
 import {
   btnPrimary,
-  inputStyle,
   sectionCard,
   sectionHeader,
   sectionTitle,
@@ -10,7 +10,15 @@ import {
   tableStyle,
   tdStyle,
   thStyle,
+  toolbarBarStyle,
+  toolbarDateStyle,
+  toolbarSelectStyle,
 } from './bankFirmStyles';
+
+function ledgerClientLabel(row) {
+  const name = String(row.client_name || row.clientName || '').trim();
+  return name || '—';
+}
 
 export default function BankFirmLedgerPage() {
   const {
@@ -37,9 +45,9 @@ export default function BankFirmLedgerPage() {
           <div style={{ fontSize: 13, color: '#94a3b8' }}>Select a billing firm above to choose an account.</div>
         ) : (
           <>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+            <div style={toolbarBarStyle}>
               <select
-                style={{ ...inputStyle, flex: 1, minWidth: 200, maxWidth: 360 }}
+                style={toolbarSelectStyle}
                 value={ledgerAccountId}
                 onChange={(e) => setLedgerAccountId(e.target.value)}
               >
@@ -50,9 +58,17 @@ export default function BankFirmLedgerPage() {
                   </option>
                 ))}
               </select>
-              <input style={{ ...inputStyle, minWidth: 130 }} type="date" value={ledgerFrom} onChange={(e) => setLedgerFrom(e.target.value)} />
-              <input style={{ ...inputStyle, minWidth: 130 }} type="date" value={ledgerTo} onChange={(e) => setLedgerTo(e.target.value)} />
-              <button type="button" style={btnPrimary} onClick={loadLedger}>
+              <DateInput
+                style={toolbarDateStyle}
+                value={ledgerFrom}
+                onChange={(e) => setLedgerFrom(e.target.value)}
+              />
+              <DateInput
+                style={toolbarDateStyle}
+                value={ledgerTo}
+                onChange={(e) => setLedgerTo(e.target.value)}
+              />
+              <button type="button" style={{ ...btnPrimary, flexShrink: 0 }} onClick={loadLedger}>
                 Load
               </button>
             </div>
@@ -61,6 +77,7 @@ export default function BankFirmLedgerPage() {
                 <thead>
                   <tr>
                     <th style={thStyle}>Date</th>
+                    <th style={thStyle}>Client</th>
                     <th style={thStyle}>Particulars</th>
                     <th style={thStyle}>Movement</th>
                     <th style={thStyle}>Balance</th>
@@ -69,7 +86,7 @@ export default function BankFirmLedgerPage() {
                 <tbody>
                   {ledgerRows.length === 0 && (
                     <tr>
-                      <td colSpan={4} style={{ ...tdStyle, textAlign: 'center', color: '#94a3b8' }}>
+                      <td colSpan={5} style={{ ...tdStyle, textAlign: 'center', color: '#94a3b8' }}>
                         No entries
                       </td>
                     </tr>
@@ -77,6 +94,7 @@ export default function BankFirmLedgerPage() {
                   {ledgerRows.map((r, i) => (
                     <tr key={r.id ?? `o-${i}`}>
                       <td style={tdStyle}>{r.txn_date || r.txnDate || '—'}</td>
+                      <td style={tdStyle}>{ledgerClientLabel(r)}</td>
                       <td style={tdStyle}>{r.narration || r.row_type || ''}</td>
                       <td
                         style={{

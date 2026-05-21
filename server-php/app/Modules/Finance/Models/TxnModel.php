@@ -6,6 +6,7 @@ namespace App\Models;
 use App\Config\Database;
 use App\Models\AdminAuditLogModel;
 use App\Models\RecoveryLogModel;
+use App\Models\LedgerRecoveryStatusModel;
 use App\Libraries\InvoiceLineCommission;
 use App\Libraries\LedgerDimensions;
 use App\Libraries\LedgerPresentation;
@@ -584,20 +585,59 @@ class TxnModel
         $stmt = $this->db->query(
             "SELECT COALESCE(SUM(GREATEST(per.balance, 0)), 0)
              FROM (
-                 SELECT SUM(t.debit - t.credit) AS balance
+                 SELECT
+                     CASE WHEN t.client_id IS NOT NULL THEN 'client' ELSE 'organization' END AS entity_type,
+                     COALESCE(t.client_id, t.organization_id) AS entity_id,
+                     SUM(t.debit - t.credit) AS balance
                  FROM txn t
                  WHERE " . self::sqlTxnVisibleOnEntityLedger('t') . "
                    AND (t.client_id IS NOT NULL OR t.organization_id IS NOT NULL)
-                 GROUP BY (
-                     CASE
-                         WHEN t.client_id IS NOT NULL THEN 'c:' || t.client_id::TEXT
-                         ELSE 'o:' || t.organization_id::TEXT
-                     END
-                 )
-             ) per"
+                 GROUP BY
+                     CASE WHEN t.client_id IS NOT NULL THEN 'client' ELSE 'organization' END,
+                     COALESCE(t.client_id, t.organization_id)
+             ) per
+             WHERE NOT EXISTS (
+                 SELECT 1
+                 FROM ledger_recovery_status lrs
+                 WHERE lrs.entity_type = per.entity_type
+                   AND lrs.entity_id = per.entity_id
+             )"
         );
 
         return (float)$stmt->fetchColumn();
+    }
+
+    /**
+     * Consolidated receivable balance for one ledger entity (all ledger classes).
+     */
+    public function getEntityReceivableBalance(string $entityType, int $entityId): float
+    {
+        if (!in_array($entityType, ['client', 'organization'], true)) {
+            throw new \InvalidArgumentException('entity_type must be client or organization.');
+        }
+        if ($entityId <= 0) {
+            throw new \InvalidArgumentException('entity_id is required.');
+        }
+
+        if ($entityType === 'client') {
+            $stmt = $this->db->prepare(
+                'SELECT COALESCE(SUM(t.debit - t.credit), 0)
+                 FROM txn t
+                 WHERE t.client_id = :entity_id
+                   AND ' . self::sqlTxnVisibleOnEntityLedger('t')
+            );
+        } else {
+            $stmt = $this->db->prepare(
+                'SELECT COALESCE(SUM(t.debit - t.credit), 0)
+                 FROM txn t
+                 WHERE t.organization_id = :entity_id
+                   AND t.client_id IS NULL
+                   AND ' . self::sqlTxnVisibleOnEntityLedger('t')
+            );
+        }
+        $stmt->execute([':entity_id' => $entityId]);
+
+        return round(max(0.0, (float)$stmt->fetchColumn()), 2);
     }
 
     /**
@@ -611,8 +651,9 @@ class TxnModel
      *   kpiTotalReceivable: float
      * }
      */
-    public function getRecoveryByGroupReport(): array
+    public function getRecoveryByGroupReport(string $bucket = 'active'): array
     {
+        $bucket = LedgerRecoveryStatusModel::assertBucket($bucket);
         $stmt = $this->db->query(
             'SELECT t.*
              FROM txn t
@@ -722,16 +763,24 @@ class TxnModel
             $entityPairs[] = [$er['entityType'], (int)$er['entityId']];
         }
         $logMap = (new RecoveryLogModel())->latestPerEntity($entityPairs);
+        $statusModel = new LedgerRecoveryStatusModel();
+        $statusMap   = $statusModel->mapForEntities($entityPairs);
         foreach ($entityRows as $ek => &$er) {
             $logKey       = $er['entityType'] . ':' . $er['entityId'];
             $er['latestLog'] = $logMap[$logKey] ?? null;
+            $statusRow    = $statusMap[$logKey] ?? null;
+            $er['recoveryStatus'] = $statusModel->formatForApi($statusRow);
         }
         unset($er);
 
         /** @var array<string, list<array<string, mixed>>> $grouped */
         $grouped = [];
         foreach ($entityRows as $er) {
-            if ($er['rowTotal'] <= 0) {
+            $statusRow = $statusMap[$er['entityType'] . ':' . $er['entityId']] ?? null;
+            if (!LedgerRecoveryStatusModel::entityMatchesBucket($statusRow, $bucket)) {
+                continue;
+            }
+            if ($bucket === LedgerRecoveryStatusModel::BUCKET_ACTIVE && $er['rowTotal'] <= 0) {
                 continue;
             }
             $gLabel = (string)($er['groupName'] ?? '');
@@ -782,6 +831,10 @@ class TxnModel
             'grand'   => 0.0,
         ];
         foreach ($entityRows as $er) {
+            $statusRow = $statusMap[$er['entityType'] . ':' . $er['entityId']] ?? null;
+            if (!LedgerRecoveryStatusModel::entityMatchesBucket($statusRow, $bucket)) {
+                continue;
+            }
             if ($er['rowTotal'] <= 0) {
                 continue;
             }
@@ -803,6 +856,7 @@ class TxnModel
             'groups'              => $outGroups,
             'totals'              => $totals,
             'kpiTotalReceivable'  => $this->getTotalReceivable(),
+            'bucket'              => $bucket,
         ];
     }
 
@@ -1865,6 +1919,14 @@ class TxnModel
         $billingFrom = (string)$aFrom['billing_firm_code'];
         $billingTo   = (string)$aTo['billing_firm_code'];
 
+        $scope = trim((string)($data['transfer_scope'] ?? ''));
+        if ($scope === 'intra' && $billingFrom !== $billingTo) {
+            throw new \InvalidArgumentException('Intra transfer requires both accounts to belong to the same billing firm.');
+        }
+        if ($scope === 'inter' && $billingFrom === $billingTo) {
+            throw new \InvalidArgumentException('Inter transfer requires accounts from different billing firms.');
+        }
+
         $this->db->beginTransaction();
         try {
             $idOut = $this->create(array_merge($data, [
@@ -1936,8 +1998,20 @@ class TxnModel
         $whereClause = implode(' AND ', $where);
 
         $stmt = $this->db->prepare(
-            "SELECT t.*
+            "SELECT t.*,
+                    CASE
+                        WHEN t.client_id IS NOT NULL OR t.organization_id IS NOT NULL THEN
+                            COALESCE(
+                                NULLIF(TRIM(o.name), ''),
+                                NULLIF(TRIM(c.organization_name), ''),
+                                NULLIF(TRIM(CONCAT(COALESCE(c.first_name,''),' ',COALESCE(c.last_name,''))), ''),
+                                'Unknown'
+                            )
+                        ELSE NULL
+                    END AS client_name
              FROM txn t
+             LEFT JOIN clients c ON c.id = t.client_id
+             LEFT JOIN organizations o ON o.id = t.organization_id
              WHERE {$whereClause}
              ORDER BY t.txn_date ASC, t.id ASC"
         );
@@ -2354,11 +2428,70 @@ class TxnModel
     }
 
     /**
+     * Compensating reversal row for an original, including cancelled/deleted (mirror cleanup only).
+     */
+    private function findAnyCompensatingReversalIdForOriginal(int $originalTxnId): ?int
+    {
+        if ($originalTxnId <= 0) {
+            return null;
+        }
+        $stmt = $this->db->prepare(
+            "SELECT id FROM txn
+             WHERE linked_txn_id = :lid
+               AND txn_type IN ('receipt_reversal', 'payment_expense_reversal', 'tds_reversal')
+             ORDER BY id DESC
+             LIMIT 1"
+        );
+        $stmt->execute([':lid' => $originalTxnId]);
+        $v = $stmt->fetchColumn();
+
+        return $v !== false ? (int) $v : null;
+    }
+
+    /**
+     * Original is reversed but no active compensating row exists — restore status and bank legs only.
+     *
+     * @param array<string, mixed> $orig
+     *
+     * @return array{original_txn_id: int, reversal_txn_id: null, orphan_repair: true}
+     */
+    private function restoreOrphanReversedOriginal(int $originalTxnId, array $orig, ?int $actorId): array
+    {
+        $origType = (string) ($orig['txn_type'] ?? '');
+        $allowed  = ['receipt', 'payment_expense', 'tds_provisional', 'tds_final'];
+        if (!in_array($origType, $allowed, true)) {
+            throw new \InvalidArgumentException('This transaction type cannot be restored through cancel reversal.');
+        }
+
+        $this->db->beginTransaction();
+        try {
+            $anyRevId = $this->findAnyCompensatingReversalIdForOriginal($originalTxnId);
+            if ($anyRevId !== null) {
+                $this->deleteCashMirrorRowsForClientLeg($anyRevId);
+            }
+            if ($origType === 'payment_expense') {
+                $this->restorePrimaryBankLegMarkedReversed($originalTxnId, self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG, $actorId);
+            } elseif ($origType === 'receipt') {
+                $this->restorePrimaryBankLegMarkedReversed($originalTxnId, self::TXN_TYPE_RECEIPT_BANK_LEG, $actorId);
+            }
+            $this->update($originalTxnId, ['status' => 'active'], $actorId);
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+
+        return ['original_txn_id' => $originalTxnId, 'reversal_txn_id' => null, 'orphan_repair' => true];
+    }
+
+    /**
      * Undo an active ledger reversal: cancel the compensating row, restore the original to active,
      * and restore firm cash-book legs where applicable. Does not restore receipt→invoice allocations
-     * (receipt reversals are rejected).
+     * (receipt reversals are rejected). When no active compensating row exists, repairs the orphan state.
      *
-     * @return array{original_txn_id: int, reversal_txn_id: int}
+     * @return array{original_txn_id: int, reversal_txn_id: int|null, orphan_repair?: true}
      */
     public function cancelLedgerReversalForOriginal(int $originalTxnId, ?int $actorId): array
     {
@@ -2371,7 +2504,7 @@ class TxnModel
         }
         $reversalId = $this->findLedgerReversalIdForOriginal($originalTxnId);
         if ($reversalId === null) {
-            throw new \InvalidArgumentException('No active compensating reversal row is linked to this transaction.');
+            return $this->restoreOrphanReversedOriginal($originalTxnId, $orig, $actorId);
         }
         $revRow = $this->find($reversalId);
         if ($revRow === null || (string)($revRow['status'] ?? '') !== 'active') {

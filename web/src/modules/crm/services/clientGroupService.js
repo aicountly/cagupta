@@ -12,7 +12,13 @@ function authHeaders() {
 
 async function parseResponse(res) {
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(json.message || `Request failed (${res.status})`);
+  if (!res.ok) {
+    const err = new Error(json.message || `Request failed (${res.status})`);
+    if (json.data) err.data = json.data;
+    if (json.meta) err.meta = json.meta;
+    if (json.pending_name_change) err.pending_name_change = json.pending_name_change;
+    throw err;
+  }
   return json;
 }
 
@@ -45,7 +51,13 @@ export async function updateGroup(id, payload) {
     method: 'PUT', headers: authHeaders(), body: JSON.stringify(payload),
   });
   const data = await parseResponse(res);
-  return data.data;
+  return {
+    group: data.data,
+    message: data.message || 'Group updated',
+    meta: {
+      pending_name_change: data.pending_name_change || data.meta?.pending_name_change || null,
+    },
+  };
 }
 
 export async function deleteGroup(id) {
@@ -55,8 +67,13 @@ export async function deleteGroup(id) {
   await parseResponse(res);
 }
 
-export async function getGroupMembers(id) {
+export async function getGroup(id) {
   const res = await fetch(`${API_BASE}/admin/client-groups/${id}`, { headers: authHeaders() });
   const data = await parseResponse(res);
-  return data.data?.members || { contacts: [], organizations: [] };
+  return data.data;
+}
+
+export async function getGroupMembers(id) {
+  const group = await getGroup(id);
+  return group?.members || { contacts: [], organizations: [] };
 }

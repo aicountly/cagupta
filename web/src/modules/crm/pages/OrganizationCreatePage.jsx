@@ -19,6 +19,8 @@ import ClientSearchDropdown from '../../../components/common/ClientSearchDropdow
 import ContactMultiSelect from '../../../components/common/ContactMultiSelect';
 import NameCollisionModal from '../../../components/common/NameCollisionModal';
 import WorkHoldSection from '../components/WorkHoldSection';
+import MasterChangeLogSection from '../components/MasterChangeLogSection';
+import PendingNameChangeBanner from '../components/PendingNameChangeBanner';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ORG_TYPES = ['Company', 'LLP', 'Partnership', 'Proprietorship', 'Trust', 'Society', 'Other'];
@@ -234,6 +236,7 @@ export default function OrganizationCreatePage() {
   /** Inline name duplicate / similarity (from search API; not persisted server-side). */
   const [nameDuplicateInfo, setNameDuplicateInfo] = useState(null);
   const [activeTab, setActiveTab] = useState('details');
+  const [pendingNameChange, setPendingNameChange] = useState(null);
   const [nameCollisionModalOpen, setNameCollisionModalOpen] = useState(false);
   /** Set to `'save'` when identical duplicate blocked a save attempt (modal copy). */
   const [nameCollisionBlockingReason, setNameCollisionBlockingReason] = useState(null);
@@ -300,6 +303,7 @@ export default function OrganizationCreatePage() {
           commissionMode: existing.commissionMode || 'referral_only',
           clientFacingRestricted: Boolean(existing.clientFacingRestricted),
         });
+        setPendingNameChange(existing.pendingNameChange || null);
       })
       .catch(() => {});
   }, [isEdit, id]);
@@ -418,14 +422,36 @@ export default function OrganizationCreatePage() {
   }
 
   // ── Save ────────────────────────────────────────────────────────────────────
+  function applyOrgUpdateResult(result) {
+    const pending = result?.meta?.pending_name_change || null;
+    if (pending) {
+      setPendingNameChange(pending);
+      if (pending.current_name) {
+        setForm((prev) => ({ ...prev, displayName: pending.current_name }));
+      }
+      setToast({
+        message: result.message || `Name change submitted for Super Admin approval (Approval #${pending.approval_id}).`,
+        type: 'success',
+      });
+      return false;
+    }
+    setPendingNameChange(null);
+    setToast({ message: result?.message || '✅ Organization updated successfully!', type: 'success' });
+    return true;
+  }
+
   async function executePendingSave() {
     const pending = pendingOrgSaveRef.current;
     if (!pending?.afterSave) return;
     setSubmitting(true);
     try {
       if (isEdit && orgId) {
-        await updateOrganizationApi(orgId, buildOrg(form));
-        setToast({ message: '✅ Organization updated successfully!', type: 'success' });
+        const result = await updateOrganizationApi(orgId, buildOrg(form));
+        const canContinue = applyOrgUpdateResult(result);
+        pendingOrgSaveRef.current = null;
+        setNameCollisionModalOpen(false);
+        setNameCollisionBlockingReason(null);
+        if (canContinue) pending.afterSave();
       } else {
         await createOrganization(buildOrg(form));
         setToast({ message: '✅ Organization created successfully!', type: 'success' });
@@ -561,14 +587,18 @@ export default function OrganizationCreatePage() {
 
     try {
       if (isEdit && orgId) {
-        await updateOrganizationApi(orgId, buildOrg(form));
-        setToast({ message: '✅ Organization updated successfully!', type: 'success' });
+        const result = await updateOrganizationApi(orgId, buildOrg(form));
+        const canContinue = applyOrgUpdateResult(result);
+        if (canContinue) afterSave();
       } else {
         await createOrganization(buildOrg(form));
         setToast({ message: '✅ Organization created successfully!', type: 'success' });
+        afterSave();
       }
-      afterSave();
     } catch (err) {
+      if (err instanceof ApiError && (err.meta?.pending_name_change || err.body?.data?.pending_name_change)) {
+        setPendingNameChange(err.meta?.pending_name_change || err.body?.data?.pending_name_change);
+      }
       if (err instanceof ApiError && err.status === 409 && err.body?.data?.existing) {
         setDuplicateConflict({
           fields: Array.isArray(err.body.data.fields) ? err.body.data.fields : [],
@@ -698,6 +728,9 @@ export default function OrganizationCreatePage() {
               Work hold
             </button>
           )}
+          <button style={activeTab === 'change_log' ? orgTabActive : orgTabInactive} onClick={() => setActiveTab('change_log')}>
+            Change log
+          </button>
         </div>
       )}
 
@@ -710,8 +743,13 @@ export default function OrganizationCreatePage() {
         <WorkHoldSection variant="organization" entityId={parseInt(id, 10)} canMutate={canWorkHoldAdmin} />
       )}
 
-      {/* Form grid – hidden (not unmounted) when on the documents tab so form state is preserved */}
-      <div style={(activeTab === 'documents' || activeTab === 'work_hold') && isEdit ? { display: 'none' } : formGrid}>
+      {isEdit && activeTab === 'change_log' && (
+        <MasterChangeLogSection entityType="organization" entityId={parseInt(id, 10)} />
+      )}
+
+      {/* Form grid – hidden when on non-details tabs so form state is preserved */}
+      <div style={activeTab !== 'details' && isEdit ? { display: 'none' } : formGrid}>
+        <PendingNameChangeBanner pending={pendingNameChange} />
         {/* ── Section: Basic Information ──────────────────────────────── */}
         <FormSection title="Basic Information">
           {/* Read-only Org Code */}
@@ -735,8 +773,13 @@ export default function OrganizationCreatePage() {
             <input
               value={form.displayName}
               onChange={e => setField('displayName', e.target.value)}
+              disabled={Boolean(pendingNameChange)}
               placeholder="Enter organization name"
-              style={{ ...inputStyle, borderColor: errors.displayName ? '#ef4444' : '#E6E8F0' }}
+              style={{
+                ...inputStyle,
+                borderColor: errors.displayName ? '#ef4444' : '#E6E8F0',
+                ...(pendingNameChange ? { background: '#F8FAFC', cursor: 'not-allowed' } : {}),
+              }}
             />
             {errors.displayName && <ErrorMsg msg={errors.displayName} />}
             {nameDuplicateInfo && !nameCollisionModalOpen && (

@@ -24,8 +24,11 @@ export default function BankFirmTransferPage() {
       <div style={sectionCard}>
         <div style={sectionHeader}>
           <ArrowRightLeft size={15} color="#F37920" style={{ marginRight: 8 }} />
-          <span style={sectionTitle}>Internal transfer (contra)</span>
+          <span style={sectionTitle}>Intra Transfer</span>
         </div>
+        <p style={{ margin: '0 0 0', padding: '0 20px 12px', fontSize: 12, color: '#64748b' }}>
+          Transfer between accounts in the same billing firm.
+        </p>
         {!firmCode || accounts.length === 0 ? (
           <div style={{ padding: 20, fontSize: 13, color: '#94a3b8' }}>
             {!firmCode ? 'Select a billing firm above.' : 'No accounts loaded for this firm — add accounts on the Accounts tab.'}

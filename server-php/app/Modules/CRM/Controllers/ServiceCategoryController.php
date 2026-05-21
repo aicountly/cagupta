@@ -420,20 +420,71 @@ class ServiceCategoryController extends BaseController
             $this->success($this->engagementTypes()->find($id), 'No changes.');
         }
 
-        $this->engagementTypes()->update($id, $data);
-        $updated = $this->engagementTypes()->find($id);
+        $db = Database::getConnection();
+        $db->beginTransaction();
+        try {
+            $this->engagementTypes()->update($id, $data);
 
-        if (isset($data['name'])) {
-            $newName = trim((string)$data['name']);
-            if ($newName !== $oldName) {
-                $this->services()->syncDenormalizedEngagementTypeName($id, $newName);
-                $this->leads()->syncEngagementTypeName($id, $newName);
-                $this->recurringDefs()->syncReturnTypeAfterEngagementTypeRename($id, $oldName, $newName);
-                $this->registers()->syncReturnTypeAfterEngagementTypeRename($id, $oldName, $newName);
+            if (isset($data['name'])) {
+                $newName = trim((string)$data['name']);
+                if ($newName !== $oldName) {
+                    $this->services()->syncDenormalizedEngagementTypeName($id, $newName);
+                    $this->leads()->syncEngagementTypeName($id, $newName);
+                    $this->syncReturnTypesAfterEngagementTypeRename($id, $oldName, $newName);
+                }
             }
+
+            $db->commit();
+        } catch (\Throwable $e) {
+            if ($db->inTransaction()) {
+                $db->rollBack();
+            }
+            error_log('[ServiceCategoryController::engagementTypeUpdate] ' . $e::class . ': ' . $e->getMessage());
+            throw $e;
         }
 
-        $this->success($updated, 'Engagement type updated');
+        $this->success($this->engagementTypes()->find($id), 'Engagement type updated');
+    }
+
+    /**
+     * Refresh register/recurring return_type labels after an engagement type rename.
+     * Skipped when migration 044 columns/tables are not present.
+     */
+    private function syncReturnTypesAfterEngagementTypeRename(int $id, string $oldName, string $newName): void
+    {
+        static $hasRegisterReturnType = null;
+        if ($hasRegisterReturnType === null) {
+            $stmt = Database::getConnection()->prepare(
+                'SELECT COUNT(*) FROM information_schema.columns
+                 WHERE table_schema = current_schema()
+                   AND table_name = :table
+                   AND column_name IN (\'engagement_type_id\', \'return_type\')'
+            );
+            $stmt->execute([':table' => 'registers']);
+            $hasRegisterReturnType = ((int)$stmt->fetchColumn()) >= 2;
+        }
+
+        if (!$hasRegisterReturnType) {
+            return;
+        }
+
+        static $hasRecurringTable = null;
+        if ($hasRecurringTable === null) {
+            $stmt = Database::getConnection()->prepare(
+                'SELECT 1 FROM information_schema.tables
+                 WHERE table_schema = current_schema()
+                   AND table_name = :table
+                 LIMIT 1'
+            );
+            $stmt->execute([':table' => 'recurring_service_definitions']);
+            $hasRecurringTable = (bool)$stmt->fetchColumn();
+        }
+
+        if ($hasRecurringTable) {
+            $this->recurringDefs()->syncReturnTypeAfterEngagementTypeRename($id, $oldName, $newName);
+        }
+
+        $this->registers()->syncReturnTypeAfterEngagementTypeRename($id, $oldName, $newName);
     }
 
     // ── DELETE /api/admin/engagement-types/:id ────────────────────────────────

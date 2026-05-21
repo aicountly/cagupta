@@ -17,7 +17,8 @@ const BASE = '/finance/bank-reports';
 const tabs = [
   { to: `${BASE}/accounts`, label: 'Accounts' },
   { to: `${BASE}/ledger`, label: 'Bank ledger' },
-  { to: `${BASE}/transfer`, label: 'Internal transfer' },
+  { to: `${BASE}/transfer`, label: 'Intra Transfer' },
+  { to: `${BASE}/inter-transfer`, label: 'Inter Transfer' },
   { to: `${BASE}/expense`, label: 'Firm expense' },
   { to: `${BASE}/report`, label: 'Contra & expenses' },
 ];

@@ -1,7 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { getCredentials, createCredential, updateCredential, deleteCredential } from '../services/credentialService';
 import { fetchPortalTypes } from '../services/portalTypeService';
 import EntitySearchDropdown from '../components/common/EntitySearchDropdown';
+
+const STATUS_FILTER_OPTIONS = [
+  { value: 'all', label: 'All Statuses' },
+  { value: 'complete', label: 'Complete' },
+  { value: 'missing_password', label: 'Missing password' },
+  { value: 'missing_username', label: 'Missing username' },
+];
+
+function credentialStatus(c) {
+  const hasUser = Boolean(String(c.username || '').trim());
+  const hasPass = Boolean(String(c.password || '').trim());
+  if (hasUser && hasPass) return 'complete';
+  if (!hasPass) return 'missing_password';
+  if (!hasUser) return 'missing_username';
+  return 'incomplete';
+}
 
 function CredentialModal({ onClose, onSave, initial }) {
   const isEdit = !!initial;
@@ -105,11 +121,18 @@ export default function Credentials() {
   const [clientFilterId, setClientFilterId]       = useState('');
   const [clientFilterName, setClientFilterName]   = useState('');
   const [clientFilterType, setClientFilterType]   = useState('contact');
+  const [portalFilter, setPortalFilter]           = useState('');
+  const [statusFilter, setStatusFilter]           = useState('all');
+  const [portalTypes, setPortalTypes]             = useState([]);
   const [revealed, setRevealed]                 = useState({});
   const [credentials, setCredentials]           = useState([]);
   const [loading, setLoading]                   = useState(true);
   const [showAddModal, setShowAddModal]         = useState(false);
   const [editCredential, setEditCredential]     = useState(null);
+
+  useEffect(() => {
+    fetchPortalTypes().then(setPortalTypes).catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -118,10 +141,33 @@ export default function Credentials() {
       .finally(() => setLoading(false));
   }, []);
 
+  const portalOptions = useMemo(() => {
+    const fromSettings = portalTypes.map(p => p.name).filter(Boolean);
+    const fromRecords = credentials.map(c => c.portalName).filter(Boolean);
+    return [...new Set([...fromSettings, ...fromRecords])].sort((a, b) => a.localeCompare(b));
+  }, [portalTypes, credentials]);
+
+  const hasActiveFilters = Boolean(clientFilterId) || Boolean(portalFilter) || statusFilter !== 'all';
+
+  function clearAllFilters() {
+    setClientFilterId('');
+    setClientFilterName('');
+    setClientFilterType('contact');
+    setPortalFilter('');
+    setStatusFilter('all');
+  }
+
   const filtered = credentials.filter(c => {
-    if (!clientFilterId) return true;
-    if (clientFilterType === 'organization') return String(c.organizationId) === String(clientFilterId);
-    return String(c.clientId) === String(clientFilterId);
+    if (clientFilterId) {
+      if (clientFilterType === 'organization') {
+        if (String(c.organizationId) !== String(clientFilterId)) return false;
+      } else if (String(c.clientId) !== String(clientFilterId)) {
+        return false;
+      }
+    }
+    if (portalFilter && c.portalName !== portalFilter) return false;
+    if (statusFilter !== 'all' && credentialStatus(c) !== statusFilter) return false;
+    return true;
   });
 
   function handleAdd(payload) {
@@ -165,8 +211,8 @@ export default function Credentials() {
         🔒 <strong>Credentials Vault</strong> — All passwords are stored AES-256 encrypted. Access is logged. Handle with care.
       </div>
 
-      <div style={{ display:'flex', gap:12, marginBottom:20, alignItems:'center' }}>
-        <div style={{ flex:'0 0 280px' }}>
+      <div style={{ display:'flex', gap:12, marginBottom:20, alignItems:'center', flexWrap:'wrap' }}>
+        <div style={{ flex:'0 0 280px', minWidth:220 }}>
           <EntitySearchDropdown
             value={clientFilterId}
             displayValue={clientFilterName}
@@ -178,16 +224,46 @@ export default function Credentials() {
             style={{ ...selectStyle, width:'100%' }}
           />
         </div>
-        {clientFilterId && (
+        <select
+          value={portalFilter}
+          onChange={e => setPortalFilter(e.target.value)}
+          style={{ ...selectStyle, minWidth:180 }}
+          aria-label="Filter by portal"
+        >
+          <option value="">All Portals</option>
+          {portalOptions.map(name => (
+            <option key={name} value={name}>{name}</option>
+          ))}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value)}
+          style={{ ...selectStyle, minWidth:160 }}
+          aria-label="Filter by status"
+        >
+          {STATUS_FILTER_OPTIONS.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
+        {hasActiveFilters && (
           <button
+            type="button"
             style={{ ...btnSecondary, fontSize:12, padding:'6px 10px' }}
-            onClick={() => { setClientFilterId(''); setClientFilterName(''); setClientFilterType('contact'); }}
+            onClick={clearAllFilters}
           >
-            ✕ Clear
+            ✕ Clear filters
           </button>
         )}
-        <button style={btnPrimary} onClick={() => setShowAddModal(true)}>➕ Add Credential</button>
+        <button type="button" style={{ ...btnPrimary, marginLeft:'auto' }} onClick={() => setShowAddModal(true)}>
+          ➕ Add Credential
+        </button>
       </div>
+      {!loading && credentials.length > 0 && (
+        <p style={{ margin:'-12px 0 16px', fontSize:12, color:'#64748b' }}>
+          Showing {filtered.length} of {credentials.length} credential{credentials.length !== 1 ? 's' : ''}
+          {hasActiveFilters ? ' (filtered)' : ''}
+        </p>
+      )}
 
       <div style={cardStyle}>
         <table style={tableStyle}>
@@ -206,9 +282,17 @@ export default function Credentials() {
                 <td style={tdStyle}><a href={cr.portalUrl} target="_blank" rel="noreferrer" style={{ color:'#2563eb', fontSize:12 }}>{cr.portalUrl}</a></td>
                 <td style={{ ...tdStyle, fontFamily:'monospace', fontSize:12 }}>{cr.username}</td>
                 <td style={{ ...tdStyle, fontFamily:'monospace', fontSize:12 }}>
-                  {revealed[cr.id] ? <span style={{ color:'#dc2626' }}>••••••••</span> : '••••••••'}
-                  <button onClick={()=>setRevealed(r=>({...r,[cr.id]:!r[cr.id]}))} style={{ background:'none', border:'none', cursor:'pointer', fontSize:13, marginLeft:6 }}>
-                    {revealed[cr.id]?'🙈':'👁️'}
+                  {revealed[cr.id]
+                    ? <span style={{ color:'#dc2626' }}>{cr.password || '—'}</span>
+                    : '••••••••'}
+                  <button
+                    type="button"
+                    onClick={() => setRevealed(r => ({ ...r, [cr.id]: !r[cr.id] }))}
+                    style={{ background:'none', border:'none', cursor:'pointer', fontSize:13, marginLeft:6 }}
+                    title={revealed[cr.id] ? 'Hide password' : 'Show password'}
+                    aria-label={revealed[cr.id] ? 'Hide password' : 'Show password'}
+                  >
+                    {revealed[cr.id] ? '🙈' : '👁️'}
                   </button>
                 </td>
                 <td style={tdStyle}>{cr.lastChangedAt}</td>

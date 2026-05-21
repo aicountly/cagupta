@@ -36,6 +36,16 @@ export function BankFirmWorkspaceProvider({ children }) {
   const [xferDate, setXferDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [xferNote, setXferNote] = useState('');
 
+  const [interFromFirm, setInterFromFirm] = useState('');
+  const [interToFirm, setInterToFirm] = useState('');
+  const [interFromAccounts, setInterFromAccounts] = useState([]);
+  const [interToAccounts, setInterToAccounts] = useState([]);
+  const [interFromAcct, setInterFromAcct] = useState('');
+  const [interToAcct, setInterToAcct] = useState('');
+  const [interAmt, setInterAmt] = useState('');
+  const [interDate, setInterDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [interNote, setInterNote] = useState('');
+
   const [expAcct, setExpAcct] = useState('');
   const [expCat, setExpCat] = useState('other');
   const [expAmt, setExpAmt] = useState('');
@@ -84,6 +94,52 @@ export function BankFirmWorkspaceProvider({ children }) {
     refreshAccounts();
   }, [refreshAccounts]);
 
+  useEffect(() => {
+    if (!interFromFirm) {
+      setInterFromAccounts([]);
+      setInterFromAcct('');
+      return;
+    }
+    let cancelled = false;
+    listFirmBankAccounts(interFromFirm)
+      .then((rows) => {
+        if (!cancelled) {
+          setInterFromAccounts(Array.isArray(rows) ? rows : []);
+          setInterFromAcct('');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInterFromAccounts([]);
+          setInterFromAcct('');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [interFromFirm]);
+
+  useEffect(() => {
+    if (!interToFirm) {
+      setInterToAccounts([]);
+      setInterToAcct('');
+      return;
+    }
+    let cancelled = false;
+    listFirmBankAccounts(interToFirm)
+      .then((rows) => {
+        if (!cancelled) {
+          setInterToAccounts(Array.isArray(rows) ? rows : []);
+          setInterToAcct('');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setInterToAccounts([]);
+          setInterToAcct('');
+        }
+      });
+    return () => { cancelled = true; };
+  }, [interToFirm]);
+
   const loadLedger = useCallback(async () => {
     const id = parseInt(ledgerAccountId, 10);
     if (!id) {
@@ -109,13 +165,22 @@ export function BankFirmWorkspaceProvider({ children }) {
 
   const submitXfer = useCallback(async (e) => {
     e.preventDefault();
+    const fromId = parseInt(xferFrom, 10);
+    const toId = parseInt(xferTo, 10);
+    const fromAcct = accounts.find((a) => Number(a.id) === fromId);
+    const toAcct = accounts.find((a) => Number(a.id) === toId);
+    if (fromAcct && toAcct && fromAcct.billingFirmCode !== toAcct.billingFirmCode) {
+      flash('Intra transfer requires both accounts in the same billing firm.', 'error');
+      return;
+    }
     try {
       await createFirmBankTransfer({
-        fromFirmBankAccountId: parseInt(xferFrom, 10),
-        toFirmBankAccountId: parseInt(xferTo, 10),
+        fromFirmBankAccountId: fromId,
+        toFirmBankAccountId: toId,
         amount: parseFloat(xferAmt),
         txnDate: xferDate,
         narration: xferNote,
+        transferScope: 'intra',
       });
       flash('Transfer recorded successfully', 'success');
       setXferAmt('');
@@ -125,7 +190,38 @@ export function BankFirmWorkspaceProvider({ children }) {
     } catch (err) {
       flash(err.message || 'Transfer failed', 'error');
     }
-  }, [xferFrom, xferTo, xferAmt, xferDate, xferNote, flash, refreshAccounts, loadReport]);
+  }, [xferFrom, xferTo, xferAmt, xferDate, xferNote, accounts, flash, refreshAccounts, loadReport]);
+
+  const submitInterXfer = useCallback(async (e) => {
+    e.preventDefault();
+    if (interFromFirm === interToFirm) {
+      flash('Inter transfer requires different billing firms on each side.', 'error');
+      return;
+    }
+    const fromId = parseInt(interFromAcct, 10);
+    const toId = parseInt(interToAcct, 10);
+    if (fromId === toId) {
+      flash('From and to accounts must differ.', 'error');
+      return;
+    }
+    try {
+      await createFirmBankTransfer({
+        fromFirmBankAccountId: fromId,
+        toFirmBankAccountId: toId,
+        amount: parseFloat(interAmt),
+        txnDate: interDate,
+        narration: interNote,
+        transferScope: 'inter',
+      });
+      flash('Inter-firm transfer recorded successfully', 'success');
+      setInterAmt('');
+      setInterNote('');
+      refreshAccounts();
+      loadReport();
+    } catch (err) {
+      flash(err.message || 'Transfer failed', 'error');
+    }
+  }, [interFromFirm, interToFirm, interFromAcct, interToAcct, interAmt, interDate, interNote, flash, refreshAccounts, loadReport]);
 
   const submitExp = useCallback(async (e) => {
     e.preventDefault();
@@ -264,6 +360,23 @@ export function BankFirmWorkspaceProvider({ children }) {
       xferNote,
       setXferNote,
       submitXfer,
+      interFromFirm,
+      setInterFromFirm,
+      interToFirm,
+      setInterToFirm,
+      interFromAccounts,
+      interToAccounts,
+      interFromAcct,
+      setInterFromAcct,
+      interToAcct,
+      setInterToAcct,
+      interAmt,
+      setInterAmt,
+      interDate,
+      setInterDate,
+      interNote,
+      setInterNote,
+      submitInterXfer,
       expAcct,
       setExpAcct,
       expCat,
@@ -326,6 +439,16 @@ export function BankFirmWorkspaceProvider({ children }) {
       xferDate,
       xferNote,
       submitXfer,
+      interFromFirm,
+      interToFirm,
+      interFromAccounts,
+      interToAccounts,
+      interFromAcct,
+      interToAcct,
+      interAmt,
+      interDate,
+      interNote,
+      submitInterXfer,
       expAcct,
       expCat,
       expAmt,

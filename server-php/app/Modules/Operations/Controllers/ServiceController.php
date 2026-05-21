@@ -429,7 +429,7 @@ class ServiceController extends BaseController
     /**
      * Close billing row: built (in books) or non_billable.
      *
-     * Body: { closure: "built"|"non_billable", reason?: string }
+     * Body: { closure: "built"|"non_billable", reason: string (required when non_billable) }
      */
     public function patchBillingClosure(int $id): never
     {
@@ -444,6 +444,10 @@ class ServiceController extends BaseController
 
         if (!in_array($closure, ['built', 'non_billable'], true)) {
             $this->error('closure must be "built" or "non_billable".', 422);
+        }
+
+        if ($closure === 'non_billable' && ($reason === null || $reason === '')) {
+            $this->error('A reason is required when marking a service as non-billable.', 422);
         }
 
         // Master service gate: all linked children must be completed before billing can be closed.

@@ -24,6 +24,9 @@ async function parseResponse(res) {
     if (json.data !== undefined && json.data !== null) {
       err.data = json.data;
     }
+    if (json.meta !== undefined && json.meta !== null) {
+      err.meta = json.meta;
+    }
     throw err;
   }
   return json;
@@ -146,6 +149,7 @@ function normalizeContact(c) {
     referralStartDate: c.referral_start_date || '',
     commissionMode: c.commission_mode || 'referral_only',
     clientFacingRestricted: Boolean(c.client_facing_restricted),
+    pendingNameChange: c.pending_name_change || null,
   };
 }
 
@@ -420,7 +424,13 @@ export async function updateContact(id, payload) {
     body:    JSON.stringify(body),
   });
   const data = await parseResponse(res);
-  return normalizeContact(data.data);
+  return {
+    contact: normalizeContact(data.data),
+    message: data.message || 'Contact updated',
+    meta: {
+      pending_name_change: data.pending_name_change || data.meta?.pending_name_change || null,
+    },
+  };
 }
 
 /** POST — super admin receives OTP email to authorize contact delete */

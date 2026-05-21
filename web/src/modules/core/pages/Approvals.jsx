@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../../auth/AuthContext';
 import { ROLES } from '../../../constants/roles';
-import { CheckSquare, Clock, Wallet, AlertCircle, RefreshCw } from 'lucide-react';
+import { CheckSquare, Clock, Wallet, AlertCircle, Users } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import {
   listPendingTimesheetOverflowRequests,
   approveTimesheetOverflowRequest,
@@ -17,6 +18,13 @@ import {
   approvePartnerPayoutCycleAmendment,
   rejectPartnerPayoutCycleAmendment,
 } from '../../../services/partnerPayoutCycleService';
+import {
+  listPendingClientMasterNameChanges,
+  approveClientMasterNameChange,
+  rejectClientMasterNameChange,
+  entityTypeLabel,
+  entityEditPath,
+} from '../services/clientMasterNameChangeApprovalService';
 
 function parseAdj(raw) {
   if (raw == null) return [];
@@ -249,10 +257,143 @@ function PayoutAmendmentTab({ kind, allowed }) {
   );
 }
 
+function ClientMasterNameTab({ allowed }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [busyId, setBusyId] = useState(null);
+
+  const load = useCallback(() => {
+    if (!allowed) return;
+    setLoading(true);
+    setErr('');
+    listPendingClientMasterNameChanges()
+      .then(setRows)
+      .catch((e) => { setErr(e.message || 'Failed'); setRows([]); })
+      .finally(() => setLoading(false));
+  }, [allowed]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleApprove(id, decisionNotes) {
+    setBusyId(id);
+    setErr('');
+    try {
+      const body = {};
+      if (decisionNotes?.trim()) body.decision_notes = decisionNotes.trim();
+      await approveClientMasterNameChange(id, body);
+      await load();
+    } catch (e) { setErr(e.message || 'Approve failed'); }
+    finally { setBusyId(null); }
+  }
+
+  async function handleReject(id, reason) {
+    setBusyId(id);
+    setErr('');
+    try {
+      await rejectClientMasterNameChange(id, reason);
+      await load();
+    } catch (e) { setErr(e.message || 'Reject failed'); }
+    finally { setBusyId(null); }
+  }
+
+  if (loading) return <div style={emptyState}>Loading name change requests...</div>;
+  if (err) return <div style={errorBanner}><AlertCircle size={14} /> {err}</div>;
+  if (rows.length === 0) return <div style={emptyState}>No pending client master name changes.</div>;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {rows.map((r) => (
+        <ClientMasterNameCard
+          key={r.approval_id || r.id}
+          row={r}
+          busy={busyId === (r.approval_id || r.id)}
+          onApprove={handleApprove}
+          onReject={handleReject}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ClientMasterNameCard({ row, busy, onApprove, onReject }) {
+  const [decisionNotes, setDecisionNotes] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+  const [showReject, setShowReject] = useState(false);
+  const approvalId = row.approval_id || row.id;
+  const entityId = row.entity_id;
+
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: '#0B1F3B' }}>
+            Approval #{approvalId}
+          </div>
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+            {entityTypeLabel(row.entity_type)} #{entityId}
+          </div>
+        </div>
+        <StatusBadge label="Pending" color="pending" />
+      </div>
+      <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
+        <div><strong>Current name:</strong> {row.current_name || '—'}</div>
+        <div><strong>Proposed name:</strong> {row.proposed_name || '—'}</div>
+        <div><strong>Requested by:</strong> {row.requested_by_name || row.requested_by_user_id || '—'}</div>
+        {row.request_reason && <div><strong>Note:</strong> {row.request_reason}</div>}
+      </div>
+      <div style={{ marginTop: 10 }}>
+        <Link to={entityEditPath(row.entity_type, entityId)} style={{ fontSize: 12, color: '#0369a1' }}>
+          Open {entityTypeLabel(row.entity_type).toLowerCase()} record
+        </Link>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 14, alignItems: 'center' }}>
+        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: '#64748b', flex: '1 1 200px' }}>
+          Decision notes (optional)
+          <input
+            type="text"
+            value={decisionNotes}
+            onChange={(e) => setDecisionNotes(e.target.value)}
+            style={{ ...inputSm, flex: 1, minWidth: 160 }}
+            disabled={busy}
+          />
+        </label>
+        <button type="button" disabled={busy} onClick={() => onApprove(approvalId, decisionNotes)} style={btnApprove}>
+          {busy ? 'Processing...' : 'Approve'}
+        </button>
+        <button type="button" disabled={busy} onClick={() => setShowReject((s) => !s)} style={btnReject}>
+          Reject
+        </button>
+      </div>
+      {showReject && (
+        <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Reason for rejection (required)"
+            rows={2}
+            style={{ ...inputSm, width: '100%', maxWidth: 400, minHeight: 56 }}
+            disabled={busy}
+          />
+          <button
+            type="button"
+            disabled={busy || !rejectReason.trim()}
+            onClick={() => onReject(approvalId, rejectReason)}
+            style={{ ...btnReject, background: '#DC2626', color: '#fff', border: 'none' }}
+          >
+            Confirm
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const TABS = [
   { key: 'timesheet', label: 'Timesheet Overflow', icon: Clock },
   { key: 'affiliate', label: 'Affiliate Amendments', icon: Wallet },
   { key: 'partner', label: 'Partner Amendments', icon: Wallet },
+  { key: 'client_names', label: 'Client Master Names', icon: Users },
 ];
 
 export default function Approvals() {
@@ -323,6 +464,7 @@ export default function Approvals() {
         {tab === 'timesheet' && <TimesheetOverflowTab allowed={allowed} />}
         {tab === 'affiliate' && <PayoutAmendmentTab kind="affiliate" allowed={allowed} />}
         {tab === 'partner' && <PayoutAmendmentTab kind="partner" allowed={allowed} />}
+        {tab === 'client_names' && <ClientMasterNameTab allowed={allowed} />}
       </div>
     </div>
   );

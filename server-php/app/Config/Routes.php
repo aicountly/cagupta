@@ -194,6 +194,12 @@ class Routes
                 'middleware' => ['auth', 'permission:clients.view'],
             ],
             [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/contacts/:id/audit-log',
+                'handler'    => 'Admin\ContactController@auditLog',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
                 'method'     => 'PUT',
                 'pattern'    => '/api/admin/contacts/:id',
                 'handler'    => 'Admin\ContactController@update',
@@ -259,6 +265,12 @@ class Routes
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/organizations/:id',
                 'handler'    => 'Admin\OrganizationController@show',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/organizations/:id/audit-log',
+                'handler'    => 'Admin\OrganizationController@auditLog',
                 'middleware' => ['auth', 'permission:clients.view'],
             ],
             [
@@ -532,6 +544,24 @@ class Routes
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/approvals/partner-payout-cycle-amendments/:id/reject',
                 'handler'    => 'Admin\PartnerPayoutCycleAmendmentApprovalController@reject',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/approvals/client-master-name-changes',
+                'handler'    => 'Admin\ClientMasterNameChangeApprovalController@index',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/client-master-name-changes/:id/approve',
+                'handler'    => 'Admin\ClientMasterNameChangeApprovalController@approve',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/client-master-name-changes/:id/reject',
+                'handler'    => 'Admin\ClientMasterNameChangeApprovalController@reject',
                 'middleware' => ['auth', 'role:super_admin'],
             ],
             [
@@ -1224,6 +1254,26 @@ class Routes
                 'middleware' => ['auth', 'permission:invoices.edit'],
             ],
 
+            // ── Admin — Ledger recovery status (NPA / bad debt) ─────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/ledger-recovery-status',
+                'handler'    => 'Admin\LedgerRecoveryStatusController@show',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/ledger-recovery-status/mark-npa',
+                'handler'    => 'Admin\LedgerRecoveryStatusController@markNpa',
+                'middleware' => ['auth', 'permission:invoices.edit'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/ledger-recovery-status/mark-bad-debt',
+                'handler'    => 'Admin\LedgerRecoveryStatusController@markBadDebt',
+                'middleware' => ['auth', 'permission:invoices.edit'],
+            ],
+
             // ── Admin — Opening Balances ──────────────────────────────────────
             [
                 'method'     => 'GET',
@@ -1451,6 +1501,12 @@ class Routes
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/client-groups/:id',
                 'handler'    => 'Admin\ClientGroupController@show',
+                'middleware' => ['auth', 'permission:clients.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/client-groups/:id/audit-log',
+                'handler'    => 'Admin\ClientGroupController@auditLog',
                 'middleware' => ['auth', 'permission:clients.view'],
             ],
             [

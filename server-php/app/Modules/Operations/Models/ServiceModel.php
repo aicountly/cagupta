@@ -1099,6 +1099,10 @@ SQL;
             );
             $stmt->execute([':id' => $id, ':amt' => $sum]);
         } else {
+            $reasonTrim = ($reason !== null && trim($reason) !== '') ? trim($reason) : null;
+            if ($reasonTrim === null) {
+                return null;
+            }
             $stmt = $this->db->prepare(
                 "UPDATE services SET
                     billing_closure = 'non_billable',
@@ -1109,7 +1113,7 @@ SQL;
             );
             $stmt->execute([
                 ':id'     => $id,
-                ':reason' => ($reason !== null && trim($reason) !== '') ? trim($reason) : null,
+                ':reason' => $reasonTrim,
             ]);
         }
 

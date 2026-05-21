@@ -58,6 +58,7 @@ import BankFirmShell from './modules/finance/pages/bank-firm/BankFirmShell';
 import BankFirmAccountsPage from './modules/finance/pages/bank-firm/BankFirmAccountsPage';
 import BankFirmLedgerPage from './modules/finance/pages/bank-firm/BankFirmLedgerPage';
 import BankFirmTransferPage from './modules/finance/pages/bank-firm/BankFirmTransferPage';
+import BankFirmInterTransferPage from './modules/finance/pages/bank-firm/BankFirmInterTransferPage';
 import BankFirmExpensePage from './modules/finance/pages/bank-firm/BankFirmExpensePage';
 import BankFirmReportPage from './modules/finance/pages/bank-firm/BankFirmReportPage';
 import InvoiceCostVarianceReport from './modules/finance/pages/InvoiceCostVarianceReport';
@@ -257,6 +258,7 @@ export default function App() {
             <Route path="accounts" element={<BankFirmAccountsPage />} />
             <Route path="ledger" element={<BankFirmLedgerPage />} />
             <Route path="transfer" element={<BankFirmTransferPage />} />
+            <Route path="inter-transfer" element={<BankFirmInterTransferPage />} />
             <Route path="expense" element={<BankFirmExpensePage />} />
             <Route path="report" element={<BankFirmReportPage />} />
           </Route>

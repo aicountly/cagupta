@@ -1469,21 +1469,27 @@ class TxnController extends BaseController
             $this->error($e->getMessage(), 422);
         }
 
-        $origAfter = $this->txn->find($id);
-        $revAfter  = $this->txn->find((int)$result['reversal_txn_id']);
-        $afterPayload = [
+        $origAfter     = $this->txn->find($id);
+        $orphanRepair  = !empty($result['orphan_repair']);
+        $reversalTxnId = $result['reversal_txn_id'] ?? null;
+        $revAfter      = $reversalTxnId !== null ? $this->txn->find((int) $reversalTxnId) : null;
+        $afterPayload  = [
             'original' => $origAfter !== null ? $this->txnAuditCompactSnapshot($origAfter) : null,
             'reversal' => $revAfter !== null ? $this->txnAuditCompactSnapshot($revAfter) : null,
         ];
+        $auditMeta = [
+            'mode'            => $mode,
+            'reversal_txn_id' => $reversalTxnId,
+            'txn_type'        => (string) ($row['txn_type'] ?? ''),
+        ];
+        if ($orphanRepair) {
+            $auditMeta['orphan_repair'] = true;
+        }
         $this->auditTxnLog(
             $actorRowId,
             'txn.reversal_cancelled',
             $id,
-            [
-                'mode'            => $mode,
-                'reversal_txn_id' => $result['reversal_txn_id'],
-                'txn_type'        => (string)($row['txn_type'] ?? ''),
-            ],
+            $auditMeta,
             $beforeOrig,
             $afterPayload
         );
@@ -1491,11 +1497,12 @@ class TxnController extends BaseController
         $this->success(
             [
                 'original_txn_id' => $id,
-                'reversal_txn_id' => $result['reversal_txn_id'],
+                'reversal_txn_id' => $reversalTxnId,
+                'orphan_repair'   => $orphanRepair,
                 'original'        => $origAfter,
                 'reversal'        => $revAfter,
             ],
-            'Ledger reversal cancelled.'
+            $orphanRepair ? 'Reversed posting restored to active.' : 'Ledger reversal cancelled.'
         );
     }
 
@@ -1511,9 +1518,6 @@ class TxnController extends BaseController
         }
         if ((string)($row['status'] ?? '') !== 'reversed') {
             $this->error('Only reversed transactions can cancel their ledger reversal.', 422);
-        }
-        if ($this->txn->findLedgerReversalIdForOriginal((int)($row['id'] ?? 0)) === null) {
-            $this->error('No active compensating reversal row is linked to this transaction.', 422);
         }
         if ($enforceCreatedAtWindow) {
             $this->assertUserReversalWithinCreatedAtWindow($row);
@@ -1767,8 +1771,11 @@ class TxnController extends BaseController
     public function recoveryByGroup(): never
     {
         try {
-            $payload = $this->txn->getRecoveryByGroupReport();
+            $bucket = trim((string)$this->query('bucket', 'active'));
+            $payload = $this->txn->getRecoveryByGroupReport($bucket);
             $this->success($payload, 'Recovery by group');
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
         } catch (\Throwable $e) {
             error_log('[recoveryByGroup] ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine() . "\n" . $e->getTraceAsString());
             $this->error('Recovery list failed: ' . $e->getMessage(), 500);

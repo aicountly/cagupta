@@ -2225,9 +2225,19 @@ export default function Invoices() {
       .catch((e) => window.alert(e?.message || 'Could not update.'));
   }
 
+  function promptNonBillableReason() {
+    while (true) {
+      const input = window.prompt('Reason for marking non-billable (required):', '');
+      if (input === null) return null;
+      const trimmed = String(input).trim();
+      if (trimmed !== '') return trimmed;
+      window.alert('Please enter a reason before marking this service as non-billable.');
+    }
+  }
+
   function handleBillingNonBillable(row) {
     if (!canBillingClosure) return;
-    const reason = window.prompt('Optional reason (non-billable):', '');
+    const reason = promptNonBillableReason();
     if (reason === null) return;
     patchBillingClosure(row.id, { closure: 'non_billable', reason })
       .then(() => refreshBillingReport())

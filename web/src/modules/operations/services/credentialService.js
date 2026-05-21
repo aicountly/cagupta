@@ -38,6 +38,7 @@ function normalizeCredential(c) {
     portalName:     c.portal_name     || '',
     portalUrl:      c.url             || c.portal_url || '',
     username:       c.username        || '',
+    password:       c.password_encrypted ?? c.password ?? '',
     notes:          c.notes           || '',
     lastChangedAt:  c.updated_at      || c.last_changed_at || c.created_at || '',
     createdAt:      c.created_at      || '',

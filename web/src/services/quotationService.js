@@ -54,12 +54,14 @@ export async function requestQuotationSetupOtp({ passphrase, otpRecipient = 'sup
   return parseResponse(res);
 }
 
-export async function saveQuotationDefault(engagementTypeId, { otp, otpRecipient, defaultPrice, documentsRequired }) {
+export async function saveQuotationDefault(engagementTypeId, { otp, otpRecipient, defaultPrice, documentsRequired } = {}) {
   const body = {
-    otp,
-    otp_recipient: otpRecipient || 'super_admin',
     documents_required: Array.isArray(documentsRequired) ? documentsRequired : [],
   };
+  if (otp != null && String(otp).trim() !== '') {
+    body.otp = String(otp).trim();
+    body.otp_recipient = otpRecipient || 'super_admin';
+  }
   if (defaultPrice !== '' && defaultPrice != null && !Number.isNaN(Number(defaultPrice))) {
     body.default_price = Number(defaultPrice);
   } else {

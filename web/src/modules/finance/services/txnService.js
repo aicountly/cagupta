@@ -414,8 +414,11 @@ export async function getBillSettlementReport({
 }
 
 /** GET /api/admin/txn/recovery-by-group — receivables by client group (fees / taxes / reimbursement per ledger class) */
-export async function getRecoveryByGroup() {
-  const res = await fetch(`${API_BASE}/admin/txn/recovery-by-group`, { headers: authHeaders() });
+export async function getRecoveryByGroup({ bucket = 'active' } = {}) {
+  const query = new URLSearchParams();
+  if (bucket) query.set('bucket', bucket);
+  const qs = query.toString();
+  const res = await fetch(`${API_BASE}/admin/txn/recovery-by-group${qs ? `?${qs}` : ''}`, { headers: authHeaders() });
   const data = await parseResponse(res);
   if (!data.data) {
     throw new Error(data.message || 'No data returned from server');
@@ -584,6 +587,7 @@ export async function createFirmBankTransfer(payload) {
       amount: payload.amount,
       txn_date: payload.txnDate,
       narration: payload.narration || '',
+      ...(payload.transferScope ? { transfer_scope: payload.transferScope } : {}),
     }),
   });
   const data = await parseResponse(res);

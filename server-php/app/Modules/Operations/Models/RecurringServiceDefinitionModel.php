@@ -218,17 +218,17 @@ class RecurringServiceDefinitionModel
     ): void {
         $stmt = $this->db->prepare(
             'UPDATE recurring_service_definitions
-             SET return_type = :new, updated_at = NOW()
+             SET return_type = LEFT(:new_label, 100), updated_at = NOW()
              WHERE engagement_type_id = :eid
                AND (
-                   return_type = :old
+                   return_type = :old_label
                    OR TRIM(COALESCE(return_type, \'\')) = \'\'
                )'
         );
         $stmt->execute([
-            ':new' => $newName,
-            ':eid' => $engagementTypeId,
-            ':old' => $oldName,
+            ':new_label' => $newName,
+            ':eid'       => $engagementTypeId,
+            ':old_label' => $oldName,
         ]);
     }
 
@@ -595,7 +595,7 @@ class RecurringServiceDefinitionModel
                 rsd.*,
                 et.name                          AS engagement_type_name,
                 et.register_category             AS register_category,
-                COALESCE(" . self::sqlClientContactLabelSql() . ', o.name)         AS client_name,
+                COALESCE(" . self::sqlClientContactLabelSql() . ", o.name)         AS client_name,
                 c.pan                            AS client_pan,
                 o.cin                            AS org_cin,
                 u.name                           AS created_by_name

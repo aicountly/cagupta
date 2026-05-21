@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createTds, finalizeTds,
   getTdsEntries, createRebate, createCreditNote, getLedger, getBillSettlementReport, getRecoveryByGroup,
@@ -15,6 +15,9 @@ import {
 import {
   getRecoveryLogs, createRecoveryLog, updateRecoveryLog,
 } from '../services/recoveryLogService';
+import {
+  getRecoveryStatus, markNpa, markBadDebt,
+} from '../services/ledgerRecoveryStatusService';
 import { LastUpdatedByCell, TxnAuditLogModal } from '../../../components/finance/TxnAuditActivity';
 import ServiceBillingDetailModal from '../../../components/finance/ServiceBillingDetailModal';
 import { useAuth } from '../../../auth/AuthContext';
@@ -3597,10 +3600,11 @@ function OpeningBalanceModal({
 
 // ── Main Invoices page ────────────────────────────────────────────────────────
 
-const INVOICE_TABS = new Set(['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note']);
-const LEDGER_TABS  = new Set(['ledger', 'bill_settlement', 'service_billing', 'recovery_list']);
+const INVOICE_TABS = new Set(['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note', 'service_billing']);
+const LEDGER_TABS  = new Set(['ledger', 'bill_settlement', 'recovery_list']);
 
 export default function Invoices({ ledgerOnly = false }) {
+  const navigate = useNavigate();
   const { hasPermission } = useAuth();
   const canEditInvoice = hasPermission('invoices.edit');
   const canDeleteInvoice = hasPermission('invoices.delete');
@@ -3623,11 +3627,19 @@ export default function Invoices({ ledgerOnly = false }) {
   }, [searchParams, ledgerOnly]);
 
   useEffect(() => {
-    if (!ledgerOnly) return undefined;
+    if (!ledgerOnly) return;
+    if (searchParams.get('tab') === 'service_billing') {
+      navigate('/invoices?tab=service_billing', { replace: true });
+    }
+  }, [ledgerOnly, searchParams, navigate]);
+
+  useEffect(() => {
     const cur = searchParams.get('tab');
-    if (cur === tab) return undefined;
+    const defaultTab = ledgerOnly ? 'ledger' : 'invoices';
+    if (cur === tab || (cur == null && tab === defaultTab)) return undefined;
     const next = new URLSearchParams(searchParams);
-    next.set('tab', tab);
+    if (tab === defaultTab) next.delete('tab');
+    else next.set('tab', tab);
     setSearchParams(next, { replace: true });
     return undefined;
   }, [tab, ledgerOnly, searchParams, setSearchParams]);
@@ -3706,6 +3718,17 @@ export default function Invoices({ ledgerOnly = false }) {
   const [recoveryReport, setRecoveryReport] = useState(null);
   const [recoveryLoading, setRecoveryLoading] = useState(false);
   const [recoveryError, setRecoveryError] = useState(null);
+  const [recoveryBucket, setRecoveryBucket] = useState('active');
+
+  const [npaModal, setNpaModal] = useState({ open: false, entityType: '', entityId: 0, displayName: '' });
+  const [npaReason, setNpaReason] = useState('');
+  const [npaSaving, setNpaSaving] = useState(false);
+
+  const [badDebtModal, setBadDebtModal] = useState({ open: false, entityType: '', entityId: 0, displayName: '' });
+  const [badDebtReason, setBadDebtReason] = useState('');
+  const [badDebtSaving, setBadDebtSaving] = useState(false);
+
+  const [ledgerRecoveryStatus, setLedgerRecoveryStatus] = useState(null);
 
   // ── Recovery Log modal state ─────────────────────────────────────────────────
   const [recoveryLogModal, setRecoveryLogModal] = useState({ open: false, entityType: '', entityId: 0, displayName: '' });
@@ -3782,6 +3805,116 @@ export default function Invoices({ ledgerOnly = false }) {
 
   function closeRecoveryLogModal() {
     setRecoveryLogModal({ open: false, entityType: '', entityId: 0, displayName: '' });
+  }
+
+  function openNpaModal(ent) {
+    setNpaReason('');
+    setNpaModal({
+      open: true,
+      entityType: ent.entityType,
+      entityId: ent.entityId,
+      displayName: ent.displayName || '',
+    });
+  }
+
+  function closeNpaModal() {
+    setNpaModal({ open: false, entityType: '', entityId: 0, displayName: '' });
+    setNpaReason('');
+  }
+
+  function openBadDebtModal(ent) {
+    setBadDebtReason('');
+    setBadDebtModal({
+      open: true,
+      entityType: ent.entityType,
+      entityId: ent.entityId,
+      displayName: ent.displayName || '',
+    });
+  }
+
+  function closeBadDebtModal() {
+    setBadDebtModal({ open: false, entityType: '', entityId: 0, displayName: '' });
+    setBadDebtReason('');
+  }
+
+  function reloadRecoveryReport() {
+    setRecoveryLoading(true);
+    setRecoveryError(null);
+    return getRecoveryByGroup({ bucket: recoveryBucket })
+      .then((data) => {
+        setRecoveryError(null);
+        setRecoveryReport(data);
+      })
+      .catch((e) => {
+        setRecoveryError(e?.message || 'Unknown error loading recovery list');
+        setRecoveryReport(null);
+      })
+      .finally(() => setRecoveryLoading(false));
+  }
+
+  async function submitMarkNpa(e) {
+    e.preventDefault();
+    if (!npaReason.trim()) {
+      alert('Please enter a reason for marking as NPA.');
+      return;
+    }
+    setNpaSaving(true);
+    try {
+      await markNpa({
+        entity_type: npaModal.entityType,
+        entity_id: npaModal.entityId,
+        reason: npaReason.trim(),
+      });
+      closeNpaModal();
+      if (ledgerClientId && String(npaModal.entityId) === ledgerClientId
+          && (ledgerEntityType === 'organization' ? 'organization' : 'client') === npaModal.entityType) {
+        getRecoveryStatus({ entityType: npaModal.entityType, entityId: npaModal.entityId })
+          .then(setLedgerRecoveryStatus)
+          .catch(() => setLedgerRecoveryStatus(null));
+      }
+      await reloadRecoveryReport();
+    } catch (err) {
+      alert('Failed to mark as NPA: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setNpaSaving(false);
+    }
+  }
+
+  async function submitMarkBadDebt(e) {
+    e.preventDefault();
+    if (!badDebtReason.trim()) {
+      alert('Please enter a reason for marking as bad debt.');
+      return;
+    }
+    setBadDebtSaving(true);
+    try {
+      await markBadDebt({
+        entity_type: badDebtModal.entityType,
+        entity_id: badDebtModal.entityId,
+        reason: badDebtReason.trim(),
+      });
+      closeBadDebtModal();
+      if (ledgerClientId && String(badDebtModal.entityId) === ledgerClientId
+          && (ledgerEntityType === 'organization' ? 'organization' : 'client') === badDebtModal.entityType) {
+        getRecoveryStatus({ entityType: badDebtModal.entityType, entityId: badDebtModal.entityId })
+          .then(setLedgerRecoveryStatus)
+          .catch(() => setLedgerRecoveryStatus(null));
+      }
+      await reloadRecoveryReport();
+    } catch (err) {
+      alert('Failed to mark as bad debt: ' + (err?.message || 'Unknown error'));
+    } finally {
+      setBadDebtSaving(false);
+    }
+  }
+
+  function formatRecoveryMarkedAt(iso) {
+    if (!iso) return '—';
+    try {
+      return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+    } catch {
+      return '—';
+    }
   }
 
   async function submitRecoveryLog(e) {
@@ -4037,7 +4170,7 @@ export default function Invoices({ ledgerOnly = false }) {
     setRecoveryLoading(true);
     setRecoveryError(null);
     let cancelled = false;
-    getRecoveryByGroup()
+    getRecoveryByGroup({ bucket: recoveryBucket })
       .then((data) => {
         if (!cancelled) {
           setRecoveryError(null);
@@ -4054,7 +4187,29 @@ export default function Invoices({ ledgerOnly = false }) {
         if (!cancelled) setRecoveryLoading(false);
       });
     return () => { cancelled = true; };
-  }, [tab]);
+  }, [tab, recoveryBucket]);
+
+  useEffect(() => {
+    if (!ledgerClientId || (tab !== 'ledger' && tab !== 'bill_settlement')) {
+      setLedgerRecoveryStatus(null);
+      return undefined;
+    }
+    const entityType = ledgerEntityType === 'organization' ? 'organization' : 'client';
+    const entityId = parseInt(ledgerClientId, 10);
+    if (!entityId) {
+      setLedgerRecoveryStatus(null);
+      return undefined;
+    }
+    let cancelled = false;
+    getRecoveryStatus({ entityType, entityId })
+      .then((status) => {
+        if (!cancelled) setLedgerRecoveryStatus(status);
+      })
+      .catch(() => {
+        if (!cancelled) setLedgerRecoveryStatus(null);
+      });
+    return () => { cancelled = true; };
+  }, [ledgerClientId, ledgerEntityType, tab]);
 
   useEffect(() => {
     setLedgerFilterDateFrom('');
@@ -4643,9 +4798,19 @@ export default function Invoices({ ledgerOnly = false }) {
       .catch((e) => window.alert(e?.message || 'Could not update.'));
   }
 
+  function promptNonBillableReason() {
+    while (true) {
+      const input = window.prompt('Reason for marking non-billable (required):', '');
+      if (input === null) return null;
+      const trimmed = String(input).trim();
+      if (trimmed !== '') return trimmed;
+      window.alert('Please enter a reason before marking this service as non-billable.');
+    }
+  }
+
   function handleBillingNonBillable(row, { onSuccess } = {}) {
     if (!canBillingClosure) return;
-    const reason = window.prompt('Optional reason (non-billable):', '');
+    const reason = promptNonBillableReason();
     if (reason === null) return;
     patchBillingClosure(row.id, { closure: 'non_billable', reason })
       .then(() => {
@@ -4662,9 +4827,9 @@ export default function Invoices({ ledgerOnly = false }) {
     { key:'tds',            label:'📋 TDS' },
     { key:'rebate',         label:'💸 Rebate/Discount' },
     { key:'credit_note',    label:'📝 Credit Notes' },
+    { key:'service_billing',label:'📋 Service billing' },
     { key:'ledger',         label:'📒 Ledger' },
     { key:'bill_settlement',label:'📑 Bill by bill' },
-    { key:'service_billing',label:'📋 Service billing' },
     { key:'recovery_list',  label:'📊 Recovery list' },
   ];
   const visibleTabSet = ledgerOnly ? LEDGER_TABS : INVOICE_TABS;
@@ -4894,6 +5059,92 @@ export default function Invoices({ ledgerOnly = false }) {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mark NPA Modal ─────────────────────────────────────────────────────── */}
+      {npaModal.open && (
+        <div
+          style={{ ...overlayStyle, zIndex: 1200, alignItems: 'flex-start', paddingTop: 80 }}
+          role="presentation"
+          onClick={closeNpaModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', overflow: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#fff7ed' }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#9a3412' }}>Mark as NPA</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{npaModal.displayName}</div>
+            </div>
+            <form onSubmit={submitMarkNpa} style={{ padding: '16px 20px' }}>
+              <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>
+                Classification only — ledger balances will not change. Entity must have a positive receivable balance.
+              </p>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#475569' }}>
+                Reason *
+                <textarea
+                  rows={3}
+                  value={npaReason}
+                  onChange={(e) => setNpaReason(e.target.value)}
+                  required
+                  placeholder="Why is this entity being marked as NPA?"
+                  style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, resize: 'vertical' }}
+                />
+              </label>
+              <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button type="button" onClick={closeNpaModal} style={{ padding: '7px 18px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', color: '#475569', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+                <button type="submit" disabled={npaSaving} style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: '#ea580c', color: '#fff', cursor: npaSaving ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13 }}>
+                  {npaSaving ? 'Saving…' : 'Mark as NPA'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Mark Bad Debt Modal ────────────────────────────────────────────────── */}
+      {badDebtModal.open && (
+        <div
+          style={{ ...overlayStyle, zIndex: 1200, alignItems: 'flex-start', paddingTop: 80 }}
+          role="presentation"
+          onClick={closeBadDebtModal}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ background: '#fff', borderRadius: 12, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.18)', overflow: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#fef2f2' }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#b91c1c' }}>Mark as bad debt</div>
+              <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{badDebtModal.displayName}</div>
+            </div>
+            <form onSubmit={submitMarkBadDebt} style={{ padding: '16px 20px' }}>
+              <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 12px' }}>
+                One-way transition from NPA to bad debt (terminal). Ledger balances will not change.
+              </p>
+              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, color: '#475569' }}>
+                Reason *
+                <textarea
+                  rows={3}
+                  value={badDebtReason}
+                  onChange={(e) => setBadDebtReason(e.target.value)}
+                  required
+                  placeholder="Why is this being written off as bad debt?"
+                  style={{ padding: '8px 10px', borderRadius: 6, border: '1px solid #cbd5e1', fontSize: 13, resize: 'vertical' }}
+                />
+              </label>
+              <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button type="button" onClick={closeBadDebtModal} style={{ padding: '7px 18px', borderRadius: 7, border: '1px solid #cbd5e1', background: '#fff', color: '#475569', cursor: 'pointer', fontSize: 13 }}>Cancel</button>
+                <button type="submit" disabled={badDebtSaving} style={{ padding: '7px 18px', borderRadius: 7, border: 'none', background: '#dc2626', color: '#fff', cursor: badDebtSaving ? 'not-allowed' : 'pointer', fontWeight: 600, fontSize: 13 }}>
+                  {badDebtSaving ? 'Saving…' : 'Mark as bad debt'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -5860,6 +6111,31 @@ export default function Invoices({ ledgerOnly = false }) {
                 />
               </div>
             </div>
+            {ledgerClientId && ledgerRecoveryStatus?.status && (
+              <div style={ledgerToolbarGroupStyle}>
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    padding: '4px 10px',
+                    borderRadius: 999,
+                    fontSize: 12,
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    background: ledgerRecoveryStatus.status === 'bad_debt' ? '#fef2f2' : '#fff7ed',
+                    color: ledgerRecoveryStatus.status === 'bad_debt' ? '#b91c1c' : '#c2410c',
+                    border: `1px solid ${ledgerRecoveryStatus.status === 'bad_debt' ? '#fecaca' : '#fed7aa'}`,
+                  }}
+                  title={
+                    ledgerRecoveryStatus.status === 'bad_debt'
+                      ? (ledgerRecoveryStatus.badDebtReason || 'Marked as bad debt')
+                      : (ledgerRecoveryStatus.npaReason || 'Marked as NPA')
+                  }
+                >
+                  {ledgerRecoveryStatus.status === 'bad_debt' ? 'Bad debt' : 'NPA'}
+                </span>
+              </div>
+            )}
             <div style={ledgerToolbarScrollTailStyle}>
             {ledgerClientId && (
               <>
@@ -6154,11 +6430,40 @@ export default function Invoices({ ledgerOnly = false }) {
       {tab === 'recovery_list' && (
         <div style={{ ...cardStyle, overflowX: 'auto' }}>
           <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9' }}>
-            <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>Recovery list</div>
-            <div style={{ fontSize: 12, color: '#64748b', marginTop: 6, maxWidth: 860 }}>
-              Receivables by client group (fees, taxes, and reimbursement pre–cost-recovery base). Groups with the highest total due appear first. Matches the dashboard outstanding KPI when totals align.
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>Recovery list</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[
+                  { key: 'active', label: 'Active' },
+                  { key: 'npa', label: 'NPA' },
+                  { key: 'bad_debt', label: 'Bad debt' },
+                ].map((b) => (
+                  <button
+                    key={b.key}
+                    type="button"
+                    onClick={() => setRecoveryBucket(b.key)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 7,
+                      border: recoveryBucket === b.key ? '1px solid #6366f1' : '1px solid #cbd5e1',
+                      background: recoveryBucket === b.key ? '#eef2ff' : '#fff',
+                      color: recoveryBucket === b.key ? '#4338ca' : '#475569',
+                      fontWeight: recoveryBucket === b.key ? 700 : 500,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {b.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            {recoveryReport && typeof recoveryReport.kpiTotalReceivable === 'number'
+            <div style={{ fontSize: 12, color: '#64748b', marginTop: 6, maxWidth: 860 }}>
+              {recoveryBucket === 'active' && 'Active receivables by client group. NPA and bad-debt entities are excluded from this list and the dashboard KPI.'}
+              {recoveryBucket === 'npa' && 'Entities marked as Non-Performing Asset (NPA). Ledger balances are unchanged — classification only.'}
+              {recoveryBucket === 'bad_debt' && 'Entities written off as bad debt (terminal). Read-only; ledger balances unchanged.'}
+            </div>
+            {recoveryBucket === 'active' && recoveryReport && typeof recoveryReport.kpiTotalReceivable === 'number'
               && typeof recoveryReport.totals?.grand === 'number'
               && Math.abs(recoveryReport.totals.grand - recoveryReport.kpiTotalReceivable) > 0.02 && (
               <div style={{ marginTop: 8, fontSize: 11, color: '#b45309' }}>
@@ -6175,8 +6480,24 @@ export default function Invoices({ ledgerOnly = false }) {
                 <th colSpan={3} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Memorandum</th>
                 <th colSpan={3} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Optional</th>
                 <th rowSpan={2} style={{ ...thStyle, textAlign: 'right', borderLeft: '1px solid #e2e8f0' }}>Total</th>
-                <th rowSpan={2} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Due Date</th>
-                <th rowSpan={2} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Actions</th>
+                {recoveryBucket === 'active' && (
+                  <th rowSpan={2} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Due Date</th>
+                )}
+                {recoveryBucket === 'npa' && (
+                  <>
+                    <th rowSpan={2} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>NPA marked</th>
+                    <th rowSpan={2} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>NPA reason</th>
+                  </>
+                )}
+                {recoveryBucket === 'bad_debt' && (
+                  <>
+                    <th rowSpan={2} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Bad debt marked</th>
+                    <th rowSpan={2} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Bad debt reason</th>
+                  </>
+                )}
+                {recoveryBucket !== 'bad_debt' && (
+                  <th rowSpan={2} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Actions</th>
+                )}
               </tr>
               <tr>
                 {['regular', 'memorandum', 'optional'].flatMap((k) => (
@@ -6187,31 +6508,37 @@ export default function Invoices({ ledgerOnly = false }) {
               </tr>
             </thead>
             <tbody>
+              {(() => {
+                const recoveryColSpan = recoveryBucket === 'npa' ? 14 : 13;
+                return (
+                  <>
               {recoveryLoading && (
                 <tr>
-                  <td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
+                  <td colSpan={recoveryColSpan} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
                     Loading recovery list…
                   </td>
                 </tr>
               )}
               {!recoveryLoading && recoveryError && (
                 <tr>
-                  <td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#dc2626', background: '#fef2f2' }}>
+                  <td colSpan={recoveryColSpan} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#dc2626', background: '#fef2f2' }}>
                     ⚠ Failed to load recovery list: {recoveryError}
                   </td>
                 </tr>
               )}
-              {!recoveryLoading && !recoveryError && (!recoveryReport?.groups || recoveryReport.groups.length === 0) && (recoveryReport?.kpiTotalReceivable ?? 0) > 0.01 && (
+              {!recoveryLoading && !recoveryError && (!recoveryReport?.groups || recoveryReport.groups.length === 0) && recoveryBucket === 'active' && (recoveryReport?.kpiTotalReceivable ?? 0) > 0.01 && (
                 <tr>
-                  <td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#92400e', background: '#fffbeb' }}>
+                  <td colSpan={recoveryColSpan} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#92400e', background: '#fffbeb' }}>
                     Dashboard KPI shows ₹{(recoveryReport.kpiTotalReceivable).toLocaleString('en-IN', { minimumFractionDigits: 2 })} receivable but no records are displaying — please contact support or reload.
                   </td>
                 </tr>
               )}
-              {!recoveryLoading && !recoveryError && (!recoveryReport?.groups || recoveryReport.groups.length === 0) && (recoveryReport?.kpiTotalReceivable ?? 0) <= 0.01 && (
+              {!recoveryLoading && !recoveryError && (!recoveryReport?.groups || recoveryReport.groups.length === 0) && (recoveryBucket !== 'active' || (recoveryReport?.kpiTotalReceivable ?? 0) <= 0.01) && (
                 <tr>
-                  <td colSpan={13} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
-                    No receivable balances to show (or no client / org ledger data yet).
+                  <td colSpan={recoveryColSpan} style={{ ...tdStyle, textAlign: 'center', padding: 28, color: '#94a3b8' }}>
+                    {recoveryBucket === 'active' && 'No receivable balances to show (or no client / org ledger data yet).'}
+                    {recoveryBucket === 'npa' && 'No entities marked as NPA.'}
+                    {recoveryBucket === 'bad_debt' && 'No entities marked as bad debt.'}
                   </td>
                 </tr>
               )}
@@ -6222,7 +6549,7 @@ export default function Invoices({ ledgerOnly = false }) {
                 return (
                   <Fragment key={g.groupKey}>
                     <tr style={{ background: '#eef2ff' }}>
-                      <td colSpan={13} style={{ ...tdStyle, fontWeight: 700, color: '#312e81' }}>
+                      <td colSpan={recoveryColSpan} style={{ ...tdStyle, fontWeight: 700, color: '#312e81' }}>
                         {g.groupLabel}
                         <span style={{ fontWeight: 500, color: '#6366f1', marginLeft: 8 }}>
                           — Group total ₹{g.groupTotal.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
@@ -6251,22 +6578,67 @@ export default function Invoices({ ledgerOnly = false }) {
                         <td style={{ ...tdStyle, textAlign: 'right', fontWeight: 700 }}>
                           {recoveryMoney(ent.rowTotal)}
                         </td>
-                        <td style={{ ...tdStyle, textAlign: 'center', whiteSpace: 'nowrap', color: ent.latestLog?.revised_due_date ? '#0f172a' : '#94a3b8', fontSize: 12 }}>
-                          {ent.latestLog?.revised_due_date
-                            ? new Date(ent.latestLog.revised_due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-                            : '—'}
-                        </td>
+                        {recoveryBucket === 'active' && (
+                          <td style={{ ...tdStyle, textAlign: 'center', whiteSpace: 'nowrap', color: ent.latestLog?.revised_due_date ? '#0f172a' : '#94a3b8', fontSize: 12 }}>
+                            {ent.latestLog?.revised_due_date
+                              ? new Date(ent.latestLog.revised_due_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+                              : '—'}
+                          </td>
+                        )}
+                        {recoveryBucket === 'npa' && (
+                          <>
+                            <td style={{ ...tdStyle, textAlign: 'center', whiteSpace: 'nowrap', fontSize: 12 }}>
+                              {formatRecoveryMarkedAt(ent.recoveryStatus?.npaMarkedAt)}
+                            </td>
+                            <td style={{ ...tdStyle, fontSize: 12, maxWidth: 180, whiteSpace: 'normal' }}>
+                              {ent.recoveryStatus?.npaReason || '—'}
+                            </td>
+                          </>
+                        )}
+                        {recoveryBucket === 'bad_debt' && (
+                          <>
+                            <td style={{ ...tdStyle, textAlign: 'center', whiteSpace: 'nowrap', fontSize: 12 }}>
+                              {formatRecoveryMarkedAt(ent.recoveryStatus?.badDebtMarkedAt)}
+                            </td>
+                            <td style={{ ...tdStyle, fontSize: 12, maxWidth: 180, whiteSpace: 'normal' }}>
+                              {ent.recoveryStatus?.badDebtReason || '—'}
+                            </td>
+                          </>
+                        )}
+                        {recoveryBucket !== 'bad_debt' && (
                         <td
                           style={{ ...tdStyle, textAlign: 'center' }}
-                          onClick={(e) => { e.stopPropagation(); openRecoveryLogModal(ent); }}
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          <button
-                            type="button"
-                            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, border: '1px solid #6366f1', background: '#eef2ff', color: '#4338ca', cursor: 'pointer', fontWeight: 600 }}
-                          >
-                            Log
-                          </button>
+                          <div style={{ display: 'flex', gap: 6, justifyContent: 'center', flexWrap: 'wrap' }}>
+                            <button
+                              type="button"
+                              onClick={() => openRecoveryLogModal(ent)}
+                              style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, border: '1px solid #6366f1', background: '#eef2ff', color: '#4338ca', cursor: 'pointer', fontWeight: 600 }}
+                            >
+                              Log
+                            </button>
+                            {recoveryBucket === 'active' && canEditInvoice && (
+                              <button
+                                type="button"
+                                onClick={() => openNpaModal(ent)}
+                                style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, border: '1px solid #ea580c', background: '#fff7ed', color: '#c2410c', cursor: 'pointer', fontWeight: 600 }}
+                              >
+                                Mark NPA
+                              </button>
+                            )}
+                            {recoveryBucket === 'npa' && canEditInvoice && (
+                              <button
+                                type="button"
+                                onClick={() => openBadDebtModal(ent)}
+                                style={{ fontSize: 11, padding: '3px 10px', borderRadius: 5, border: '1px solid #dc2626', background: '#fef2f2', color: '#b91c1c', cursor: 'pointer', fontWeight: 600 }}
+                              >
+                                Bad debt
+                              </button>
+                            )}
+                          </div>
                         </td>
+                        )}
                       </tr>
                     ))}
                     <tr style={{ background: '#f8fafc', fontWeight: 600 }}>
@@ -6281,7 +6653,11 @@ export default function Invoices({ ledgerOnly = false }) {
                       <td style={{ ...tdStyle, textAlign: 'right' }}>
                         {recoveryMoney(g.groupTotal)}
                       </td>
-                      <td colSpan={2} style={tdStyle} />
+                      {recoveryBucket === 'bad_debt' ? (
+                        <td colSpan={2} style={tdStyle} />
+                      ) : (
+                        <td colSpan={recoveryBucket === 'npa' ? 3 : 2} style={tdStyle} />
+                      )}
                     </tr>
                   </Fragment>
                 );
@@ -6302,9 +6678,16 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={{ ...tdStyle, textAlign: 'right', color: '#dc2626' }}>
                     {recoveryMoney(recoveryReport.totals.grand)}
                   </td>
-                  <td colSpan={2} style={tdStyle} />
+                  {recoveryBucket === 'bad_debt' ? (
+                    <td colSpan={2} style={tdStyle} />
+                  ) : (
+                    <td colSpan={recoveryBucket === 'npa' ? 3 : 2} style={tdStyle} />
+                  )}
                 </tr>
               )}
+                  </>
+                );
+              })()}
             </tbody>
           </table>
         </div>

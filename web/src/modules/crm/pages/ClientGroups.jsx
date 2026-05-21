@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
-import { getGroups, createGroup, updateGroup, deleteGroup, getGroupMembers } from '../services/clientGroupService';
+import { getGroups, createGroup, updateGroup, deleteGroup, getGroupMembers, getGroup } from '../services/clientGroupService';
 import { updateContact } from '../services/contactService';
 import { updateOrganization } from '../services/organizationService';
+import MasterChangeLogSection from '../components/MasterChangeLogSection';
+import PendingNameChangeBanner from '../components/PendingNameChangeBanner';
 
 const PRESET_COLORS = ['#6366f1', '#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed'];
 
@@ -22,6 +24,8 @@ export default function ClientGroups() {
   const [modalForm, setModalForm] = useState({ name: '', description: '', color: '#6366f1' });
   const [modalErrors, setModalErrors] = useState({});
   const [saving, setSaving] = useState(false);
+  const [pendingNameChange, setPendingNameChange] = useState(null);
+  const [saveNotice, setSaveNotice] = useState('');
 
   /** In-app delete flow: blocked when members exist, otherwise confirm then delete. */
   const [deleteDialog, setDeleteDialog] = useState(null); // { mode: 'blocked'|'confirm', group } | null
@@ -41,6 +45,8 @@ export default function ClientGroups() {
     setEditingGroup(null);
     setModalForm({ name: '', description: '', color: '#6366f1' });
     setModalErrors({});
+    setPendingNameChange(null);
+    setSaveNotice('');
     setShowModal(true);
   }
 
@@ -49,12 +55,19 @@ export default function ClientGroups() {
     setEditingGroup(g);
     setModalForm({ name: g.name || '', description: g.description || '', color: g.color || '#6366f1' });
     setModalErrors({});
+    setSaveNotice('');
+    setPendingNameChange(null);
     setShowModal(true);
+    getGroup(g.id)
+      .then((full) => setPendingNameChange(full?.pending_name_change || null))
+      .catch(() => setPendingNameChange(null));
   }
 
   function closeModal() {
     setShowModal(false);
     setEditingGroup(null);
+    setPendingNameChange(null);
+    setSaveNotice('');
   }
 
   async function handleSave() {
@@ -70,14 +83,27 @@ export default function ClientGroups() {
     setSaving(true);
     try {
       if (editingGroup) {
-        await updateGroup(editingGroup.id, { name: trimmedName, description: modalForm.description.trim() || null, color: modalForm.color });
+        const result = await updateGroup(editingGroup.id, { name: trimmedName, description: modalForm.description.trim() || null, color: modalForm.color });
+        const pending = result?.meta?.pending_name_change || null;
+        if (pending) {
+          setPendingNameChange(pending);
+          setModalForm((prev) => ({ ...prev, name: pending.current_name || prev.name }));
+          setSaveNotice(result.message || `Name change submitted (Approval #${pending.approval_id}).`);
+          loadGroups();
+        } else {
+          closeModal();
+          loadGroups();
+        }
       } else {
         await createGroup({ name: trimmedName, description: modalForm.description.trim() || null, color: modalForm.color });
+        closeModal();
+        loadGroups();
       }
-      closeModal();
-      loadGroups();
     } catch (err) {
       const msg = err.message || 'Failed to save group.';
+      if (err.meta?.pending_name_change || err.data?.pending_name_change) {
+        setPendingNameChange(err.meta?.pending_name_change || err.data?.pending_name_change);
+      }
       if (/already exists/i.test(msg)) {
         setModalErrors({ name: msg });
       } else {
@@ -123,8 +149,11 @@ export default function ClientGroups() {
   function openPanel(g) {
     setSelected(g);
     setMembersLoading(true);
-    getGroupMembers(g.id)
-      .then(data => setMembers(data))
+    getGroup(g.id)
+      .then((full) => {
+        setMembers(full?.members || { contacts: [], organizations: [] });
+        setSelected((prev) => (prev?.id === g.id ? { ...prev, pending_name_change: full?.pending_name_change || null } : prev));
+      })
       .catch(() => setMembers({ contacts: [], organizations: [] }))
       .finally(() => setMembersLoading(false));
   }
@@ -327,6 +356,10 @@ export default function ClientGroups() {
             </>
           )}
 
+          <div style={{ marginTop: 16 }}>
+            <MasterChangeLogSection entityType="client_group" entityId={selected.id} collapsible />
+          </div>
+
           <button
             onClick={() => setSelected(null)}
             style={{ ...btnOutline, width: '100%', marginTop: 8 }}
@@ -417,14 +450,27 @@ export default function ClientGroups() {
               </div>
             )}
 
+            {saveNotice && (
+              <div style={{ color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a', padding: '8px 12px', borderRadius: 8, fontSize: 13, marginBottom: 14 }}>
+                {saveNotice}
+              </div>
+            )}
+
+            <PendingNameChangeBanner pending={pendingNameChange} style={{ marginBottom: 14 }} />
+
             {/* Name */}
             <div style={{ marginBottom: 14 }}>
               <label style={labelStyle}>Group Name <span style={{ color: '#ef4444' }}>*</span></label>
               <input
                 value={modalForm.name}
                 onChange={e => { setModalForm(prev => ({ ...prev, name: e.target.value })); setModalErrors(prev => ({ ...prev, name: undefined })); }}
+                disabled={Boolean(pendingNameChange)}
                 placeholder="e.g. Sharma Family"
-                style={{ ...inputStyle, borderColor: modalErrors.name ? '#ef4444' : '#E6E8F0' }}
+                style={{
+                  ...inputStyle,
+                  borderColor: modalErrors.name ? '#ef4444' : '#E6E8F0',
+                  ...(pendingNameChange ? { background: '#F8FAFC', cursor: 'not-allowed' } : {}),
+                }}
                 autoFocus
               />
               {modalErrors.name && <div style={{ color: '#dc2626', fontSize: 11, marginTop: 3 }}>{modalErrors.name}</div>}

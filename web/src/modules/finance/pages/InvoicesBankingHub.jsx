@@ -12,14 +12,14 @@ const HUB_SECTIONS = [
       {
         id: 'invoices',
         label: 'Invoices',
-        description: 'Manage client invoices, receipts, payments, TDS, rebates, and credit notes.',
+        description: 'Manage client invoices, receipts, payments, TDS, rebates, credit notes, and service billing.',
         icon: Receipt,
         to: '/invoices',
       },
       {
         id: 'ledgers',
         label: 'Ledgers',
-        description: 'View client ledger, bill-by-bill settlement, and service billing reports.',
+        description: 'View client ledger, bill-by-bill settlement, and recovery list.',
         icon: BookOpen,
         to: '/invoices/ledgers',
       },

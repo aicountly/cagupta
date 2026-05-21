@@ -380,9 +380,33 @@ class BlogController extends BaseController
 
     public function blogDelete(int $id): never
     {
-        $stmt = $this->db()->prepare('DELETE FROM blog_posts WHERE id = :id RETURNING id');
-        $stmt->execute([':id' => $id]);
-        if (!$stmt->fetch()) $this->error('Post not found.', 404);
+        $existing = $this->db()->prepare('SELECT id FROM blog_posts WHERE id = :id');
+        $existing->execute([':id' => $id]);
+        if (!$existing->fetch()) {
+            $this->error('Post not found.', 404);
+        }
+
+        $this->db()->beginTransaction();
+        try {
+            // AI-approved drafts reference the post; clear before delete (FK has no CASCADE).
+            $this->db()->prepare('
+                UPDATE blog_ai_drafts SET blog_post_id = NULL, updated_at = NOW()
+                WHERE blog_post_id = :id
+            ')->execute([':id' => $id]);
+
+            $stmt = $this->db()->prepare('DELETE FROM blog_posts WHERE id = :id RETURNING id');
+            $stmt->execute([':id' => $id]);
+            if (!$stmt->fetch()) {
+                $this->db()->rollBack();
+                $this->error('Post not found.', 404);
+            }
+
+            $this->db()->commit();
+        } catch (\PDOException $e) {
+            $this->db()->rollBack();
+            error_log('[BlogController::blogDelete] PDOException: ' . $e->getMessage());
+            $this->error('Failed to delete post.', 500);
+        }
 
         $this->success(null, 'Post deleted');
     }

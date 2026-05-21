@@ -451,7 +451,7 @@ function normalizeBillingReportRow(r) {
 }
 
 /**
- * Billing queue report (Invoices & Ledger → Service billing).
+ * Billing queue report (Invoices → Service billing tab).
  * @returns {Promise<{ rows: object[], pagination: object }>}
  */
 export async function getBillingReport({
