@@ -28,6 +28,9 @@ const breadcrumbMap = {
   '/documents':              ['Home', 'Documents'],
   '/invoices':               ['Home', 'Invoices & Ledger'],
   '/inbox':                  ['Home', 'Inbox & tickets'],
+  '/desk/chat':              ['Home', 'Team Chat'],
+  '/desk/chat/audit':        ['Home', 'Team Chat', 'Audit log'],
+  '/desk/client-chat':       ['Home', 'Client Chat'],
   '/reports/client-engagement': ['Home', 'Client engagement gaps'],
   '/calendar':               ['Home', 'Calendar'],
   '/credentials':            ['Home', 'Credentials Vault'],
@@ -338,8 +341,32 @@ export default function TopBar({ title }) {
               ) : (
                 <>
                   {staffNotifs.map((row) => (
-                    <div key={`s-${row.id}`} style={styles.notifItem}>
-                      <span style={{ fontSize: 16 }}>🔔</span>
+                    <div
+                      key={`s-${row.id}`}
+                      style={{
+                        ...styles.notifItem,
+                        cursor: (row.kind === 'chat_message' || row.kind === 'client_chat_escalation') && row.entity_id ? 'pointer' : 'default',
+                      }}
+                      onClick={() => {
+                        if (row.kind === 'chat_message' && row.entity_id) {
+                          markStaffNotificationsRead({ ids: [row.id] }).then(() => {
+                            loadStaffNotifications();
+                            navigate(`/desk/chat?conversation=${row.entity_id}`);
+                            setNotifOpen(false);
+                          }).catch(() => {});
+                        } else if (row.kind === 'client_chat_escalation' && row.entity_id) {
+                          markStaffNotificationsRead({ ids: [row.id] }).then(() => {
+                            loadStaffNotifications();
+                            navigate(`/desk/client-chat?thread=${row.entity_id}`);
+                            setNotifOpen(false);
+                          }).catch(() => {});
+                        }
+                      }}
+                      role={(row.kind === 'chat_message' || row.kind === 'client_chat_escalation') && row.entity_id ? 'button' : undefined}
+                    >
+                      <span style={{ fontSize: 16 }}>
+                        {row.kind === 'chat_message' ? '💬' : row.kind === 'client_chat_escalation' ? '🆘' : '🔔'}
+                      </span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, color: '#334155', fontWeight: 600 }}>{row.title}</div>
                         {row.body ? <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>{row.body}</div> : null}
@@ -348,7 +375,10 @@ export default function TopBar({ title }) {
                       {!row.read_at && (
                         <button
                           type="button"
-                          onClick={() => markStaffNotificationsRead({ ids: [row.id] }).then(() => loadStaffNotifications()).catch(() => {})}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            markStaffNotificationsRead({ ids: [row.id] }).then(() => loadStaffNotifications()).catch(() => {});
+                          }}
                           style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb', fontSize: 11, flexShrink: 0, fontWeight: 600 }}
                         >
                           Read

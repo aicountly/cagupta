@@ -4,6 +4,7 @@ import logoUrl from '../../../assets/cropped_logo.png';
 import { useAuth } from '../../../auth/AuthContext';
 import { getInitials } from '../../../utils/getInitials';
 import { getOverdueFollowUpCount } from '../../../services/serviceLogService';
+import { fetchChatUnreadCount } from '../../chat/services/chatService';
 import {
   LayoutDashboard, Users, ClipboardList, FolderOpen,
   Receipt, CalendarDays, KeyRound, BookOpen, Landmark, Wallet,
@@ -64,6 +65,8 @@ const navSections = [
     label: 'DESK',
     items: [
       { to: '/desk/inbox', label: 'Inbox & Tickets', icon: Inbox, permission: 'settings.view' },
+      { to: '/desk/chat', label: 'Team Chat', icon: MessageSquare, permission: 'chat.use', badge: 'chatUnread' },
+      { to: '/desk/client-chat', label: 'Client Chat', icon: Users, permission: 'client.chat.manage' },
     ],
   },
 ];
@@ -83,6 +86,7 @@ export default function Sidebar() {
   const loc = useLocation();
   const { session, hasPermission, hasAnyPermission } = useAuth();
   const [overdueCount, setOverdueCount] = useState(0);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   // Generic open-state map for expandable nav items, keyed by navKey
   const [openMenus, setOpenMenus] = useState(() => {
@@ -104,6 +108,14 @@ export default function Sidebar() {
     getOverdueFollowUpCount()
       .then(setOverdueCount)
       .catch(() => setOverdueCount(0));
+  }, [hasPermission]);
+
+  useEffect(() => {
+    if (!hasPermission('chat.use')) return;
+    const load = () => fetchChatUnreadCount().then(setChatUnreadCount).catch(() => setChatUnreadCount(0));
+    load();
+    const t = setInterval(load, 30000);
+    return () => clearInterval(t);
   }, [hasPermission]);
 
   // Auto-open parent menus when a child route is active
@@ -204,7 +216,8 @@ export default function Sidebar() {
       );
     }
 
-    const badgeCount = item.badge === 'overdue' ? overdueCount : 0;
+    const badgeCount = item.badge === 'overdue' ? overdueCount
+      : item.badge === 'chatUnread' ? chatUnreadCount : 0;
     return (
       <NavLink
         key={item.to}

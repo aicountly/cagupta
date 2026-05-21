@@ -6,6 +6,7 @@ const nav = [
   { to: '/partner', label: 'Dashboard', end: true },
   { to: '/partner/assignments', label: 'My assignments' },
   { to: '/partner/payouts', label: 'Payouts' },
+  { to: '/partner/chat', label: 'Team chat' },
   { to: '/partner/bank', label: 'Bank / KYC' },
   { to: '/partner/profile', label: 'Profile' },
 ];

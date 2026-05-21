@@ -1054,6 +1054,112 @@ class Routes
                 'handler'    => 'Admin\NotificationController@markRead',
                 'middleware' => ['auth', 'permission:dashboard.view'],
             ],
+
+            // ── Team Chat ─────────────────────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/chat/conversations',
+                'handler'    => 'Admin\ChatController@conversationsIndex',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/chat/conversations',
+                'handler'    => 'Admin\ChatController@conversationsCreate',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/chat/conversations/:id',
+                'handler'    => 'Admin\ChatController@conversationsShow',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/chat/conversations/:id/messages',
+                'handler'    => 'Admin\ChatController@messagesIndex',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/chat/conversations/:id/messages',
+                'handler'    => 'Admin\ChatController@messagesCreate',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/chat/conversations/:id/read',
+                'handler'    => 'Admin\ChatController@markRead',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/chat/conversations/:id/members',
+                'handler'    => 'Admin\ChatController@addMembers',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/chat/conversations/:id/leave',
+                'handler'    => 'Admin\ChatController@leave',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/chat/contacts',
+                'handler'    => 'Admin\ChatController@contacts',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/chat/unread-count',
+                'handler'    => 'Admin\ChatController@unreadCount',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/chat/audit',
+                'handler'    => 'Admin\ChatAuditController@search',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/chat/audit/conversations/:id',
+                'handler'    => 'Admin\ChatAuditController@conversationThread',
+                'middleware' => ['auth', 'permission:chat.use'],
+            ],
+
+            // ── Client chat (staff desk) ──────────────────────────────────────
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/client-chat/threads',
+                'handler'    => 'Admin\ClientChatStaffController@threadsIndex',
+                'middleware' => ['auth', 'permission:client.chat.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/client-chat/threads/:id',
+                'handler'    => 'Admin\ClientChatStaffController@threadsShow',
+                'middleware' => ['auth', 'permission:client.chat.manage'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/client-chat/threads/:id/messages',
+                'handler'    => 'Admin\ClientChatStaffController@messagesIndex',
+                'middleware' => ['auth', 'permission:client.chat.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/client-chat/threads/:id/messages',
+                'handler'    => 'Admin\ClientChatStaffController@messagesCreate',
+                'middleware' => ['auth', 'permission:client.chat.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/client-chat/threads/:id/read',
+                'handler'    => 'Admin\ClientChatStaffController@markRead',
+                'middleware' => ['auth', 'permission:client.chat.manage'],
+            ],
             [
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/inbound-emails',
@@ -2097,6 +2203,24 @@ class Routes
                 'pattern'    => '/api/client/services/:id/logs',
                 'handler'    => 'Client\ServiceLogController@index',
                 'middleware' => ['auth', 'permission:client.services.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/client/chat/thread',
+                'handler'    => 'Client\ClientChatController@thread',
+                'middleware' => ['auth', 'permission:client.chat.use'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/client/chat/messages',
+                'handler'    => 'Client\ClientChatController@sendMessage',
+                'middleware' => ['auth', 'permission:client.chat.use'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/client/chat/read',
+                'handler'    => 'Client\ClientChatController@markRead',
+                'middleware' => ['auth', 'permission:client.chat.use'],
             ],
 
             // ── Marketing — WA Web Session ────────────────────────────────────

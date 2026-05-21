@@ -16,6 +16,8 @@ import Settings from './modules/core/pages/Settings';
 import GlobalSearchPage from './modules/core/pages/GlobalSearchPage';
 import InboxAndTickets from './modules/core/pages/InboxAndTickets';
 import Approvals from './modules/core/pages/Approvals';
+import ChatPage from './modules/chat/pages/ChatPage';
+import ChatAuditPage from './modules/chat/pages/ChatAuditPage';
 
 // ── CRM module ───────────────────────────────────────────────────────────────
 import Contacts from './modules/crm/pages/Contacts';
@@ -109,6 +111,8 @@ import ClientCompletedServices from './modules/client/pages/ClientCompletedServi
 import ClientServiceDetails from './modules/client/pages/ClientServiceDetails';
 import ClientLedger from './modules/client/pages/ClientLedger';
 import ClientProfile from './modules/client/pages/ClientProfile';
+import ClientChat from './modules/client/pages/ClientChat';
+import ClientChatInbox from './modules/chat/pages/ClientChatInbox';
 
 initAnalytics();
 
@@ -186,6 +190,9 @@ const pageTitles = {
   '/marketing/blog/approvals':  '✅ AI Draft Approvals',
   '/search':                    '🔍 Search',
   '/desk/inbox':                '📥 Inbox & Tickets',
+  '/desk/chat':                 '💬 Team Chat',
+  '/desk/chat/audit':           '🔍 Chat Audit Log',
+  '/desk/client-chat':          '💬 Client Chat',
   '/profile':                   '👤 My Profile',
 };
 
@@ -344,6 +351,21 @@ export default function App() {
               <Layout routePath="/desk/inbox"><InboxAndTickets /></Layout>
             </ProtectedRoute>
           } />
+          <Route path="/desk/chat" element={
+            <ProtectedRoute staffOnly requiredPermission="chat.use">
+              <Layout routePath="/desk/chat"><ChatPage /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/desk/chat/audit" element={
+            <ProtectedRoute staffOnly requiredPermission="chat.use">
+              <Layout routePath="/desk/chat/audit"><ChatAuditPage /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/desk/client-chat" element={
+            <ProtectedRoute staffOnly requiredPermission="client.chat.manage">
+              <Layout routePath="/desk/client-chat"><ClientChatInbox /></Layout>
+            </ProtectedRoute>
+          } />
           <Route path="/inbox" element={<Navigate to="/desk/inbox" replace />} />
           <Route path="/settings" element={<ProtectedRoute staffOnly><Layout routePath="/settings"><Settings /></Layout></ProtectedRoute>} />
           <Route path="/settings/appointment-fees" element={<ProtectedRoute staffOnly><Layout routePath="/settings/appointment-fees"><AppointmentFeeRules /></Layout></ProtectedRoute>} />
@@ -416,6 +438,20 @@ export default function App() {
           <Route path="/affiliate/bank" element={<ProtectedRoute affiliateOnly><AffiliateBank /></ProtectedRoute>} />
           <Route path="/affiliate/sub-affiliates" element={<ProtectedRoute affiliateOnly><AffiliateSubAffiliates /></ProtectedRoute>} />
           <Route path="/affiliate/rewards" element={<ProtectedRoute affiliateOnly><AffiliateRewards /></ProtectedRoute>} />
+          <Route path="/affiliate/chat" element={
+            <ProtectedRoute affiliateOnly requiredPermission="chat.use">
+              <AffiliateLayout title="Team chat">
+                <ChatPage auditPath="/affiliate/chat/audit" />
+              </AffiliateLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/affiliate/chat/audit" element={
+            <ProtectedRoute affiliateOnly requiredPermission="chat.use">
+              <AffiliateLayout title="Chat audit log">
+                <ChatAuditPage backPath="/affiliate/chat" />
+              </AffiliateLayout>
+            </ProtectedRoute>
+          } />
           <Route path="/affiliate/profile" element={
             <ProtectedRoute affiliateOnly>
               <AffiliateLayout title="My profile">
@@ -428,6 +464,20 @@ export default function App() {
           <Route path="/partner/assignments" element={<ProtectedRoute partnerOnly><PartnerAssignments /></ProtectedRoute>} />
           <Route path="/partner/payouts" element={<ProtectedRoute partnerOnly><PartnerPayouts /></ProtectedRoute>} />
           <Route path="/partner/bank" element={<ProtectedRoute partnerOnly><PartnerBank /></ProtectedRoute>} />
+          <Route path="/partner/chat" element={
+            <ProtectedRoute partnerOnly requiredPermission="chat.use">
+              <PartnerLayout title="Team chat">
+                <ChatPage auditPath="/partner/chat/audit" />
+              </PartnerLayout>
+            </ProtectedRoute>
+          } />
+          <Route path="/partner/chat/audit" element={
+            <ProtectedRoute partnerOnly requiredPermission="chat.use">
+              <PartnerLayout title="Chat audit log">
+                <ChatAuditPage backPath="/partner/chat" />
+              </PartnerLayout>
+            </ProtectedRoute>
+          } />
           <Route path="/partner/profile" element={
             <ProtectedRoute partnerOnly>
               <PartnerLayout title="My profile">
@@ -441,6 +491,11 @@ export default function App() {
           <Route path="/client/services/:id" element={<ProtectedRoute clientOnly><ClientServiceDetails /></ProtectedRoute>} />
           <Route path="/client/ledger" element={<ProtectedRoute clientOnly><ClientLedger /></ProtectedRoute>} />
           <Route path="/client/profile" element={<ProtectedRoute clientOnly><ClientProfile /></ProtectedRoute>} />
+          <Route path="/client/chat" element={
+            <ProtectedRoute clientOnly requiredPermission="client.chat.use">
+              <ClientChat />
+            </ProtectedRoute>
+          } />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

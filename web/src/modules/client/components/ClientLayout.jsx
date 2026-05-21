@@ -6,6 +6,7 @@ const nav = [
   { to: '/client', label: 'Active services', end: true },
   { to: '/client/completed', label: 'Completed services' },
   { to: '/client/ledger', label: 'Ledger' },
+  { to: '/client/chat', label: 'Chat' },
   { to: '/client/profile', label: 'Profile' },
 ];
 
