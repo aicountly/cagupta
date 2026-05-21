@@ -21,11 +21,11 @@ use PDO;
  * ledger_entries tables with a single consolidated transaction record.
  *
  * Supported txn_type values:
- *   opening_balance, invoice, payment_expense, receipt,
+ *   opening_balance, invoice, payment_expense, payment_client_cost, receipt,
  *   tds_provisional, tds_final, rebate, credit_note,
- *   receipt_reversal, payment_expense_reversal, tds_reversal (compensating rows)
- *   receipt_bank_leg, payment_expense_bank_leg (firm cash mirror; no client_id)
- *   receipt_bank_leg_reversal, payment_expense_bank_leg_reversal (cash mirror for reversals)
+ *   receipt_reversal, payment_expense_reversal, payment_client_cost_reversal, tds_reversal (compensating rows)
+ *   receipt_bank_leg, payment_expense_bank_leg, payment_client_cost_bank_leg (firm cash mirror; no client_id)
+ *   receipt_bank_leg_reversal, payment_expense_bank_leg_reversal, payment_client_cost_bank_leg_reversal
  */
 class TxnModel
 {
@@ -33,9 +33,17 @@ class TxnModel
 
     public const TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG = 'payment_expense_bank_leg';
 
+    public const TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG = 'payment_client_cost_bank_leg';
+
     public const TXN_TYPE_RECEIPT_BANK_LEG_REVERSAL = 'receipt_bank_leg_reversal';
 
     public const TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL = 'payment_expense_bank_leg_reversal';
+
+    public const TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG_REVERSAL = 'payment_client_cost_bank_leg_reversal';
+
+    public const TXN_TYPE_PAYMENT_CLIENT_COST = 'payment_client_cost';
+
+    public const TXN_TYPE_PAYMENT_CLIENT_COST_REVERSAL = 'payment_client_cost_reversal';
 
     /**
      * Entity ledger / reconciliation include reversed originals together with compensating *_reversal rows.
@@ -44,6 +52,31 @@ class TxnModel
     public static function sqlTxnVisibleOnEntityLedger(string $alias = 't'): string
     {
         return "{$alias}.status NOT IN ('cancelled', 'deleted')";
+    }
+
+    /**
+     * Rows that count toward client receivable ledger, recovery list, and KPI totals.
+     * Excludes non-recoverable client cost payments (ledger_class client_costs).
+     */
+    public static function sqlTxnCountsTowardClientReceivable(string $alias = 't'): string
+    {
+        $lc = LedgerDimensions::CLASS_CLIENT_COSTS;
+        $types = implode(
+            ',',
+            array_map(
+                static fn (string $t) => "'" . $t . "'",
+                [
+                    self::TXN_TYPE_PAYMENT_CLIENT_COST,
+                    self::TXN_TYPE_PAYMENT_CLIENT_COST_REVERSAL,
+                    self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG,
+                    self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG_REVERSAL,
+                ]
+            )
+        );
+
+        return self::sqlTxnVisibleOnEntityLedger($alias)
+            . " AND COALESCE(NULLIF(TRIM({$alias}.ledger_class), ''), 'regular') <> '{$lc}'"
+            . " AND {$alias}.txn_type NOT IN ({$types})";
     }
 
     private PDO $db;
@@ -251,6 +284,8 @@ class TxnModel
                 $where[] = "t.txn_type IN ('receipt','receipt_reversal')";
             } elseif ($txnType === 'payment_expense') {
                 $where[] = "t.txn_type IN ('payment_expense','payment_expense_reversal')";
+            } elseif ($txnType === 'payment_client_cost') {
+                $where[] = "t.txn_type IN ('payment_client_cost','payment_client_cost_reversal')";
             } else {
                 $where[]             = 't.txn_type = :txn_type';
                 $params[':txn_type'] = $txnType;
@@ -385,7 +420,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
-               AND ' . self::sqlTxnVisibleOnEntityLedger('t') . '
+               AND ' . self::sqlTxnCountsTowardClientReceivable('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
             . $limitSql
@@ -419,7 +454,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.organization_id = :org_id
-               AND ' . self::sqlTxnVisibleOnEntityLedger('t') . '
+               AND ' . self::sqlTxnCountsTowardClientReceivable('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
             . $limitSql
@@ -452,7 +487,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.client_id = :client_id
-               AND ' . self::sqlTxnVisibleOnEntityLedger('t') . '
+               AND ' . self::sqlTxnCountsTowardClientReceivable('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
         );
@@ -478,7 +513,7 @@ class TxnModel
             'SELECT t.*
              FROM txn t
              WHERE t.organization_id = :org_id
-               AND ' . self::sqlTxnVisibleOnEntityLedger('t') . '
+               AND ' . self::sqlTxnCountsTowardClientReceivable('t') . '
                AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
              ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
         );
@@ -590,7 +625,7 @@ class TxnModel
                      COALESCE(t.client_id, t.organization_id) AS entity_id,
                      SUM(t.debit - t.credit) AS balance
                  FROM txn t
-                 WHERE " . self::sqlTxnVisibleOnEntityLedger('t') . "
+                 WHERE " . self::sqlTxnCountsTowardClientReceivable('t') . "
                    AND (t.client_id IS NOT NULL OR t.organization_id IS NOT NULL)
                  GROUP BY
                      CASE WHEN t.client_id IS NOT NULL THEN 'client' ELSE 'organization' END,
@@ -624,7 +659,7 @@ class TxnModel
                 'SELECT COALESCE(SUM(t.debit - t.credit), 0)
                  FROM txn t
                  WHERE t.client_id = :entity_id
-                   AND ' . self::sqlTxnVisibleOnEntityLedger('t')
+                   AND ' . self::sqlTxnCountsTowardClientReceivable('t')
             );
         } else {
             $stmt = $this->db->prepare(
@@ -632,7 +667,7 @@ class TxnModel
                  FROM txn t
                  WHERE t.organization_id = :entity_id
                    AND t.client_id IS NULL
-                   AND ' . self::sqlTxnVisibleOnEntityLedger('t')
+                   AND ' . self::sqlTxnCountsTowardClientReceivable('t')
             );
         }
         $stmt->execute([':entity_id' => $entityId]);
@@ -657,7 +692,7 @@ class TxnModel
         $stmt = $this->db->query(
             'SELECT t.*
              FROM txn t
-             WHERE ' . self::sqlTxnVisibleOnEntityLedger('t') . '
+             WHERE ' . self::sqlTxnCountsTowardClientReceivable('t') . '
                AND (t.client_id IS NOT NULL OR t.organization_id IS NOT NULL)
              ORDER BY t.client_id NULLS LAST, t.organization_id NULLS LAST,
                LOWER(t.ledger_class), t.txn_date ASC, t.txn_type ASC, t.id ASC'
@@ -674,6 +709,9 @@ class TxnModel
             $cid = isset($row['client_id']) ? (int)$row['client_id'] : 0;
             $oid = isset($row['organization_id']) ? (int)$row['organization_id'] : 0;
             $lc  = LedgerDimensions::normalizeLedgerClass($row['ledger_class'] ?? null);
+            if ($lc === LedgerDimensions::CLASS_CLIENT_COSTS) {
+                continue;
+            }
             if ($cid > 0) {
                 $key = 'client:' . $cid . ':' . $lc;
             } elseif ($oid > 0) {
@@ -704,6 +742,7 @@ class TxnModel
             LedgerDimensions::CLASS_REGULAR,
             LedgerDimensions::CLASS_MEMORANDUM,
             LedgerDimensions::CLASS_OPTIONAL,
+            LedgerDimensions::CLASS_PARKED,
         ];
 
         /** @var array<string, array<string, mixed>> $entityRows */
@@ -721,7 +760,7 @@ class TxnModel
         }
 
         foreach ($byEntityClass as $key => $rows) {
-            if (!preg_match('/^(client|organization):(\d+):(regular|memorandum|optional)$/', $key, $m)) {
+            if (!preg_match('/^(client|organization):(\d+):(regular|memorandum|optional|parked)$/', $key, $m)) {
                 continue;
             }
             $type  = $m[1];
@@ -732,13 +771,13 @@ class TxnModel
                 continue;
             }
             $agg = LedgerRecoveryAggregator::compute($rows);
-            if ($lcRaw === LedgerDimensions::CLASS_REGULAR) {
-                $slot = 'regular';
-            } elseif ($lcRaw === LedgerDimensions::CLASS_MEMORANDUM) {
-                $slot = 'memorandum';
-            } else {
-                $slot = 'optional';
-            }
+            $slot = match ($lcRaw) {
+                LedgerDimensions::CLASS_REGULAR    => 'regular',
+                LedgerDimensions::CLASS_MEMORANDUM => 'memorandum',
+                LedgerDimensions::CLASS_OPTIONAL   => 'optional',
+                LedgerDimensions::CLASS_PARKED     => 'parked',
+                default                            => 'regular',
+            };
             $entityRows[$ek][$slot] = [
                 'fees'            => $agg['fees'],
                 'taxes'           => $agg['taxes'],
@@ -749,8 +788,7 @@ class TxnModel
 
         foreach ($entityRows as &$er) {
             $closingSum = 0.0;
-            foreach ($classes as $lc) {
-                $slot = $lc === LedgerDimensions::CLASS_REGULAR ? 'regular' : ($lc === LedgerDimensions::CLASS_MEMORANDUM ? 'memorandum' : 'optional');
+            foreach (['regular', 'memorandum', 'optional', 'parked'] as $slot) {
                 $closingSum += (float)($er[$slot]['ledgerClosing'] ?? 0);
             }
             $er['rowTotal'] = round($closingSum, 2);
@@ -828,6 +866,7 @@ class TxnModel
             'regular' => ['fees' => 0.0, 'taxes' => 0.0, 'reimbursement' => 0.0],
             'memorandum' => ['fees' => 0.0, 'taxes' => 0.0, 'reimbursement' => 0.0],
             'optional' => ['fees' => 0.0, 'taxes' => 0.0, 'reimbursement' => 0.0],
+            'parked' => ['fees' => 0.0, 'taxes' => 0.0, 'reimbursement' => 0.0],
             'grand'   => 0.0,
         ];
         foreach ($entityRows as $er) {
@@ -838,14 +877,14 @@ class TxnModel
             if ($er['rowTotal'] <= 0) {
                 continue;
             }
-            foreach (['regular', 'memorandum', 'optional'] as $slot) {
+            foreach (['regular', 'memorandum', 'optional', 'parked'] as $slot) {
                 foreach (['fees', 'taxes', 'reimbursement'] as $f) {
                     $totals[$slot][$f] += (float)($er[$slot][$f] ?? 0);
                 }
             }
             $totals['grand'] += $er['rowTotal'];
         }
-        foreach (['regular', 'memorandum', 'optional'] as $slot) {
+        foreach (['regular', 'memorandum', 'optional', 'parked'] as $slot) {
             foreach (['fees', 'taxes', 'reimbursement'] as $f) {
                 $totals[$slot][$f] = round($totals[$slot][$f], 2);
             }
@@ -934,6 +973,7 @@ class TxnModel
             'regular'       => $empty,
             'memorandum'    => $empty,
             'optional'      => $empty,
+            'parked'        => $empty,
             'rowTotal'      => 0.0,
         ];
     }
@@ -1221,6 +1261,57 @@ class TxnModel
     }
 
     /**
+     * Client cost payment: firm pays bundled-in-fee expense; no recoverable client ledger debit/credit.
+     *
+     * @param array<string, mixed> $data
+     */
+    public function createPaymentClientCost(array $data): int
+    {
+        $amount = (float)($data['amount'] ?? 0);
+        $bankId = (int)($data['firm_bank_account_id'] ?? 0);
+        $paidFrom = null;
+        if ($bankId > 0) {
+            $acc = (new FirmBankAccountModel())->find($bankId);
+            if ($acc !== null) {
+                $name = trim((string)($acc['name'] ?? ''));
+                $type = trim((string)($acc['account_type'] ?? ''));
+                $paidFrom = $name !== '' && $type !== ''
+                    ? $name . ' (' . $type . ')'
+                    : ($name !== '' ? $name : $type);
+                $paidFrom = $paidFrom !== '' ? $paidFrom : null;
+            }
+        }
+        if (empty($data['public_ref'])) {
+            $data['public_ref'] = \App\Libraries\TxnPublicRefGenerator::next(
+                $this->db,
+                'PAY',
+                isset($data['txn_date']) ? (string)$data['txn_date'] : null
+            );
+        }
+
+        $clientPayload = array_merge($data, [
+            'txn_type'             => self::TXN_TYPE_PAYMENT_CLIENT_COST,
+            'ledger_class'         => LedgerDimensions::CLASS_CLIENT_COSTS,
+            'narration'            => $data['narration'] ?? 'Client cost — ' . ($data['payment_method'] ?? 'Transfer'),
+            'debit'                => 0,
+            'credit'               => 0,
+            'amount'               => $amount,
+            'status'               => 'active',
+            'paid_from'            => $paidFrom,
+            'firm_bank_account_id' => null,
+            'counterparty_firm_bank_account_id' => null,
+        ]);
+
+        $id = $this->create($clientPayload);
+
+        if ($bankId > 0) {
+            $this->insertPaymentClientCostBankLeg($id, $bankId, $amount, $clientPayload);
+        }
+
+        return $id;
+    }
+
+    /**
      * Firm cash-book row: money in (same credit as client receipt); no client_id.
      *
      * @param array<string, mixed> $src  Client receipt payload used for metadata copy
@@ -1272,6 +1363,34 @@ class TxnModel
             'status'                 => 'active',
             'created_by'             => $src['created_by'] ?? null,
             'ledger_class'           => $src['ledger_class'] ?? LedgerDimensions::CLASS_REGULAR,
+            'ledger_movement_kind'   => $src['ledger_movement_kind'] ?? null,
+        ]);
+    }
+
+    /**
+     * Firm cash-book row: money out for client cost payment; no client_id.
+     *
+     * @param array<string, mixed> $src Client payment_client_cost payload
+     */
+    private function insertPaymentClientCostBankLeg(int $paymentClientLegId, int $bankId, float $amount, array $src): void
+    {
+        $this->create([
+            'client_id'              => null,
+            'organization_id'      => null,
+            'txn_type'               => self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG,
+            'txn_date'               => $src['txn_date']            ?? date('Y-m-d'),
+            'narration'              => 'Cash out — ' . (string)($src['narration'] ?? 'Client cost'),
+            'debit'                  => $amount,
+            'credit'                 => 0,
+            'amount'                 => $amount,
+            'billing_profile_code'   => $src['billing_profile_code'] ?? null,
+            'payment_method'         => $src['payment_method'] ?? null,
+            'reference_number'       => $src['reference_number'] ?? null,
+            'linked_txn_id'          => $paymentClientLegId,
+            'firm_bank_account_id'   => $bankId,
+            'status'                 => 'active',
+            'created_by'             => $src['created_by'] ?? null,
+            'ledger_class'           => LedgerDimensions::CLASS_CLIENT_COSTS,
             'ledger_movement_kind'   => $src['ledger_movement_kind'] ?? null,
         ]);
     }
@@ -1716,6 +1835,7 @@ class TxnModel
             'linked_txn_id', 'notes', 'status', 'line_items', 'gst_breakdown',
             'invoice_cost_analysis_ack_user_id', 'invoice_cost_analysis_ack_at', 'invoice_cost_analysis',
             'ledger_class', 'ledger_movement_kind', 'public_ref',
+            'parked_transfer_target_txn_id', 'parked_transfer_reversal_txn_id',
         ];
         foreach ($allowed as $field) {
             if (!array_key_exists($field, $data)) {
@@ -1821,7 +1941,7 @@ class TxnModel
             $stmt = $this->db->prepare(
                 "UPDATE txn SET status = 'cancelled', updated_at = NOW(), updated_by = :ub
                  WHERE linked_txn_id = :lid
-                   AND txn_type IN ('receipt_bank_leg', 'payment_expense_bank_leg')
+                   AND txn_type IN ('receipt_bank_leg', 'payment_expense_bank_leg', 'payment_client_cost_bank_leg')
                    AND status = 'active'"
             );
             $stmt->execute([':lid' => $clientLegId, ':ub' => $actorId]);
@@ -1831,7 +1951,7 @@ class TxnModel
         $stmt = $this->db->prepare(
             "UPDATE txn SET status = 'cancelled', updated_at = NOW()
              WHERE linked_txn_id = :lid
-               AND txn_type IN ('receipt_bank_leg', 'payment_expense_bank_leg')
+               AND txn_type IN ('receipt_bank_leg', 'payment_expense_bank_leg', 'payment_client_cost_bank_leg')
                AND status = 'active'"
         );
         $stmt->execute([':lid' => $clientLegId]);
@@ -1880,6 +2000,47 @@ class TxnModel
             'narration'              => $data['narration'] ?? ('Firm expense — ' . $cat),
             'debit'                  => $amount,
             'credit'                 => 0,
+            'amount'                 => $amount,
+            'firm_expense_category'  => $cat,
+            'firm_bank_account_id'   => $bankId,
+            'status'                 => 'active',
+        ]));
+    }
+
+    /**
+     * Firm-only inflow (fund infusion, etc.) — credits bank account, no client ledger impact.
+     *
+     * @param array<string, mixed> $data
+     */
+    public function createFirmInflow(array $data): int
+    {
+        $amount = (float)($data['amount'] ?? 0);
+        if ($amount <= 0) {
+            throw new \InvalidArgumentException('amount must be greater than zero.');
+        }
+        $bankId = (int)($data['firm_bank_account_id'] ?? 0);
+        if ($bankId <= 0) {
+            throw new \InvalidArgumentException('firm_bank_account_id is required.');
+        }
+        $cat = trim((string)($data['firm_expense_category'] ?? ''));
+        if ($cat === '') {
+            throw new \InvalidArgumentException('firm_expense_category is required.');
+        }
+        $banks = new FirmBankAccountModel();
+        $acc   = $banks->find($bankId);
+        if ($acc === null || empty($acc['is_active'])) {
+            throw new \InvalidArgumentException('Invalid or inactive bank account.');
+        }
+        $billingCode = (string)$acc['billing_firm_code'];
+
+        return $this->create(array_merge($data, [
+            'txn_type'               => 'firm_inflow',
+            'client_id'              => null,
+            'organization_id'        => null,
+            'billing_profile_code'   => $billingCode,
+            'narration'              => $data['narration'] ?? ('Firm inflow — ' . $cat),
+            'debit'                  => 0,
+            'credit'                 => $amount,
             'amount'                 => $amount,
             'firm_expense_category'  => $cat,
             'firm_bank_account_id'   => $bankId,
@@ -2069,8 +2230,10 @@ class TxnModel
             $where[] = "t.txn_type = 'firm_expense'";
         } elseif ($kind === 'contra') {
             $where[] = "t.txn_type = 'firm_bank_transfer'";
+        } elseif ($kind === 'inflow') {
+            $where[] = "t.txn_type = 'firm_inflow'";
         } else {
-            $where[] = "t.txn_type IN ('firm_expense', 'firm_bank_transfer')";
+            $where[] = "t.txn_type IN ('firm_expense', 'firm_bank_transfer', 'firm_inflow')";
         }
         if ($dateFrom !== '') {
             $where[]       = 't.txn_date >= :df';
@@ -2296,6 +2459,50 @@ class TxnModel
     }
 
     /**
+     * Reverse cash-book mirror when a client cost payment is reversed.
+     */
+    private function applyPaymentClientCostCashReversalMirrors(int $originalPaymentId, int $reversalTxnId, float $amount, array $originalRow, ?int $actorId): void
+    {
+        $stmt = $this->db->prepare(
+            "SELECT * FROM txn
+             WHERE linked_txn_id = :lid AND txn_type = :tt AND status = 'active'
+             LIMIT 1"
+        );
+        $stmt->execute([':lid' => $originalPaymentId, ':tt' => self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG]);
+        $bankLeg = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($bankLeg === false) {
+            return;
+        }
+        $bankLegId = (int)($bankLeg['id'] ?? 0);
+        if ($bankLegId <= 0) {
+            return;
+        }
+        $this->update($bankLegId, ['status' => 'reversed'], $actorId);
+        $bankAcc = (int)($bankLeg['firm_bank_account_id'] ?? 0);
+        if ($bankAcc <= 0) {
+            return;
+        }
+        $today = (new \DateTimeImmutable('now'))->format('Y-m-d');
+        $this->create([
+            'client_id'              => null,
+            'organization_id'        => null,
+            'txn_type'               => self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG_REVERSAL,
+            'txn_date'               => $today,
+            'narration'              => 'Cash in (reversal) — Client cost #' . $originalPaymentId,
+            'debit'                  => 0,
+            'credit'                 => $amount,
+            'amount'                 => $amount,
+            'billing_profile_code'   => $originalRow['billing_profile_code'] ?? null,
+            'linked_txn_id'          => $reversalTxnId,
+            'firm_bank_account_id'   => $bankAcc,
+            'status'                 => 'active',
+            'created_by'             => $actorId,
+            'ledger_class'           => LedgerDimensions::CLASS_CLIENT_COSTS,
+            'ledger_movement_kind'   => $originalRow['ledger_movement_kind'] ?? null,
+        ]);
+    }
+
+    /**
      * Delete firm cash mirror rows linked to a client-ledger receipt or POB before deleting the client row.
      */
     public function deleteCashMirrorRowsForClientLeg(int $clientLegId): void
@@ -2303,8 +2510,10 @@ class TxnModel
         $types = [
             self::TXN_TYPE_RECEIPT_BANK_LEG,
             self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
+            self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG,
             self::TXN_TYPE_RECEIPT_BANK_LEG_REVERSAL,
             self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL,
+            self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG_REVERSAL,
         ];
         $in   = implode(',', array_fill(0, count($types), '?'));
         $sql  = "DELETE FROM txn WHERE linked_txn_id = ? AND txn_type IN ({$in})";
@@ -2376,10 +2585,41 @@ class TxnModel
         $this->insertPaymentExpenseBankLeg($paymentId, $bankId, $amount, $paymentRow);
     }
 
-    /** @return int Firm bank account id on active receipt_bank_leg, or 0 */
-    public function findReceiptBankLegAccountId(int $receiptId): int
+    /**
+     * @param array<string, mixed> $paymentRow Current payment_client_cost row
+     */
+    public function syncPaymentClientCostBankLeg(int $paymentId, array $paymentRow, float $amount, int $bankId): void
     {
-        if ($receiptId <= 0) {
+        if ($paymentId <= 0 || $bankId <= 0) {
+            return;
+        }
+        $stmt = $this->db->prepare(
+            "SELECT id FROM txn
+             WHERE linked_txn_id = :lid AND txn_type = :tt AND status = 'active'
+             LIMIT 1"
+        );
+        $stmt->execute([':lid' => $paymentId, ':tt' => self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG]);
+        $existingId = $stmt->fetchColumn();
+        if ($existingId !== false) {
+            $this->update((int) $existingId, [
+                'debit'                => $amount,
+                'credit'               => 0,
+                'amount'               => $amount,
+                'firm_bank_account_id' => $bankId,
+                'txn_date'             => $paymentRow['txn_date'] ?? date('Y-m-d'),
+                'payment_method'       => $paymentRow['payment_method'] ?? null,
+                'reference_number'     => $paymentRow['reference_number'] ?? null,
+            ], null);
+
+            return;
+        }
+        $this->insertPaymentClientCostBankLeg($paymentId, $bankId, $amount, $paymentRow);
+    }
+
+    /** @return int Firm bank account id on active cash mirror leg linked to a client txn, or 0 */
+    public function findCashLegFirmBankAccountId(int $linkedTxnId, string $bankLegType): int
+    {
+        if ($linkedTxnId <= 0 || $bankLegType === '') {
             return 0;
         }
         $stmt = $this->db->prepare(
@@ -2387,27 +2627,47 @@ class TxnModel
              WHERE linked_txn_id = :lid AND txn_type = :tt AND status = 'active'
              LIMIT 1"
         );
-        $stmt->execute([':lid' => $receiptId, ':tt' => self::TXN_TYPE_RECEIPT_BANK_LEG]);
+        $stmt->execute([':lid' => $linkedTxnId, ':tt' => $bankLegType]);
         $v = $stmt->fetchColumn();
 
         return $v !== false ? (int) $v : 0;
     }
 
+    /** @return int Firm bank account id from the cash mirror leg for receipt/payment rows, or 0 */
+    public function resolveFirmBankAccountIdForClientTxn(int $txnId, string $txnType): int
+    {
+        $legType = match ($txnType) {
+            'receipt'                         => self::TXN_TYPE_RECEIPT_BANK_LEG,
+            'receipt_reversal'                => self::TXN_TYPE_RECEIPT_BANK_LEG_REVERSAL,
+            'payment_expense'                 => self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
+            'payment_expense_reversal'        => self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL,
+            'payment_client_cost'             => self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG,
+            'payment_client_cost_reversal'    => self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG_REVERSAL,
+            default                           => null,
+        };
+        if ($legType === null) {
+            return 0;
+        }
+
+        return $this->findCashLegFirmBankAccountId($txnId, $legType);
+    }
+
+    /** @return int Firm bank account id on active receipt_bank_leg, or 0 */
+    public function findReceiptBankLegAccountId(int $receiptId): int
+    {
+        return $this->findCashLegFirmBankAccountId($receiptId, self::TXN_TYPE_RECEIPT_BANK_LEG);
+    }
+
     /** @return int Firm bank account id on active payment_expense_bank_leg, or 0 */
     public function findPaymentExpenseBankLegAccountId(int $paymentId): int
     {
-        if ($paymentId <= 0) {
-            return 0;
-        }
-        $stmt = $this->db->prepare(
-            "SELECT firm_bank_account_id FROM txn
-             WHERE linked_txn_id = :lid AND txn_type = :tt AND status = 'active'
-             LIMIT 1"
-        );
-        $stmt->execute([':lid' => $paymentId, ':tt' => self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG]);
-        $v = $stmt->fetchColumn();
+        return $this->findCashLegFirmBankAccountId($paymentId, self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG);
+    }
 
-        return $v !== false ? (int) $v : 0;
+    /** @return int Firm bank account id on active payment_client_cost_bank_leg, or 0 */
+    public function findPaymentClientCostBankLegAccountId(int $paymentId): int
+    {
+        return $this->findCashLegFirmBankAccountId($paymentId, self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG);
     }
 
     public function findLedgerReversalIdForOriginal(int $originalTxnId): ?int
@@ -2418,7 +2678,7 @@ class TxnModel
         $stmt = $this->db->prepare(
             "SELECT id FROM txn
              WHERE linked_txn_id = :lid
-               AND txn_type IN ('receipt_reversal', 'payment_expense_reversal', 'tds_reversal')
+               AND txn_type IN ('receipt_reversal', 'payment_expense_reversal', 'payment_client_cost_reversal', 'tds_reversal')
                AND " . self::sqlTxnVisibleOnEntityLedger('txn') . '
              ORDER BY id ASC
              LIMIT 1'
@@ -2440,7 +2700,7 @@ class TxnModel
         $stmt = $this->db->prepare(
             "SELECT id FROM txn
              WHERE linked_txn_id = :lid
-               AND txn_type IN ('receipt_reversal', 'payment_expense_reversal', 'tds_reversal')
+               AND txn_type IN ('receipt_reversal', 'payment_expense_reversal', 'payment_client_cost_reversal', 'tds_reversal')
              ORDER BY id DESC
              LIMIT 1"
         );
@@ -2460,7 +2720,7 @@ class TxnModel
     private function restoreOrphanReversedOriginal(int $originalTxnId, array $orig, ?int $actorId): array
     {
         $origType = (string) ($orig['txn_type'] ?? '');
-        $allowed  = ['receipt', 'payment_expense', 'tds_provisional', 'tds_final'];
+        $allowed  = ['receipt', 'payment_expense', 'payment_client_cost', 'tds_provisional', 'tds_final'];
         if (!in_array($origType, $allowed, true)) {
             throw new \InvalidArgumentException('This transaction type cannot be restored through cancel reversal.');
         }
@@ -2473,6 +2733,8 @@ class TxnModel
             }
             if ($origType === 'payment_expense') {
                 $this->restorePrimaryBankLegMarkedReversed($originalTxnId, self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG, $actorId);
+            } elseif ($origType === 'payment_client_cost') {
+                $this->restorePrimaryBankLegMarkedReversed($originalTxnId, self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG, $actorId);
             } elseif ($origType === 'receipt') {
                 $this->restorePrimaryBankLegMarkedReversed($originalTxnId, self::TXN_TYPE_RECEIPT_BANK_LEG, $actorId);
             }
@@ -2521,6 +2783,7 @@ class TxnModel
         $origType = (string)($orig['txn_type'] ?? '');
         $pairOk   = match ($revType) {
             'payment_expense_reversal' => $origType === 'payment_expense',
+            'payment_client_cost_reversal' => $origType === 'payment_client_cost',
             'tds_reversal' => in_array($origType, ['tds_provisional', 'tds_final'], true),
             default => false,
         };
@@ -2533,6 +2796,8 @@ class TxnModel
             $this->deleteCashMirrorRowsForClientLeg($reversalId);
             if ($revType === 'payment_expense_reversal') {
                 $this->restorePrimaryBankLegMarkedReversed($originalTxnId, self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG, $actorId);
+            } elseif ($revType === 'payment_client_cost_reversal') {
+                $this->restorePrimaryBankLegMarkedReversed($originalTxnId, self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG, $actorId);
             }
             $this->update($reversalId, ['status' => 'cancelled'], $actorId);
             $this->update($originalTxnId, ['status' => 'active'], $actorId);
@@ -2569,6 +2834,216 @@ class TxnModel
     }
 
     /**
+     * Assign a parked receipt/payment to a final client ledger: reverse on action date, recreate on original date.
+     *
+     * @param array<string, mixed> $target target_client_id|target_organization_id, target_ledger_class,
+     *                                     target_ledger_movement_kind, notes?
+     * @return array{original_id: int, reversal_id: int, target_id: int}
+     */
+    public function assignParkedEntry(int $parkedTxnId, array $target, ?int $actorId): array
+    {
+        $row = $this->find($parkedTxnId);
+        if ($row === null) {
+            throw new \InvalidArgumentException('Transaction not found.');
+        }
+        if (!LedgerDimensions::isParkedLedgerClass($row['ledger_class'] ?? null)) {
+            throw new \InvalidArgumentException('Only parked ledger entries can be assigned via this flow.');
+        }
+        $type = (string)($row['txn_type'] ?? '');
+        if (!in_array($type, ['receipt', 'payment_expense'], true)) {
+            throw new \InvalidArgumentException('Only receipts and payment expenses can be assigned from parked.');
+        }
+        if ((string)($row['status'] ?? '') !== 'active') {
+            throw new \InvalidArgumentException('Only active parked entries can be assigned.');
+        }
+        if (!empty($row['parked_transfer_target_txn_id']) || $this->findLedgerReversalIdForOriginal($parkedTxnId) !== null) {
+            throw new \InvalidArgumentException('This parked entry has already been assigned.');
+        }
+
+        $targetClientId = (int)($target['target_client_id'] ?? 0);
+        $targetOrgId    = (int)($target['target_organization_id'] ?? 0);
+        if ($targetClientId <= 0 && $targetOrgId <= 0) {
+            throw new \InvalidArgumentException('target_client_id or target_organization_id is required.');
+        }
+        if ($targetClientId > 0 && $targetOrgId > 0) {
+            throw new \InvalidArgumentException('Provide only one of target_client_id or target_organization_id.');
+        }
+        $srcClientId = (int)($row['client_id'] ?? 0);
+        $srcOrgId    = (int)($row['organization_id'] ?? 0);
+        if ($targetClientId === $srcClientId && $targetOrgId === $srcOrgId) {
+            throw new \InvalidArgumentException('Target entity must differ from the parked source entity.');
+        }
+
+        $targetLc = LedgerDimensions::assertAssignableTargetLedgerClass($target['target_ledger_class'] ?? '');
+        $targetMk = LedgerDimensions::assertLedgerMovementKindRequired($target['target_ledger_movement_kind'] ?? '');
+        $userNotes = trim((string)($target['notes'] ?? ''));
+
+        $amount = round((float)($row['amount'] ?? 0), 2);
+        if ($amount <= 0.00001) {
+            throw new \InvalidArgumentException('Invalid transaction amount.');
+        }
+
+        $reversalType = $type === 'receipt' ? 'receipt_reversal' : 'payment_expense_reversal';
+        $debit  = $type === 'receipt' ? $amount : 0.0;
+        $credit = $type === 'receipt' ? 0.0 : $amount;
+
+        $origNarr = trim((string)($row['narration'] ?? ''));
+        if ($origNarr === '') {
+            $origNarr = $type;
+        }
+        $today = (new \DateTimeImmutable('now'))->format('Y-m-d');
+        $srcRef = trim((string)($row['public_ref'] ?? ''));
+        $srcLabel = $srcRef !== '' ? $srcRef : ('#' . $parkedTxnId);
+        $assignNote = 'Assigned from parked ' . $srcLabel;
+        $targetNotes = $userNotes !== '' ? ($assignNote . ' — ' . $userNotes) : $assignNote;
+
+        $this->db->beginTransaction();
+        try {
+            $this->update($parkedTxnId, ['status' => 'reversed'], $actorId);
+
+            $reversalRow = [
+                'client_id'            => $row['client_id'] ?? null,
+                'organization_id'      => $row['organization_id'] ?? null,
+                'txn_type'             => $reversalType,
+                'txn_date'             => $today,
+                'narration'            => 'Parked assign reversal — ' . $origNarr,
+                'debit'                => $debit,
+                'credit'               => $credit,
+                'amount'               => $amount,
+                'billing_profile_code' => $row['billing_profile_code'] ?? null,
+                'linked_txn_id'        => $parkedTxnId,
+                'notes'                => $targetNotes,
+                'status'               => 'active',
+                'created_by'           => $actorId,
+                'ledger_class'         => LedgerDimensions::CLASS_PARKED,
+                'ledger_movement_kind' => $row['ledger_movement_kind'] ?? null,
+                'payment_method'       => $row['payment_method'] ?? null,
+                'reference_number'     => $row['reference_number'] ?? null,
+                'expense_purpose'      => $row['expense_purpose'] ?? null,
+                'paid_from'            => $row['paid_from'] ?? null,
+            ];
+            $reversalId = $this->create($reversalRow);
+
+            if ($type === 'receipt') {
+                $this->applyReceiptCashReversalMirrors($parkedTxnId, $reversalId, $amount, $row, $actorId);
+            } else {
+                $this->applyPaymentExpenseCashReversalMirrors($parkedTxnId, $reversalId, $amount, $row, $actorId);
+            }
+
+            $targetPayload = [
+                'client_id'              => $targetClientId > 0 ? $targetClientId : null,
+                'organization_id'        => $targetOrgId > 0 ? $targetOrgId : null,
+                'txn_date'               => $row['txn_date'] ?? $today,
+                'narration'              => $row['narration'] ?? ($type === 'receipt' ? 'Receipt' : 'Payment'),
+                'notes'                  => $targetNotes,
+                'billing_profile_code'   => $row['billing_profile_code'] ?? null,
+                'ledger_class'           => $targetLc,
+                'ledger_movement_kind'   => $targetMk,
+                'payment_method'         => $row['payment_method'] ?? null,
+                'reference_number'       => $row['reference_number'] ?? null,
+                'expense_purpose'        => $row['expense_purpose'] ?? null,
+                'amount'                 => $amount,
+                'created_by'             => $actorId,
+                'linked_txn_id'          => $parkedTxnId,
+            ];
+
+            if ($type === 'receipt') {
+                $allocRows = [[
+                    'target_type'   => 'unallocated_advance',
+                    'target_txn_id' => null,
+                    'amount'        => $amount,
+                ]];
+                TxnReceiptAllocationService::assignPublicRef($targetPayload);
+                $targetPayload['txn_type']             = 'receipt';
+                $targetPayload['debit']                = 0;
+                $targetPayload['credit']               = $amount;
+                $targetPayload['status']               = 'active';
+                $targetPayload['firm_bank_account_id'] = null;
+                $targetId = $this->create($targetPayload);
+                TxnReceiptAllocationService::persistForNewReceipt($targetId, $allocRows);
+            } else {
+                $targetPayload['txn_type'] = 'payment_expense';
+                $targetPayload['debit']    = $amount;
+                $targetPayload['credit']   = 0;
+                $targetPayload['status']   = 'active';
+                $targetPayload['paid_from'] = null;
+                if (empty($targetPayload['public_ref'])) {
+                    $targetPayload['public_ref'] = \App\Libraries\TxnPublicRefGenerator::next(
+                        $this->db,
+                        'PAY',
+                        (string)($targetPayload['txn_date'] ?? $today)
+                    );
+                }
+                $targetId = $this->create($targetPayload);
+            }
+
+            $this->update($parkedTxnId, [
+                'parked_transfer_reversal_txn_id' => $reversalId,
+                'parked_transfer_target_txn_id'   => $targetId,
+            ], $actorId);
+
+            $this->db->commit();
+
+            return [
+                'original_id' => $parkedTxnId,
+                'reversal_id' => $reversalId,
+                'target_id'   => $targetId,
+            ];
+        } catch (\Throwable $e) {
+            if ($this->db->inTransaction()) {
+                $this->db->rollBack();
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * Attach parked assign traceability summaries for API responses.
+     *
+     * @param array<string, mixed> $row
+     */
+    public function attachParkedTransferMeta(array &$row): void
+    {
+        $summarize = function (?int $tid): ?array {
+            if ($tid === null || $tid <= 0) {
+                return null;
+            }
+            $t = $this->find($tid);
+            if ($t === null) {
+                return null;
+            }
+
+            return [
+                'id'                   => (int)$t['id'],
+                'txn_type'             => (string)($t['txn_type'] ?? ''),
+                'txn_date'             => (string)($t['txn_date'] ?? ''),
+                'public_ref'           => $t['public_ref'] ?? null,
+                'client_id'            => $t['client_id'] ?? null,
+                'organization_id'      => $t['organization_id'] ?? null,
+                'ledger_class'         => $t['ledger_class'] ?? null,
+                'ledger_movement_kind' => $t['ledger_movement_kind'] ?? null,
+                'amount'               => round((float)($t['amount'] ?? 0), 2),
+            ];
+        };
+
+        $targetId = isset($row['parked_transfer_target_txn_id']) ? (int)$row['parked_transfer_target_txn_id'] : 0;
+        $reversalId = isset($row['parked_transfer_reversal_txn_id']) ? (int)$row['parked_transfer_reversal_txn_id'] : 0;
+        if ($targetId > 0) {
+            $row['parked_transfer_target'] = $summarize($targetId);
+        }
+        if ($reversalId > 0) {
+            $row['parked_transfer_reversal'] = $summarize($reversalId);
+        }
+        $linkedId = isset($row['linked_txn_id']) ? (int)$row['linked_txn_id'] : 0;
+        if ($linkedId > 0 && empty($row['parked_transfer_target'])) {
+            $src = $this->find($linkedId);
+            if ($src !== null && LedgerDimensions::isParkedLedgerClass($src['ledger_class'] ?? null)) {
+                $row['parked_transfer_source'] = $summarize($linkedId);
+            }
+        }
+    }
+
+    /**
      * Mark the original txn as reversed, unwind settlement where needed, insert compensating row.
      *
      * @return array{new_id: int, affected_invoice_ids: list<int>}
@@ -2580,7 +3055,7 @@ class TxnModel
             throw new \InvalidArgumentException('Transaction not found.');
         }
         $type = (string)($row['txn_type'] ?? '');
-        if (!in_array($type, ['receipt', 'payment_expense', 'tds_provisional', 'tds_final'], true)) {
+        if (!in_array($type, ['receipt', 'payment_expense', 'payment_client_cost', 'tds_provisional', 'tds_final'], true)) {
             throw new \InvalidArgumentException('This transaction type cannot be reversed via this flow.');
         }
         $st = (string)($row['status'] ?? '');
@@ -2589,6 +3064,11 @@ class TxnModel
         }
         if ($this->findLedgerReversalIdForOriginal($originalId) !== null) {
             throw new \InvalidArgumentException('This transaction has already been reversed.');
+        }
+        if (LedgerDimensions::isParkedLedgerClass($row['ledger_class'] ?? null)) {
+            throw new \InvalidArgumentException(
+                'Parked ledger entries must be assigned to a client using Assign to client, not manual reversal.'
+            );
         }
 
         $amount = round((float)($row['amount'] ?? 0), 2);
@@ -2599,6 +3079,7 @@ class TxnModel
         $reversalType = match ($type) {
             'receipt' => 'receipt_reversal',
             'payment_expense' => 'payment_expense_reversal',
+            'payment_client_cost' => 'payment_client_cost_reversal',
             'tds_provisional', 'tds_final' => 'tds_reversal',
             default => throw new \InvalidArgumentException('Unsupported transaction type.'),
         };
@@ -2609,6 +3090,9 @@ class TxnModel
             $debit = $amount;
         } elseif ($reversalType === 'payment_expense_reversal') {
             $credit = $amount;
+        } elseif ($reversalType === 'payment_client_cost_reversal') {
+            $debit = 0.0;
+            $credit = 0.0;
         } else {
             $debit = $amount;
         }
@@ -2626,6 +3110,8 @@ class TxnModel
                 }
             } elseif ($type === 'payment_expense') {
                 TxnReceiptAllocationService::unlinkPaymentExpenseFromReceipts($originalId);
+                $this->update($originalId, ['status' => 'reversed'], $actorId);
+            } elseif ($type === 'payment_client_cost') {
                 $this->update($originalId, ['status' => 'reversed'], $actorId);
             } else {
                 $this->update($originalId, ['status' => 'reversed'], $actorId);
@@ -2674,6 +3160,8 @@ class TxnModel
                 $this->applyReceiptCashReversalMirrors($originalId, $newId, $amount, $row, $actorId);
             } elseif ($type === 'payment_expense') {
                 $this->applyPaymentExpenseCashReversalMirrors($originalId, $newId, $amount, $row, $actorId);
+            } elseif ($type === 'payment_client_cost') {
+                $this->applyPaymentClientCostCashReversalMirrors($originalId, $newId, $amount, $row, $actorId);
             }
             $this->db->commit();
 

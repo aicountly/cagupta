@@ -56,7 +56,8 @@ function ActionBtn({ icon, title, onClick }) {
  * @param {boolean} props.canEditService
  * @param {boolean} props.canDeleteService
  * @param {string} [props.emptyMessage]
- * @param {object[]} [props.allServicesForSelection] Full list to resolve `expandServiceId` (e.g. when filtered rows omit the id)
+ * @param {(updated: object) => boolean} [props.shouldRemoveFromList] When true after update, row is removed from current page
+ * @param {function} [props.onRowRemoved] Called when a row is removed from the list (delete or filter mismatch)
  * @param {string|number|null} [props.expandServiceId] Select this id in the side panel when it appears
  * @param {function} [props.onExpandConsumed]
  */
@@ -66,7 +67,8 @@ export default function ServicesEngagementTableBlock({
   canEditService,
   canDeleteService,
   emptyMessage = 'No service engagements match your filters.',
-  allServicesForSelection,
+  shouldRemoveFromList,
+  onRowRemoved,
   expandServiceId,
   onExpandConsumed,
 }) {
@@ -146,16 +148,35 @@ export default function ServicesEngagementTableBlock({
     return Array.isArray(selectedService?.assigneeUserIds) ? selectedService.assigneeUserIds : [];
   }, [hydratedAssigneeIds, selectedService]);
 
+  function applyRowUpdate(updated) {
+    setAllServices((prev) => {
+      if (shouldRemoveFromList?.(updated)) {
+        onRowRemoved?.();
+        return prev.filter((x) => x.id !== updated.id);
+      }
+      return prev.map((x) => (x.id === updated.id ? updated : x));
+    });
+  }
+
   useEffect(() => {
     if (expandServiceId == null) return;
-    const list = (allServicesForSelection && allServicesForSelection.length > 0)
-      ? allServicesForSelection
-      : rows;
-    if (!list.length) return;
-    const found = list.find((s) => String(s.id) === String(expandServiceId));
-    if (found) setSelectedService(found);
-    onExpandConsumed?.();
-  }, [expandServiceId, allServicesForSelection, rows, onExpandConsumed]);
+    const found = rows.find((s) => String(s.id) === String(expandServiceId));
+    if (found) {
+      setSelectedService(found);
+      onExpandConsumed?.();
+      return undefined;
+    }
+    let cancelled = false;
+    getEngagement(expandServiceId)
+      .then((full) => {
+        if (!cancelled) {
+          setSelectedService(full);
+          onExpandConsumed?.();
+        }
+      })
+      .catch(() => onExpandConsumed?.());
+    return () => { cancelled = true; };
+  }, [expandServiceId, rows, onExpandConsumed]);
 
   useEffect(() => {
     if (!selectedService?.id) {
@@ -167,11 +188,18 @@ export default function ServicesEngagementTableBlock({
 
   function handleAddChildService() {
     if (!selectedService) return;
-    navigate('/engagements/new', {
+    const isChild = selectedService.masterServiceId && !selectedService.isMasterService;
+    if (isChild) return;
+    navigate('/services/new', {
       state: {
         parentServiceId: selectedService.id,
         parentServiceName: selectedService.serviceType || selectedService.type || `Service #${selectedService.id}`,
         parentIsMaster: selectedService.isMasterService,
+        parentClientType: selectedService.clientType || 'contact',
+        parentClientId: selectedService.clientId,
+        parentClientName: selectedService.clientName,
+        parentFinancialYear: selectedService.financialYear,
+        returnUrl: `/services/${selectedService.id}`,
       },
     });
   }
@@ -180,7 +208,7 @@ export default function ServicesEngagementTableBlock({
     if (!selectedService) return;
     createTask(selectedService.id, taskData)
       .then((updated) => {
-        setAllServices((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+        applyRowUpdate(updated);
         setSelectedService(updated);
       })
       .catch(() => {});
@@ -194,7 +222,7 @@ export default function ServicesEngagementTableBlock({
     }
     try {
       const updated = await updateEngagement(s.id, { status: nextStatus });
-      setAllServices((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+      applyRowUpdate(updated);
       setSelectedService((cur) => (cur && cur.id === updated.id ? updated : cur));
     } catch {
       /* optional toast */
@@ -242,6 +270,7 @@ export default function ServicesEngagementTableBlock({
     try {
       await deleteEngagement(serviceToDelete.id, { superadminOtp: deleteOtp.trim() });
       setAllServices((prev) => prev.filter((x) => x.id !== serviceToDelete.id));
+      onRowRemoved?.();
       setSelectedService((cur) => (cur && cur.id === serviceToDelete.id ? null : cur));
       closeServiceDeleteModal();
     } catch (e) {
@@ -654,7 +683,9 @@ export default function ServicesEngagementTableBlock({
               <span style={{ fontWeight: 700, fontSize: 13, color: '#0B1F3B' }}>Tasks</span>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button type="button" style={btnSecondary} onClick={() => setShowAddTask(true)}><Plus size={12} /> Add Task</button>
-                <button type="button" style={btnSecondary} onClick={handleAddChildService}><Plus size={12} /> Add Child Service</button>
+                {!(selectedService.masterServiceId && !selectedService.isMasterService) && (
+                  <button type="button" style={btnSecondary} onClick={handleAddChildService}><Plus size={12} /> Add Child Service</button>
+                )}
               </div>
             </div>
 

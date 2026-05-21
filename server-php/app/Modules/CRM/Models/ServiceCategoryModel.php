@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Config\Database;
+use App\Models\EngagementTypeAdditionalFeeTemplateModel;
 use PDO;
 
 /**
@@ -71,7 +72,48 @@ class ServiceCategoryModel
         }
         unset($cat);
 
+        $categories = self::attachAdditionalFeeTemplates($categories);
+
         return self::sanitizeCatalogTree($categories);
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $categories
+     * @return array<int, array<string, mixed>>
+     */
+    private static function attachAdditionalFeeTemplates(array $categories): array
+    {
+        $etIds = [];
+        foreach ($categories as $cat) {
+            foreach ($cat['engagementTypes'] ?? [] as $et) {
+                $etIds[] = (int)$et['id'];
+            }
+            foreach ($cat['subcategories'] ?? [] as $sub) {
+                foreach ($sub['engagementTypes'] ?? [] as $et) {
+                    $etIds[] = (int)$et['id'];
+                }
+            }
+        }
+
+        $templateModel = new EngagementTypeAdditionalFeeTemplateModel();
+        $byEt          = $templateModel->forEngagementTypeIds($etIds);
+
+        foreach ($categories as &$cat) {
+            foreach ($cat['engagementTypes'] as &$et) {
+                $et['additional_fee_templates'] = $byEt[(int)$et['id']] ?? [];
+            }
+            unset($et);
+            foreach ($cat['subcategories'] as &$sub) {
+                foreach ($sub['engagementTypes'] as &$et) {
+                    $et['additional_fee_templates'] = $byEt[(int)$et['id']] ?? [];
+                }
+                unset($et);
+            }
+            unset($sub);
+        }
+        unset($cat);
+
+        return $categories;
     }
 
     /**

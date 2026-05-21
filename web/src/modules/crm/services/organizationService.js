@@ -98,6 +98,7 @@ function normalizeOrg(o) {
     referralStartDate: o.referral_start_date || '',
     commissionMode: o.commission_mode || 'referral_only',
     clientFacingRestricted: Boolean(o.client_facing_restricted),
+    defaultBillingProfileCode: o.default_billing_profile_code || '',
     pendingNameChange: o.pending_name_change || null,
   };
 }
@@ -217,6 +218,9 @@ export async function createOrganization(payload) {
     referral_start_date: payload.referralStartDate || null,
     commission_mode: payload.commissionMode || 'referral_only',
     client_facing_restricted: Boolean(payload.clientFacingRestricted),
+    default_billing_profile_code: payload.defaultBillingProfileCode
+      ? String(payload.defaultBillingProfileCode).trim().toUpperCase()
+      : null,
   };
 
   const res = await fetch(`${API_BASE}/admin/organizations`, {
@@ -261,6 +265,9 @@ export async function updateOrganization(id, payload) {
     referral_start_date: payload.referralStartDate || null,
     commission_mode: payload.commissionMode || 'referral_only',
     client_facing_restricted: Boolean(payload.clientFacingRestricted),
+    default_billing_profile_code: payload.defaultBillingProfileCode
+      ? String(payload.defaultBillingProfileCode).trim().toUpperCase()
+      : null,
   };
 
   const res = await fetch(`${API_BASE}/admin/organizations/${id}`, {
@@ -276,6 +283,16 @@ export async function updateOrganization(id, payload) {
       pending_name_change: data.pending_name_change || data.meta?.pending_name_change || null,
     },
   };
+}
+
+/** GET — linked records that block or warn before organization delete */
+export async function getOrganizationDeleteEligibility(id) {
+  const res = await fetch(`${API_BASE}/admin/organizations/${id}/delete-eligibility`, {
+    method:  'GET',
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  return data.data || { can_delete: true, blockers: [], warnings: [] };
 }
 
 /** POST — super admin receives OTP email to authorize organization delete */

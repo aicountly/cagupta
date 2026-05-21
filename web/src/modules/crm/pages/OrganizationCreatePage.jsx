@@ -19,6 +19,8 @@ import ClientSearchDropdown from '../../../components/common/ClientSearchDropdow
 import ContactMultiSelect from '../../../components/common/ContactMultiSelect';
 import NameCollisionModal from '../../../components/common/NameCollisionModal';
 import RecordSavePreviewModal from '../../../components/common/RecordSavePreviewModal';
+import BillingProfileSelect from '../../../components/common/BillingProfileSelect';
+import { getBillingProfileByCode } from '../../../constants/billingProfiles';
 import WorkHoldSection from '../components/WorkHoldSection';
 import MasterChangeLogSection from '../components/MasterChangeLogSection';
 import PendingNameChangeBanner from '../components/PendingNameChangeBanner';
@@ -157,6 +159,7 @@ function blankForm(defaultManager) {
     referralStartDate: '',
     commissionMode: 'referral_only',
     clientFacingRestricted: false,
+    defaultBillingProfileCode: '',
   };
 }
 
@@ -305,6 +308,7 @@ export default function OrganizationCreatePage() {
           referralStartDate: existing.referralStartDate || '',
           commissionMode: existing.commissionMode || 'referral_only',
           clientFacingRestricted: Boolean(existing.clientFacingRestricted),
+          defaultBillingProfileCode: existing.defaultBillingProfileCode || '',
         });
         setPendingNameChange(existing.pendingNameChange || null);
       })
@@ -468,6 +472,7 @@ export default function OrganizationCreatePage() {
       referralStartDate: f.referralStartDate || null,
       commissionMode: f.commissionMode || 'referral_only',
       clientFacingRestricted: f.clientFacingRestricted,
+      defaultBillingProfileCode: f.defaultBillingProfileCode || null,
     };
   }
 
@@ -476,6 +481,9 @@ export default function OrganizationCreatePage() {
       .map((cid) => secondaryContactNamesById[cid] || secondaryContactNamesById[Number(cid)] || `Contact #${cid}`)
       .filter(Boolean);
     const affiliate = approvedAffiliates.find((a) => String(a.id) === String(org.referringAffiliateUserId || ''));
+    const billingProfile = org.defaultBillingProfileCode
+      ? getBillingProfileByCode(org.defaultBillingProfileCode)
+      : null;
     return {
       groupName: groupDisplayName || '',
       primaryContact: primaryContactDisplayName || '',
@@ -484,6 +492,9 @@ export default function OrganizationCreatePage() {
       referringAffiliate: affiliate
         ? `${affiliate.name} (${affiliate.email})`
         : (org.referringAffiliateUserId ? `User #${org.referringAffiliateUserId}` : ''),
+      defaultBillingProfile: billingProfile
+        ? `${billingProfile.code} – ${billingProfile.name}`
+        : (org.defaultBillingProfileCode || ''),
     };
   }
 
@@ -855,6 +866,19 @@ export default function OrganizationCreatePage() {
               />
               {errors.gstin && <ErrorMsg msg={errors.gstin} />}
             </div>
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <FieldLabel label="Default billing firm" />
+            <div style={{ fontSize: 11, color: '#64748b', marginBottom: 6 }}>
+              Optional — pre-fills Raise Invoice for this organization
+            </div>
+            <BillingProfileSelect
+              value={form.defaultBillingProfileCode}
+              onChange={(code) => setField('defaultBillingProfileCode', code)}
+              placeholder="— None —"
+              style={inputStyle}
+            />
           </div>
 
           <div style={{ marginTop: 14 }}>

@@ -18,6 +18,12 @@ import {
   createLeadQuotation,
   updateLeadQuotation,
 } from '../services/quotationService';
+import QuotationPricingEditor from '../../../components/crm/QuotationPricingEditor';
+import {
+  normalizeSnapshot,
+  formatShareText,
+  emptySnapshot,
+} from '../../../utils/quotationPricing';
 
 const stages = ['new','contacted','qualified','proposal_sent','negotiation','won','lost'];
 
@@ -58,7 +64,7 @@ export default function Leads() {
 
   const [quoteModal, setQuoteModal] = useState(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
-  const [quotePrice, setQuotePrice] = useState('');
+  const [quoteSnapshot, setQuoteSnapshot] = useState(emptySnapshot());
   const [quoteDocs, setQuoteDocs] = useState('');
   const [quoteStatus, setQuoteStatus] = useState('draft');
   const [quoteEngId, setQuoteEngId] = useState(null);
@@ -100,7 +106,7 @@ export default function Leads() {
       const draft = qs.find(q => q.status === 'draft');
       if (draft) {
         setQuoteEditId(draft.id);
-        setQuotePrice(draft.price != null ? String(draft.price) : '');
+        setQuoteSnapshot(normalizeSnapshot(draft.pricing_snapshot, draft.price));
         setQuoteDocs(Array.isArray(draft.documents_required) ? draft.documents_required.join('\n') : '');
         setQuoteStatus(draft.status);
         setQuoteEngId(draft.engagement_type_id || engId);
@@ -109,10 +115,10 @@ export default function Leads() {
         setQuoteEngId(engId);
         if (engId) {
           const def = await getQuotationDefaultByEngagementType(engId);
-          setQuotePrice(def?.default_price != null ? String(def.default_price) : '');
+          setQuoteSnapshot(normalizeSnapshot(def?.pricing_snapshot));
           setQuoteDocs(Array.isArray(def?.documents_required) ? def.documents_required.join('\n') : '');
         } else {
-          setQuotePrice('');
+          setQuoteSnapshot(emptySnapshot());
           setQuoteDocs('');
         }
         setQuoteStatus('draft');
@@ -132,7 +138,7 @@ export default function Leads() {
       const docs = quoteDocs.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
       const payload = {
         engagement_type_id: quoteEngId || null,
-        price: quotePrice === '' || quotePrice == null ? null : Number(quotePrice),
+        pricing_snapshot: quoteSnapshot,
         documents_required: docs,
         status: quoteStatus,
       };
@@ -153,14 +159,8 @@ export default function Leads() {
 
   function handleShareQuotation() {
     if (!quoteModal) return;
-    const lines = [
-      `Quotation for ${quoteModal.contactName}`,
-      quoteEngId ? `Engagement type ID: ${quoteEngId}` : '',
-      `Price: ${quotePrice ? `₹${Number(quotePrice).toLocaleString('en-IN')}` : '—'}`,
-      'Documents required:',
-      ...quoteDocs.split(/\r?\n/).filter(s => s.trim()),
-    ].filter(Boolean);
-    const text = lines.join('\n');
+    const docs = quoteDocs.split(/\r?\n/).filter(s => s.trim());
+    const text = formatShareText(quoteModal.contactName, quoteSnapshot, docs);
     navigator.clipboard.writeText(text).then(() => {
       addNotification('Quotation copied to clipboard', 'lead');
     }).catch(() => {
@@ -415,7 +415,7 @@ export default function Leads() {
             <div style={{ padding:8 }}>
               <h3 style={{ margin:'0 0 12px', fontSize:15, fontWeight:700 }}>Quotation &amp; setup status</h3>
               <ul style={{ margin:0, paddingLeft:20, fontSize:14, color:'#334155', lineHeight:1.7 }}>
-                <li><strong>{pendingSummary.engagement_types_incomplete}</strong> engagement type(s) still need a default price or document list (configure under Settings → Service Configuration).</li>
+                <li><strong>{pendingSummary.engagement_types_incomplete}</strong> engagement type(s) still need quotation pricing or a document list (configure under Settings → Service Configuration).</li>
                 <li><strong>{pendingSummary.leads_needing_final_quotation}</strong> lead(s) in <em>Qualified</em> or <em>Proposal sent</em> have no final quotation saved yet.</li>
               </ul>
               {pendingSummary.lead_ids_needing_quotation?.length > 0 && (
@@ -514,11 +514,11 @@ export default function Leads() {
 
       {quoteModal && (
         <div style={{ ...modalOverlay, zIndex: 600 }}>
-          <div style={{ ...modalBox, maxWidth: 520 }}>
+          <div style={{ ...modalBox, maxWidth: 560 }}>
             <div style={modalHeader}>
               <div>
                 <h3 style={modalTitle}>Quotation — {quoteModal.contactName}</h3>
-                <p style={modalSubtitle}>Pre-filled from setup defaults when an engagement type is set; adjust per lead.</p>
+                <p style={modalSubtitle}>Pre-filled from engagement type pricing; adjust amounts and conditional events per lead.</p>
               </div>
               <button type="button" onClick={() => setQuoteModal(null)} style={btnModalClose} aria-label="Close">✕</button>
             </div>
@@ -536,9 +536,11 @@ export default function Leads() {
                       if (id) {
                         try {
                           const def = await getQuotationDefaultByEngagementType(id);
-                          setQuotePrice(def?.default_price != null ? String(def.default_price) : '');
+                          setQuoteSnapshot(normalizeSnapshot(def?.pricing_snapshot));
                           setQuoteDocs(Array.isArray(def?.documents_required) ? def.documents_required.join('\n') : '');
                         } catch { /* ignore */ }
+                      } else {
+                        setQuoteSnapshot(emptySnapshot());
                       }
                     }}
                     style={{ ...inputStyle, marginBottom:12 }}
@@ -550,8 +552,14 @@ export default function Leads() {
                       </option>
                     ))}
                   </select>
-                  <label style={labelStyle}>Price (₹)</label>
-                  <input type="number" value={quotePrice} onChange={e => setQuotePrice(e.target.value)} style={{ ...inputStyle, marginBottom:12 }} />
+                  <label style={labelStyle}>Pricing</label>
+                  <div style={{ marginBottom: 12 }}>
+                    <QuotationPricingEditor
+                      mode="quotation"
+                      value={quoteSnapshot}
+                      onChange={setQuoteSnapshot}
+                    />
+                  </div>
                   <label style={labelStyle}>Documents required (one per line)</label>
                   <textarea value={quoteDocs} onChange={e => setQuoteDocs(e.target.value)} style={{ ...inputStyle, minHeight:100, marginBottom:12 }} />
                   <label style={labelStyle}>Status</label>

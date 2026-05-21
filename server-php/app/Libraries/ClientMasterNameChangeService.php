@@ -112,22 +112,31 @@ final class ClientMasterNameChangeService
         }
     }
 
-    public static function notifyRequester(int $userId, string $title, string $body, int $approvalId): void
-    {
-        if ($userId <= 0) {
-            return;
-        }
-        try {
-            (new UserNotificationModel())->createForUsers(
-                [$userId],
-                'client_master_name_change_decided',
-                $title,
-                $body,
-                'client_master_name_change',
-                $approvalId
-            );
-        } catch (\Throwable $e) {
-            error_log('[ClientMasterNameChange] notify requester: ' . $e->getMessage());
-        }
+    /**
+     * @param array<string, mixed>|null $actor  Super Admin who decided
+     */
+    public static function notifyRequester(
+        int $userId,
+        string $title,
+        string $body,
+        int $approvalId,
+        string $decision,
+        string $summary,
+        ?array $actor = null,
+        ?string $detailHtml = null
+    ): void {
+        ApprovalDecisionNotifier::notifyRequester(
+            $userId,
+            'client_master_name_change_decided',
+            $title,
+            $body,
+            'client_master_name_change',
+            $approvalId,
+            'Client master name change',
+            $decision,
+            $summary,
+            $actor,
+            $detailHtml
+        );
     }
 }

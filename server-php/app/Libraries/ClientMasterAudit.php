@@ -73,6 +73,7 @@ final class ClientMasterAudit
             'referral_start_date'       => $row['referral_start_date'] ?? null,
             'commission_mode'           => $row['commission_mode'] ?? null,
             'client_facing_restricted'  => $row['client_facing_restricted'] ?? null,
+            'default_billing_profile_code' => $row['default_billing_profile_code'] ?? null,
             'linked_org_ids'            => $row['linked_org_ids'] ?? null,
         ];
     }
@@ -110,6 +111,7 @@ final class ClientMasterAudit
             'referral_start_date'       => $row['referral_start_date'] ?? null,
             'commission_mode'           => $row['commission_mode'] ?? null,
             'client_facing_restricted'  => $row['client_facing_restricted'] ?? null,
+            'default_billing_profile_code' => $row['default_billing_profile_code'] ?? null,
         ];
     }
 

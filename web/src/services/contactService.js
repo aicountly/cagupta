@@ -146,6 +146,7 @@ function normalizeContact(c) {
     referralStartDate: c.referral_start_date || '',
     commissionMode: c.commission_mode || 'referral_only',
     clientFacingRestricted: Boolean(c.client_facing_restricted),
+    defaultBillingProfileCode: c.default_billing_profile_code || '',
   };
 }
 

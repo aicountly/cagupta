@@ -206,13 +206,19 @@ export async function deleteEngagementType(id) {
 
 /**
  * @param {number|string} id
- * @param {{ name?: string, standard_fee_amount?: number|string|null, standard_allowable_hours?: number|string|null }} payload
+ * @param {object} payload — pricing_model, quotation_base_amount, quotation_hourly_rate,
+ *   quotation_estimated_hours, standard_fee_amount, standard_allowable_hours, additional_fee_templates
  */
 export async function updateEngagementType(id, payload) {
   const body = {};
   if (payload.name != null) body.name = payload.name;
   if ('standard_fee_amount' in payload) body.standard_fee_amount = payload.standard_fee_amount;
   if ('standard_allowable_hours' in payload) body.standard_allowable_hours = payload.standard_allowable_hours;
+  if ('pricing_model' in payload) body.pricing_model = payload.pricing_model;
+  if ('quotation_base_amount' in payload) body.quotation_base_amount = payload.quotation_base_amount;
+  if ('quotation_hourly_rate' in payload) body.quotation_hourly_rate = payload.quotation_hourly_rate;
+  if ('quotation_estimated_hours' in payload) body.quotation_estimated_hours = payload.quotation_estimated_hours;
+  if ('additional_fee_templates' in payload) body.additional_fee_templates = payload.additional_fee_templates;
   const res = await fetch(`${API_BASE}/admin/engagement-types/${id}`, {
     method:  'PATCH',
     headers: authHeaders(),

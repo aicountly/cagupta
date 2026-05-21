@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
+use App\Libraries\QuotationPricing;
 use App\Models\EngagementTypeQuotationDefaultModel;
 use App\Models\LeadModel;
 use App\Models\LeadQuotationModel;
@@ -54,10 +55,16 @@ class LeadQuotationController extends BaseController
             $this->error('Invalid engagement_type_id.', 422);
         }
 
-        $price = null;
+        $legacyPrice = null;
         if (isset($body['price']) && $body['price'] !== null && $body['price'] !== '') {
-            $price = (float)$body['price'];
+            $legacyPrice = (float)$body['price'];
         }
+
+        $snapshot = QuotationPricing::normalizeSnapshot(
+            $body['pricing_snapshot'] ?? [],
+            $legacyPrice
+        );
+        $price = QuotationPricing::computeTotal($snapshot) ?? $legacyPrice;
 
         $docs   = $this->normalizeDocuments($body['documents_required'] ?? []);
         $status = trim((string)($body['status'] ?? 'draft'));
@@ -68,7 +75,7 @@ class LeadQuotationController extends BaseController
         $acting = $this->authUser();
         $uid    = $acting ? (int)$acting['id'] : null;
 
-        $newId = $this->quotations->create($leadId, $eid, $price, $docs, $status, $uid);
+        $newId = $this->quotations->create($leadId, $eid, $price, $docs, $snapshot, $status, $uid);
         $row   = $this->quotations->find($newId);
         $this->success($this->formatQuotation($row ?? []), 'Quotation saved.', 201);
     }
@@ -103,14 +110,28 @@ class LeadQuotationController extends BaseController
             }
         }
 
-        $price = isset($existing['price']) && $existing['price'] !== null ? (float)$existing['price'] : null;
+        $legacyPrice = isset($existing['price']) && $existing['price'] !== null
+            ? (float)$existing['price'] : null;
         if (array_key_exists('price', $body)) {
             if ($body['price'] === null || $body['price'] === '') {
-                $price = null;
+                $legacyPrice = null;
             } else {
-                $price = (float)$body['price'];
+                $legacyPrice = (float)$body['price'];
             }
         }
+
+        $existingSnapRaw = $existing['pricing_snapshot'] ?? [];
+        if (is_string($existingSnapRaw)) {
+            $existingSnapRaw = json_decode($existingSnapRaw, true) ?? [];
+        }
+
+        if (array_key_exists('pricing_snapshot', $body)) {
+            $snapshot = QuotationPricing::normalizeSnapshot($body['pricing_snapshot'], $legacyPrice);
+        } else {
+            $snapshot = QuotationPricing::normalizeSnapshot($existingSnapRaw, $legacyPrice);
+        }
+
+        $price = QuotationPricing::computeTotal($snapshot) ?? $legacyPrice;
 
         $docs = $this->normalizeDocumentsFromExisting($existing['documents_required'] ?? []);
         if (array_key_exists('documents_required', $body)) {
@@ -126,7 +147,7 @@ class LeadQuotationController extends BaseController
             $status = $st;
         }
 
-        $this->quotations->update($quotationId, $price, $docs, $status, $eid, $touchEid);
+        $this->quotations->update($quotationId, $price, $docs, $snapshot, $status, $eid, $touchEid);
         $row = $this->quotations->find($quotationId);
         $this->success($this->formatQuotation($row ?? []), 'Quotation updated.');
     }
@@ -163,13 +184,21 @@ class LeadQuotationController extends BaseController
             $docs = [];
         }
 
+        $legacyPrice = isset($row['price']) && $row['price'] !== null ? (float)$row['price'] : null;
+        $snapRaw     = $row['pricing_snapshot'] ?? [];
+        if (is_string($snapRaw)) {
+            $snapRaw = json_decode($snapRaw, true) ?? [];
+        }
+        $snapshot = QuotationPricing::normalizeSnapshot($snapRaw, $legacyPrice);
+
         return [
             'id'                   => (int)($row['id'] ?? 0),
             'lead_id'              => (int)($row['lead_id'] ?? 0),
             'engagement_type_id'   => isset($row['engagement_type_id']) && $row['engagement_type_id'] !== null
                 ? (int)$row['engagement_type_id'] : null,
             'engagement_type_name' => $row['engagement_type_name'] ?? null,
-            'price'                => isset($row['price']) && $row['price'] !== null ? (float)$row['price'] : null,
+            'price'                => $legacyPrice,
+            'pricing_snapshot'     => $snapshot,
             'documents_required'   => $docs,
             'status'               => (string)($row['status'] ?? 'draft'),
             'created_by'           => isset($row['created_by']) ? (int)$row['created_by'] : null,

@@ -553,4 +553,63 @@ final class TxnReceiptAllocationService
 
         return ['receipt_totals' => $receiptTotals];
     }
+
+    /**
+     * Parked ledger receipts: full amount as unallocated advance only (no bill-by-bill).
+     *
+     * @param array<string, mixed> $receiptBody
+     * @return list<array{target_type:string, target_txn_id?:int|null, amount:float}>
+     */
+    public static function normalizeParkedReceiptAllocations(array $receiptBody): array
+    {
+        if (!LedgerDimensions::isParkedLedgerClass($receiptBody['ledger_class'] ?? null)) {
+            throw new InvalidArgumentException('normalizeParkedReceiptAllocations requires ledger_class parked.');
+        }
+        LedgerDimensions::assertLedgerMovementKindRequired($receiptBody['ledger_movement_kind'] ?? '');
+        $amount = round((float)($receiptBody['amount'] ?? 0), 2);
+        if ($amount <= 0) {
+            throw new InvalidArgumentException('amount must be greater than zero.');
+        }
+
+        return [[
+            'target_type'   => 'unallocated_advance',
+            'target_txn_id' => null,
+            'amount'        => $amount,
+        ]];
+    }
+
+    /**
+     * Parked ledger payment expenses: settlement must be 100% unallocated advance (no receipt links).
+     */
+    public static function assertParkedPaymentSettlementLines(float $paymentAmount, mixed $linesRaw): void
+    {
+        $paymentAmount = round($paymentAmount, 2);
+        if ($paymentAmount <= 0) {
+            throw new InvalidArgumentException('Invalid payment amount.');
+        }
+        if (!is_array($linesRaw) || $linesRaw === []) {
+            return;
+        }
+        $unallocSum = 0.0;
+        foreach ($linesRaw as $line) {
+            if (!is_array($line)) {
+                throw new InvalidArgumentException('Each settlement line must be an object.');
+            }
+            $tt = strtolower(trim((string)($line['target_type'] ?? '')));
+            if ($tt !== 'unallocated_advance') {
+                throw new InvalidArgumentException('Parked payment expenses can only use unallocated_advance settlement lines.');
+            }
+            $amt = round((float)($line['amount'] ?? 0), 2);
+            if ($amt <= 0) {
+                throw new InvalidArgumentException('Each settlement line amount must be greater than zero.');
+            }
+            $unallocSum += $amt;
+        }
+        if (abs($unallocSum - $paymentAmount) > 0.02) {
+            throw new InvalidArgumentException(
+                'Settlement lines must sum to the payment amount (₹'
+                . number_format($paymentAmount, 2, '.', '') . ').'
+            );
+        }
+    }
 }

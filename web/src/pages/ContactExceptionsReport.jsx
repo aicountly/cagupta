@@ -8,6 +8,7 @@ const CRITERIA = [
   { key: 'pan', label: 'PAN' },
   { key: 'email', label: 'Email' },
   { key: 'website', label: 'Website' },
+  { key: 'default_billing_profile', label: 'Default billing firm' },
 ];
 
 const FIELD_BADGE = {
@@ -15,6 +16,7 @@ const FIELD_BADGE = {
   pan: 'PAN',
   email: 'Email',
   website: 'Website',
+  default_billing_profile: 'Billing firm',
 };
 
 export default function ContactExceptionsReport() {

@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../auth/AuthContext';
 import { ROLES } from '../../../constants/roles';
-import { CheckSquare, Clock, Wallet, AlertCircle, Users } from 'lucide-react';
+import { CheckSquare, Clock, Wallet, AlertCircle, Users, Filter, FileText } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import {
   listPendingTimesheetOverflowRequests,
@@ -25,6 +25,29 @@ import {
   entityTypeLabel,
   entityEditPath,
 } from '../services/clientMasterNameChangeApprovalService';
+import {
+  listPendingLedgerTxnChanges,
+  approveLedgerTxnChange,
+  rejectLedgerTxnChange,
+  actionLabel as ledgerActionLabel,
+} from '../services/ledgerTxnChangeApprovalService';
+
+const FILTER_OPTIONS = [
+  { key: 'all', label: 'All' },
+  { key: 'timesheet', label: 'Timesheet overflow', icon: Clock },
+  { key: 'affiliate', label: 'Affiliate amendments', icon: Wallet },
+  { key: 'partner', label: 'Partner amendments', icon: Wallet },
+  { key: 'client_names', label: 'Client master names', icon: Users },
+  { key: 'ledger', label: 'Ledger changes', icon: FileText },
+];
+
+const TYPE_META = {
+  timesheet: { label: 'Timesheet overflow', color: '#0369a1', bg: '#E0F2FE' },
+  affiliate: { label: 'Affiliate payout', color: '#7C3AED', bg: '#EDE9FE' },
+  partner: { label: 'Partner payout', color: '#0D9488', bg: '#CCFBF1' },
+  client_names: { label: 'Client master name', color: '#B45309', bg: '#FEF3C7' },
+  ledger: { label: 'Ledger change', color: '#0369a1', bg: '#E0F2FE' },
+};
 
 function parseAdj(raw) {
   if (raw == null) return [];
@@ -33,6 +56,16 @@ function parseAdj(raw) {
     const j = typeof raw === 'string' ? JSON.parse(raw) : raw;
     return Array.isArray(j) ? j : [];
   } catch { return []; }
+}
+
+function busyKey(type, id) {
+  return `${type}:${id}`;
+}
+
+function sortKey(row) {
+  const ts = row.created_at || row.submitted_at || row.requested_at;
+  if (ts) return new Date(ts).getTime();
+  return Number(row.id || row.approval_id || 0);
 }
 
 function StatusBadge({ label, color }) {
@@ -49,59 +82,15 @@ function StatusBadge({ label, color }) {
   );
 }
 
-function TimesheetOverflowTab({ allowed }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const [busyId, setBusyId] = useState(null);
-
-  const load = useCallback(() => {
-    if (!allowed) return;
-    setLoading(true);
-    setErr('');
-    listPendingTimesheetOverflowRequests()
-      .then(setRows)
-      .catch((e) => { setErr(e.message || 'Failed'); setRows([]); })
-      .finally(() => setLoading(false));
-  }, [allowed]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function handleApprove(id, modifyMin) {
-    setBusyId(id);
-    setErr('');
-    try {
-      const body = {};
-      if (modifyMin) {
-        const n = parseInt(String(modifyMin), 10);
-        if (Number.isFinite(n) && n > 0) body.approved_duration_minutes = n;
-      }
-      await approveTimesheetOverflowRequest(id, body);
-      await load();
-    } catch (e) { setErr(e.message || 'Approve failed'); }
-    finally { setBusyId(null); }
-  }
-
-  async function handleReject(id, reason) {
-    setBusyId(id);
-    setErr('');
-    try {
-      await rejectTimesheetOverflowRequest(id, reason);
-      await load();
-    } catch (e) { setErr(e.message || 'Reject failed'); }
-    finally { setBusyId(null); }
-  }
-
-  if (loading) return <div style={emptyState}>Loading requests...</div>;
-  if (err) return <div style={errorBanner}><AlertCircle size={14} /> {err}</div>;
-  if (rows.length === 0) return <div style={emptyState}>No pending timesheet overflow requests.</div>;
-
+function TypeBadge({ type }) {
+  const meta = TYPE_META[type] || { label: type, color: '#475569', bg: '#F1F5F9' };
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {rows.map((r) => (
-        <OverflowCard key={r.id} row={r} busy={busyId === r.id} onApprove={handleApprove} onReject={handleReject} />
-      ))}
-    </div>
+    <span style={{
+      display: 'inline-block', padding: '2px 10px', borderRadius: 10, fontSize: 11, fontWeight: 600,
+      background: meta.bg, color: meta.color,
+    }}>
+      {meta.label}
+    </span>
   );
 }
 
@@ -112,7 +101,7 @@ function OverflowCard({ row, busy, onApprove, onReject }) {
 
   return (
     <div style={card}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontWeight: 700, fontSize: 14, color: '#0B1F3B' }}>
             Request #{row.id}
@@ -121,7 +110,10 @@ function OverflowCard({ row, busy, onApprove, onReject }) {
             {(row.source_kind || '').replace(/_/g, ' ')}
           </div>
         </div>
-        <StatusBadge label="Pending" color="pending" />
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <TypeBadge type="timesheet" />
+          <StatusBadge label="Pending" color="pending" />
+        </div>
       </div>
       <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
         <div><strong>Service:</strong> {row.service_type || '—'} — {row.client_name || '—'}</div>
@@ -153,165 +145,174 @@ function OverflowCard({ row, busy, onApprove, onReject }) {
   );
 }
 
-function PayoutAmendmentTab({ kind, allowed }) {
+function PayoutAmendmentCard({ kind, row, busy, onApprove, onReject }) {
   const isAffiliate = kind === 'affiliate';
-  const listFn = isAffiliate ? listPendingAffiliatePayoutCycleAmendments : listPendingPartnerPayoutCycleAmendments;
-  const approveFn = isAffiliate ? approveAffiliatePayoutCycleAmendment : approvePartnerPayoutCycleAmendment;
-  const rejectFn = isAffiliate ? rejectAffiliatePayoutCycleAmendment : rejectPartnerPayoutCycleAmendment;
   const idKey = isAffiliate ? 'commission_accrual_id' : 'partner_payout_accrual_id';
   const cycleIdKey = isAffiliate ? 'affiliate_payout_cycle_id' : 'partner_payout_cycle_id';
-
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const [busyId, setBusyId] = useState(null);
-
-  const load = useCallback(() => {
-    if (!allowed) return;
-    setLoading(true);
-    setErr('');
-    listFn()
-      .then(setRows)
-      .catch((e) => { setErr(e.message || 'Failed'); setRows([]); })
-      .finally(() => setLoading(false));
-  }, [allowed, listFn]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function onApprove(id) {
-    setBusyId(id);
-    setErr('');
-    try { await approveFn(id); await load(); }
-    catch (e) { setErr(e.message || 'Approve failed'); }
-    finally { setBusyId(null); }
-  }
-
-  async function onReject(id) {
-    const reason = window.prompt('Rejection reason (required):');
-    if (!reason?.trim()) return;
-    setBusyId(id);
-    setErr('');
-    try { await rejectFn(id, reason.trim()); await load(); }
-    catch (e) { setErr(e.message || 'Reject failed'); }
-    finally { setBusyId(null); }
-  }
-
-  if (loading) return <div style={emptyState}>Loading amendments...</div>;
-  if (err) return <div style={errorBanner}><AlertCircle size={14} /> {err}</div>;
-  if (rows.length === 0) return <div style={emptyState}>No pending {isAffiliate ? 'affiliate' : 'partner'} payout amendments.</div>;
+  const [rejectReason, setRejectReason] = useState('');
+  const [showReject, setShowReject] = useState(false);
+  const adj = parseAdj(row.adjustments_json);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {rows.map((r) => {
-        const adj = parseAdj(r.adjustments_json);
-        return (
-          <div key={r.id} style={card}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: '#0B1F3B' }}>
-                  Amendment #{r.id} — Cycle #{r[cycleIdKey]}
-                </div>
-                <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
-                  {r.period_start} to {r.period_end} ({r.cycle_anchor})
-                </div>
-              </div>
-              <StatusBadge label="Pending approval" color="pending" />
-            </div>
-            <div style={{ fontSize: 13, color: '#475569', marginBottom: 10 }}>
-              Requested by: <strong>{r.requested_by_name || r.requested_by_user_id}</strong>
-            </div>
-            {adj.length > 0 && (
-              <div style={{ overflowX: 'auto', marginBottom: 12 }}>
-                <table style={tableStyle}>
-                  <thead>
-                    <tr style={{ background: '#F8FAFC' }}>
-                      <th style={thStyle}>Accrual ID</th>
-                      <th style={thStyle}>Proposed Amount</th>
-                      <th style={thStyle}>Note</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adj.map((a, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid #F1F5F9' }}>
-                        <td style={tdStyle}>{a[idKey]}</td>
-                        <td style={tdStyle}>₹{Number(a.amount_final).toFixed(2)}</td>
-                        <td style={tdStyle}>{a.note || '—'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button type="button" style={btnApprove} disabled={busyId === r.id} onClick={() => onApprove(r.id)}>
-                {busyId === r.id ? 'Processing...' : 'Approve & Finalise'}
-              </button>
-              <button type="button" style={btnReject} disabled={busyId === r.id} onClick={() => onReject(r.id)}>
-                Reject
-              </button>
-            </div>
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: '#0B1F3B' }}>
+            Amendment #{row.id} — Cycle #{row[cycleIdKey]}
           </div>
-        );
-      })}
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+            {row.period_start} to {row.period_end} ({row.cycle_anchor})
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <TypeBadge type={kind} />
+          <StatusBadge label="Pending approval" color="pending" />
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: '#475569', marginBottom: 10 }}>
+        Requested by: <strong>{row.requested_by_name || row.requested_by_user_id}</strong>
+      </div>
+      {adj.length > 0 && (
+        <div style={{ overflowX: 'auto', marginBottom: 12 }}>
+          <table style={tableStyle}>
+            <thead>
+              <tr style={{ background: '#F8FAFC' }}>
+                <th style={thStyle}>Accrual ID</th>
+                <th style={thStyle}>Proposed Amount</th>
+                <th style={thStyle}>Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {adj.map((a, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                  <td style={tdStyle}>{a[idKey]}</td>
+                  <td style={tdStyle}>₹{Number(a.amount_final).toFixed(2)}</td>
+                  <td style={tdStyle}>{a.note || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+        <button type="button" style={btnApprove} disabled={busy} onClick={() => onApprove(row.id)}>
+          {busy ? 'Processing...' : 'Approve & Finalise'}
+        </button>
+        <button type="button" style={btnReject} disabled={busy} onClick={() => setShowReject((s) => !s)}>
+          Reject
+        </button>
+      </div>
+      {showReject && (
+        <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Reason for rejection (required)"
+            rows={2}
+            style={{ ...inputSm, width: '100%', maxWidth: 400, minHeight: 56 }}
+            disabled={busy}
+          />
+          <button
+            type="button"
+            disabled={busy || !rejectReason.trim()}
+            onClick={() => onReject(row.id, rejectReason)}
+            style={{ ...btnReject, background: '#DC2626', color: '#fff', border: 'none' }}
+          >
+            Confirm
+          </button>
+        </div>
+      )}
     </div>
   );
 }
 
-function ClientMasterNameTab({ allowed }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [err, setErr] = useState('');
-  const [busyId, setBusyId] = useState(null);
-
-  const load = useCallback(() => {
-    if (!allowed) return;
-    setLoading(true);
-    setErr('');
-    listPendingClientMasterNameChanges()
-      .then(setRows)
-      .catch((e) => { setErr(e.message || 'Failed'); setRows([]); })
-      .finally(() => setLoading(false));
-  }, [allowed]);
-
-  useEffect(() => { load(); }, [load]);
-
-  async function handleApprove(id, decisionNotes) {
-    setBusyId(id);
-    setErr('');
-    try {
-      const body = {};
-      if (decisionNotes?.trim()) body.decision_notes = decisionNotes.trim();
-      await approveClientMasterNameChange(id, body);
-      await load();
-    } catch (e) { setErr(e.message || 'Approve failed'); }
-    finally { setBusyId(null); }
-  }
-
-  async function handleReject(id, reason) {
-    setBusyId(id);
-    setErr('');
-    try {
-      await rejectClientMasterNameChange(id, reason);
-      await load();
-    } catch (e) { setErr(e.message || 'Reject failed'); }
-    finally { setBusyId(null); }
-  }
-
-  if (loading) return <div style={emptyState}>Loading name change requests...</div>;
-  if (err) return <div style={errorBanner}><AlertCircle size={14} /> {err}</div>;
-  if (rows.length === 0) return <div style={emptyState}>No pending client master name changes.</div>;
+function LedgerTxnChangeCard({ row, busy, onApprove, onReject }) {
+  const [decisionNotes, setDecisionNotes] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+  const [showReject, setShowReject] = useState(false);
+  const approvalId = row.approval_id || row.id;
+  const snap = row.txn_snapshot || {};
+  const action = row.action || '';
+  const label = row.action_label || ledgerActionLabel(action);
+  const ids = row.payload?.ids;
+  const isBulkCancel = action === 'cancel' && Array.isArray(ids) && ids.length > 1;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-      {rows.map((r) => (
-        <ClientMasterNameCard
-          key={r.approval_id || r.id}
-          row={r}
-          busy={busyId === (r.approval_id || r.id)}
-          onApprove={handleApprove}
-          onReject={handleReject}
-        />
-      ))}
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: '#0B1F3B' }}>
+            Approval #{approvalId} — {label}
+          </div>
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+            {isBulkCancel
+              ? `Cancel ${ids.length} ledger records`
+              : row.txn_id
+                ? `Txn #${row.txn_id} · ${snap.txn_type || '—'}`
+                : 'Bulk ledger cancel'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <TypeBadge type="ledger" />
+          <StatusBadge label="Pending" color="pending" />
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
+        {!isBulkCancel && (
+          <>
+            <div><strong>Ref:</strong> {snap.public_ref || snap.invoice_number || '—'}</div>
+            <div><strong>Date:</strong> {snap.txn_date || '—'} · <strong>Amount:</strong> ₹{Number(snap.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+          </>
+        )}
+        {isBulkCancel && (
+          <div><strong>Txn ids:</strong> {ids.join(', ')}</div>
+        )}
+        <div><strong>Requested by:</strong> {row.requested_by_name || row.requested_by_user_id || '—'}</div>
+        {row.request_reason && <div><strong>Reason:</strong> {row.request_reason}</div>}
+        {action === 'update' && row.payload && (
+          <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
+            Proposed field changes are stored in the approval payload and applied on approve.
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 14, alignItems: 'center' }}>
+        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: '#64748b', flex: '1 1 200px' }}>
+          Decision notes (optional)
+          <input
+            type="text"
+            value={decisionNotes}
+            onChange={(e) => setDecisionNotes(e.target.value)}
+            style={{ ...inputSm, flex: 1, minWidth: 160 }}
+            disabled={busy}
+          />
+        </label>
+        <button type="button" disabled={busy} onClick={() => onApprove(approvalId, decisionNotes)} style={btnApprove}>
+          {busy ? 'Processing...' : 'Approve'}
+        </button>
+        <button type="button" disabled={busy} onClick={() => setShowReject((s) => !s)} style={btnReject}>
+          Reject
+        </button>
+      </div>
+      {showReject && (
+        <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Reason for rejection (required)"
+            rows={2}
+            style={{ ...inputSm, width: '100%', maxWidth: 400, minHeight: 56 }}
+            disabled={busy}
+          />
+          <button
+            type="button"
+            disabled={busy || !rejectReason.trim()}
+            onClick={() => onReject(approvalId, rejectReason)}
+            style={{ ...btnReject, background: '#DC2626', color: '#fff', border: 'none' }}
+          >
+            Confirm
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -325,7 +326,7 @@ function ClientMasterNameCard({ row, busy, onApprove, onReject }) {
 
   return (
     <div style={card}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
         <div>
           <div style={{ fontWeight: 700, fontSize: 14, color: '#0B1F3B' }}>
             Approval #{approvalId}
@@ -334,7 +335,10 @@ function ClientMasterNameCard({ row, busy, onApprove, onReject }) {
             {entityTypeLabel(row.entity_type)} #{entityId}
           </div>
         </div>
-        <StatusBadge label="Pending" color="pending" />
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <TypeBadge type="client_names" />
+          <StatusBadge label="Pending" color="pending" />
+        </div>
       </div>
       <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
         <div><strong>Current name:</strong> {row.current_name || '—'}</div>
@@ -389,20 +393,103 @@ function ClientMasterNameCard({ row, busy, onApprove, onReject }) {
   );
 }
 
-const TABS = [
-  { key: 'timesheet', label: 'Timesheet Overflow', icon: Clock },
-  { key: 'affiliate', label: 'Affiliate Amendments', icon: Wallet },
-  { key: 'partner', label: 'Partner Amendments', icon: Wallet },
-  { key: 'client_names', label: 'Client Master Names', icon: Users },
-];
-
 export default function Approvals() {
   const { user } = useAuth();
   const allowed =
     String(user?.role || '').toLowerCase() === ROLES.SUPER_ADMIN
     || String(user?.email || '').toLowerCase() === 'rahul@cagupta.in';
 
-  const [tab, setTab] = useState('timesheet');
+  const [filter, setFilter] = useState('all');
+  const [timesheet, setTimesheet] = useState([]);
+  const [affiliate, setAffiliate] = useState([]);
+  const [partner, setPartner] = useState([]);
+  const [clientNames, setClientNames] = useState([]);
+  const [ledger, setLedger] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [busyKey, setBusyKey] = useState(null);
+
+  const counts = useMemo(() => ({
+    all: timesheet.length + affiliate.length + partner.length + clientNames.length + ledger.length,
+    timesheet: timesheet.length,
+    affiliate: affiliate.length,
+    partner: partner.length,
+    client_names: clientNames.length,
+    ledger: ledger.length,
+  }), [timesheet, affiliate, partner, clientNames, ledger]);
+
+  const load = useCallback(async () => {
+    if (!allowed) return;
+    setLoading(true);
+    setErr('');
+    try {
+      const [ts, aff, part, names, led] = await Promise.all([
+        listPendingTimesheetOverflowRequests(),
+        listPendingAffiliatePayoutCycleAmendments(),
+        listPendingPartnerPayoutCycleAmendments(),
+        listPendingClientMasterNameChanges(),
+        listPendingLedgerTxnChanges(),
+      ]);
+      setTimesheet(Array.isArray(ts) ? ts : []);
+      setAffiliate(Array.isArray(aff) ? aff : []);
+      setPartner(Array.isArray(part) ? part : []);
+      setClientNames(Array.isArray(names) ? names : []);
+      setLedger(Array.isArray(led) ? led : []);
+    } catch (e) {
+      setErr(e.message || 'Failed to load approvals');
+      setTimesheet([]);
+      setAffiliate([]);
+      setPartner([]);
+      setClientNames([]);
+      setLedger([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [allowed]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const items = useMemo(() => {
+    const list = [];
+    const include = (type) => filter === 'all' || filter === type;
+
+    if (include('timesheet')) {
+      timesheet.forEach((row) => list.push({ type: 'timesheet', id: row.id, row, _sort: sortKey(row) }));
+    }
+    if (include('affiliate')) {
+      affiliate.forEach((row) => list.push({ type: 'affiliate', id: row.id, row, _sort: sortKey(row) }));
+    }
+    if (include('partner')) {
+      partner.forEach((row) => list.push({ type: 'partner', id: row.id, row, _sort: sortKey(row) }));
+    }
+    if (include('client_names')) {
+      clientNames.forEach((row) => {
+        const id = row.approval_id || row.id;
+        list.push({ type: 'client_names', id, row, _sort: sortKey(row) });
+      });
+    }
+    if (include('ledger')) {
+      ledger.forEach((row) => {
+        const id = row.approval_id || row.id;
+        list.push({ type: 'ledger', id, row, _sort: sortKey(row) });
+      });
+    }
+
+    return list.sort((a, b) => b._sort - a._sort);
+  }, [filter, timesheet, affiliate, partner, clientNames, ledger]);
+
+  async function runAction(key, fn) {
+    setBusyKey(key);
+    setErr('');
+    try {
+      await fn();
+      await load();
+    } catch (e) {
+      setErr(e.message || 'Action failed');
+    } finally {
+      setBusyKey(null);
+    }
+  }
 
   if (!allowed) {
     return (
@@ -426,26 +513,33 @@ export default function Approvals() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={iconWrap}><CheckSquare size={20} color="#F37920" /></div>
           <div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Approvals</div>
+            <div style={{ fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Team Approvals</div>
             <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
-              Review and approve pending requests across all workflows
+              {counts.all === 0
+                ? 'No pending approval requests'
+                : `${counts.all} pending request${counts.all === 1 ? '' : 's'} across all workflows`}
             </div>
           </div>
         </div>
       </div>
 
       <div style={toolbar}>
-        {TABS.map((t) => {
-          const Icon = t.icon;
-          const isActive = tab === t.key;
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#64748b', fontSize: 12, fontWeight: 600, marginRight: 4 }}>
+          <Filter size={14} />
+          Filter
+        </div>
+        {FILTER_OPTIONS.map((opt) => {
+          const Icon = opt.icon;
+          const isActive = filter === opt.key;
+          const count = counts[opt.key] ?? 0;
           return (
             <button
-              key={t.key}
+              key={opt.key}
               type="button"
-              onClick={() => setTab(t.key)}
+              onClick={() => setFilter(opt.key)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 6,
-                padding: '8px 16px', borderRadius: 8,
+                padding: '8px 14px', borderRadius: 8,
                 border: '1px solid', cursor: 'pointer',
                 fontSize: 13, fontWeight: 600,
                 background: isActive ? '#F37920' : '#fff',
@@ -453,18 +547,110 @@ export default function Approvals() {
                 borderColor: isActive ? '#F37920' : '#E6E8F0',
               }}
             >
-              <Icon size={14} />
-              {t.label}
+              {Icon && <Icon size={14} />}
+              {opt.label}
+              <span style={{
+                fontSize: 11, fontWeight: 700, padding: '1px 7px', borderRadius: 10,
+                background: isActive ? 'rgba(255,255,255,0.25)' : '#F1F5F9',
+                color: isActive ? '#fff' : '#64748b',
+              }}>
+                {count}
+              </span>
             </button>
           );
         })}
       </div>
 
       <div style={contentArea}>
-        {tab === 'timesheet' && <TimesheetOverflowTab allowed={allowed} />}
-        {tab === 'affiliate' && <PayoutAmendmentTab kind="affiliate" allowed={allowed} />}
-        {tab === 'partner' && <PayoutAmendmentTab kind="partner" allowed={allowed} />}
-        {tab === 'client_names' && <ClientMasterNameTab allowed={allowed} />}
+        {loading && <div style={emptyState}>Loading approvals...</div>}
+        {!loading && err && (
+          <div style={errorBanner}>
+            <AlertCircle size={14} /> {err}
+          </div>
+        )}
+        {!loading && !err && items.length === 0 && (
+          <div style={emptyState}>
+            {filter === 'all'
+              ? 'No pending approval requests.'
+              : `No pending ${FILTER_OPTIONS.find((o) => o.key === filter)?.label?.toLowerCase() || ''} requests.`}
+          </div>
+        )}
+        {!loading && !err && items.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {items.map((item) => {
+              const key = busyKey(item.type, item.id);
+              const busy = busyKey === key;
+
+              if (item.type === 'timesheet') {
+                return (
+                  <OverflowCard
+                    key={key}
+                    row={item.row}
+                    busy={busy}
+                    onApprove={(id, modifyMin) => runAction(key, async () => {
+                      const body = {};
+                      if (modifyMin) {
+                        const n = parseInt(String(modifyMin), 10);
+                        if (Number.isFinite(n) && n > 0) body.approved_duration_minutes = n;
+                      }
+                      await approveTimesheetOverflowRequest(id, body);
+                    })}
+                    onReject={(id, reason) => runAction(key, () => rejectTimesheetOverflowRequest(id, reason))}
+                  />
+                );
+              }
+
+              if (item.type === 'affiliate' || item.type === 'partner') {
+                const approveFn = item.type === 'affiliate'
+                  ? approveAffiliatePayoutCycleAmendment
+                  : approvePartnerPayoutCycleAmendment;
+                const rejectFn = item.type === 'affiliate'
+                  ? rejectAffiliatePayoutCycleAmendment
+                  : rejectPartnerPayoutCycleAmendment;
+                return (
+                  <PayoutAmendmentCard
+                    key={key}
+                    kind={item.type}
+                    row={item.row}
+                    busy={busy}
+                    onApprove={(id) => runAction(key, () => approveFn(id))}
+                    onReject={(id, reason) => runAction(key, () => rejectFn(id, reason))}
+                  />
+                );
+              }
+
+              if (item.type === 'ledger') {
+                return (
+                  <LedgerTxnChangeCard
+                    key={key}
+                    row={item.row}
+                    busy={busy}
+                    onApprove={(id, decisionNotes) => runAction(key, async () => {
+                      const body = {};
+                      if (decisionNotes?.trim()) body.decision_notes = decisionNotes.trim();
+                      await approveLedgerTxnChange(id, body);
+                    })}
+                    onReject={(id, reason) => runAction(key, () => rejectLedgerTxnChange(id, reason))}
+                  />
+                );
+              }
+
+              return (
+                <ClientMasterNameCard
+                  key={key}
+                  row={item.row}
+                  busy={busy}
+                  onApprove={(id, decisionNotes) => runAction(key, async () => {
+                    const body = {};
+                    if (decisionNotes?.trim()) body.decision_notes = decisionNotes.trim();
+                    await approveClientMasterNameChange(id, body);
+                  })}
+                  onReject={(id, reason) => runAction(key, () => rejectClientMasterNameChange(id, reason))}
+                />
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -473,11 +659,11 @@ export default function Approvals() {
 const pageWrap = { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, background: '#F6F7FB', minHeight: '100%' };
 const pageHeader = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '20px 24px', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' };
 const iconWrap = { width: 44, height: 44, borderRadius: 12, background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
-const toolbar = { display: 'flex', gap: 8, background: '#fff', padding: '12px 16px', borderRadius: 12, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', flexWrap: 'wrap' };
+const toolbar = { display: 'flex', gap: 8, background: '#fff', padding: '12px 16px', borderRadius: 12, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', flexWrap: 'wrap', alignItems: 'center' };
 const contentArea = { background: '#fff', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', padding: 20, minHeight: 200 };
 const card = { border: '1px solid #E6E8F0', borderRadius: 12, padding: 16, background: '#FAFBFD' };
 const emptyState = { fontSize: 13, color: '#94a3b8', padding: 20, textAlign: 'center' };
-const errorBanner = { display: 'flex', alignItems: 'center', gap: 8, background: '#FEE2E2', color: '#991B1B', borderRadius: 8, padding: '10px 14px', fontSize: 13 };
+const errorBanner = { display: 'flex', alignItems: 'center', gap: 8, background: '#FEE2E2', color: '#991B1B', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 12 };
 const btnApprove = { padding: '8px 16px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13, boxShadow: '0 2px 8px rgba(243,121,32,0.25)' };
 const btnReject = { padding: '8px 16px', borderRadius: 8, border: '1px solid #FCA5A5', background: '#fff', color: '#DC2626', fontWeight: 600, cursor: 'pointer', fontSize: 13 };
 const inputSm = { padding: '6px 10px', borderRadius: 6, border: '1px solid #E6E8F0', fontSize: 13, boxSizing: 'border-box' };

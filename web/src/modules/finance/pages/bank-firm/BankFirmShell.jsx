@@ -20,6 +20,7 @@ const tabs = [
   { to: `${BASE}/transfer`, label: 'Intra Transfer' },
   { to: `${BASE}/inter-transfer`, label: 'Inter Transfer' },
   { to: `${BASE}/expense`, label: 'Firm expense' },
+  { to: `${BASE}/inflow`, label: 'Firm inflow' },
   { to: `${BASE}/report`, label: 'Contra & expenses' },
 ];
 
@@ -66,7 +67,7 @@ export default function BankFirmShell() {
           <div>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Bank & Firm Transactions</h1>
             <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
-              Manage bank/cash accounts, view ledgers, record transfers and firm expenses
+              Manage bank/cash accounts, view ledgers, record transfers, firm expenses and inflows
             </p>
           </div>
         </div>

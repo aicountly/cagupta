@@ -124,6 +124,7 @@ export default function ServiceEngagementManage() {
   const [linkSaving, setLinkSaving] = useState(false);
   const [masterError, setMasterError] = useState('');
   const [masterClientId, setMasterClientId] = useState(null);
+  const [engClientType, setEngClientType] = useState('contact');
   const [masterOrgId, setMasterOrgId] = useState(null);
   const [masterServicesList, setMasterServicesList] = useState([]);
   const [linkToMasterTarget, setLinkToMasterTarget] = useState('');
@@ -284,6 +285,7 @@ export default function ServiceEngagementManage() {
         setMasterServiceId(eng.masterServiceId ?? null);
         setMasterServiceName(eng.masterServiceName ?? '');
         setMasterClientId(eng.clientId ?? null);
+        setEngClientType(eng.clientType || 'contact');
         setMasterOrgId(eng.clientType === 'organization' ? eng.clientId : null);
         if (eng.linkedServicesSummary) {
           setLinkedServicesSummary(eng.linkedServicesSummary);
@@ -504,12 +506,20 @@ export default function ServiceEngagementManage() {
 
   // ── Master Service handlers ─────────────────────────────────────────────────
 
+  const canAddChildService = canEditService && (!masterServiceId || isMasterService);
+
   function handleAddChildService() {
-    navigate('/engagements/new', {
+    if (!id || !canAddChildService) return;
+    navigate('/services/new', {
       state: {
         parentServiceId: id,
         parentServiceName: serviceType || `Service #${id}`,
         parentIsMaster: isMasterService,
+        parentClientType: engClientType,
+        parentClientId: masterClientId,
+        parentClientName: clientName,
+        parentFinancialYear: fy,
+        returnUrl: `/services/${id}`,
       },
     });
   }
@@ -1777,12 +1787,20 @@ export default function ServiceEngagementManage() {
               <button type="button" style={btnSecondary} disabled={requestingCfOtp} onClick={handleRequestCfOtp}>
                 {requestingCfOtp ? 'Sending…' : 'Request superadmin OTP'}
               </button>
+              {canAddChildService && (
+                <button type="button" style={btnSecondary} onClick={handleAddChildService}>
+                  <Plus size={14} /> Add child service
+                </button>
+              )}
               <button type="button" style={btnSmall} onClick={() => setShowAddTask(true)}><Plus size={14} /> Add task</button>
             </div>
           </div>
           <p style={hint}>
             Check off items locally, then click <strong>Save changes</strong> to persist task status. New tasks are saved immediately.
             <strong> Removing a task</strong> requires a superadmin OTP (request above, or on Overview) and the code in the Overview field, then <strong>Save changes</strong>.
+            {canAddChildService && (
+              <> Use <strong>Add child service</strong> to create a linked engagement in one step — the current service is marked as master automatically.</>
+            )}
           </p>
           {tasks.length === 0 && <div style={{ color: '#94a3b8', fontSize: 13 }}>No tasks yet.</div>}
           {tasks.map((t, i) => (

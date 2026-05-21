@@ -11,6 +11,7 @@ use App\Libraries\ClientMasterNameChangeService;
 use App\Libraries\DigestQueue;
 use App\Libraries\OtpService;
 use App\Models\AdminAuditLogModel;
+use App\Models\BillingFirmModel;
 use App\Models\ClientModel;
 use App\Models\UserModel;
 
@@ -154,6 +155,7 @@ class ContactController extends BaseController
 
         try {
             $referral = $this->referralFieldsFromBody($body);
+            $billingDefault = $this->defaultBillingFieldsFromBody($body);
             $newId = $this->clients->create(array_merge([
                 'type'              => $body['type']              ?? 'individual',
                 'first_name'        => $firstName  ?: null,
@@ -178,7 +180,7 @@ class ContactController extends BaseController
                 'is_active'         => $body['is_active'] ?? true,
                 'contact_status'    => $body['contact_status'] ?? $body['status'] ?? null,
                 'created_by'        => $actingUser ? (int)$actingUser['id'] : null,
-            ], $referral));
+            ], $referral, $billingDefault ?? []));
         } catch (\Throwable $e) {
             error_log('[ContactController] Create failed: ' . $e->getMessage());
             $this->error('Failed to create contact. Please try again.', 500);
@@ -308,6 +310,10 @@ class ContactController extends BaseController
         }
         if (array_key_exists('client_facing_restricted', $body)) {
             $data['client_facing_restricted'] = (bool)$body['client_facing_restricted'];
+        }
+        $billingDefault = $this->defaultBillingFieldsFromBody($body);
+        if ($billingDefault !== null) {
+            $data = array_merge($data, $billingDefault);
         }
 
         if (array_key_exists('pan', $data)) {
@@ -612,6 +618,31 @@ class ContactController extends BaseController
             'commission_mode'             => $mode,
             'client_facing_restricted'    => !empty($body['client_facing_restricted']),
         ];
+    }
+
+    /**
+     * Optional default billing firm for Raise Invoice pre-fill.
+     *
+     * @param array<string, mixed> $body
+     *
+     * @return array{default_billing_profile_code: ?string}|null  null when key not sent
+     */
+    private function defaultBillingFieldsFromBody(array $body): ?array
+    {
+        if (!array_key_exists('default_billing_profile_code', $body)
+            && !array_key_exists('defaultBillingProfileCode', $body)) {
+            return null;
+        }
+        $raw  = $body['default_billing_profile_code'] ?? $body['defaultBillingProfileCode'] ?? '';
+        $code = strtoupper(trim((string)$raw));
+        if ($code === '') {
+            return ['default_billing_profile_code' => null];
+        }
+        if ((new BillingFirmModel())->findByCode($code) === null) {
+            $this->error('Unknown billing firm code for default billing profile.', 422);
+        }
+
+        return ['default_billing_profile_code' => $code];
     }
 
     /**

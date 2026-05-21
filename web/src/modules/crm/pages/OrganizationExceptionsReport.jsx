@@ -9,6 +9,7 @@ const CRITERIA = [
   { key: 'cin', label: 'CIN' },
   { key: 'email', label: 'Email' },
   { key: 'website', label: 'Website' },
+  { key: 'default_billing_profile', label: 'Default billing firm' },
 ];
 
 const FIELD_BADGE = {
@@ -17,6 +18,7 @@ const FIELD_BADGE = {
   cin: 'CIN',
   email: 'Email',
   website: 'Website',
+  default_billing_profile: 'Billing firm',
 };
 
 export default function OrganizationExceptionsReport() {

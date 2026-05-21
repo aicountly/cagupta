@@ -255,13 +255,15 @@ class ClientModel
                 email, secondary_email, phone, secondary_phone, pan, gstin, website,
                 address_line1, address_line2, city, state, pincode, country,
                 notes, reference, group_id, is_active, contact_status, created_by,
-                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
+                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted,
+                default_billing_profile_code
              ) VALUES (
                 :type, :first_name, :last_name, :organization_name,
                 :email, :secondary_email, :phone, :secondary_phone, :pan, :gstin, :website,
                 :address_line1, :address_line2, :city, :state, :pincode, :country,
                 :notes, :reference, :group_id, :is_active, :contact_status, :created_by,
-                :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted
+                :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted,
+                :default_billing_profile_code
              ) RETURNING id'
         );
         $refAff = isset($data['referring_affiliate_user_id']) ? (int)$data['referring_affiliate_user_id'] : 0;
@@ -294,6 +296,7 @@ class ClientModel
             ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
             ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
             ':client_facing_restricted' => ((bool)($data['client_facing_restricted'] ?? false)) ? 'true' : 'false',
+            ':default_billing_profile_code' => $data['default_billing_profile_code'] ?? null,
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -314,6 +317,7 @@ class ClientModel
             'address_line1', 'address_line2', 'city', 'state', 'pincode', 'country',
             'notes', 'reference',
             'referral_start_date', 'commission_mode',
+            'default_billing_profile_code',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
@@ -503,7 +507,7 @@ class ClientModel
      */
     public static function exceptionReportAllowedKeys(): array
     {
-        return ['gstin', 'pan', 'email', 'website'];
+        return ['gstin', 'pan', 'email', 'website', 'default_billing_profile'];
     }
 
     /**
@@ -528,10 +532,11 @@ class ClientModel
 
         $orParts = [];
         $colMap  = [
-            'gstin'   => 'c.gstin',
-            'pan'     => 'c.pan',
-            'email'   => 'c.email',
-            'website' => 'c.website',
+            'gstin'                   => 'c.gstin',
+            'pan'                     => 'c.pan',
+            'email'                   => 'c.email',
+            'website'                 => 'c.website',
+            'default_billing_profile' => 'c.default_billing_profile_code',
         ];
         foreach ($missingKeys as $i => $key) {
             $col = $colMap[$key] ?? null;
@@ -556,7 +561,9 @@ class ClientModel
 
         $stmt = $this->db->prepare(
             "SELECT c.id, c.first_name, c.last_name, c.organization_name,
-                    c.email, c.pan, c.gstin, c.website, c.is_active, c.contact_status,
+                    c.email, c.pan, c.gstin, c.website,
+                    c.default_billing_profile_code AS default_billing_profile,
+                    c.is_active, c.contact_status,
                     cg.name AS group_name
              FROM clients c
              LEFT JOIN client_groups cg ON cg.id = c.group_id

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Clock, Target, UserRound, Building2, ShieldCheck,
+  Clock, Target, UserRound, Building2, ShieldCheck, Receipt,
   Search, ArrowRight, BarChart3,
 } from 'lucide-react';
 import { useAuth } from '../auth/AuthContext';
@@ -65,6 +65,14 @@ const REPORT_CATEGORIES = [
         description: 'Organizations with missing, expired, or unverified KYC documents.',
         icon: ShieldCheck,
         to: '/reports/exceptions/organization-kyc',
+        permission: 'clients.view',
+      },
+      {
+        id: 'billing-firm-exceptions',
+        label: 'Default Billing Firm Exceptions',
+        description: 'Contacts and organizations with no default billing firm set on the client master.',
+        icon: Receipt,
+        to: '/reports/exceptions/billing-firm',
         permission: 'clients.view',
       },
     ],

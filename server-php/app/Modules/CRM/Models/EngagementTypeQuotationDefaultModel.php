@@ -32,7 +32,10 @@ class EngagementTypeQuotationDefaultModel
                     c.name AS category_name,
                     sc.id AS subcategory_id,
                     sc.name AS subcategory_name,
-                    d.default_price,
+                    et.pricing_model,
+                    et.quotation_base_amount,
+                    et.quotation_hourly_rate,
+                    et.quotation_estimated_hours,
                     d.documents_required,
                     d.updated_at AS default_updated_at,
                     d.updated_by AS default_updated_by
@@ -90,20 +93,27 @@ class EngagementTypeQuotationDefaultModel
 
     /**
      * Count engagement types where quotation setup is incomplete:
-     * no defaults row, or both price is null and documents list has no non-empty strings.
+     * missing valid pricing on engagement_types or no documents in defaults.
      */
     public function countIncompleteSetups(): int
     {
         $sql = 'SELECT COUNT(*) FROM engagement_types et
                 LEFT JOIN engagement_type_quotation_defaults d ON d.engagement_type_id = et.id
-                WHERE d.engagement_type_id IS NULL
-                   OR (
-                        d.default_price IS NULL
-                        AND NOT EXISTS (
-                            SELECT 1 FROM jsonb_array_elements_text(COALESCE(d.documents_required, \'[]\'::jsonb)) AS t(x)
-                            WHERE TRIM(t.x) <> \'\'
-                        )
-                      )';
+                WHERE NOT (
+                    (
+                        (et.pricing_model = \'fixed\'
+                         AND et.quotation_base_amount IS NOT NULL AND et.quotation_base_amount > 0)
+                        OR (et.pricing_model = \'per_hour\'
+                         AND et.quotation_hourly_rate IS NOT NULL AND et.quotation_hourly_rate > 0)
+                        OR (et.pricing_model = \'fixed_plus_additional\'
+                         AND et.quotation_base_amount IS NOT NULL AND et.quotation_base_amount > 0)
+                    )
+                    AND d.engagement_type_id IS NOT NULL
+                    AND EXISTS (
+                        SELECT 1 FROM jsonb_array_elements_text(COALESCE(d.documents_required, \'[]\'::jsonb)) AS t(x)
+                        WHERE TRIM(t.x) <> \'\'
+                    )
+                )';
         return (int)$this->db->query($sql)->fetchColumn();
     }
 

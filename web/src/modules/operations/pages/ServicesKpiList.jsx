@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Navigate } from 'react-router-dom';
 import { ArrowLeft, Search } from 'lucide-react';
-import { getAllEngagements } from '../../../services/engagementService';
+import { getEngagementsWithMeta } from '../../../services/engagementService';
 import { useAuth } from '../../../auth/AuthContext';
-import { isValidKpiSlug, filterEngagementsBySlug, kpiLabelFromSlug } from '../../../utils/serviceKpiFilters';
+import { isValidKpiSlug, kpiLabelFromSlug, localDateKey } from '../../../utils/serviceKpiFilters';
+import ListPaginationBar from '../../../components/common/ListPaginationBar';
 import ServicesEngagementTableBlock from '../../../components/services/ServicesEngagementTableBlock';
+
+const PER_PAGE = 50;
 
 export default function ServicesKpiList() {
   const { kpiSlug } = useParams();
@@ -12,30 +15,51 @@ export default function ServicesKpiList() {
   const { hasPermission } = useAuth();
   const canDeleteService = hasPermission('services.delete');
   const canEditService = hasPermission('services.edit');
-  const [allServices, setAllServices] = useState([]);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [pageServices, setPageServices] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setLoading(true);
-    getAllEngagements()
-      .then((data) => setAllServices(data))
-      .catch(() => setAllServices([]))
-      .finally(() => setLoading(false));
-  }, []);
+    const t = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
-  const byKpi = filterEngagementsBySlug(allServices, kpiSlug);
-  const rows = byKpi.filter((s) => {
-    const q = search.toLowerCase();
-    return !q || s.clientName.toLowerCase().includes(q) || s.type.toLowerCase().includes(q);
-  });
+  useEffect(() => {
+    if (!isValidKpiSlug(kpiSlug)) return;
+    setLoading(true);
+    getEngagementsWithMeta({
+      page,
+      perPage: PER_PAGE,
+      search,
+      kpiSlug,
+      asOf: localDateKey(new Date()),
+    })
+      .then(({ engagements, total, lastPage }) => {
+        setPageServices(engagements);
+        setServerTotal(total);
+        setTotalPages(Math.max(1, lastPage));
+      })
+      .catch(() => {
+        setPageServices([]);
+        setServerTotal(0);
+        setTotalPages(1);
+      })
+      .finally(() => setLoading(false));
+  }, [kpiSlug, page, search]);
 
   if (!isValidKpiSlug(kpiSlug)) {
     return <Navigate to="/services" replace />;
   }
 
   const label = kpiLabelFromSlug(kpiSlug);
-  const emptyMessage = byKpi.length === 0
+  const emptyMessage = serverTotal === 0 && !loading
     ? 'No service engagements in this list.'
     : 'No results for your search.';
 
@@ -47,7 +71,7 @@ export default function ServicesKpiList() {
           Back to Services &amp; Tasks
         </button>
         <h1 style={h1}>{label}</h1>
-        {loading && <span style={muted}>Loading…</span>}
+        {loading && pageServices.length === 0 && <span style={muted}>Loading…</span>}
       </div>
       <p style={subText}>Open engagements in this group; search to narrow, then use actions on each row.</p>
 
@@ -55,22 +79,43 @@ export default function ServicesKpiList() {
         <div style={searchBox}>
           <Search size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
           <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search client or service…"
             style={searchInput}
           />
         </div>
       </div>
 
-      <ServicesEngagementTableBlock
-        rows={rows}
-        setAllServices={setAllServices}
-        canEditService={canEditService}
-        canDeleteService={canDeleteService}
-        emptyMessage={emptyMessage}
-        allServicesForSelection={allServices}
-      />
+      <div style={listCard}>
+        <ListPaginationBar
+          placement="top"
+          total={serverTotal}
+          page={page}
+          totalPages={totalPages}
+          perPage={PER_PAGE}
+          loading={loading}
+          setPage={setPage}
+          entityPlural="engagements"
+        />
+        <ServicesEngagementTableBlock
+          rows={pageServices}
+          setAllServices={setPageServices}
+          canEditService={canEditService}
+          canDeleteService={canDeleteService}
+          emptyMessage={emptyMessage}
+        />
+        <ListPaginationBar
+          placement="bottom"
+          total={serverTotal}
+          page={page}
+          totalPages={totalPages}
+          perPage={PER_PAGE}
+          loading={loading}
+          setPage={setPage}
+          entityPlural="engagements"
+        />
+      </div>
     </div>
   );
 }
@@ -93,3 +138,10 @@ const toolbar = {
 };
 const searchBox = { display: 'flex', alignItems: 'center', gap: 8, background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 8, padding: '6px 10px', flex: 1, width: '100%' };
 const searchInput = { border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: '#334155', width: '100%' };
+const listCard = {
+  background: '#fff',
+  borderRadius: 14,
+  border: '1px solid #E6E8F0',
+  boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+  overflow: 'hidden',
+};

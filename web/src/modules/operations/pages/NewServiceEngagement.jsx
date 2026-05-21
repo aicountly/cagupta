@@ -208,6 +208,11 @@ export default function NewServiceEngagement() {
   const parentServiceId = location.state?.parentServiceId ?? null;
   const parentServiceName = location.state?.parentServiceName ?? null;
   const parentIsMaster = location.state?.parentIsMaster ?? false;
+  const parentClientType = location.state?.parentClientType ?? null;
+  const parentClientId = location.state?.parentClientId ?? null;
+  const parentClientName = location.state?.parentClientName ?? null;
+  const parentFinancialYear = location.state?.parentFinancialYear ?? null;
+  const returnUrl = location.state?.returnUrl ?? '/services';
 
   // Catalog loaded from API
   const [categories, setCategories] = useState([]);
@@ -273,6 +278,17 @@ export default function NewServiceEngagement() {
       .then(setApprovedAffiliates)
       .catch(() => setApprovedAffiliates([]));
   }, []);
+
+  // Pre-fill client and FY when creating a child service from an existing engagement
+  useEffect(() => {
+    if (!parentServiceId) return;
+    if (parentClientType && parentClientId) {
+      setClientType(parentClientType);
+      setClientId(String(parentClientId));
+      if (parentClientName) setSelectedClientLabel(parentClientName);
+    }
+    if (parentFinancialYear) setFy(parentFinancialYear);
+  }, [parentServiceId, parentClientType, parentClientId, parentClientName, parentFinancialYear]);
 
   useEffect(() => {
     if (!clientId) {
@@ -442,7 +458,7 @@ export default function NewServiceEngagement() {
           addNotification('New service engagement created', 'service');
           setToast('Engagement created');
         }
-        setTimeout(() => navigate('/services'), 1200);
+        setTimeout(() => navigate(returnUrl), 1200);
       })
       .catch(err => {
         if (err instanceof ApiError && err.status === 409 && err.body?.data?.existing) {
@@ -455,7 +471,7 @@ export default function NewServiceEngagement() {
   }
 
   function handleCancel() {
-    navigate('/services');
+    navigate(returnUrl);
   }
 
   // ── Render ──────────────────────────────────────────────────────────────────

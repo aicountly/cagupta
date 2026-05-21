@@ -52,13 +52,22 @@ class LeadQuotationModel
 
     /**
      * @param array<int, string> $documentsRequired
+     * @param array<string, mixed> $pricingSnapshot
      */
-    public function create(int $leadId, ?int $engagementTypeId, ?float $price, array $documentsRequired, string $status, ?int $createdBy): int
-    {
-        $json = json_encode(array_values($documentsRequired), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+    public function create(
+        int $leadId,
+        ?int $engagementTypeId,
+        ?float $price,
+        array $documentsRequired,
+        array $pricingSnapshot,
+        string $status,
+        ?int $createdBy
+    ): int {
+        $json     = json_encode(array_values($documentsRequired), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $snapJson = json_encode($pricingSnapshot, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         $stmt = $this->db->prepare(
-            'INSERT INTO lead_quotations (lead_id, engagement_type_id, price, documents_required, status, created_by, created_at, updated_at)
-             VALUES (:lid, :eid, :price, CAST(:docs AS jsonb), :st, :uid, NOW(), NOW())
+            'INSERT INTO lead_quotations (lead_id, engagement_type_id, price, documents_required, pricing_snapshot, status, created_by, created_at, updated_at)
+             VALUES (:lid, :eid, :price, CAST(:docs AS jsonb), CAST(:snap AS jsonb), :st, :uid, NOW(), NOW())
              RETURNING id'
         );
         $stmt->execute([
@@ -66,6 +75,7 @@ class LeadQuotationModel
             ':eid'   => $engagementTypeId,
             ':price' => $price,
             ':docs'  => $json,
+            ':snap'  => $snapJson,
             ':st'    => $status,
             ':uid'   => $createdBy,
         ]);
@@ -74,22 +84,26 @@ class LeadQuotationModel
 
     /**
      * @param array<int, string> $documentsRequired
+     * @param array<string, mixed> $pricingSnapshot
      */
     public function update(
         int $id,
         ?float $price,
         array $documentsRequired,
+        array $pricingSnapshot,
         string $status,
         ?int $engagementTypeId,
         bool $setEngagementTypeId
     ): bool {
-        $json = json_encode(array_values($documentsRequired), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $json     = json_encode(array_values($documentsRequired), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $snapJson = json_encode($pricingSnapshot, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         if ($setEngagementTypeId) {
             $stmt = $this->db->prepare(
                 'UPDATE lead_quotations SET
                     engagement_type_id = :eid,
                     price = :price,
                     documents_required = CAST(:docs AS jsonb),
+                    pricing_snapshot = CAST(:snap AS jsonb),
                     status = :st,
                     updated_at = NOW()
                  WHERE id = :id'
@@ -99,6 +113,7 @@ class LeadQuotationModel
                 ':eid'   => $engagementTypeId,
                 ':price' => $price,
                 ':docs'  => $json,
+                ':snap'  => $snapJson,
                 ':st'    => $status,
             ]);
         }
@@ -106,6 +121,7 @@ class LeadQuotationModel
             'UPDATE lead_quotations SET
                 price = :price,
                 documents_required = CAST(:docs AS jsonb),
+                pricing_snapshot = CAST(:snap AS jsonb),
                 status = :st,
                 updated_at = NOW()
              WHERE id = :id'
@@ -114,6 +130,7 @@ class LeadQuotationModel
             ':id'    => $id,
             ':price' => $price,
             ':docs'  => $json,
+            ':snap'  => $snapJson,
             ':st'    => $status,
         ]);
     }

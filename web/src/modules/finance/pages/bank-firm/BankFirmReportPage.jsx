@@ -26,6 +26,7 @@ export default function BankFirmReportPage() {
             <option value="all">All transactions</option>
             <option value="contra">Contra only</option>
             <option value="expense">Expenses only</option>
+            <option value="inflow">Inflows only</option>
           </select>
           <button type="button" style={btnSecondary} onClick={loadReport}>
             Refresh
@@ -50,25 +51,29 @@ export default function BankFirmReportPage() {
                   </td>
                 </tr>
               )}
-              {reportRows.map((r) => (
+              {reportRows.map((r) => {
+                const isContra = r.txnType === 'firm_bank_transfer';
+                const isInflow = r.txnType === 'firm_inflow';
+                const badgeStyle = isContra
+                  ? { background: '#DBEAFE', color: '#1E40AF' }
+                  : isInflow
+                    ? { background: '#DCFCE7', color: '#166534' }
+                    : { background: '#FEE2E2', color: '#991B1B' };
+                const typeLabel = isContra ? 'contra' : isInflow ? 'inflow' : r.txnType;
+                return (
                 <tr key={r.id}>
                   <td style={tdStyle}>{r.txnDate}</td>
                   <td style={tdStyle}>
-                    <span
-                      style={{
-                        ...badge,
-                        background: r.txnType === 'contra' ? '#DBEAFE' : '#FEE2E2',
-                        color: r.txnType === 'contra' ? '#1E40AF' : '#991B1B',
-                      }}
-                    >
-                      {r.txnType}
+                    <span style={{ ...badge, ...badgeStyle }}>
+                      {typeLabel}
                     </span>
                   </td>
                   <td style={tdStyle}>{r.debit ? `₹${Number(r.debit).toLocaleString('en-IN')}` : '—'}</td>
                   <td style={tdStyle}>{r.credit ? `₹${Number(r.credit).toLocaleString('en-IN')}` : '—'}</td>
                   <td style={tdStyle}>{r.narration}</td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

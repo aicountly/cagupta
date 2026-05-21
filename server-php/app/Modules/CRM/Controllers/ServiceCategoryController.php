@@ -5,10 +5,12 @@ namespace App\Controllers\Admin;
 
 use App\Config\Database;
 use App\Controllers\BaseController;
+use App\Libraries\QuotationPricing;
 use JsonException;
 use App\Models\ServiceCategoryModel;
 use App\Models\ServiceSubcategoryModel;
 use App\Models\EngagementTypeModel;
+use App\Models\EngagementTypeAdditionalFeeTemplateModel;
 use App\Models\ServiceModel;
 use App\Models\LeadModel;
 use App\Models\RecurringServiceDefinitionModel;
@@ -29,6 +31,8 @@ class ServiceCategoryController extends BaseController
     private ?ServiceSubcategoryModel $lazySubcategories = null;
 
     private ?EngagementTypeModel $lazyEngagementTypes = null;
+
+    private ?EngagementTypeAdditionalFeeTemplateModel $lazyAdditionalTemplates = null;
 
     private ?ServiceModel $lazyServices = null;
 
@@ -51,6 +55,11 @@ class ServiceCategoryController extends BaseController
     private function engagementTypes(): EngagementTypeModel
     {
         return $this->lazyEngagementTypes ??= new EngagementTypeModel();
+    }
+
+    private function additionalTemplates(): EngagementTypeAdditionalFeeTemplateModel
+    {
+        return $this->lazyAdditionalTemplates ??= new EngagementTypeAdditionalFeeTemplateModel();
     }
 
     private function services(): ServiceModel
@@ -364,9 +373,11 @@ class ServiceCategoryController extends BaseController
     // ── PATCH /api/admin/engagement-types/:id ─────────────────────────────────
 
     /**
-     * Update billing standards (and optionally name) on an engagement type.
+     * Update billing standards, quotation pricing, and optionally name on an engagement type.
      *
-     * Body: { name?, standard_fee_amount?, standard_allowable_hours? } — omit or null to clear amounts/hours.
+     * Body: { name?, standard_fee_amount?, standard_allowable_hours?,
+     *         pricing_model?, quotation_base_amount?, quotation_hourly_rate?, quotation_estimated_hours?,
+     *         additional_fee_templates? }
      */
     public function engagementTypeUpdate(int $id): never
     {
@@ -377,6 +388,7 @@ class ServiceCategoryController extends BaseController
 
         $body = $this->getJsonBody();
         $data = [];
+        $templatesToSave = null;
 
         $oldName = trim((string)($et['name'] ?? ''));
 
@@ -416,14 +428,83 @@ class ServiceCategoryController extends BaseController
             }
         }
 
-        if ($data === []) {
-            $this->success($this->engagementTypes()->find($id), 'No changes.');
+        $pricingTouched = array_key_exists('pricing_model', $body)
+            || array_key_exists('quotation_base_amount', $body)
+            || array_key_exists('quotation_hourly_rate', $body)
+            || array_key_exists('quotation_estimated_hours', $body);
+
+        if ($pricingTouched) {
+            $mergedPricing = [
+                'pricing_model'             => array_key_exists('pricing_model', $body)
+                    ? $body['pricing_model'] : ($et['pricing_model'] ?? QuotationPricing::MODEL_FIXED),
+                'quotation_base_amount'     => array_key_exists('quotation_base_amount', $body)
+                    ? $body['quotation_base_amount'] : ($et['quotation_base_amount'] ?? null),
+                'quotation_hourly_rate'     => array_key_exists('quotation_hourly_rate', $body)
+                    ? $body['quotation_hourly_rate'] : ($et['quotation_hourly_rate'] ?? null),
+                'quotation_estimated_hours' => array_key_exists('quotation_estimated_hours', $body)
+                    ? $body['quotation_estimated_hours'] : ($et['quotation_estimated_hours'] ?? null),
+            ];
+
+            $errors = QuotationPricing::validateEngagementTypePricing($mergedPricing);
+            if ($errors !== []) {
+                $this->error(implode(' ', $errors), 422);
+            }
+
+            if (array_key_exists('pricing_model', $body)) {
+                $data['pricing_model'] = QuotationPricing::normalizeModel((string)$body['pricing_model']);
+            }
+            foreach (['quotation_base_amount', 'quotation_hourly_rate', 'quotation_estimated_hours'] as $field) {
+                if (array_key_exists($field, $body)) {
+                    $raw = $body[$field];
+                    if ($raw === null || $raw === '') {
+                        $data[$field] = null;
+                    } elseif (!is_numeric($raw)) {
+                        $this->error("{$field} must be numeric or empty.", 422);
+                    } else {
+                        $v = (float)$raw;
+                        if ($v < 0) {
+                            $this->error("{$field} cannot be negative.", 422);
+                        }
+                        $data[$field] = $v;
+                    }
+                }
+            }
+        }
+
+        if (array_key_exists('additional_fee_templates', $body)) {
+            if (!is_array($body['additional_fee_templates'])) {
+                $this->error('additional_fee_templates must be an array.', 422);
+            }
+            foreach ($body['additional_fee_templates'] as $i => $item) {
+                if (!is_array($item)) {
+                    $this->error("additional_fee_templates[{$i}] must be an object.", 422);
+                }
+                $itemErrors = QuotationPricing::validateAdditionalTemplate($item);
+                if ($itemErrors !== []) {
+                    $this->error('Template ' . ($i + 1) . ': ' . implode(' ', $itemErrors), 422);
+                }
+            }
+            $templatesToSave = $body['additional_fee_templates'];
+        }
+
+        if ($data === [] && $templatesToSave === null) {
+            $updated = $this->engagementTypes()->find($id);
+            if ($updated !== null) {
+                $updated['additional_fee_templates'] = $this->additionalTemplates()->forEngagementType($id);
+            }
+            $this->success($updated, 'No changes.');
         }
 
         $db = Database::getConnection();
         $db->beginTransaction();
         try {
-            $this->engagementTypes()->update($id, $data);
+            if ($data !== []) {
+                $this->engagementTypes()->update($id, $data);
+            }
+
+            if ($templatesToSave !== null) {
+                $this->additionalTemplates()->replaceForEngagementType($id, $templatesToSave);
+            }
 
             if (isset($data['name'])) {
                 $newName = trim((string)$data['name']);
@@ -443,7 +524,11 @@ class ServiceCategoryController extends BaseController
             throw $e;
         }
 
-        $this->success($this->engagementTypes()->find($id), 'Engagement type updated');
+        $updated = $this->engagementTypes()->find($id);
+        if ($updated !== null) {
+            $updated['additional_fee_templates'] = $this->additionalTemplates()->forEngagementType($id);
+        }
+        $this->success($updated, 'Engagement type updated');
     }
 
     /**

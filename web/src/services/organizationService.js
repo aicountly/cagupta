@@ -96,6 +96,7 @@ function normalizeOrg(o) {
     referralStartDate: o.referral_start_date || '',
     commissionMode: o.commission_mode || 'referral_only',
     clientFacingRestricted: Boolean(o.client_facing_restricted),
+    defaultBillingProfileCode: o.default_billing_profile_code || '',
   };
 }
 

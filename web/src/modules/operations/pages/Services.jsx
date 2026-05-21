@@ -1,15 +1,16 @@
 import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { getAllEngagements, getServiceKpiSnapshot } from '../../../services/engagementService';
+import { getEngagementsWithMeta, getServiceKpiSnapshot } from '../../../services/engagementService';
 import { getMyTemporaryCharges } from '../../../services/leaveService';
 import { useAuth } from '../../../auth/AuthContext';
 import { useStaffUsers } from '../../../hooks/useStaffUsers';
+import ListPaginationBar from '../../../components/common/ListPaginationBar';
 import {
   Plus, Search, SlidersHorizontal,
   Clock, AlertTriangle,
   Info, CheckCircle2, Briefcase,
 } from 'lucide-react';
-import { KPI_SLUGS, filterEngagementsBySlug } from '../../../utils/serviceKpiFilters';
+import { KPI_SLUGS } from '../../../utils/serviceKpiFilters';
 import ServicesEngagementTableBlock from '../../../components/services/ServicesEngagementTableBlock';
 const RecurringServices = lazy(() => import('./RecurringServices'));
 
@@ -17,6 +18,7 @@ const PENDING_ON_ME_FILTER = 'pending_on_me';
 const PENDING_ON_ME_STATUSES = ['not_started', 'in_progress', 'pending_info', 'review'];
 const TAB_ALL   = 'all';
 const TAB_TEMP  = 'temp_charge';
+const PER_PAGE = 50;
 
 function formatWeekLine(delta, mode) {
   if (mode === 'activity_7d') {
@@ -27,8 +29,16 @@ function formatWeekLine(delta, mode) {
   return 'No change';
 }
 
+function engagementMatchesStatusFilter(status, filterStatus) {
+  if (filterStatus === 'all') return true;
+  if (filterStatus === PENDING_ON_ME_FILTER) {
+    return PENDING_ON_ME_STATUSES.includes(status);
+  }
+  return status === filterStatus;
+}
+
 // ── KPI helpers (engagement-level due date; not per-task JSON lines) ───────
-function kpiData(services, snapshot) {
+function kpiData(snapshot) {
   const defs = [
     {
       label: 'Due This Week',
@@ -65,10 +75,9 @@ function kpiData(services, snapshot) {
   ];
 
   return defs.map((row) => {
-    const useApi = snapshot && typeof snapshot.counts?.[row.slug] === 'number';
-    const value = useApi
+    const value = snapshot && typeof snapshot.counts?.[row.slug] === 'number'
       ? snapshot.counts[row.slug]
-      : filterEngagementsBySlug(services, row.slug).length;
+      : '—';
     const weekLine = snapshot
       ? formatWeekLine(
           snapshot.weekDelta[row.slug],
@@ -129,12 +138,18 @@ export default function Services() {
   const [activeTab, setActiveTab] = useState(TAB_ALL);
   const [scopeUserId, setScopeUserId] = useState('');
   const [filterStatus, setFilterStatus] = useState(PENDING_ON_ME_FILTER);
+  const [searchInput, setSearchInput] = useState('');
   const [search, setSearch] = useState('');
-  const [allServices, setAllServices] = useState([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [serverTotal, setServerTotal] = useState(0);
+  const [pageServices, setPageServices] = useState([]);
   const [kpiSnapshot, setKpiSnapshot] = useState(null);
   const [loading, setLoading] = useState(true);
   const [expandServiceId, setExpandServiceId] = useState(null);
   const onExpandConsumed = useCallback(() => setExpandServiceId(null), []);
+
+  const scopeUserIdNum = isSuperAdmin && scopeUserId ? Number(scopeUserId) : null;
 
   // Temporary charge state
   const [tempCharges, setTempCharges] = useState([]);
@@ -143,12 +158,19 @@ export default function Services() {
   useEffect(() => {
     const raw = searchParams.get('openService');
     if (raw == null) return;
-    if (!allServices.length) return;
     setExpandServiceId(raw);
     const next = new URLSearchParams(searchParams);
     next.delete('openService');
     setSearchParams(next, { replace: true });
-  }, [searchParams, allServices, setSearchParams]);
+  }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(t);
+  }, [searchInput]);
 
   // Load temporary charges once on mount (only for non-super-admin staff)
   useEffect(() => {
@@ -161,21 +183,32 @@ export default function Services() {
   }, []);
 
   useEffect(() => {
+    getServiceKpiSnapshot({ userId: scopeUserIdNum })
+      .then((snap) => setKpiSnapshot(snap))
+      .catch(() => setKpiSnapshot(null));
+  }, [scopeUserIdNum]);
+
+  useEffect(() => {
     setLoading(true);
-    Promise.all([
-      getAllEngagements({
-        userId: isSuperAdmin && scopeUserId ? Number(scopeUserId) : null,
-      }).catch(() => []),
-      getServiceKpiSnapshot({
-        userId: isSuperAdmin && scopeUserId ? Number(scopeUserId) : null,
-      }).catch(() => null),
-    ])
-      .then(([data, snap]) => {
-        setAllServices(data);
-        setKpiSnapshot(snap);
+    getEngagementsWithMeta({
+      page,
+      perPage: PER_PAGE,
+      search,
+      status: filterStatus,
+      userId: scopeUserIdNum,
+    })
+      .then(({ engagements, total, lastPage }) => {
+        setPageServices(engagements);
+        setServerTotal(total);
+        setTotalPages(Math.max(1, lastPage));
+      })
+      .catch(() => {
+        setPageServices([]);
+        setServerTotal(0);
+        setTotalPages(1);
       })
       .finally(() => setLoading(false));
-  }, [isSuperAdmin, scopeUserId]);
+  }, [page, search, filterStatus, scopeUserIdNum]);
 
   const selectableUsers = useMemo(() => {
     return staffUsers
@@ -183,24 +216,29 @@ export default function Services() {
       .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   }, [staffUsers]);
 
-  const kpis = kpiData(allServices, kpiSnapshot);
+  const kpis = kpiData(kpiSnapshot);
   const hasTempCharges = tempChargesLoaded && tempCharges.length > 0;
 
-  const filteredServices = allServices.filter((s) => {
-    const matchStatus = filterStatus === 'all'
-      || (filterStatus === PENDING_ON_ME_FILTER
-        ? PENDING_ON_ME_STATUSES.includes(s.status)
-        : s.status === filterStatus);
-    const q = search.toLowerCase();
-    const matchSearch = !q || s.clientName.toLowerCase().includes(q) || s.type.toLowerCase().includes(q);
-    return matchStatus && matchSearch;
-  });
+  const shouldRemoveFromList = useCallback((updated) => (
+    !engagementMatchesStatusFilter(updated.status, filterStatus)
+  ), [filterStatus]);
+
+  const handleRowRemoved = useCallback(() => {
+    setServerTotal((t) => Math.max(0, t - 1));
+  }, []);
+
+  function handleFilterStatusChange(val) {
+    setFilterStatus(val);
+    setPage(1);
+  }
+
+  function handleScopeUserChange(val) {
+    setScopeUserId(val);
+    setPage(1);
+  }
 
   return (
     <div style={pageWrap}>
-      {loading && (
-        <div style={{ fontSize: 13, color: '#64748b' }}>Loading engagements…</div>
-      )}
       {/* KPI row — only shown on the main tab */}
       {activeTab === TAB_ALL && (
         <div style={kpiRow}>
@@ -246,8 +284,8 @@ export default function Services() {
             <div style={searchBox}>
               <Search size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
               <input
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
                 placeholder="Search client or service…"
                 style={searchInput}
               />
@@ -255,7 +293,7 @@ export default function Services() {
             {isSuperAdmin && (
               <select
                 value={scopeUserId}
-                onChange={(e) => setScopeUserId(e.target.value)}
+                onChange={(e) => handleScopeUserChange(e.target.value)}
                 style={selectStyle}
               >
                 <option value="">All Users</option>
@@ -267,7 +305,7 @@ export default function Services() {
             <SlidersHorizontal size={14} style={{ color: '#64748b' }} />
             <select
               value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
+              onChange={(e) => handleFilterStatusChange(e.target.value)}
               style={selectStyle}
             >
               <option value="all">All Statuses</option>
@@ -286,15 +324,41 @@ export default function Services() {
 
       {/* All Services tab content */}
       {activeTab === TAB_ALL && (
-        <ServicesEngagementTableBlock
-          rows={filteredServices}
-          setAllServices={setAllServices}
-          canEditService={canEditService}
-          canDeleteService={canDeleteService}
-          allServicesForSelection={allServices}
-          expandServiceId={expandServiceId}
-          onExpandConsumed={onExpandConsumed}
-        />
+        <div style={listCard}>
+          <ListPaginationBar
+            placement="top"
+            total={serverTotal}
+            page={page}
+            totalPages={totalPages}
+            perPage={PER_PAGE}
+            loading={loading}
+            setPage={setPage}
+            entityPlural="engagements"
+          />
+          {loading && pageServices.length === 0 && (
+            <div style={{ padding: '16px 20px', fontSize: 13, color: '#64748b' }}>Loading engagements…</div>
+          )}
+          <ServicesEngagementTableBlock
+            rows={pageServices}
+            setAllServices={setPageServices}
+            canEditService={canEditService}
+            canDeleteService={canDeleteService}
+            shouldRemoveFromList={shouldRemoveFromList}
+            onRowRemoved={handleRowRemoved}
+            expandServiceId={expandServiceId}
+            onExpandConsumed={onExpandConsumed}
+          />
+          <ListPaginationBar
+            placement="bottom"
+            total={serverTotal}
+            page={page}
+            totalPages={totalPages}
+            perPage={PER_PAGE}
+            loading={loading}
+            setPage={setPage}
+            entityPlural="engagements"
+          />
+        </div>
       )}
 
       {/* Temporary Charge tab content */}
@@ -411,6 +475,14 @@ const kpiWeekLine = { fontSize: 12, fontWeight: 600, color: '#0B1F3B', marginTop
 const kpiSubtitle = { fontSize: 11, color: '#94a3b8', marginTop: 8, lineHeight: 1.35 };
 const kpiIconWrap = { width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 
+const listCard = {
+  background: '#fff',
+  borderRadius: 14,
+  border: '1px solid #E6E8F0',
+  boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+  overflow: 'hidden',
+};
+
 const tabBarWrap = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12,
   background: '#fff', padding: '10px 16px', borderRadius: 12,
@@ -458,4 +530,3 @@ const tempTh = {
   padding: '8px 16px', borderBottom: '1px solid #E6E8F0',
 };
 const tempTd = { padding: '12px 16px', borderBottom: '1px solid #F1F5F9', verticalAlign: 'middle' };
-

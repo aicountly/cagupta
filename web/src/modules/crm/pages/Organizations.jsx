@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../auth/AuthContext';
 import {
   getOrganizationsWithMeta,
+  getOrganizationDeleteEligibility,
   requestOrganizationDeleteOtp,
   deleteOrganization,
+  ApiError,
 } from '../services/organizationService';
 import StatusBadge from '../../../components/common/StatusBadge';
 import ListPaginationBar from '../../../components/common/ListPaginationBar';
@@ -14,28 +16,86 @@ const PER_PAGE = 100;
 const NO_DELETE_ORG_HINT =
   'You do not have permission to delete organizations. Please contact an Admin or Super Admin.';
 
+function DeleteBlockerList({ blockers, color = '#dc2626' }) {
+  if (!blockers?.length) return null;
+  return (
+    <ul style={{ margin: '8px 0 0', paddingLeft: 20, fontSize: 13, color }}>
+      {blockers.map((b) => (
+        <li key={b.key}>
+          {b.count} {b.label}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function formatDeleteError(e, { otpAttempted = false } = {}) {
+  let message = e.message || 'Delete failed.';
+  if (e instanceof ApiError && e.status === 409) {
+    const blockers = e.body?.data?.blockers;
+    if (blockers?.length) {
+      return { message, blockers };
+    }
+  }
+  if (otpAttempted) {
+    message += ' Request a new superadmin OTP before trying again.';
+  }
+  return { message, blockers: null };
+}
+
 function DeleteOrganizationModal({ org, onClose, onDeleted }) {
   const [step, setStep] = useState('warn');
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [err, setErr] = useState('');
+  const [errBlockers, setErrBlockers] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [eligibility, setEligibility] = useState(null);
+  const [eligibilityLoading, setEligibilityLoading] = useState(true);
 
   useEffect(() => {
     setStep('warn');
     setOtpSent(false);
     setOtp('');
     setErr('');
+    setErrBlockers(null);
+    setEligibility(null);
+    setEligibilityLoading(true);
+
+    if (!org?.id) return;
+
+    let cancelled = false;
+    getOrganizationDeleteEligibility(org.id)
+      .then((data) => {
+        if (!cancelled) setEligibility(data);
+      })
+      .catch((e) => {
+        if (!cancelled) setErr(e.message || 'Failed to check delete eligibility.');
+      })
+      .finally(() => {
+        if (!cancelled) setEligibilityLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [org?.id]);
+
+  const canDelete = eligibility?.can_delete === true;
+  const blockers = eligibility?.blockers ?? [];
+  const warnings = eligibility?.warnings ?? [];
 
   async function sendOtp() {
     setErr('');
+    setErrBlockers(null);
     setBusy(true);
     try {
       await requestOrganizationDeleteOtp(org.id);
       setOtpSent(true);
     } catch (e) {
-      setErr(e.message || 'Failed to send OTP.');
+      const formatted = formatDeleteError(e);
+      setErr(formatted.message);
+      setErrBlockers(formatted.blockers);
     } finally {
       setBusy(false);
     }
@@ -48,12 +108,17 @@ function DeleteOrganizationModal({ org, onClose, onDeleted }) {
     }
     setBusy(true);
     setErr('');
+    setErrBlockers(null);
     try {
       await deleteOrganization(org.id, { superadminOtp: otp.trim() });
       onDeleted(org.id);
       onClose();
     } catch (e) {
-      setErr(e.message || 'Delete failed.');
+      const formatted = formatDeleteError(e, { otpAttempted: true });
+      setErr(formatted.message);
+      setErrBlockers(formatted.blockers);
+      setOtpSent(false);
+      setOtp('');
     } finally {
       setBusy(false);
     }
@@ -64,6 +129,7 @@ function DeleteOrganizationModal({ org, onClose, onDeleted }) {
     setOtp('');
     setOtpSent(false);
     setErr('');
+    setErrBlockers(null);
     onClose();
   }
 
@@ -81,10 +147,33 @@ function DeleteOrganizationModal({ org, onClose, onDeleted }) {
                 You are about to <strong>permanently delete</strong> organization{' '}
                 <strong>{org.displayName}</strong> ({org.clientCode}).
               </p>
+              {eligibilityLoading && (
+                <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>Checking linked records…</p>
+              )}
+              {!eligibilityLoading && !canDelete && (
+                <div style={{ padding: '10px 12px', background: '#fef2f2', borderRadius: 8, border: '1px solid #fecaca' }}>
+                  <p style={{ fontSize: 13, color: '#b91c1c', margin: 0, fontWeight: 600 }}>
+                    This organization cannot be deleted yet.
+                  </p>
+                  <p style={{ fontSize: 12, color: '#991b1b', margin: '6px 0 0' }}>
+                    Remove or reassign the following linked records first:
+                  </p>
+                  <DeleteBlockerList blockers={blockers} />
+                </div>
+              )}
+              {!eligibilityLoading && canDelete && warnings.length > 0 && (
+                <div style={{ padding: '10px 12px', background: '#fffbeb', borderRadius: 8, border: '1px solid #fde68a' }}>
+                  <p style={{ fontSize: 12, color: '#92400e', margin: 0, fontWeight: 600 }}>
+                    The following will be unlinked (not deleted):
+                  </p>
+                  <DeleteBlockerList blockers={warnings} color="#92400e" />
+                </div>
+              )}
               <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
                 This removes the organization record and linked data policies allow. Continue only if you are sure —
                 the next step requires a superadmin OTP.
               </p>
+              {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
             </>
           ) : (
             <>
@@ -95,6 +184,7 @@ function DeleteOrganizationModal({ org, onClose, onDeleted }) {
                   setOtp('');
                   setOtpSent(false);
                   setErr('');
+                  setErrBlockers(null);
                 }}
                 style={{ ...deleteBtnSecondary, alignSelf: 'flex-start' }}
               >
@@ -103,7 +193,12 @@ function DeleteOrganizationModal({ org, onClose, onDeleted }) {
               <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
                 Request a superadmin OTP, then enter it to authorize deletion of <strong>{org.displayName}</strong>.
               </p>
-              {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
+              {err && (
+                <div style={{ color: '#dc2626', fontSize: 13 }}>
+                  {err}
+                  <DeleteBlockerList blockers={errBlockers} />
+                </div>
+              )}
               <button type="button" style={deleteBtnSecondary} disabled={busy} onClick={sendOtp}>
                 {busy && !otpSent ? 'Sending…' : 'Request superadmin OTP'}
               </button>
@@ -126,7 +221,13 @@ function DeleteOrganizationModal({ org, onClose, onDeleted }) {
           {step === 'warn' ? (
             <>
               <button type="button" onClick={handleClose} style={deleteBtnSecondary}>Cancel</button>
-              <button type="button" style={{ ...deleteBtnPrimary, background: '#b91c1c' }} onClick={() => setStep('otp')}>
+              <button
+                type="button"
+                style={{ ...deleteBtnPrimary, background: '#b91c1c', opacity: !canDelete || eligibilityLoading ? 0.5 : 1 }}
+                disabled={!canDelete || eligibilityLoading}
+                title={!canDelete ? 'Remove linked records before continuing.' : undefined}
+                onClick={() => setStep('otp')}
+              >
                 Continue to OTP
               </button>
             </>

@@ -21,17 +21,53 @@ async function parseResponse(res) {
   if (!res.ok) {
     const err = new Error(json.message || `Request failed (${res.status})`);
     err.apiData = json.data;
+    err.pendingLedgerChange = json.pending_ledger_change
+      || json.data?.pending_ledger_change
+      || null;
     throw err;
   }
   return json;
 }
 
-/** Must match LedgerDimensions ledger_class strings. */
-const LEDGER_CLASSES = ['regular', 'memorandum', 'optional'];
+export function normalizePendingLedgerChange(raw) {
+  if (!raw || !raw.approval_id) return null;
+  return {
+    approvalId: raw.approval_id,
+    txnId: raw.txn_id != null ? raw.txn_id : null,
+    action: raw.action || '',
+    actionLabel: raw.action_label || raw.action || '',
+    payload: raw.payload || {},
+    txnSnapshot: raw.txn_snapshot || {},
+    requestReason: raw.request_reason || null,
+    createdAt: raw.created_at || null,
+  };
+}
+
+function attachMutationMeta(result, json) {
+  const pending = normalizePendingLedgerChange(json.pending_ledger_change);
+  if (!pending) return result;
+  if (result && typeof result === 'object') {
+    return { ...result, pendingLedgerChange: pending, queuedMessage: json.message || '' };
+  }
+  return { pendingLedgerChange: pending, queuedMessage: json.message || '' };
+}
+
+/** Must match LedgerDimensions ledger_class strings (receivable ledgers). */
+const LEDGER_CLASSES = ['regular', 'memorandum', 'optional', 'parked'];
+
+export const LEDGER_CLASS_CLIENT_COSTS = 'client_costs';
 
 export function normalizeLedgerClassForApi(lc) {
   const s = String(lc || '').trim();
   return LEDGER_CLASSES.includes(s) ? s : 'regular';
+}
+
+export function ledgerClassDisplayLabel(lc) {
+  const s = String(lc || '').trim();
+  if (s === LEDGER_CLASS_CLIENT_COSTS) return 'Client Costs';
+  const v = normalizeLedgerClassForApi(s);
+  const labels = { regular: 'Regular', memorandum: 'Memorandum', optional: 'Optional', parked: 'Parked' };
+  return labels[v] || v;
 }
 
 function normalizeLineItems(raw) {
@@ -145,6 +181,25 @@ function normalizeTxn(t) {
     ledgerSlice:        t.ledger_slice || null,
     allocations:        normalizeReceiptAllocations(t.allocations),
     settlementLines:    normalizeSettlementLines(t.settlement_lines),
+    parkedTransferTargetTxnId: t.parked_transfer_target_txn_id != null ? parseInt(t.parked_transfer_target_txn_id, 10) || null : null,
+    parkedTransferReversalTxnId: t.parked_transfer_reversal_txn_id != null ? parseInt(t.parked_transfer_reversal_txn_id, 10) || null : null,
+    parkedTransferTarget: normalizeParkedTransferSummary(t.parked_transfer_target),
+    parkedTransferReversal: normalizeParkedTransferSummary(t.parked_transfer_reversal),
+    parkedTransferSource: normalizeParkedTransferSummary(t.parked_transfer_source),
+    pendingLedgerChange: normalizePendingLedgerChange(t.pending_ledger_change),
+  };
+}
+
+function normalizeParkedTransferSummary(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  return {
+    id: raw.id,
+    txnType: raw.txn_type || raw.txnType || '',
+    txnDate: raw.txn_date || raw.txnDate || '',
+    publicRef: raw.public_ref || raw.publicRef || '',
+    ledgerClass: raw.ledger_class || raw.ledgerClass || '',
+    ledgerMovementKind: raw.ledger_movement_kind || raw.ledgerMovementKind || '',
+    amount: parseFloat(raw.amount) || 0,
   };
 }
 
@@ -234,32 +289,26 @@ export async function getTxn(id) {
   return normalizeTxn(data.data);
 }
 
-/** PUT /api/admin/txn/:id — pass superadminOtp for ledger invoice rows */
-export async function updateTxn(id, payload, { superadminOtp } = {}) {
-  const headers = { ...authHeaders() };
-  if (superadminOtp) {
-    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
-  }
+/** PUT /api/admin/txn/:id — staff changes queue for Team Approvals when protected */
+export async function updateTxn(id, payload) {
   const res  = await fetch(`${API_BASE}/admin/txn/${id}`, {
     method:  'PUT',
-    headers,
+    headers: authHeaders(),
     body:    JSON.stringify(payload),
   });
-  const data = await parseResponse(res);
-  return normalizeTxn(data.data);
+  const json = await parseResponse(res);
+  const txn = json.data ? normalizeTxn(json.data) : null;
+  return attachMutationMeta(txn, json);
 }
 
-/** DELETE /api/admin/txn/:id — protected ledger rows require superadminOtp header */
-export async function deleteTxn(id, { superadminOtp } = {}) {
-  const headers = { ...authHeaders() };
-  if (superadminOtp) {
-    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
-  }
+/** DELETE /api/admin/txn/:id — protected ledger rows queue cancel for approval */
+export async function deleteTxn(id) {
   const res = await fetch(`${API_BASE}/admin/txn/${id}`, {
     method:  'DELETE',
-    headers,
+    headers: authHeaders(),
   });
-  await parseResponse(res);
+  const json = await parseResponse(res);
+  return attachMutationMeta(json.data ?? null, json);
 }
 
 /** POST /api/admin/txn/request-ledger-delete-otp — one OTP for a batch (single or bulk) */
@@ -274,20 +323,16 @@ export async function requestLedgerDeleteOtp(ids) {
   return data.data || {};
 }
 
-/** POST /api/admin/txn/bulk-delete — header X-Superadmin-Otp; same OTP covers all ids */
-export async function bulkDeleteTxns(ids, { superadminOtp } = {}) {
+/** POST /api/admin/txn/bulk-delete — staff batch queues cancel for Team Approvals */
+export async function bulkDeleteTxns(ids) {
   const idArr = Array.isArray(ids) ? ids.map((x) => parseInt(x, 10)).filter((n) => n > 0) : [];
-  const headers = { ...authHeaders() };
-  if (superadminOtp) {
-    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
-  }
   const res = await fetch(`${API_BASE}/admin/txn/bulk-delete`, {
     method:  'POST',
-    headers,
+    headers: authHeaders(),
     body:    JSON.stringify({ ids: idArr }),
   });
-  const data = await parseResponse(res);
-  return data.data || {};
+  const json = await parseResponse(res);
+  return attachMutationMeta(json.data || {}, json);
 }
 
 /** POST /api/admin/txn/:id/request-ledger-reversal-otp — OTP to acting user’s email (feature-gated server-side) */
@@ -302,45 +347,48 @@ export async function requestLedgerReversalUserOtp(txnId) {
 }
 
 /**
- * POST /api/admin/txn/:id/reverse — compensating txn; use superadminOtp and/or user otp in body.
+ * POST /api/admin/txn/:id/reverse — user otp within 30d, else Team Approvals queue.
  * @param {number|string} txnId
- * @param {{ reason: string, otp?: string, superadminOtp?: string }} opts
+ * @param {{ reason: string, otp?: string }} opts
  */
-export async function reverseLedgerTxn(txnId, { reason, otp, superadminOtp } = {}) {
-  const headers = { ...authHeaders() };
-  if (superadminOtp) {
-    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
-  }
+export async function reverseLedgerTxn(txnId, { reason, otp } = {}) {
   const body = { reason: String(reason || '').trim() };
-  if (otp && !superadminOtp) {
+  if (otp) {
     body.otp = String(otp).trim();
   }
   const res  = await fetch(`${API_BASE}/admin/txn/${txnId}/reverse`, {
     method:  'POST',
-    headers,
+    headers: authHeaders(),
     body:    JSON.stringify(body),
+  });
+  const json = await parseResponse(res);
+  return attachMutationMeta(json.data || {}, json);
+}
+
+/** POST /api/admin/txn/:id/assign-parked — move parked entry to final client ledger */
+export async function assignParkedTxn(txnId, payload) {
+  const res = await fetch(`${API_BASE}/admin/txn/${txnId}/assign-parked`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify(payload),
   });
   const data = await parseResponse(res);
   return data.data || {};
 }
 
-/** POST /api/admin/txn/:id/cancel-reversal — undo compensating reversal (`txnId` is the original posting). */
-export async function cancelLedgerReversalTxn(txnId, { otp, superadminOtp } = {}) {
-  const headers = { ...authHeaders() };
-  if (superadminOtp) {
-    headers['X-Superadmin-Otp'] = String(superadminOtp).trim();
-  }
+/** POST /api/admin/txn/:id/cancel-reversal — user otp within 30d, else Team Approvals queue. */
+export async function cancelLedgerReversalTxn(txnId, { otp } = {}) {
   const body = {};
-  if (otp && !superadminOtp) {
+  if (otp) {
     body.otp = String(otp).trim();
   }
   const res = await fetch(`${API_BASE}/admin/txn/${txnId}/cancel-reversal`, {
     method:  'POST',
-    headers,
+    headers: authHeaders(),
     body:    JSON.stringify(body),
   });
-  const data = await parseResponse(res);
-  return data.data || {};
+  const json = await parseResponse(res);
+  return attachMutationMeta(json.data || {}, json);
 }
 
 /** POST — superadmin receives OTP email; intent is update | delete */
@@ -448,6 +496,16 @@ export async function getReceiptsWithUnallocated({
  */
 export async function createPaymentExpense(payload) {
   const body = { txn_type: 'payment_expense', ...payload };
+  return createTxn(body);
+}
+
+/** POST /api/admin/txn — non-recoverable client cost (firm bank only; no settlement). */
+export async function createPaymentClientCost(payload) {
+  const body = {
+    txn_type: 'payment_client_cost',
+    ledger_class: LEDGER_CLASS_CLIENT_COSTS,
+    ...payload,
+  };
   return createTxn(body);
 }
 
@@ -600,6 +658,24 @@ export async function createFirmExpenseTxn(payload) {
     headers: authHeaders(),
     body: JSON.stringify({
       txn_type: 'firm_expense',
+      firm_bank_account_id: payload.firmBankAccountId,
+      firm_expense_category: payload.category,
+      amount: payload.amount,
+      txn_date: payload.txnDate,
+      narration: payload.narration || '',
+      notes: payload.notes || null,
+    }),
+  });
+  const data = await parseResponse(res);
+  return normalizeTxn(data.data);
+}
+
+export async function createFirmInflowTxn(payload) {
+  const res = await fetch(`${API_BASE}/admin/txn`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      txn_type: 'firm_inflow',
       firm_bank_account_id: payload.firmBankAccountId,
       firm_expense_category: payload.category,
       amount: payload.amount,

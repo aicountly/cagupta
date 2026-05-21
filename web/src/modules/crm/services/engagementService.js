@@ -152,13 +152,21 @@ export async function getEngagements({
  * @param {number|null} [opts.clientId]
  * @param {number|null} [opts.organizationId]
  * @param {number|null} [opts.userId]
+ * @param {string} [opts.kpiSlug]
+ * @param {string} [opts.asOf]
  */
 function buildServicesListParams({
   page = 1, perPage = 100, search = '', status = '', clientId = null, organizationId = null, userId = null,
+  kpiSlug = '', asOf = '',
 } = {}) {
   const params = new URLSearchParams({ page, per_page: perPage });
   if (search) params.set('search', search);
-  if (status && status !== 'all') params.set('status', status);
+  if (kpiSlug) {
+    params.set('kpi_slug', kpiSlug);
+    params.set('as_of', asOf || localDateKey(new Date()));
+  } else if (status && status !== 'all') {
+    params.set('status', status);
+  }
   if (clientId != null && clientId !== '' && Number(clientId) > 0) {
     params.set('client_id', String(clientId));
   }
@@ -169,6 +177,29 @@ function buildServicesListParams({
     params.set('user_id', String(userId));
   }
   return params;
+}
+
+/**
+ * Paginated services list with server total metadata.
+ * @returns {Promise<{ engagements: object[], total: number, lastPage: number }>}
+ */
+export async function getEngagementsWithMeta({
+  page = 1, perPage = 50, search = '', status = '', clientId = null, organizationId = null, userId = null,
+  kpiSlug = '', asOf = '',
+} = {}) {
+  const params = buildServicesListParams({
+    page, perPage, search, status, clientId, organizationId, userId, kpiSlug, asOf,
+  });
+  const res = await fetch(`${API_BASE}/admin/services?${params}`, {
+    headers: authHeaders(),
+  });
+  const data = await parseResponse(res);
+  const pagination = data.meta?.pagination || data.pagination || {};
+  return {
+    engagements: (data.data || []).map(normalizeEngagement),
+    total: pagination.total ?? (data.data || []).length,
+    lastPage: pagination.last_page ?? 1,
+  };
 }
 
 /**

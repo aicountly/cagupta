@@ -33,6 +33,34 @@ final class BillSettlementReportBuilder
         $ledgerClass = LedgerDimensions::normalizeLedgerClass($ledgerClass);
         $ledgerView  = LedgerDimensions::assertLedgerView($ledgerView);
 
+        if ($ledgerClass === LedgerDimensions::CLASS_PARKED) {
+            $closing = 0.0;
+            if ($clientId > 0) {
+                $built = LedgerPresentation::buildLedger(
+                    $txn->fetchRawLedgerRowsForClient($clientId, $ledgerClass),
+                    $ledgerView
+                );
+            } else {
+                $built = LedgerPresentation::buildLedger(
+                    $txn->fetchRawLedgerRowsForOrganization($orgId, $ledgerClass),
+                    $ledgerView
+                );
+            }
+            if ($built !== []) {
+                $last = $built[count($built) - 1];
+                $closing = round((float)($last['balance'] ?? 0), 2);
+            }
+
+            return [
+                'lines'                  => [],
+                'ledger_closing_balance' => $closing,
+                'report_net'             => 0.0,
+                'reconciliation_gap'     => $closing,
+                'ledger_view'            => $ledgerView,
+                'ledger_class'           => $ledgerClass,
+            ];
+        }
+
         if ($clientId > 0) {
             $rows = $txn->fetchRawLedgerRowsForClient($clientId, $ledgerClass);
         } elseif ($orgId > 0) {

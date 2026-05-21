@@ -61,7 +61,7 @@ class RecurringServiceDefinitionModel
 
         if (array_key_exists('is_active', $filters) && $filters['is_active'] !== null) {
             $where[]  = 'rsd.is_active = :is_active';
-            $params[':is_active'] = (bool)$filters['is_active'];
+            $params[':is_active'] = $filters['is_active'] ? 'true' : 'false';
         }
 
         if (!empty($filters['client_id'])) {
@@ -192,6 +192,8 @@ class RecurringServiceDefinitionModel
                 $params[":{$field}"] = (int)$val;
             } elseif ($field === 'client_id' || $field === 'organization_id') {
                 $params[":{$field}"] = (int)$val;
+            } elseif ($field === 'is_active') {
+                $params[":{$field}"] = ((bool)$val) ? 'true' : 'false';
             } else {
                 $params[":{$field}"] = $val;
             }

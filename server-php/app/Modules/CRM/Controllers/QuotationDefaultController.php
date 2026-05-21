@@ -7,7 +7,10 @@ use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
 use App\Libraries\OtpService;
+use App\Libraries\QuotationPricing;
 use App\Models\AdminAuditLogModel;
+use App\Models\EngagementTypeModel;
+use App\Models\EngagementTypeAdditionalFeeTemplateModel;
 use App\Models\EngagementTypeQuotationDefaultModel;
 use App\Models\LeadQuotationModel;
 use App\Models\UserModel;
@@ -19,15 +22,19 @@ class QuotationDefaultController extends BaseController
 {
     private EngagementTypeQuotationDefaultModel $defaults;
     private LeadQuotationModel $leadQuotations;
+    private EngagementTypeModel $engagementTypes;
+    private EngagementTypeAdditionalFeeTemplateModel $additionalTemplates;
     private UserModel $users;
     private AdminAuditLogModel $audit;
 
     public function __construct()
     {
-        $this->defaults       = new EngagementTypeQuotationDefaultModel();
-        $this->leadQuotations = new LeadQuotationModel();
-        $this->users          = new UserModel();
-        $this->audit          = new AdminAuditLogModel();
+        $this->defaults            = new EngagementTypeQuotationDefaultModel();
+        $this->leadQuotations      = new LeadQuotationModel();
+        $this->engagementTypes     = new EngagementTypeModel();
+        $this->additionalTemplates = new EngagementTypeAdditionalFeeTemplateModel();
+        $this->users               = new UserModel();
+        $this->audit               = new AdminAuditLogModel();
     }
 
     // ── GET /api/admin/quotation-defaults ─────────────────────────────────────
@@ -69,7 +76,9 @@ class QuotationDefaultController extends BaseController
             $this->error('Engagement type not found.', 404);
         }
         $row = $this->defaults->findByEngagementTypeId($engagementTypeId);
-        $this->success($this->formatDefaultRow($engagementTypeId, $row));
+        $et  = $this->engagementTypes->find($engagementTypeId);
+        $templates = $this->additionalTemplates->forEngagementType($engagementTypeId);
+        $this->success($this->formatDefaultRow($engagementTypeId, $row, $et, $templates));
     }
 
     // ── POST /api/admin/quotation-defaults/request-change-otp ────────────────
@@ -158,21 +167,19 @@ class QuotationDefaultController extends BaseController
         }
 
         $docs = $this->normalizeDocuments($body['documents_required'] ?? []);
-        $price = null;
-        if (array_key_exists('default_price', $body) && $body['default_price'] !== null && $body['default_price'] !== '') {
-            $price = (float)$body['default_price'];
-        }
 
         $before = $this->defaults->findByEngagementTypeId($engagementTypeId);
         $actorId = $acting ? (int)$acting['id'] : null;
 
-        $this->defaults->upsert($engagementTypeId, $price, $docs, $actorId);
+        $this->defaults->upsert($engagementTypeId, null, $docs, $actorId);
 
         $after = $this->defaults->findByEngagementTypeId($engagementTypeId);
         $this->logQuotationDefaultChange($actorId, $engagementTypeId, $before, $after, $acting, $bypass, $otpVerified);
         $this->sendSuperadminSuccessAlert($before, $after, $engagementTypeId, $acting);
 
-        $this->success($this->formatDefaultRow($engagementTypeId, $after), 'Quotation default saved.');
+        $et = $this->engagementTypes->find($engagementTypeId);
+        $templates = $this->additionalTemplates->forEngagementType($engagementTypeId);
+        $this->success($this->formatDefaultRow($engagementTypeId, $after, $et, $templates), 'Quotation default saved.');
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -247,8 +254,17 @@ class QuotationDefaultController extends BaseController
             $docs = [];
         }
 
-        $setupComplete = $row['default_price'] !== null
-            || $this->docsHaveContent($docs);
+        $etRow = [
+            'pricing_model'             => $row['pricing_model'] ?? QuotationPricing::MODEL_FIXED,
+            'quotation_base_amount'     => $row['quotation_base_amount'] ?? null,
+            'quotation_hourly_rate'     => $row['quotation_hourly_rate'] ?? null,
+            'quotation_estimated_hours' => $row['quotation_estimated_hours'] ?? null,
+        ];
+        $pricingValid = QuotationPricing::engagementTypeHasValidPricing($etRow);
+        $setupComplete = $pricingValid && $this->docsHaveContent($docs);
+
+        $templates = $this->additionalTemplates->forEngagementType((int)$row['engagement_type_id']);
+        $pricingSnapshot = QuotationPricing::buildSnapshotFromEngagementType($etRow, $templates);
 
         return [
             'engagement_type_id'   => (int)$row['engagement_type_id'],
@@ -257,7 +273,8 @@ class QuotationDefaultController extends BaseController
             'category_name'        => (string)$row['category_name'],
             'subcategory_id'       => $row['subcategory_id'] !== null ? (int)$row['subcategory_id'] : null,
             'subcategory_name'     => $row['subcategory_name'] !== null ? (string)$row['subcategory_name'] : null,
-            'default_price'        => $row['default_price'] !== null ? (float)$row['default_price'] : null,
+            'pricing_model'        => $etRow['pricing_model'],
+            'pricing_snapshot'     => $pricingSnapshot,
             'documents_required'   => $docs,
             'setup_complete'       => $setupComplete,
             'updated_at'           => $row['default_updated_at'],
@@ -267,32 +284,38 @@ class QuotationDefaultController extends BaseController
 
     /**
      * @param array<string, mixed>|null $row
+     * @param array<string, mixed>|null $et
+     * @param array<int, array<string, mixed>> $templates
      * @return array<string, mixed>
      */
-    private function formatDefaultRow(int $engagementTypeId, ?array $row): array
+    private function formatDefaultRow(int $engagementTypeId, ?array $row, ?array $et = null, array $templates = []): array
     {
-        if ($row === null) {
-            return [
-                'engagement_type_id'   => $engagementTypeId,
-                'default_price'        => null,
-                'documents_required'   => [],
-                'setup_complete'       => false,
-                'updated_at'           => null,
-                'updated_by'           => null,
-            ];
+        $docs = [];
+        if ($row !== null) {
+            $docs = $row['documents_required'] ?? [];
+            if (is_string($docs)) {
+                $docs = json_decode($docs, true) ?? [];
+            }
+            if (!is_array($docs)) {
+                $docs = [];
+            }
         }
-        $docs = $row['documents_required'] ?? [];
-        if (is_string($docs)) {
-            $docs = json_decode($docs, true) ?? [];
+
+        if ($et === null) {
+            $et = $this->engagementTypes->find($engagementTypeId) ?? [];
         }
-        if (!is_array($docs)) {
-            $docs = [];
+        if ($templates === []) {
+            $templates = $this->additionalTemplates->forEngagementType($engagementTypeId);
         }
-        $setupComplete = $row['default_price'] !== null || $this->docsHaveContent($docs);
+
+        $pricingValid = QuotationPricing::engagementTypeHasValidPricing($et);
+        $setupComplete = $pricingValid && $this->docsHaveContent($docs);
+        $pricingSnapshot = QuotationPricing::buildSnapshotFromEngagementType($et, $templates);
 
         return [
-            'engagement_type_id'   => (int)$row['engagement_type_id'],
-            'default_price'        => $row['default_price'] !== null ? (float)$row['default_price'] : null,
+            'engagement_type_id'   => $engagementTypeId,
+            'pricing_model'        => $et['pricing_model'] ?? QuotationPricing::MODEL_FIXED,
+            'pricing_snapshot'     => $pricingSnapshot,
             'documents_required'   => $docs,
             'setup_complete'       => $setupComplete,
             'updated_at'           => $row['updated_at'] ?? null,
@@ -342,19 +365,14 @@ class QuotationDefaultController extends BaseController
      */
     private function quotationDefaultSnapshot(int $engagementTypeId, ?array $row): array
     {
-        if ($row === null) {
-            return [
-                'engagement_type_id' => $engagementTypeId,
-                'default_price'      => null,
-                'documents_required' => [],
-            ];
+        $docs = [];
+        if ($row !== null) {
+            $docs = $this->normalizeDocuments($row['documents_required'] ?? []);
         }
 
         return [
             'engagement_type_id' => $engagementTypeId,
-            'default_price'      => isset($row['default_price']) && $row['default_price'] !== null
-                ? (float)$row['default_price'] : null,
-            'documents_required' => $this->normalizeDocuments($row['documents_required'] ?? []),
+            'documents_required' => $docs,
         ];
     }
 
@@ -407,27 +425,6 @@ class QuotationDefaultController extends BaseController
             }
         } catch (\Throwable $e) {
             error_log('[QuotationDefaultController] Audit log failed: ' . $e->getMessage());
-        }
-
-        $beforePrice = $beforeSnap['default_price'];
-        $afterPrice  = $afterSnap['default_price'];
-        if ($beforePrice !== $afterPrice) {
-            try {
-                $this->audit->insert(
-                    $actorId,
-                    'quotation_default.price_changed',
-                    'quotation_default',
-                    $engagementTypeId,
-                    array_merge($baseMeta, [
-                        'before_price' => $beforePrice,
-                        'after_price'  => $afterPrice,
-                    ]),
-                    null,
-                    null
-                );
-            } catch (\Throwable $e) {
-                error_log('[QuotationDefaultController] Audit log (price) failed: ' . $e->getMessage());
-            }
         }
 
         $beforeDocs = $beforeSnap['documents_required'];
@@ -498,8 +495,6 @@ class QuotationDefaultController extends BaseController
             $actorEmail      = $acting['email'] ?? 'Unknown';
             $timestamp       = date('d M Y, h:i A T');
 
-            $bp = $before['default_price'] ?? '—';
-            $ap = $after['default_price'] ?? '—';
             $bd = $before['documents_required'] ?? '[]';
             $ad = $after['documents_required'] ?? '[]';
             if (is_array($bd)) {
@@ -514,8 +509,8 @@ class QuotationDefaultController extends BaseController
                 'actorName'        => (string)$actorName,
                 'actorEmail'       => (string)$actorEmail,
                 'timestamp'        => $timestamp,
-                'beforePrice'      => (string)$bp,
-                'afterPrice'       => (string)$ap,
+                'beforePrice'      => '—',
+                'afterPrice'       => '—',
                 'beforeDocs'       => (string)$bd,
                 'afterDocs'        => (string)$ad,
             ]);

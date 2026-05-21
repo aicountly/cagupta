@@ -13,12 +13,14 @@ use App\Libraries\CommissionSyncService;
 use App\Libraries\GstInvoiceTax;
 use App\Libraries\InvoiceCostAnalysis;
 use App\Libraries\LedgerDimensions;
+use App\Libraries\LedgerTxnChangeService;
 use App\Libraries\OtpService;
 use App\Libraries\RazorpayClient;
 use App\Libraries\TxnReceiptAllocationService;
 use App\Models\AdminAuditLogModel;
 use App\Models\ClientModel;
 use App\Models\FirmBankAccountModel;
+use App\Models\LedgerTxnChangeRequestModel;
 use App\Models\OrganizationModel;
 use App\Models\TxnModel;
 use App\Models\TxnSettlementAllocationModel;
@@ -100,9 +102,9 @@ class TxnController extends BaseController
         $txnType = trim((string)($body['txn_type'] ?? ''));
 
         $valid = [
-            'opening_balance', 'invoice', 'payment_expense',
+            'opening_balance', 'invoice', 'payment_expense', 'payment_client_cost',
             'receipt', 'tds_provisional', 'tds_final', 'rebate', 'credit_note',
-            'firm_expense', 'firm_bank_transfer',
+            'firm_expense', 'firm_inflow', 'firm_bank_transfer',
         ];
         if (!in_array($txnType, $valid, true)) {
             $this->error('Invalid or missing txn_type.', 422);
@@ -167,6 +169,9 @@ class TxnController extends BaseController
                     }
 
                     $merged['ledger_class'] = LedgerDimensions::assertLedgerClass($merged['ledger_class'] ?? '');
+                    if (LedgerDimensions::isParkedLedgerClass($merged['ledger_class'])) {
+                        throw new \InvalidArgumentException('Invoices cannot use parked ledger class.');
+                    }
                     $merged['ledger_movement_kind'] = null;
 
                     $id = $this->txn->createInvoice($merged);
@@ -184,7 +189,13 @@ class TxnController extends BaseController
                     $this->error('Provide only one of client_id or organization_id for a receipt.', 422);
                 }
                 try {
-                    $allocRows = TxnReceiptAllocationService::normalizeAndValidateAllocations($body, $body['allocations'] ?? null);
+                    $body['ledger_class'] = LedgerDimensions::assertLedgerClass($body['ledger_class'] ?? '');
+                    $body['ledger_movement_kind'] = LedgerDimensions::assertLedgerMovementKindRequired($body['ledger_movement_kind'] ?? '');
+                    if (LedgerDimensions::isParkedLedgerClass($body['ledger_class'])) {
+                        $allocRows = TxnReceiptAllocationService::normalizeParkedReceiptAllocations($body);
+                    } else {
+                        $allocRows = TxnReceiptAllocationService::normalizeAndValidateAllocations($body, $body['allocations'] ?? null);
+                    }
                 } catch (\InvalidArgumentException $e) {
                     $this->error($e->getMessage(), 422);
                 }
@@ -218,15 +229,20 @@ class TxnController extends BaseController
                     $body['settle_from_receipt_amount']
                 );
                 try {
-                    $parsed = TxnReceiptAllocationService::normalizePaymentExpenseSettlementLines(
-                        $pAmount,
-                        $linesRaw,
-                        $pcid,
-                        $poid,
-                        (string)($body['ledger_class'] ?? ''),
-                        (string)($body['ledger_movement_kind'] ?? ''),
-                        $this->txn
-                    );
+                    if (LedgerDimensions::isParkedLedgerClass($body['ledger_class'] ?? '')) {
+                        TxnReceiptAllocationService::assertParkedPaymentSettlementLines($pAmount, $linesRaw);
+                        $parsed = ['receipt_totals' => []];
+                    } else {
+                        $parsed = TxnReceiptAllocationService::normalizePaymentExpenseSettlementLines(
+                            $pAmount,
+                            $linesRaw,
+                            $pcid,
+                            $poid,
+                            (string)($body['ledger_class'] ?? ''),
+                            (string)($body['ledger_movement_kind'] ?? ''),
+                            $this->txn
+                        );
+                    }
                 } catch (\InvalidArgumentException $e) {
                     $this->error($e->getMessage(), 422);
                 }
@@ -262,6 +278,30 @@ class TxnController extends BaseController
                     }
                     throw $e;
                 }
+                break;
+            case 'payment_client_cost':
+                $cAmount = (float)($body['amount'] ?? 0);
+                if ($cAmount <= 0) {
+                    $this->error('amount must be greater than zero.', 422);
+                }
+                $ccid = (int)($body['client_id'] ?? 0);
+                $coid = (int)($body['organization_id'] ?? 0);
+                if ($ccid <= 0 && $coid <= 0) {
+                    $this->error('client_id or organization_id is required for a client cost payment.', 422);
+                }
+                if ($ccid > 0 && $coid > 0) {
+                    $this->error('Provide only one of client_id or organization_id for a client cost payment.', 422);
+                }
+                if (!empty($body['settlement_lines']) || !empty($body['settle_from_receipt_id'])) {
+                    $this->error('Client cost payments cannot be settled from receipts or unallocated advance.', 422);
+                }
+                try {
+                    $this->enforceClientCostLedgerDimensions($body);
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
+                }
+                $this->attachValidatedBankAccount($body);
+                $id = $this->txn->createPaymentClientCost($body);
                 break;
             case 'tds_provisional':
                 try {
@@ -299,6 +339,13 @@ class TxnController extends BaseController
             case 'firm_expense':
                 try {
                     $id = $this->txn->createFirmExpense($body);
+                } catch (\InvalidArgumentException $e) {
+                    $this->error($e->getMessage(), 422);
+                }
+                break;
+            case 'firm_inflow':
+                try {
+                    $id = $this->txn->createFirmInflow($body);
                 } catch (\InvalidArgumentException $e) {
                     $this->error($e->getMessage(), 422);
                 }
@@ -360,6 +407,17 @@ class TxnController extends BaseController
                 (float)($row['amount'] ?? 0)
             );
         }
+        if ($type === 'payment_client_cost') {
+            $row['settlement_lines'] = [];
+        }
+        if (empty($row['firm_bank_account_id'])) {
+            $bankId = $this->txn->resolveFirmBankAccountIdForClientTxn($id, $type);
+            if ($bankId > 0) {
+                $row['firm_bank_account_id'] = $bankId;
+            }
+        }
+        $this->txn->attachParkedTransferMeta($row);
+        LedgerTxnChangeService::attachPendingToTxnRow($row);
         $this->success($row);
     }
 
@@ -454,8 +512,8 @@ class TxnController extends BaseController
         }
         $txnType = (string)($row['txn_type'] ?? '');
         $otpEligible = [
-            'invoice', 'receipt', 'payment_expense', 'tds_provisional', 'tds_final',
-            'receipt_reversal', 'payment_expense_reversal', 'tds_reversal',
+            'invoice', 'receipt', 'payment_expense', 'payment_client_cost', 'tds_provisional', 'tds_final',
+            'receipt_reversal', 'payment_expense_reversal', 'payment_client_cost_reversal', 'tds_reversal',
         ];
         if (!in_array($txnType, $otpEligible, true)) {
             $this->error('OTP requests are not supported for this transaction type.', 422);
@@ -549,13 +607,10 @@ class TxnController extends BaseController
         $actingUser = $this->authUser();
         $actorId    = $actingUser ? (int)$actingUser['id'] : null;
         $type = (string)($row['txn_type'] ?? '');
-        if ($this->txnRequiresLedgerModifyOtp($type)) {
-            $otp = $this->readSuperadminOtpFromRequest();
-            if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
-                $this->error(
-                    'Valid superadmin OTP is required to modify this ledger record. Request a code first.',
-                    403
-                );
+        if ($this->txnRequiresLedgerModifyOtp($type) && !$this->isSuperAdminActor($actingUser)) {
+            $intercept = LedgerTxnChangeService::queueUpdate($id, $body, $actingUser);
+            if ($intercept !== null) {
+                $this->respondLedgerChangeQueued($intercept, $row);
             }
         }
 
@@ -570,6 +625,9 @@ class TxnController extends BaseController
                 break;
             case 'payment_expense':
                 $this->applyPaymentExpenseTxnUpdate($id, $row, $body, $actorId);
+                break;
+            case 'payment_client_cost':
+                $this->applyPaymentClientCostTxnUpdate($id, $row, $body, $actorId);
                 break;
             case 'tds_provisional':
             case 'tds_final':
@@ -596,8 +654,8 @@ class TxnController extends BaseController
     private function txnTypesRequiringLedgerModifyOtp(): array
     {
         return [
-            'invoice', 'receipt', 'payment_expense', 'tds_provisional', 'tds_final',
-            'receipt_reversal', 'payment_expense_reversal', 'tds_reversal',
+            'invoice', 'receipt', 'payment_expense', 'payment_client_cost', 'tds_provisional', 'tds_final',
+            'receipt_reversal', 'payment_expense_reversal', 'payment_client_cost_reversal', 'tds_reversal',
         ];
     }
 
@@ -631,10 +689,12 @@ class TxnController extends BaseController
             'invoice' => 'Invoice',
             'receipt' => 'Receipt',
             'payment_expense' => 'On-behalf payment',
+            'payment_client_cost' => 'Client cost payment',
             'tds_provisional' => 'TDS (provisional)',
             'tds_final' => 'TDS (final)',
             'receipt_reversal' => 'Receipt reversal',
             'payment_expense_reversal' => 'On-behalf payment reversal',
+            'payment_client_cost_reversal' => 'Client cost payment reversal',
             'tds_reversal' => 'TDS reversal',
             default => str_replace('_', ' ', $txnType),
         };
@@ -949,6 +1009,7 @@ class TxnController extends BaseController
             'invoice',
             'receipt',
             'payment_expense',
+            'payment_client_cost',
             'tds_provisional',
             'tds_final',
             'rebate',
@@ -965,7 +1026,7 @@ class TxnController extends BaseController
     private function txnDeleteSortPriority(string $txnType): int
     {
         return match ($txnType) {
-            'receipt', 'payment_expense', 'tds_provisional', 'tds_final', 'rebate' => 10,
+            'receipt', 'payment_expense', 'payment_client_cost', 'tds_provisional', 'tds_final', 'rebate' => 10,
             'credit_note' => 20,
             'invoice' => 30,
             default => 0,
@@ -1051,6 +1112,21 @@ class TxnController extends BaseController
 
             return;
         }
+        if ($type === 'payment_client_cost') {
+            $this->txn->softCancelCashMirrorsForClientLeg($id, $actorId);
+            $this->txn->softCancelForAudit($id, $actorId);
+            $after = $this->txn->find($id);
+            $this->auditTxnLog(
+                $actorId,
+                'txn.cancelled',
+                $id,
+                ['txn_type' => $type],
+                $beforeSnap,
+                $after !== null ? $this->txnAuditCompactSnapshot($after) : null
+            );
+
+            return;
+        }
         $this->txn->softCancelForAudit($id, $actorId);
         $after = $this->txn->find($id);
         $this->auditTxnLog(
@@ -1083,8 +1159,10 @@ class TxnController extends BaseController
         $cashMirrorOnly = [
             TxnModel::TXN_TYPE_RECEIPT_BANK_LEG,
             TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
+            TxnModel::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG,
             TxnModel::TXN_TYPE_RECEIPT_BANK_LEG_REVERSAL,
             TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL,
+            TxnModel::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG_REVERSAL,
         ];
         if (in_array($type, $cashMirrorOnly, true)) {
             $this->error(
@@ -1093,7 +1171,7 @@ class TxnController extends BaseController
             );
         }
 
-        if (in_array($type, ['receipt_reversal', 'payment_expense_reversal', 'tds_reversal'], true)) {
+        if (in_array($type, ['receipt_reversal', 'payment_expense_reversal', 'payment_client_cost_reversal', 'tds_reversal'], true)) {
             $this->error(
                 'Ledger reversal rows cannot be deleted. Use cancel reversal on the original posting instead.',
                 422
@@ -1104,11 +1182,14 @@ class TxnController extends BaseController
             if (!$this->userHasPermission($this->authUser(), 'invoices.delete')) {
                 $this->error('Access denied. Required permission: invoices.delete.', 403);
             }
-            $otp = $this->readSuperadminOtpFromRequest();
-            if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
-                $this->error('Valid superadmin OTP is required to delete this ledger record. Request a code first.', 403);
+            $acting = $this->authUser();
+            if (!$this->isSuperAdminActor($acting)) {
+                $intercept = LedgerTxnChangeService::queueCancel([$id], $acting);
+                if ($intercept !== null) {
+                    $this->respondLedgerChangeQueued($intercept, $row);
+                }
             }
-            $delActor = $this->authUser() ? (int)$this->authUser()['id'] : null;
+            $delActor = $acting ? (int)$acting['id'] : null;
             $this->performTxnDelete($row, $delActor);
             $this->success(null, 'Transaction cancelled.');
         }
@@ -1332,35 +1413,25 @@ class TxnController extends BaseController
             $this->error('Transaction not found.', 404);
         }
 
-        $superOtp    = $this->readSuperadminOtpFromRequest();
-        $actingEmail = trim((string)(($acting ?? [])['email'] ?? ''));
-        $mode        = 'user_otp';
+        $mode = 'approval_pending';
 
-        if ($superOtp !== '' && $this->verifySuperadminOtp($superOtp)) {
-            $mode = 'superadmin_otp';
-        } elseif ($actingEmail !== '' && $this->isSuperAdminEmail($actingEmail)) {
+        if ($this->isSuperAdminActor($acting)) {
             $mode = 'super_admin_session';
-        } else {
-            $app = new App();
-            if (!$app->ledgerUserReversalEnabled) {
-                $this->error(
-                    'User-initiated ledger reversal is not enabled. Provide a valid superadmin OTP in X-Superadmin-Otp, or contact an administrator.',
-                    403
-                );
-            }
-            $this->assertTxnReversibleForUserFlow($row, true);
-            $otp = trim((string)($body['otp'] ?? ''));
-            if ($otp === '') {
-                $this->error('OTP is required. Request a code to your email first.', 422);
-            }
-            $actorId = (int)(($acting ?? [])['id'] ?? 0);
-            if ($actorId <= 0 || !OtpService::verify($actorId, $otp)) {
-                $this->error('Invalid or expired OTP.', 403);
-            }
-        }
-
-        if ($mode === 'superadmin_otp' || $mode === 'super_admin_session') {
             $this->assertTxnReversibleForUserFlow($row, false);
+        } else {
+            $app     = new App();
+            $userOtp = trim((string)($body['otp'] ?? ''));
+            $actorId = (int)(($acting ?? [])['id'] ?? 0);
+            if ($app->ledgerUserReversalEnabled && $userOtp !== '' && $actorId > 0 && OtpService::verify($actorId, $userOtp)) {
+                $mode = 'user_otp';
+                $this->assertTxnReversibleForUserFlow($row, true);
+            } else {
+                $intercept = LedgerTxnChangeService::queueReverse($id, $reason, $acting);
+                if ($intercept !== null) {
+                    $this->respondLedgerChangeQueued($intercept, $row);
+                }
+                $this->error('Could not submit reversal for approval.', 500);
+            }
         }
 
         $beforeOrig = $this->txnAuditCompactSnapshot($row);
@@ -1413,6 +1484,46 @@ class TxnController extends BaseController
     }
 
     /**
+     * POST /api/admin/txn/:id/assign-parked
+     * Body: target_client_id|target_organization_id, target_ledger_class, target_ledger_movement_kind, notes?
+     */
+    public function assignParked(int $id): never
+    {
+        $acting = $this->authUser();
+        if (!$this->userHasPermission($acting, 'invoices.edit')) {
+            $this->error('Access denied. Required permission: invoices.edit.', 403);
+        }
+
+        $body = $this->getJsonBody();
+        $actorRowId = $acting ? (int)$acting['id'] : null;
+
+        try {
+            $result = $this->txn->assignParkedEntry($id, $body, $actorRowId);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
+        $original = $this->txn->find($id);
+        if ($original !== null) {
+            $this->txn->attachParkedTransferMeta($original);
+        }
+        $target = $this->txn->find((int)$result['target_id']);
+        if ($target !== null) {
+            $this->txn->attachParkedTransferMeta($target);
+        }
+        $reversal = $this->txn->find((int)$result['reversal_id']);
+
+        $this->success([
+            'original_id' => $result['original_id'],
+            'reversal_id' => $result['reversal_id'],
+            'target_id'   => $result['target_id'],
+            'original'    => $original,
+            'reversal'    => $reversal,
+            'target'      => $target,
+        ], 'Parked entry assigned to client.');
+    }
+
+    /**
      * POST /api/admin/txn/:id/cancel-reversal
      * Restores the original txn to active and cancels the compensating reversal row (same auth modes as reverse).
      */
@@ -1428,36 +1539,26 @@ class TxnController extends BaseController
             $this->error('Transaction not found.', 404);
         }
 
-        $body        = $this->getJsonBody();
-        $superOtp    = $this->readSuperadminOtpFromRequest();
-        $actingEmail = trim((string)(($acting ?? [])['email'] ?? ''));
-        $mode        = 'user_otp';
+        $body = $this->getJsonBody();
+        $mode = 'approval_pending';
 
-        if ($superOtp !== '' && $this->verifySuperadminOtp($superOtp)) {
-            $mode = 'superadmin_otp';
-        } elseif ($actingEmail !== '' && $this->isSuperAdminEmail($actingEmail)) {
+        if ($this->isSuperAdminActor($acting)) {
             $mode = 'super_admin_session';
-        } else {
-            $app = new App();
-            if (!$app->ledgerUserReversalEnabled) {
-                $this->error(
-                    'User-initiated ledger reversal is not enabled. Provide a valid superadmin OTP in X-Superadmin-Otp, or contact an administrator.',
-                    403
-                );
-            }
-            $this->assertTxnCancelReversalForUserFlow($row, true);
-            $otp = trim((string)($body['otp'] ?? ''));
-            if ($otp === '') {
-                $this->error('OTP is required. Request a code to your email first.', 422);
-            }
-            $actorIdForOtp = (int)(($acting ?? [])['id'] ?? 0);
-            if ($actorIdForOtp <= 0 || !OtpService::verify($actorIdForOtp, $otp)) {
-                $this->error('Invalid or expired OTP.', 403);
-            }
-        }
-
-        if ($mode === 'superadmin_otp' || $mode === 'super_admin_session') {
             $this->assertTxnCancelReversalForUserFlow($row, false);
+        } else {
+            $app     = new App();
+            $userOtp = trim((string)($body['otp'] ?? ''));
+            $actorId = (int)(($acting ?? [])['id'] ?? 0);
+            if ($app->ledgerUserReversalEnabled && $userOtp !== '' && $actorId > 0 && OtpService::verify($actorId, $userOtp)) {
+                $mode = 'user_otp';
+                $this->assertTxnCancelReversalForUserFlow($row, true);
+            } else {
+                $intercept = LedgerTxnChangeService::queueCancelReversal($id, $acting);
+                if ($intercept !== null) {
+                    $this->respondLedgerChangeQueued($intercept, $row);
+                }
+                $this->error('Could not submit cancel reversal for approval.', 500);
+            }
         }
 
         $beforeOrig = $this->txnAuditCompactSnapshot($row);
@@ -1512,7 +1613,7 @@ class TxnController extends BaseController
     private function assertTxnCancelReversalForUserFlow(array $row, bool $enforceCreatedAtWindow): void
     {
         $txnType = (string)($row['txn_type'] ?? '');
-        $allowed = ['receipt', 'payment_expense', 'tds_provisional', 'tds_final'];
+        $allowed = ['receipt', 'payment_expense', 'payment_client_cost', 'tds_provisional', 'tds_final'];
         if (!in_array($txnType, $allowed, true)) {
             $this->error('This transaction type cannot cancel a ledger reversal through this flow.', 422);
         }
@@ -1530,7 +1631,7 @@ class TxnController extends BaseController
     private function assertTxnReversibleForUserFlow(array $row, bool $enforceCreatedAtWindow): void
     {
         $txnType = (string)($row['txn_type'] ?? '');
-        $allowed = ['receipt', 'payment_expense', 'tds_provisional', 'tds_final'];
+        $allowed = ['receipt', 'payment_expense', 'payment_client_cost', 'tds_provisional', 'tds_final'];
         if (!in_array($txnType, $allowed, true)) {
             $this->error('This transaction type cannot be reversed through this flow.', 422);
         }
@@ -1580,11 +1681,6 @@ class TxnController extends BaseController
             $this->error('Access denied. Required permission: invoices.delete.', 403);
         }
 
-        $otp = $this->readSuperadminOtpFromRequest();
-        if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
-            $this->error('Valid superadmin OTP is required. Request a code first.', 403);
-        }
-
         $body   = $this->getJsonBody();
         $idsRaw = $body['ids'] ?? null;
         if (!is_array($idsRaw) || $idsRaw === []) {
@@ -1605,44 +1701,16 @@ class TxnController extends BaseController
             $this->error('Too many transactions (max 200 per request).', 422);
         }
 
-        $rows = [];
-        foreach ($ids as $id) {
-            $row = $this->txn->find($id);
-            if ($row === null) {
-                $this->error('Transaction not found: ' . $id, 404);
+        $rows = $this->collectValidatedLedgerCancelRows($ids);
+
+        if (!$this->isSuperAdminActor($acting)) {
+            $intercept = LedgerTxnChangeService::queueCancel(
+                array_map(static fn (array $r): int => (int)($r['id'] ?? 0), $rows),
+                $acting
+            );
+            if ($intercept !== null) {
+                $this->respondLedgerChangeQueued($intercept, null);
             }
-            if (in_array((string)($row['status'] ?? ''), ['cancelled', 'deleted'], true)) {
-                $this->error('Transaction already cancelled: ' . $id, 422);
-            }
-            if ((string)($row['status'] ?? '') === 'reversed') {
-                $this->error(
-                    'Cannot cancel reversed posting id ' . $id . ' until its ledger reversal is cancelled.',
-                    422
-                );
-            }
-            $tt = (string)($row['txn_type'] ?? '');
-            $cashMirrorOnly = [
-                TxnModel::TXN_TYPE_RECEIPT_BANK_LEG,
-                TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
-                TxnModel::TXN_TYPE_RECEIPT_BANK_LEG_REVERSAL,
-                TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL,
-            ];
-            if (in_array($tt, $cashMirrorOnly, true)) {
-                $this->error(
-                    'Bulk delete cannot include firm cash-book leg id ' . $id . '. Remove it and delete the client transaction instead.',
-                    422
-                );
-            }
-            if (in_array($tt, ['receipt_reversal', 'payment_expense_reversal', 'tds_reversal'], true)) {
-                $this->error(
-                    'Bulk delete cannot include ledger reversal id ' . $id . '. Cancel the reversal on the original posting instead.',
-                    422
-                );
-            }
-            if (!$this->txnRequiresSuperadminDelete($tt)) {
-                $this->error('Bulk delete is not allowed for transaction type: ' . $tt, 422);
-            }
-            $rows[] = $row;
         }
 
         usort($rows, function (array $a, array $b): int {
@@ -1831,7 +1899,13 @@ class TxnController extends BaseController
         $body['created_by'] = $actingUser ? (int)$actingUser['id'] : null;
 
         try {
-            $allocRows = TxnReceiptAllocationService::normalizeAndValidateAllocations($body, $body['allocations'] ?? null);
+            $body['ledger_class'] = LedgerDimensions::assertLedgerClass($body['ledger_class'] ?? '');
+            $body['ledger_movement_kind'] = LedgerDimensions::assertLedgerMovementKindRequired($body['ledger_movement_kind'] ?? '');
+            if (LedgerDimensions::isParkedLedgerClass($body['ledger_class'])) {
+                $allocRows = TxnReceiptAllocationService::normalizeParkedReceiptAllocations($body);
+            } else {
+                $allocRows = TxnReceiptAllocationService::normalizeAndValidateAllocations($body, $body['allocations'] ?? null);
+            }
         } catch (\InvalidArgumentException $e) {
             $this->error($e->getMessage(), 422);
         }
@@ -2015,6 +2089,9 @@ class TxnController extends BaseController
         $amount      = (float)($body['amount'] ?? 0);
         $type        = trim((string)($body['type'] ?? 'debit'));
         $ledgerClass = LedgerDimensions::normalizeLedgerClass($body['ledger_class'] ?? null);
+        if (LedgerDimensions::isParkedLedgerClass($ledgerClass)) {
+            $this->error('Opening balance is not supported for parked ledger class.', 422);
+        }
         $movementRaw = trim((string)($body['ledger_movement_kind'] ?? $body['ledgerMovementKind'] ?? ''));
         $txnDateRaw  = trim((string)($body['txn_date'] ?? $body['txnDate'] ?? ''));
 
@@ -2410,5 +2487,464 @@ class TxnController extends BaseController
             throw new \InvalidArgumentException('Receipt ledger_class must match the linked invoice.');
         }
         LedgerDimensions::assertReceiptMovementMatchesInvoice($inv, $body['ledger_movement_kind']);
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     */
+    private function enforceClientCostLedgerDimensions(array &$body): void
+    {
+        $body['ledger_class'] = LedgerDimensions::assertClientCostsLedgerClass(
+            $body['ledger_class'] ?? LedgerDimensions::CLASS_CLIENT_COSTS
+        );
+        $body['ledger_movement_kind'] = LedgerDimensions::assertLedgerMovementKindRequired(
+            $body['ledger_movement_kind'] ?? ''
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $body
+     */
+    private function applyPaymentClientCostTxnUpdate(int $id, array $row, array $body, ?int $actorId): void
+    {
+        foreach (['client_id', 'organization_id', 'ledger_class', 'ledger_movement_kind'] as $field) {
+            if (!array_key_exists($field, $body)) {
+                continue;
+            }
+            if ((string)$body[$field] !== (string)($row[$field] ?? '')) {
+                $this->error('Cannot change ' . $field . ' on this payment via edit.', 422);
+            }
+        }
+        if (!empty($body['settlement_lines'])) {
+            $this->error('Client cost payments cannot be settled from receipts or unallocated advance.', 422);
+        }
+
+        $metaKeys = [
+            'txn_date', 'narration', 'notes', 'payment_method', 'reference_number',
+            'expense_purpose', 'firm_bank_account_id',
+        ];
+        $newAmount = array_key_exists('amount', $body)
+            ? round((float)$body['amount'], 2)
+            : round((float)($row['amount'] ?? 0), 2);
+        if ($newAmount <= 0) {
+            $this->error('amount must be greater than zero.', 422);
+        }
+
+        $resolveBankId = function (array $metaSlice) use ($row, $id): int {
+            if (!empty($metaSlice['firm_bank_account_id'])) {
+                $tmpBody = array_merge(
+                    $metaSlice,
+                    ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
+                );
+                $this->attachValidatedBankAccount($tmpBody);
+
+                return (int) $tmpBody['firm_bank_account_id'];
+            }
+
+            return $this->txn->findPaymentClientCostBankLegAccountId($id);
+        };
+
+        $patch = array_intersect_key($body, array_flip($metaKeys));
+        $patch['amount'] = $newAmount;
+        $patch['debit']  = 0;
+        $patch['credit'] = 0;
+        $bankId          = $resolveBankId($patch);
+        unset($patch['firm_bank_account_id']);
+        if ($bankId > 0) {
+            $patch['paid_from'] = $this->resolvePaidFromLabelForBankId($bankId);
+        }
+        $this->txn->update($id, $patch, $actorId);
+        if ($bankId > 0) {
+            $fresh = $this->txn->find($id);
+            $this->txn->syncPaymentClientCostBankLeg(
+                $id,
+                is_array($fresh) ? $fresh : $row,
+                $newAmount,
+                $bankId
+            );
+        }
+    }
+
+    /**
+     * Apply a pending Team Approvals ledger change (called from LedgerTxnChangeApprovalController).
+     *
+     * @return array<string, mixed>
+     */
+    public function executeApprovedLedgerChange(int $requestId, int $decidedByActorId): array
+    {
+        $model = new LedgerTxnChangeRequestModel();
+        $req   = $model->find($requestId);
+        if ($req === null || ($req['status'] ?? '') !== 'pending') {
+            $this->error('Request not found or already decided.', 404);
+        }
+
+        $action  = (string)($req['action'] ?? '');
+        $payload = LedgerTxnChangeRequestModel::decodeJsonField($req['payload'] ?? []);
+        $txnId   = $req['txn_id'] !== null ? (int)$req['txn_id'] : 0;
+
+        return match ($action) {
+            LedgerTxnChangeRequestModel::ACTION_UPDATE => $this->executeApprovedLedgerUpdate(
+                $requestId,
+                $txnId,
+                $payload,
+                $decidedByActorId
+            ),
+            LedgerTxnChangeRequestModel::ACTION_REVERSE => $this->executeApprovedLedgerReverse(
+                $requestId,
+                $txnId,
+                $payload,
+                $decidedByActorId
+            ),
+            LedgerTxnChangeRequestModel::ACTION_CANCEL_REVERSAL => $this->executeApprovedLedgerCancelReversal(
+                $requestId,
+                $txnId,
+                $decidedByActorId
+            ),
+            LedgerTxnChangeRequestModel::ACTION_CANCEL => $this->executeApprovedLedgerCancel(
+                $requestId,
+                $payload,
+                $decidedByActorId
+            ),
+            default => $this->error('Unknown approval action.', 422),
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     *
+     * @return array<string, mixed>
+     */
+    private function executeApprovedLedgerUpdate(
+        int $requestId,
+        int $txnId,
+        array $payload,
+        int $decidedByActorId
+    ): array {
+        if ($txnId <= 0) {
+            $this->error('Invalid transaction id on approval request.', 422);
+        }
+        $row = $this->txn->find($txnId);
+        if ($row === null) {
+            $this->error('Transaction not found.', 404);
+        }
+        $type = (string)($row['txn_type'] ?? '');
+        if (!$this->txnRequiresLedgerModifyOtp($type)) {
+            $this->error('This transaction type cannot be updated through ledger approval.', 422);
+        }
+
+        $body = $payload;
+        unset($body['txn_type']);
+        $beforeSnap = $this->txnAuditCompactSnapshot($row);
+
+        switch ($type) {
+            case 'invoice':
+                $this->txn->update($txnId, $body, $decidedByActorId);
+                break;
+            case 'receipt':
+                $this->applyReceiptTxnUpdate($txnId, $row, $body, $decidedByActorId);
+                break;
+            case 'payment_expense':
+                $this->applyPaymentExpenseTxnUpdate($txnId, $row, $body, $decidedByActorId);
+                break;
+            case 'payment_client_cost':
+                $this->applyPaymentClientCostTxnUpdate($txnId, $row, $body, $decidedByActorId);
+                break;
+            case 'tds_provisional':
+            case 'tds_final':
+                $this->applyTdsTxnUpdate($txnId, $row, $body, $decidedByActorId);
+                break;
+            default:
+                $this->txn->update($txnId, $body, $decidedByActorId);
+        }
+
+        $updated   = $this->txn->find($txnId);
+        $afterSnap = $this->txnAuditCompactSnapshot($updated ?? []);
+        if ($updated !== null && $beforeSnap !== $afterSnap) {
+            $this->auditTxnLog(
+                $decidedByActorId,
+                'txn.updated',
+                $txnId,
+                ['txn_type' => $type, 'approval_id' => $requestId, 'via' => 'team_approval'],
+                $beforeSnap,
+                $afterSnap
+            );
+        }
+        if ($type === 'invoice') {
+            (new CommissionSyncService())->syncInvoiceSafe($txnId);
+            $this->notifyAdminsInvoiceChange('updated', $row, $updated, null);
+        }
+
+        return ['txn_id' => $txnId, 'action' => 'update', 'txn' => $updated];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     *
+     * @return array<string, mixed>
+     */
+    private function executeApprovedLedgerReverse(
+        int $requestId,
+        int $txnId,
+        array $payload,
+        int $decidedByActorId
+    ): array {
+        if ($txnId <= 0) {
+            $this->error('Invalid transaction id on approval request.', 422);
+        }
+        $reason = trim((string)($payload['reason'] ?? ''));
+        if (strlen($reason) < 10) {
+            $this->error('reason must be at least 10 characters.', 422);
+        }
+
+        $row = $this->txn->find($txnId);
+        if ($row === null) {
+            $this->error('Transaction not found.', 404);
+        }
+        $this->assertTxnReversibleForUserFlow($row, false);
+
+        $beforeOrig = $this->txnAuditCompactSnapshot($row);
+        try {
+            $result = $this->txn->reverseLedgerEntry($txnId, $reason, $decidedByActorId);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
+        $newId = (int)$result['new_id'];
+        foreach ($result['affected_invoice_ids'] as $iid) {
+            (new CommissionSyncService())->syncInvoiceSafe((int)$iid);
+        }
+
+        $origAfter = $this->txn->find($txnId);
+        $revRow    = $this->txn->find($newId);
+        $this->auditTxnLog(
+            $decidedByActorId,
+            'txn.reversed',
+            $txnId,
+            [
+                'reversal_reason' => $reason,
+                'mode'            => 'team_approval',
+                'approval_id'     => $requestId,
+                'reversal_txn_id' => $newId,
+                'txn_type'        => (string)($row['txn_type'] ?? ''),
+            ],
+            $beforeOrig,
+            [
+                'original' => $origAfter !== null ? $this->txnAuditCompactSnapshot($origAfter) : null,
+                'reversal' => $revRow !== null ? $this->txnAuditCompactSnapshot($revRow) : null,
+            ]
+        );
+        if ($revRow !== null) {
+            $this->recordTxnCreated($newId, $decidedByActorId);
+        }
+
+        return [
+            'txn_id'          => $txnId,
+            'action'          => 'reverse',
+            'reversal_txn_id' => $newId,
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function executeApprovedLedgerCancelReversal(
+        int $requestId,
+        int $txnId,
+        int $decidedByActorId
+    ): array {
+        if ($txnId <= 0) {
+            $this->error('Invalid transaction id on approval request.', 422);
+        }
+        $row = $this->txn->find($txnId);
+        if ($row === null) {
+            $this->error('Transaction not found.', 404);
+        }
+        $this->assertTxnCancelReversalForUserFlow($row, false);
+
+        $beforeOrig = $this->txnAuditCompactSnapshot($row);
+        try {
+            $result = $this->txn->cancelLedgerReversalForOriginal($txnId, $decidedByActorId);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
+        $origAfter     = $this->txn->find($txnId);
+        $reversalTxnId = $result['reversal_txn_id'] ?? null;
+        $revAfter      = $reversalTxnId !== null ? $this->txn->find((int)$reversalTxnId) : null;
+        $this->auditTxnLog(
+            $decidedByActorId,
+            'txn.reversal_cancelled',
+            $txnId,
+            [
+                'mode'            => 'team_approval',
+                'approval_id'     => $requestId,
+                'reversal_txn_id' => $reversalTxnId,
+                'txn_type'        => (string)($row['txn_type'] ?? ''),
+            ],
+            $beforeOrig,
+            [
+                'original' => $origAfter !== null ? $this->txnAuditCompactSnapshot($origAfter) : null,
+                'reversal' => $revAfter !== null ? $this->txnAuditCompactSnapshot($revAfter) : null,
+            ]
+        );
+
+        return ['txn_id' => $txnId, 'action' => 'cancel_reversal'];
+    }
+
+    /**
+     * @param array<string, mixed> $payload
+     *
+     * @return array<string, mixed>
+     */
+    private function executeApprovedLedgerCancel(
+        int $requestId,
+        array $payload,
+        int $decidedByActorId
+    ): array {
+        $idsRaw = $payload['ids'] ?? null;
+        if (!is_array($idsRaw) || $idsRaw === []) {
+            $this->error('Cancel approval has no transaction ids.', 422);
+        }
+
+        $ids = [];
+        foreach ($idsRaw as $v) {
+            $n = (int)$v;
+            if ($n > 0) {
+                $ids[$n] = $n;
+            }
+        }
+        if ($ids === []) {
+            $this->error('No valid transaction ids.', 422);
+        }
+
+        $rows = [];
+        foreach ($ids as $id) {
+            $row = $this->txn->find($id);
+            if ($row === null) {
+                $this->error('Transaction not found: ' . $id, 404);
+            }
+            if (in_array((string)($row['status'] ?? ''), ['cancelled', 'deleted'], true)) {
+                $this->error('Transaction already cancelled: ' . $id, 422);
+            }
+            if ((string)($row['status'] ?? '') === 'reversed') {
+                $this->error(
+                    'Cannot cancel reversed posting id ' . $id . ' until its ledger reversal is cancelled.',
+                    422
+                );
+            }
+            $tt = (string)($row['txn_type'] ?? '');
+            if (!$this->txnRequiresSuperadminDelete($tt)) {
+                $this->error('Bulk delete is not allowed for transaction type: ' . $tt, 422);
+            }
+            $rows[] = $row;
+        }
+
+        usort($rows, function (array $a, array $b): int {
+            $pa = $this->txnDeleteSortPriority((string)($a['txn_type'] ?? ''));
+            $pb = $this->txnDeleteSortPriority((string)($b['txn_type'] ?? ''));
+            if ($pa !== $pb) {
+                return $pa <=> $pb;
+            }
+
+            return (int)($a['id'] ?? 0) <=> (int)($b['id'] ?? 0);
+        });
+
+        foreach ($rows as $row) {
+            $this->performTxnDelete($row, $decidedByActorId);
+        }
+
+        return [
+            'action'    => 'cancel',
+            'approval_id' => $requestId,
+            'cancelled' => count($rows),
+            'txn_ids'   => array_map(static fn (array $r): int => (int)($r['id'] ?? 0), $rows),
+        ];
+    }
+
+    /**
+     * @param array<int, int> $ids id => id map
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function collectValidatedLedgerCancelRows(array $ids): array
+    {
+        $rows = [];
+        foreach ($ids as $id) {
+            $row = $this->txn->find($id);
+            if ($row === null) {
+                $this->error('Transaction not found: ' . $id, 404);
+            }
+            if (in_array((string)($row['status'] ?? ''), ['cancelled', 'deleted'], true)) {
+                $this->error('Transaction already cancelled: ' . $id, 422);
+            }
+            if ((string)($row['status'] ?? '') === 'reversed') {
+                $this->error(
+                    'Cannot cancel reversed posting id ' . $id . ' until its ledger reversal is cancelled.',
+                    422
+                );
+            }
+            $tt = (string)($row['txn_type'] ?? '');
+            $cashMirrorOnly = [
+                TxnModel::TXN_TYPE_RECEIPT_BANK_LEG,
+                TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
+                TxnModel::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG,
+                TxnModel::TXN_TYPE_RECEIPT_BANK_LEG_REVERSAL,
+                TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG_REVERSAL,
+                TxnModel::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG_REVERSAL,
+            ];
+            if (in_array($tt, $cashMirrorOnly, true)) {
+                $this->error(
+                    'Bulk delete cannot include firm cash-book leg id ' . $id . '. Remove it and delete the client transaction instead.',
+                    422
+                );
+            }
+            if (in_array($tt, ['receipt_reversal', 'payment_expense_reversal', 'payment_client_cost_reversal', 'tds_reversal'], true)) {
+                $this->error(
+                    'Bulk delete cannot include ledger reversal id ' . $id . '. Cancel the reversal on the original posting instead.',
+                    422
+                );
+            }
+            if (!$this->txnRequiresSuperadminDelete($tt)) {
+                $this->error('Bulk delete is not allowed for transaction type: ' . $tt, 422);
+            }
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @param array{type: string, summary: array<string, mixed>} $intercept
+     * @param array<string, mixed>|null $row
+     */
+    private function respondLedgerChangeQueued(array $intercept, ?array $row): never
+    {
+        if (($intercept['type'] ?? '') === 'blocked') {
+            $this->error(
+                'A ledger change is already pending Super Admin approval (Approval #'
+                . (int)($intercept['summary']['approval_id'] ?? 0) . ').',
+                422,
+                [],
+                ['pending_ledger_change' => $intercept['summary']]
+            );
+        }
+
+        $approvalId = (int)($intercept['summary']['approval_id'] ?? 0);
+        $action     = (string)($intercept['summary']['action'] ?? '');
+        $label      = LedgerTxnChangeService::actionLabel($action);
+        $msg        = $label . ' submitted for Super Admin approval (Approval #' . $approvalId . ').';
+        $this->success($row, $msg, 200, ['pending_ledger_change' => $intercept['summary']]);
+    }
+
+    /** @param array<string, mixed>|null $actor */
+    private function isSuperAdminActor(?array $actor): bool
+    {
+        if ($actor === null) {
+            return false;
+        }
+        if ($this->isSuperAdminEmail((string)($actor['email'] ?? ''))) {
+            return true;
+        }
+
+        return ($actor['role_name'] ?? '') === 'super_admin';
     }
 }

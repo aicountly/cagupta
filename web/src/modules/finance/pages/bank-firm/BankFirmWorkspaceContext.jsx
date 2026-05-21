@@ -11,6 +11,7 @@ import {
   getFirmInternalTxns,
   createFirmBankTransfer,
   createFirmExpenseTxn,
+  createFirmInflowTxn,
 } from '../../services/txnService';
 
 const BankFirmWorkspaceContext = createContext(null);
@@ -51,6 +52,12 @@ export function BankFirmWorkspaceProvider({ children }) {
   const [expAmt, setExpAmt] = useState('');
   const [expDate, setExpDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [expNote, setExpNote] = useState('');
+
+  const [infAcct, setInfAcct] = useState('');
+  const [infCat, setInfCat] = useState('fund_infusion');
+  const [infAmt, setInfAmt] = useState('');
+  const [infDate, setInfDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [infNote, setInfNote] = useState('');
 
   const [reportKind, setReportKind] = useState('all');
   const [reportRows, setReportRows] = useState([]);
@@ -243,6 +250,26 @@ export function BankFirmWorkspaceProvider({ children }) {
     }
   }, [expAcct, expCat, expAmt, expDate, expNote, flash, refreshAccounts, loadReport]);
 
+  const submitInf = useCallback(async (e) => {
+    e.preventDefault();
+    try {
+      await createFirmInflowTxn({
+        firmBankAccountId: parseInt(infAcct, 10),
+        category: infCat,
+        amount: parseFloat(infAmt),
+        txnDate: infDate,
+        narration: infNote,
+      });
+      flash('Inflow recorded successfully', 'success');
+      setInfAmt('');
+      setInfNote('');
+      refreshAccounts();
+      loadReport();
+    } catch (err) {
+      flash(err.message || 'Inflow failed', 'error');
+    }
+  }, [infAcct, infCat, infAmt, infDate, infNote, flash, refreshAccounts, loadReport]);
+
   const addAccount = useCallback(async (e) => {
     e.preventDefault();
     if (!canSettings || !firmCode || !newName.trim()) return;
@@ -388,6 +415,17 @@ export function BankFirmWorkspaceProvider({ children }) {
       expNote,
       setExpNote,
       submitExp,
+      infAcct,
+      setInfAcct,
+      infCat,
+      setInfCat,
+      infAmt,
+      setInfAmt,
+      infDate,
+      setInfDate,
+      infNote,
+      setInfNote,
+      submitInf,
       reportKind,
       setReportKind,
       reportRows,
@@ -455,6 +493,12 @@ export function BankFirmWorkspaceProvider({ children }) {
       expDate,
       expNote,
       submitExp,
+      infAcct,
+      infCat,
+      infAmt,
+      infDate,
+      infNote,
+      submitInf,
       reportKind,
       reportRows,
       loadReport,

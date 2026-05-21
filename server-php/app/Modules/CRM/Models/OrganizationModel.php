@@ -153,12 +153,14 @@ class OrganizationModel
                 name, \"type\", gstin, pan, cin, email, secondary_email, phone, secondary_phone,
                 address, city, state, country, pincode, website, notes,
                 reference, group_id, primary_contact_id, organization_status, is_active, created_by,
-                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted
+                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted,
+                default_billing_profile_code
              ) VALUES (
                 :name, :type, :gstin, :pan, :cin, :email, :secondary_email, :phone, :secondary_phone,
                 :address, :city, :state, :country, :pincode, :website, :notes,
                 :reference, :group_id, :primary_contact_id, :organization_status, {$isActiveLit}, :created_by,
-                :referring_affiliate_user_id, :referral_start_date, :commission_mode, {$cfLit}
+                :referring_affiliate_user_id, :referral_start_date, :commission_mode, {$cfLit},
+                :default_billing_profile_code
              ) RETURNING id"
         );
         $refAff = isset($data['referring_affiliate_user_id']) ? (int)$data['referring_affiliate_user_id'] : 0;
@@ -187,6 +189,7 @@ class OrganizationModel
             ':referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
             ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
             ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
+            ':default_billing_profile_code' => $data['default_billing_profile_code'] ?? null,
         ]);
         return (int)$stmt->fetchColumn();
     }
@@ -205,6 +208,7 @@ class OrganizationModel
             'name', 'type', 'gstin', 'pan', 'cin', 'email', 'secondary_email', 'phone', 'secondary_phone',
             'address', 'city', 'state', 'country', 'pincode', 'website', 'notes', 'reference',
             'referral_start_date', 'commission_mode', 'organization_status',
+            'default_billing_profile_code',
         ];
         foreach ($allowed as $field) {
             if (array_key_exists($field, $data)) {
@@ -365,6 +369,70 @@ class OrganizationModel
     }
 
     /**
+     * Count linked records that block or warn before organization delete.
+     *
+     * @return array{
+     *   blockers: list<array{key: string, label: string, count: int}>,
+     *   warnings: list<array{key: string, label: string, count: int}>
+     * }
+     */
+    public function getDeleteDependencies(int $id): array
+    {
+        $stmt = $this->db->prepare(
+            "SELECT dep_key, dep_label, dep_count FROM (
+                SELECT 'services' AS dep_key, 'Service engagements' AS dep_label,
+                       COUNT(*)::int AS dep_count
+                FROM services WHERE organization_id = :id
+                UNION ALL
+                SELECT 'documents', 'Documents', COUNT(*)::int
+                FROM documents WHERE organization_id = :id
+                UNION ALL
+                SELECT 'invoices', 'Invoices', COUNT(*)::int
+                FROM invoices WHERE organization_id = :id
+                UNION ALL
+                SELECT 'credentials', 'Portal credentials', COUNT(*)::int
+                FROM credentials_vault WHERE organization_id = :id
+                UNION ALL
+                SELECT 'registers', 'Compliance registers', COUNT(*)::int
+                FROM registers WHERE organization_id = :id
+                UNION ALL
+                SELECT 'portal_types', 'Portal types', COUNT(*)::int
+                FROM portal_types WHERE organization_id = :id
+                UNION ALL
+                SELECT 'txn', 'Ledger entries (transactions / opening balances)', COUNT(*)::int
+                FROM txn WHERE organization_id = :id
+                UNION ALL
+                SELECT 'leads', 'Leads', COUNT(*)::int
+                FROM leads WHERE organization_id = :id
+                UNION ALL
+                SELECT 'calendar_billing', 'Calendar billing events', COUNT(*)::int
+                FROM calendar_events WHERE billing_organization_id = :id
+            ) deps WHERE dep_count > 0"
+        );
+        $stmt->execute([':id' => $id]);
+        $rows = $stmt->fetchAll();
+
+        $blockerKeys = ['services', 'documents', 'invoices', 'credentials', 'registers', 'portal_types', 'txn'];
+        $blockers  = [];
+        $warnings  = [];
+
+        foreach ($rows as $row) {
+            $entry = [
+                'key'   => (string)$row['dep_key'],
+                'label' => (string)$row['dep_label'],
+                'count' => (int)$row['dep_count'],
+            ];
+            if (in_array($entry['key'], $blockerKeys, true)) {
+                $blockers[] = $entry;
+            } else {
+                $warnings[] = $entry;
+            }
+        }
+
+        return ['blockers' => $blockers, 'warnings' => $warnings];
+    }
+
+    /**
      * Delete an organization record permanently.
      */
     public function delete(int $id): bool
@@ -378,7 +446,7 @@ class OrganizationModel
      */
     public static function exceptionReportAllowedKeys(): array
     {
-        return ['gstin', 'pan', 'cin', 'email', 'website'];
+        return ['gstin', 'pan', 'cin', 'email', 'website', 'default_billing_profile'];
     }
 
     /**
@@ -403,11 +471,12 @@ class OrganizationModel
 
         $orParts = [];
         $colMap  = [
-            'gstin'   => 'o.gstin',
-            'pan'     => 'o.pan',
-            'cin'     => 'o.cin',
-            'email'   => 'o.email',
-            'website' => 'o.website',
+            'gstin'                   => 'o.gstin',
+            'pan'                     => 'o.pan',
+            'cin'                     => 'o.cin',
+            'email'                   => 'o.email',
+            'website'                 => 'o.website',
+            'default_billing_profile' => 'o.default_billing_profile_code',
         ];
         foreach ($missingKeys as $key) {
             $col = $colMap[$key] ?? null;
@@ -431,7 +500,9 @@ class OrganizationModel
         $total = (int)$countStmt->fetchColumn();
 
         $stmt = $this->db->prepare(
-            "SELECT o.id, o.name, o.email, o.pan, o.gstin, o.cin, o.website, o.is_active,
+            "SELECT o.id, o.name, o.email, o.pan, o.gstin, o.cin, o.website,
+                    o.default_billing_profile_code AS default_billing_profile,
+                    o.is_active,
                     cg.name AS group_name
              FROM organizations o
              LEFT JOIN client_groups cg ON cg.id = o.group_id

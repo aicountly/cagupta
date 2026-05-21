@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
+use App\Libraries\ApprovalDecisionNotifier;
 use App\Libraries\ClientMasterAudit;
 use App\Libraries\ClientMasterNameChangeService;
 use App\Models\AdminAuditLogModel;
@@ -97,11 +98,21 @@ final class ClientMasterNameChangeApprovalController extends BaseController
 
         $reqUserId = (int)($row['requested_by_user_id'] ?? 0);
         $newName   = ClientMasterNameChangeRequestModel::proposedDisplayName($entityType, $prop);
+        $summary   = 'Approval #' . $id . ': name updated to “' . $newName . '”.';
+        $detail    = $decisionNotes !== ''
+            ? ApprovalDecisionNotifier::detailBlock(
+                'Decision notes: ' . ApprovalDecisionNotifier::escapeDetail($decisionNotes)
+            )
+            : null;
         ClientMasterNameChangeService::notifyRequester(
             $reqUserId,
             'Client master name change approved',
-            'Approval #' . $id . ': name updated to “' . $newName . '”.',
-            $id
+            $summary,
+            $id,
+            'approved',
+            $summary,
+            $actor,
+            $detail
         );
 
         $this->success(['id' => $id, 'status' => 'approved'], 'Name change approved');
@@ -145,11 +156,19 @@ final class ClientMasterNameChangeApprovalController extends BaseController
         }
 
         $reqUserId = (int)($row['requested_by_user_id'] ?? 0);
+        $summary   = 'Approval #' . $id . ' was rejected.';
+        $detail    = ApprovalDecisionNotifier::detailBlock(
+            'Reason: ' . ApprovalDecisionNotifier::escapeDetail($reason)
+        );
         ClientMasterNameChangeService::notifyRequester(
             $reqUserId,
             'Client master name change rejected',
-            'Approval #' . $id . ' was rejected. Reason: ' . $reason,
-            $id
+            $summary . ' Reason: ' . $reason,
+            $id,
+            'rejected',
+            $summary,
+            $actor,
+            $detail
         );
 
         $this->success(['id' => $id, 'status' => 'rejected'], 'Name change rejected');

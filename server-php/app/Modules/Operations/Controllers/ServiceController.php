@@ -49,7 +49,7 @@ class ServiceController extends BaseController
     /**
      * Return a paginated list of service engagements.
      *
-     * Query params: page, per_page, search, status
+     * Query params: page, per_page, search, status, kpi_slug, as_of
      */
     public function index(): never
     {
@@ -57,25 +57,37 @@ class ServiceController extends BaseController
         $perPage  = min(100, max(1, (int)$this->query('per_page', 20)));
         $search   = trim((string)$this->query('search', ''));
         $status   = trim((string)$this->query('status', ''));
+        $kpiSlug  = trim((string)$this->query('kpi_slug', ''));
+        $asOf     = trim((string)$this->query('as_of', ''));
         $clientId = (int)$this->query('client_id', 0);
         $orgId    = (int)$this->query('organization_id', 0);
         $scopeUserId = (int)$this->query('user_id', 0);
+
+        if ($kpiSlug !== '' && $asOf === '') {
+            $asOf = date('Y-m-d');
+        }
 
         [$actorUserId, $isSuperAdmin, $effectiveScopeUserId] = $this->resolveServiceVisibilityContext(
             $scopeUserId > 0 ? $scopeUserId : null
         );
 
-        $result = $this->services->paginate(
-            $page,
-            $perPage,
-            $search,
-            $status,
-            $clientId,
-            $orgId,
-            $actorUserId,
-            $isSuperAdmin,
-            $effectiveScopeUserId
-        );
+        try {
+            $result = $this->services->paginate(
+                $page,
+                $perPage,
+                $search,
+                $status,
+                $clientId,
+                $orgId,
+                $actorUserId,
+                $isSuperAdmin,
+                $effectiveScopeUserId,
+                $kpiSlug,
+                $asOf
+            );
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
 
         $this->success($result['services'], 'Services retrieved', 200, [
             'pagination' => [

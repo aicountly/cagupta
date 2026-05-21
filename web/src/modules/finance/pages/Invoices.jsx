@@ -1,12 +1,11 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
-  getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createTds, finalizeTds,
+  getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createPaymentClientCost, createTds, finalizeTds,
   getTdsEntries, createRebate, createCreditNote, getLedger, getBillSettlementReport, getRecoveryByGroup,
   getOpeningBalance, setOpeningBalance,
-  updateTxn, requestInvoiceModifyOtp,
-  requestLedgerDeleteOtp, bulkDeleteTxns,
-  requestLedgerReversalUserOtp, reverseLedgerTxn, cancelLedgerReversalTxn,
+  updateTxn, bulkDeleteTxns,
+  requestLedgerReversalUserOtp, reverseLedgerTxn, cancelLedgerReversalTxn, assignParkedTxn,
   postInvoiceCostAnalysisPreview,
   getReceiptsWithUnallocated,
   getLedgerReconciliation,
@@ -19,6 +18,7 @@ import {
   getRecoveryStatus, markNpa, markBadDebt,
 } from '../services/ledgerRecoveryStatusService';
 import { LastUpdatedByCell, TxnAuditLogModal } from '../../../components/finance/TxnAuditActivity';
+import PendingLedgerChangeBanner from '../../../components/finance/PendingLedgerChangeBanner';
 import ServiceBillingDetailModal from '../../../components/finance/ServiceBillingDetailModal';
 import { useAuth } from '../../../auth/AuthContext';
 import { getContact } from '../../../services/contactService';
@@ -40,6 +40,7 @@ import LineItemPresetCombobox from '../../../components/common/LineItemPresetCom
 import DateInput from '../../../components/common/DateInput';
 import AmountInput from '../../../components/common/AmountInput';
 import BillingProfileSelect from '../../../components/common/BillingProfileSelect';
+import BillingProfileDefaultNotice from '../../../components/common/BillingProfileDefaultNotice';
 import { getBillingProfiles, getBillingProfileByCode } from '../../../constants/billingProfiles';
 import { listFirmBankAccounts } from '../../../services/firmBankAccountService';
 import { stateCodeFromGstin } from '../../../utils/gstUtils';
@@ -83,8 +84,10 @@ const TXN_TYPE_COLORS = {
   opening_balance: { bg:'#fffbeb', color:'#92400e', border:'#fde68a' },
   brought_forward: { bg:'#f8fafc', color:'#334155', border:'#e2e8f0' },
   payment_expense: { bg:'#f0f9ff', color:'#075985', border:'#bae6fd' },
+  payment_client_cost: { bg:'#f5f3ff', color:'#5b21b6', border:'#ddd6fe' },
   receipt_reversal: { bg:'#ecfdf5', color:'#047857', border:'#6ee7b7' },
   payment_expense_reversal: { bg:'#fff7ed', color:'#c2410c', border:'#fdba74' },
+  payment_client_cost_reversal: { bg:'#faf5ff', color:'#7c3aed', border:'#e9d5ff' },
   tds_reversal: { bg:'#f5f3ff', color:'#6d28d9', border:'#c4b5fd' },
 };
 
@@ -96,8 +99,10 @@ function TxnTypeBadge({ type }) {
     opening_balance: 'Opening Bal.',
     brought_forward: 'B/F',
     payment_expense: 'On-behalf payment',
+    payment_client_cost: 'Client cost',
     receipt_reversal: 'Receipt reversal',
     payment_expense_reversal: 'Payment reversal',
+    payment_client_cost_reversal: 'Client cost reversal',
     tds_reversal: 'TDS reversal',
   };
   return (
@@ -139,7 +144,7 @@ function txnFieldsIncludeQuery(query, fields) {
 }
 
 /** Tabs under Invoices & Ledger that share the client-side list search bar. */
-const TXN_LIST_SEARCH_TABS = new Set(['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note']);
+const TXN_LIST_SEARCH_TABS = new Set(['invoices', 'receipts', 'payments', 'payment_costs', 'tds', 'rebate', 'credit_note']);
 
 /** Filter recovery list groups — group mode shows all ledgers in matching groups; ledger mode matches entities. */
 function filterRecoveryGroups(groups, query, mode) {
@@ -172,11 +177,12 @@ function recoveryTotalsFromGroups(groups) {
     regular: { fees: 0, taxes: 0, reimbursement: 0 },
     memorandum: { fees: 0, taxes: 0, reimbursement: 0 },
     optional: { fees: 0, taxes: 0, reimbursement: 0 },
+    parked: { fees: 0, taxes: 0, reimbursement: 0 },
     grand: 0,
   };
   for (const g of groups) {
     for (const ent of g.entities || []) {
-      for (const slot of ['regular', 'memorandum', 'optional']) {
+      for (const slot of ['regular', 'memorandum', 'optional', 'parked']) {
         const s = ent[slot] || {};
         totals[slot].fees += Number(s.fees) || 0;
         totals[slot].taxes += Number(s.taxes) || 0;
@@ -185,7 +191,7 @@ function recoveryTotalsFromGroups(groups) {
       totals.grand += Number(ent.rowTotal) || 0;
     }
   }
-  for (const slot of ['regular', 'memorandum', 'optional']) {
+  for (const slot of ['regular', 'memorandum', 'optional', 'parked']) {
     for (const f of ['fees', 'taxes', 'reimbursement']) {
       totals[slot][f] = Math.round(totals[slot][f] * 100) / 100;
     }
@@ -197,6 +203,36 @@ function recoveryTotalsFromGroups(groups) {
 const TDS_SECTIONS = ['194J','194C','194H','194I','194A','194Q','Other'];
 
 const PAYMENT_METHOD_OPTIONS = ['NEFT', 'RTGS', 'UPI', 'Cheque', 'Cash', 'IMPS', 'Payment Gateway'];
+const CASH_PAYMENT_METHOD = 'Cash';
+
+function firmBankAccountType(bank) {
+  return String(bank?.accountType || bank?.account_type || '').trim().toLowerCase();
+}
+
+function isCashFirmBankAccount(bank) {
+  return firmBankAccountType(bank) === 'cash';
+}
+
+function findFirmBankAccount(banks, firmBankAccountId) {
+  if (!firmBankAccountId) return null;
+  return (banks || []).find((b) => String(b.id) === String(firmBankAccountId)) || null;
+}
+
+/** Cash accounts only allow Cash; bank accounts allow all methods (incl. cash deposit). */
+function paymentMethodOptionsForFirmBankAccount(banks, firmBankAccountId) {
+  const sel = findFirmBankAccount(banks, firmBankAccountId);
+  if (sel && isCashFirmBankAccount(sel)) {
+    return [CASH_PAYMENT_METHOD];
+  }
+  return PAYMENT_METHOD_OPTIONS;
+}
+
+function coercePaymentMethodForFirmBankAccount(method, banks, firmBankAccountId) {
+  const opts = paymentMethodOptionsForFirmBankAccount(banks, firmBankAccountId);
+  if (opts.length === 1) return opts[0];
+  if (method && opts.includes(method)) return method;
+  return opts[0];
+}
 
 function buildEngagementLineOptions(categories) {
   const out = [];
@@ -240,6 +276,7 @@ const LEDGER_CLASS_OPTIONS = [
   { value: 'regular', label: 'Regular' },
   { value: 'memorandum', label: 'Memorandum' },
   { value: 'optional', label: 'Optional' },
+  { value: 'parked', label: 'Parked' },
 ];
 
 // Extended options for the Ledger tab only — includes "All classes" consolidated view
@@ -249,7 +286,9 @@ const LEDGER_CLASS_OPTIONS_WITH_ALL = [
 ];
 
 function ledgerClassLabel(value) {
+  if (String(value || '').trim() === 'client_costs') return 'Client Costs';
   const v = normalizeLedgerClassForApi(value);
+  if (v === 'parked') return 'Parked';
   return LEDGER_CLASS_OPTIONS.find((o) => o.value === v)?.label || v;
 }
 
@@ -303,6 +342,7 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
   });
   const [serviceCategories, setServiceCategories] = useState([]);
   const [recipientGstin, setRecipientGstin] = useState('');
+  const [clientMasterDefaultCode, setClientMasterDefaultCode] = useState('');
   const [engagementOptions, setEngagementOptions] = useState([]);
 
   useEffect(() => {
@@ -329,6 +369,7 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
       }
     }
     setForm(next);
+    setClientMasterDefaultCode('');
     return undefined;
   }, [open, prefill]);
 
@@ -341,6 +382,7 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
   useEffect(() => {
     if (!open || !form.entityId) {
       setRecipientGstin('');
+      setClientMasterDefaultCode('');
       return undefined;
     }
     let cancelled = false;
@@ -349,13 +391,34 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
       try {
         if (form.entityType === 'organization') {
           const o = await getOrganization(idNum);
-          if (!cancelled) setRecipientGstin((o?.gstin || '').replace(/\s/g, '').toUpperCase());
+          if (cancelled) return;
+          setRecipientGstin((o?.gstin || '').replace(/\s/g, '').toUpperCase());
+          const code = String(o?.defaultBillingProfileCode || '').trim().toUpperCase();
+          const profile = code ? getBillingProfileByCode(code) : null;
+          if (profile) {
+            setClientMasterDefaultCode(code);
+            setForm((f) => ({ ...f, billingProfileCode: code }));
+          } else {
+            setClientMasterDefaultCode('');
+          }
         } else {
           const c = await getContact(idNum);
-          if (!cancelled) setRecipientGstin((c?.gstin || '').replace(/\s/g, '').toUpperCase());
+          if (cancelled) return;
+          setRecipientGstin((c?.gstin || '').replace(/\s/g, '').toUpperCase());
+          const code = String(c?.defaultBillingProfileCode || '').trim().toUpperCase();
+          const profile = code ? getBillingProfileByCode(code) : null;
+          if (profile) {
+            setClientMasterDefaultCode(code);
+            setForm((f) => ({ ...f, billingProfileCode: code }));
+          } else {
+            setClientMasterDefaultCode('');
+          }
         }
       } catch {
-        if (!cancelled) setRecipientGstin('');
+        if (!cancelled) {
+          setRecipientGstin('');
+          setClientMasterDefaultCode('');
+        }
       }
     })();
     return () => { cancelled = true; };
@@ -552,11 +615,11 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
           ) : null}
           <label style={labelStyle}>
             Ledger type
-            <select style={inputStyle} value={form.ledgerClass} onChange={(e) => set('ledgerClass', e.target.value)}>
-              {LEDGER_CLASS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
+              <select style={inputStyle} value={form.ledgerClass} onChange={(e) => set('ledgerClass', e.target.value)}>
+                {LEDGER_CLASS_OPTIONS.filter((o) => o.value !== 'parked').map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
           </label>
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
@@ -679,6 +742,10 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
               value={form.billingProfileCode}
               onChange={(code) => set('billingProfileCode', code)}
               showGstSuffix
+            />
+            <BillingProfileDefaultNotice
+              defaultCode={clientMasterDefaultCode}
+              selectedCode={form.billingProfileCode}
             />
           </label>
           <label style={labelStyle}>
@@ -907,9 +974,8 @@ const INVOICE_EDIT_STATUS_OPTIONS = ['draft', 'sent', 'partially_paid', 'paid', 
 function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
-  const [otp, setOtp] = useState('');
-  const [requesting, setRequesting] = useState(false);
+  const [info, setInfo] = useState('');
+  const [pendingChange, setPendingChange] = useState(null);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     txnDate: '',
@@ -940,11 +1006,11 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
     let cancelled = false;
     setLoading(true);
     setErr('');
-    setOtpSent(false);
-    setOtp('');
+    setInfo('');
     getTxn(invoiceId)
       .then((row) => {
         if (cancelled) return;
+        setPendingChange(row.pendingLedgerChange || null);
         const lines = row.lineItems && row.lineItems.length > 0
           ? row.lineItems.map((l) => ({
             description: l.description,
@@ -971,32 +1037,16 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
     return () => { cancelled = true; };
   }, [invoiceId]);
 
-  async function handleRequestOtp() {
-    setErr('');
-    setRequesting(true);
-    try {
-      await requestInvoiceModifyOtp(invoiceId, { intent: 'update' });
-      setOtpSent(true);
-    } catch (e) {
-      setErr(e.message || 'Could not send OTP.');
-    } finally {
-      setRequesting(false);
-    }
-  }
-
   async function handleSave() {
     const parsed = form.lines.map(buildLineItemApiRow).filter(Boolean);
     if (!form.txnDate || parsed.length === 0) {
       setErr('Invoice date and at least one line item are required.');
       return;
     }
-    if (!otp.trim()) {
-      setErr('Request a superadmin code, then enter the OTP here.');
-      return;
-    }
     const subtotal = parsed.reduce((a, l) => a + l.amount, 0);
     setSaving(true);
     setErr('');
+    setInfo('');
     try {
       const payload = {
         txn_date: form.txnDate,
@@ -1010,10 +1060,16 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
         amount: subtotal,
         debit: subtotal,
       };
-      const updated = await updateTxn(invoiceId, payload, { superadminOtp: otp.trim() });
+      const updated = await updateTxn(invoiceId, payload);
+      if (updated?.pendingLedgerChange) {
+        setPendingChange(updated.pendingLedgerChange);
+        setInfo(updated.queuedMessage || 'Invoice edit submitted for Super Admin approval.');
+        return;
+      }
       onSaved(updated);
       onClose();
     } catch (e) {
+      if (e.pendingLedgerChange) setPendingChange(e.pendingLedgerChange);
       setErr(e.message || 'Save failed.');
     } finally {
       setSaving(false);
@@ -1030,10 +1086,12 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {loading && <div style={{ color: '#64748b', fontSize: 13 }}>Loading…</div>}
           {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
+          {info && <div style={{ color: '#047857', fontSize: 13 }}>{info}</div>}
+          <PendingLedgerChangeBanner pending={pendingChange} />
           {!loading && (
             <>
               <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
-                Superadmin receives a one-time code by email. Request the code, then enter it below before saving.
+                Changes are submitted for Super Admin approval from Team Approvals unless you are signed in as Super Admin.
               </p>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <label style={labelStyle}>
@@ -1096,22 +1154,12 @@ function EditInvoiceModal({ invoiceId, onClose, onSaved }) {
                 </div>
               ))}
               <button type="button" style={{ ...btnSecondary, alignSelf: 'flex-start' }} onClick={addLine}>+ Line</button>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-                <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
-                  {requesting ? 'Sending…' : 'Request superadmin OTP'}
-                </button>
-                {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent to superadmin email</span>}
-              </div>
-              <label style={labelStyle}>
-                Superadmin OTP *
-                <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\s/g, ''))} />
-              </label>
             </>
           )}
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button type="button" style={btnPrimary} disabled={loading || saving} onClick={handleSave}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button type="button" style={btnPrimary} disabled={loading || saving || pendingChange} onClick={handleSave}>{saving ? 'Saving…' : 'Submit for approval'}</button>
         </div>
       </div>
     </div>
@@ -1128,15 +1176,13 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
+  const [info, setInfo] = useState('');
   const [row, setRow] = useState(null);
-  const [otpSent, setOtpSent] = useState(false);
-  const [otp, setOtp] = useState('');
-  const [requesting, setRequesting] = useState(false);
+  const [pendingChange, setPendingChange] = useState(null);
   const [saving, setSaving] = useState(false);
 
   const [revReason, setRevReason] = useState('');
   const [revUserOtp, setRevUserOtp] = useState('');
-  const [revSuperOtp, setRevSuperOtp] = useState('');
   const [revUserOtpSent, setRevUserOtpSent] = useState(false);
   const [revRequesting, setRevRequesting] = useState(false);
   const [revReversing, setRevReversing] = useState(false);
@@ -1195,17 +1241,17 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     let cancelled = false;
     setLoading(true);
     setErr('');
-    setOtpSent(false);
-    setOtp('');
+    setInfo('');
+    setPendingChange(null);
     setRevReason('');
     setRevUserOtp('');
-    setRevSuperOtp('');
     setRevUserOtpSent(false);
     setRow(null);
     getTxn(txnId)
       .then((r) => {
         if (cancelled) return;
         setRow(r);
+        setPendingChange(r.pendingLedgerChange || null);
         const tt = r.txnType;
         if (tt === 'receipt' || tt === 'receipt_reversal') {
           setRecTxnDate(r.txnDate || '');
@@ -1240,6 +1286,16 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
             }))
             : [{ targetType: 'unallocated_advance', targetTxnId: '', amount: String(r.amount ?? '') }];
           setSettleLines(sl);
+        } else if (tt === 'payment_client_cost' || tt === 'payment_client_cost_reversal') {
+          setPayTxnDate(r.txnDate || '');
+          setPayAmount(String(r.amount ?? ''));
+          setPayMethod(r.paymentMethod || 'NEFT');
+          setPayRef(r.referenceNumber || '');
+          setPayNotes(r.notes || '');
+          setPayNarr(r.narration || '');
+          setPayPurpose(r.expensePurpose || 'misc');
+          setPayBankId(r.firmBankAccountId != null ? String(r.firmBankAccountId) : '');
+          setSettleLines([]);
         } else if (tt === 'tds_provisional' || tt === 'tds_final' || tt === 'tds_reversal') {
           setTdsTxnDate(r.txnDate || '');
           setTdsAmount(String(r.amount ?? ''));
@@ -1263,7 +1319,9 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
       || (row.txnType !== 'receipt'
         && row.txnType !== 'receipt_reversal'
         && row.txnType !== 'payment_expense'
-        && row.txnType !== 'payment_expense_reversal')) return undefined;
+        && row.txnType !== 'payment_expense_reversal'
+        && row.txnType !== 'payment_client_cost'
+        && row.txnType !== 'payment_client_cost_reversal')) return undefined;
     const code = row.billingProfileCode;
     if (!code) {
       setBanks([]);
@@ -1283,21 +1341,67 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     return () => { cancelled = true; };
   }, [row]);
 
+  useEffect(() => {
+    if (!recBankId) return undefined;
+    setRecMethod((m) => coercePaymentMethodForFirmBankAccount(m, banks, recBankId));
+    return undefined;
+  }, [recBankId, banks]);
+
+  useEffect(() => {
+    if (!payBankId) return undefined;
+    setPayMethod((m) => coercePaymentMethodForFirmBankAccount(m, banks, payBankId));
+    return undefined;
+  }, [payBankId, banks]);
+
   const withinUserRevWindow = row && row.createdAt
     && Number.isFinite(new Date(row.createdAt).getTime())
     && new Date(row.createdAt).getTime() >= Date.now() - 30 * 86400000;
   const userRevEligible = ledgerUserRevFromServer && withinUserRevWindow && row?.status === 'active';
-  const reversalBlockedForStaff =
-    ledgerUserRevFromServer && row?.status === 'active' && !withinUserRevWindow && !isPrimarySuperAdmin;
-  const needsReversalSuperOtpOnly =
-    !ledgerUserRevFromServer && !isPrimarySuperAdmin && row?.status === 'active';
+  const needsReverseApproval = row?.status === 'active' && !isPrimarySuperAdmin && !userRevEligible;
   const userCancelRevEligible = ledgerUserRevFromServer && withinUserRevWindow && row?.status === 'reversed';
-  const cancelRevBlockedForStaff =
-    ledgerUserRevFromServer && row?.status === 'reversed' && !withinUserRevWindow && !isPrimarySuperAdmin;
-  const needsCancelRevSuperOtpOnly =
-    !ledgerUserRevFromServer && !isPrimarySuperAdmin && row?.status === 'reversed';
+  const needsCancelRevApproval = row?.status === 'reversed' && !isPrimarySuperAdmin && !userCancelRevEligible;
   const isCompensatingReversalRow = row
     && ['receipt_reversal', 'payment_expense_reversal', 'tds_reversal'].includes(row.txnType);
+  const isParkedAssignable = row
+    && row.ledgerClass === 'parked'
+    && row.status === 'active'
+    && (row.txnType === 'receipt' || row.txnType === 'payment_expense');
+
+  const [assignEntityId, setAssignEntityId] = useState('');
+  const [assignEntityName, setAssignEntityName] = useState('');
+  const [assignEntityType, setAssignEntityType] = useState('contact');
+  const [assignLedgerClass, setAssignLedgerClass] = useState('regular');
+  const [assignMovementKind, setAssignMovementKind] = useState('fees');
+  const [assignNotes, setAssignNotes] = useState('');
+  const [assigning, setAssigning] = useState(false);
+
+  async function handleAssignParked() {
+    setErr('');
+    if (!assignEntityId) {
+      setErr('Select the target client or organization.');
+      return;
+    }
+    setAssigning(true);
+    try {
+      const payload = {
+        target_ledger_class: assignLedgerClass,
+        target_ledger_movement_kind: assignMovementKind,
+        notes: assignNotes.trim() || undefined,
+      };
+      if (assignEntityType === 'organization') {
+        payload.target_organization_id = parseInt(assignEntityId, 10);
+      } else {
+        payload.target_client_id = parseInt(assignEntityId, 10);
+      }
+      await assignParkedTxn(txnId, payload);
+      onSaved?.({});
+      onClose();
+    } catch (e) {
+      setErr(e.message || 'Assign to client failed.');
+    } finally {
+      setAssigning(false);
+    }
+  }
 
   async function handleRequestReversalUserOtp() {
     setErr('');
@@ -1317,10 +1421,6 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     const reason = revReason.trim();
     if (reason.length < 10) {
       setErr('Reversal reason must be at least 10 characters.');
-      return;
-    }
-    if (reversalBlockedForStaff) {
-      setErr('The 30-day window has elapsed. You cannot reverse this transaction. Please contact super admin.');
       return;
     }
     if (isPrimarySuperAdmin) {
@@ -1354,33 +1454,28 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
       }
       return;
     }
-    if (needsReversalSuperOtpOnly) {
-      const so = revSuperOtp.trim();
-      if (!so) {
-        setErr('Enter the superadmin OTP to authorize reversal. Request a code using the button in this section if needed.');
+    setRevReversing(true);
+    setErr('');
+    setInfo('');
+    try {
+      const result = await reverseLedgerTxn(txnId, { reason });
+      if (result?.pendingLedgerChange) {
+        setPendingChange(result.pendingLedgerChange);
+        setInfo(result.queuedMessage || 'Reversal submitted for Super Admin approval.');
         return;
       }
-      setRevReversing(true);
-      try {
-        await reverseLedgerTxn(txnId, { reason, superadminOtp: so });
-        onSaved?.({});
-        onClose();
-      } catch (e) {
-        setErr(e.message || 'Reversal failed.');
-      } finally {
-        setRevReversing(false);
-      }
-      return;
+      onSaved?.({});
+      onClose();
+    } catch (e) {
+      if (e.pendingLedgerChange) setPendingChange(e.pendingLedgerChange);
+      setErr(e.message || 'Reversal failed.');
+    } finally {
+      setRevReversing(false);
     }
-    setErr('Reversal is not available for this posting.');
   }
 
   async function handleCancelLedgerReversal() {
     setErr('');
-    if (cancelRevBlockedForStaff) {
-      setErr('The 30-day window has elapsed. You cannot cancel this reversal. Please contact super admin.');
-      return;
-    }
     if (isPrimarySuperAdmin) {
       setRevCancelReversing(true);
       try {
@@ -1412,46 +1507,29 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
       }
       return;
     }
-    if (needsCancelRevSuperOtpOnly) {
-      const so = revSuperOtp.trim();
-      if (!so) {
-        setErr('Enter the superadmin OTP to authorize cancel reversal. Request a code using the button in this section if needed.');
+    setRevCancelReversing(true);
+    setErr('');
+    setInfo('');
+    try {
+      const result = await cancelLedgerReversalTxn(txnId, {});
+      if (result?.pendingLedgerChange) {
+        setPendingChange(result.pendingLedgerChange);
+        setInfo(result.queuedMessage || 'Cancel reversal submitted for Super Admin approval.');
         return;
       }
-      setRevCancelReversing(true);
-      try {
-        await cancelLedgerReversalTxn(txnId, { superadminOtp: so });
-        onSaved?.({});
-        onClose();
-      } catch (e) {
-        setErr(e.message || 'Cancel reversal failed.');
-      } finally {
-        setRevCancelReversing(false);
-      }
-      return;
-    }
-    setErr('Cancel reversal is not available for this posting.');
-  }
-
-  async function handleRequestOtp() {
-    setErr('');
-    setRequesting(true);
-    try {
-      await requestInvoiceModifyOtp(txnId, { intent: 'update' });
-      setOtpSent(true);
+      onSaved?.({});
+      onClose();
     } catch (e) {
-      setErr(e.message || 'Could not send OTP.');
+      if (e.pendingLedgerChange) setPendingChange(e.pendingLedgerChange);
+      setErr(e.message || 'Cancel reversal failed.');
     } finally {
-      setRequesting(false);
+      setRevCancelReversing(false);
     }
   }
 
   async function handleSave() {
     setErr('');
-    if (!otp.trim()) {
-      setErr('Request OTP and enter the code.');
-      return;
-    }
+    setInfo('');
     if (!row) return;
     setSaving(true);
     try {
@@ -1510,6 +1588,21 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           firm_bank_account_id: bankId,
           settlement_lines,
         };
+      } else if (tt === 'payment_client_cost' || tt === 'payment_client_cost_reversal') {
+        const amount = parseFloat(payAmount);
+        if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a valid payment amount.');
+        const bankId = parseInt(payBankId, 10);
+        if (!bankId) throw new Error('Select bank / cash account.');
+        payload = {
+          txn_date: payTxnDate,
+          amount,
+          payment_method: payMethod,
+          reference_number: payRef || null,
+          notes: payNotes || null,
+          narration: payNarr || null,
+          expense_purpose: payPurpose,
+          firm_bank_account_id: bankId,
+        };
       } else if (tt === 'tds_provisional' || tt === 'tds_final' || tt === 'tds_reversal') {
         const amount = parseFloat(tdsAmount);
         if (!Number.isFinite(amount) || amount <= 0) throw new Error('Enter a valid TDS amount.');
@@ -1525,10 +1618,16 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
       } else {
         throw new Error('This transaction type cannot be edited here.');
       }
-      const updated = await updateTxn(txnId, payload, { superadminOtp: otp.trim() });
+      const updated = await updateTxn(txnId, payload);
+      if (updated?.pendingLedgerChange) {
+        setPendingChange(updated.pendingLedgerChange);
+        setInfo(updated.queuedMessage || 'Edit submitted for Super Admin approval.');
+        return;
+      }
       onSaved(updated);
       onClose();
     } catch (e) {
+      if (e.pendingLedgerChange) setPendingChange(e.pendingLedgerChange);
       setErr(e.message || 'Save failed.');
     } finally {
       setSaving(false);
@@ -1545,9 +1644,13 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           ? '✏️ Edit payment (on behalf)'
           : row.txnType === 'payment_expense_reversal'
             ? '✏️ Edit payment (reversal)'
-            : row.txnType === 'tds_reversal'
-              ? '✏️ Edit TDS (reversal)'
-              : '✏️ Edit TDS';
+            : row.txnType === 'payment_client_cost'
+              ? '✏️ Edit client cost payment'
+              : row.txnType === 'payment_client_cost_reversal'
+                ? '✏️ Edit client cost (reversal)'
+                : row.txnType === 'tds_reversal'
+                  ? '✏️ Edit TDS (reversal)'
+                  : '✏️ Edit TDS';
 
   return (
     <div style={overlayStyle}>
@@ -1559,8 +1662,13 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
         <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           {loading && <div style={{ color: '#64748b', fontSize: 13 }}>Loading…</div>}
           {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
+          {info && <div style={{ color: '#047857', fontSize: 13 }}>{info}</div>}
+          <PendingLedgerChangeBanner pending={pendingChange} />
           {!loading && row && (
             <>
+              <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+                Edits and reversals outside the 30-day self-service window are submitted to Team Approvals for Super Admin.
+              </p>
               <div style={{ fontSize: 12, color: '#64748b' }}>
                 {row.clientName || 'Unknown'} · Ref {row.publicRef || '—'} · Billing {row.billingProfileCode || '—'}
               </div>
@@ -1579,8 +1687,13 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                     <label style={labelStyle}>
                       Payment method
-                      <select style={inputStyle} value={recMethod} onChange={(e) => setRecMethod(e.target.value)}>
-                        {PAYMENT_METHOD_OPTIONS.map((m) => (
+                      <select
+                        style={inputStyle}
+                        value={recMethod}
+                        onChange={(e) => setRecMethod(e.target.value)}
+                        disabled={paymentMethodOptionsForFirmBankAccount(banks, recBankId).length === 1}
+                      >
+                        {paymentMethodOptionsForFirmBankAccount(banks, recBankId).map((m) => (
                           <option key={m} value={m}>{m}</option>
                         ))}
                       </select>
@@ -1595,7 +1708,11 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                     <select
                       style={inputStyle}
                       value={recBankId}
-                      onChange={(e) => setRecBankId(e.target.value)}
+                      onChange={(e) => {
+                        const bankId = e.target.value;
+                        setRecBankId(bankId);
+                        setRecMethod((m) => coercePaymentMethodForFirmBankAccount(m, banks, bankId));
+                      }}
                       disabled={!row.billingProfileCode || banksLoading}
                     >
                       <option value="">{banksLoading ? 'Loading…' : '— Select —'}</option>
@@ -1643,7 +1760,8 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                   </div>
                 </>
               )}
-              {(row.txnType === 'payment_expense' || row.txnType === 'payment_expense_reversal') && (
+              {(row.txnType === 'payment_expense' || row.txnType === 'payment_expense_reversal'
+                || row.txnType === 'payment_client_cost' || row.txnType === 'payment_client_cost_reversal') && (
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                     <label style={labelStyle}>
@@ -1666,8 +1784,13 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                     <label style={labelStyle}>
                       Paid via
-                      <select style={inputStyle} value={payMethod} onChange={(e) => setPayMethod(e.target.value)}>
-                        {PAYMENT_METHOD_OPTIONS.map((m) => (
+                      <select
+                        style={inputStyle}
+                        value={payMethod}
+                        onChange={(e) => setPayMethod(e.target.value)}
+                        disabled={paymentMethodOptionsForFirmBankAccount(banks, payBankId).length === 1}
+                      >
+                        {paymentMethodOptionsForFirmBankAccount(banks, payBankId).map((m) => (
                           <option key={m} value={m}>{m}</option>
                         ))}
                       </select>
@@ -1682,7 +1805,11 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                     <select
                       style={inputStyle}
                       value={payBankId}
-                      onChange={(e) => setPayBankId(e.target.value)}
+                      onChange={(e) => {
+                        const bankId = e.target.value;
+                        setPayBankId(bankId);
+                        setPayMethod((m) => coercePaymentMethodForFirmBankAccount(m, banks, bankId));
+                      }}
                       disabled={!row.billingProfileCode || banksLoading}
                     >
                       <option value="">{banksLoading ? 'Loading…' : '— Select —'}</option>
@@ -1699,6 +1826,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                     Notes
                     <input type="text" style={inputStyle} value={payNotes} onChange={(e) => setPayNotes(e.target.value)} />
                   </label>
+                  {(row.txnType === 'payment_expense' || row.txnType === 'payment_expense_reversal') && (
                   <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 10 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <span style={{ fontWeight: 600, fontSize: 13 }}>Settlement (must sum to amount)</span>
@@ -1728,6 +1856,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                       </div>
                     ))}
                   </div>
+                  )}
                 </>
               )}
               {(row.txnType === 'tds_provisional' || row.txnType === 'tds_final' || row.txnType === 'tds_reversal') && (
@@ -1763,25 +1892,80 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                   <div style={{ fontSize: 11, color: '#64748b' }}>Status: {row.tdsStatus || '—'} (finalize unchanged)</div>
                 </>
               )}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-                <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
-                  {requesting ? 'Sending…' : 'Request superadmin OTP'}
+              {!isCompensatingReversalRow && isParkedAssignable && (
+              <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 16, paddingTop: 14 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Assign to client</div>
+                <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px', lineHeight: 1.45 }}>
+                  Reverses this parked entry on today&apos;s date and recreates it on the target client with the original transaction date (full unallocated advance).
+                </p>
+                <label style={labelStyle}>
+                  Target client / organization *
+                  <EntitySearchDropdown
+                    value={assignEntityId}
+                    displayValue={assignEntityName}
+                    entityType={assignEntityType}
+                    onChange={(c) => {
+                      setAssignEntityId(String(c.id));
+                      setAssignEntityName(c.displayName);
+                      setAssignEntityType(c.entityType);
+                    }}
+                    placeholder="Search final client…"
+                  />
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginTop: 10 }}>
+                  <label style={labelStyle}>
+                    Target ledger type *
+                    <select style={inputStyle} value={assignLedgerClass} onChange={(e) => setAssignLedgerClass(e.target.value)}>
+                      {LEDGER_CLASS_OPTIONS.filter((o) => o.value !== 'parked').map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={labelStyle}>
+                    Target ledger view *
+                    <select style={inputStyle} value={assignMovementKind} onChange={(e) => setAssignMovementKind(e.target.value)}>
+                      {LEDGER_MOVEMENT_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <label style={{ ...labelStyle, marginTop: 10 }}>
+                  Notes (optional)
+                  <input type="text" style={inputStyle} value={assignNotes} onChange={(e) => setAssignNotes(e.target.value)} />
+                </label>
+                <button
+                  type="button"
+                  style={{ ...btnPrimary, marginTop: 10 }}
+                  disabled={assigning || loading || !row}
+                  onClick={handleAssignParked}
+                >
+                  {assigning ? 'Assigning…' : 'Assign to client'}
                 </button>
-                {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent</span>}
               </div>
-              <label style={labelStyle}>
-                Superadmin OTP *
-                <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\s/g, ''))} />
-              </label>
-              {!isCompensatingReversalRow && (
+              )}
+              {row?.parkedTransferTarget && (
+                <div style={{ marginTop: 12, padding: 10, background: '#ecfdf5', borderRadius: 8, fontSize: 12, color: '#047857' }}>
+                  Assigned to {row.parkedTransferTarget.publicRef || `#${row.parkedTransferTarget.id}`}
+                  {' '}({ledgerClassLabel(row.parkedTransferTarget.ledgerClass)}, {row.parkedTransferTarget.ledgerMovementKind || 'fees'})
+                  {' '}on {row.parkedTransferTarget.txnDate || '—'}
+                </div>
+              )}
+              {row?.parkedTransferSource && (
+                <div style={{ marginTop: 12, padding: 10, background: '#fffbeb', borderRadius: 8, fontSize: 12, color: '#92400e' }}>
+                  Source parked entry: {row.parkedTransferSource.publicRef || `#${row.parkedTransferSource.id}`}
+                  {' '}({row.parkedTransferSource.txnDate || '—'})
+                </div>
+              )}
+              {!isCompensatingReversalRow && row?.ledgerClass !== 'parked' && (
               <div style={{ borderTop: '1px solid #e2e8f0', marginTop: 16, paddingTop: 14 }}>
                 <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>Reverse this posting</div>
                 <p style={{ fontSize: 12, color: '#64748b', margin: '0 0 10px', lineHeight: 1.45 }}>
                   Inserts a compensating ledger row and marks the original as reversed (audit trail). Does not replace edit/delete above.
                 </p>
-                {reversalBlockedForStaff && (
+                {needsReverseApproval && (
                   <p style={{ fontSize: 12, color: '#b45309', margin: '0 0 10px', lineHeight: 1.45 }}>
-                    The 30-day window has elapsed. You cannot reverse the transaction. Please contact super admin.
+                    Outside the 30-day self-service window — reversal will be submitted for Super Admin approval.
                   </p>
                 )}
                 <label style={labelStyle}>
@@ -1791,7 +1975,6 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                     value={revReason}
                     onChange={(e) => setRevReason(e.target.value)}
                     placeholder="Document why this posting is reversed…"
-                    disabled={reversalBlockedForStaff}
                   />
                 </label>
                 {userRevEligible && (
@@ -1808,20 +1991,6 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                     </label>
                   </>
                 )}
-                {needsReversalSuperOtpOnly && (
-                  <>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8 }}>
-                      <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
-                        {requesting ? 'Sending…' : 'Request superadmin OTP'}
-                      </button>
-                      {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent to superadmin email</span>}
-                    </div>
-                    <label style={labelStyle}>
-                      Superadmin OTP (reversal) *
-                      <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={revSuperOtp} onChange={(e) => setRevSuperOtp(e.target.value.replace(/\s/g, ''))} />
-                    </label>
-                  </>
-                )}
                 <button
                   type="button"
                   style={{
@@ -1831,10 +2000,10 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                     color: '#fff',
                     border: '1px solid #450a0a',
                   }}
-                  disabled={revReversing || loading || !row || row.status !== 'active' || reversalBlockedForStaff}
+                  disabled={revReversing || loading || !row || row.status !== 'active' || pendingChange}
                   onClick={handleReverseLedger}
                 >
-                  {revReversing ? 'Reversing…' : 'Reverse transaction'}
+                  {revReversing ? 'Submitting…' : (needsReverseApproval ? 'Submit reversal for approval' : 'Reverse transaction')}
                 </button>
                 {row.status === 'reversed' && (
                   <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px dashed #cbd5e1' }}>
@@ -1844,9 +2013,9 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                       On-behalf payments: settlement links are <strong>not</strong> restored automatically — re-link from receipts if needed.
                       Receipt reversals cannot be cancelled here (invoice allocations were cleared).
                     </p>
-                    {cancelRevBlockedForStaff && (
+                    {needsCancelRevApproval && (
                       <p style={{ fontSize: 12, color: '#b45309', margin: '0 0 10px', lineHeight: 1.45 }}>
-                        The 30-day window has elapsed. You cannot cancel this reversal. Please contact super admin.
+                        Outside the 30-day self-service window — cancel reversal will be submitted for Super Admin approval.
                       </p>
                     )}
                     {userCancelRevEligible && (
@@ -1863,20 +2032,6 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                         </label>
                       </>
                     )}
-                    {needsCancelRevSuperOtpOnly && (
-                      <>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8 }}>
-                          <button type="button" style={btnSecondary} disabled={requesting} onClick={handleRequestOtp}>
-                            {requesting ? 'Sending…' : 'Request superadmin OTP'}
-                          </button>
-                          {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent to superadmin email</span>}
-                        </div>
-                        <label style={labelStyle}>
-                          Superadmin OTP (cancel reversal) *
-                          <input type="text" style={inputStyle} inputMode="numeric" autoComplete="one-time-code" placeholder="6-digit code" value={revSuperOtp} onChange={(e) => setRevSuperOtp(e.target.value.replace(/\s/g, ''))} />
-                        </label>
-                      </>
-                    )}
                     <button
                       type="button"
                       style={{
@@ -1887,11 +2042,11 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                         border: '1px solid #052e16',
                       }}
                       disabled={
-                        revCancelReversing || loading || !row || row.status !== 'reversed' || cancelRevBlockedForStaff
+                        revCancelReversing || loading || !row || row.status !== 'reversed' || pendingChange
                       }
                       onClick={handleCancelLedgerReversal}
                     >
-                      {revCancelReversing ? 'Updating…' : 'Cancel reversal'}
+                      {revCancelReversing ? 'Submitting…' : (needsCancelRevApproval ? 'Submit cancel reversal for approval' : 'Cancel reversal')}
                     </button>
                   </div>
                 )}
@@ -1902,7 +2057,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button type="button" style={btnPrimary} disabled={loading || saving || !row} onClick={handleSave}>{saving ? 'Saving…' : 'Save'}</button>
+          <button type="button" style={btnPrimary} disabled={loading || saving || !row || pendingChange} onClick={handleSave}>{saving ? 'Saving…' : 'Submit for approval'}</button>
         </div>
       </div>
     </div>
@@ -1910,40 +2065,25 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
 }
 
 
-/** Single or bulk ledger cancel (soft-delete): one superadmin OTP authorizes the batch. Rows stay for audit. */
+/** Single or bulk ledger cancel (soft-delete): staff submit to Team Approvals. Rows stay for audit. */
 function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
-  const [otpSent, setOtpSent] = useState(false);
-  const [otp, setOtp] = useState('');
   const [err, setErr] = useState('');
-  const [sendingOtp, setSendingOtp] = useState(false);
+  const [info, setInfo] = useState('');
   const [deleting, setDeleting] = useState(false);
   const ids = useMemo(() => items.map((i) => i.id), [items]);
   const isPlural = items.length !== 1;
   const heading = title || (isPlural ? `Cancel ${items.length} ledger records` : 'Cancel ledger record');
-  const otpBusy = sendingOtp || deleting;
-
-  async function sendOtp() {
-    setErr('');
-    setSendingOtp(true);
-    try {
-      await requestLedgerDeleteOtp(ids);
-      setOtpSent(true);
-    } catch (e) {
-      setErr(e.message || 'Failed to send OTP.');
-    } finally {
-      setSendingOtp(false);
-    }
-  }
 
   async function confirmDelete() {
-    if (!otp.trim()) {
-      setErr('Enter the superadmin OTP.');
-      return;
-    }
     setDeleting(true);
     setErr('');
+    setInfo('');
     try {
-      const raw = await bulkDeleteTxns(ids, { superadminOtp: otp.trim() });
+      const raw = await bulkDeleteTxns(ids);
+      if (raw?.pendingLedgerChange) {
+        setInfo(raw.queuedMessage || 'Cancellation submitted for Super Admin approval.');
+        return;
+      }
       const removed = Array.isArray(raw?.txn_ids) ? raw.txn_ids : ids;
       onDeleted(removed);
       onClose();
@@ -2001,25 +2141,10 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
             </ul>
           )}
           <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
-            Request a superadmin OTP (one code for this entire batch), then enter it to confirm.
+            Cancellation is submitted for Super Admin approval from Team Approvals (unless you are Super Admin).
           </p>
           {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
-          <button type="button" style={btnSecondary} disabled={otpBusy} onClick={sendOtp}>
-            {sendingOtp ? 'Sending…' : 'Request superadmin OTP'}
-          </button>
-          {otpSent && <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>Code sent</span>}
-          <label style={labelStyle}>
-            Superadmin OTP *
-            <input
-              type="text"
-              style={inputStyle}
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="6-digit code"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\s/g, ''))}
-            />
-          </label>
+          {info && <div style={{ color: '#047857', fontSize: 13 }}>{info}</div>}
         </div>
         <div
           style={{
@@ -2035,11 +2160,11 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
           <button type="button" disabled={deleting} onClick={onClose} style={btnSecondary}>Cancel</button>
           <button
             type="button"
-            disabled={deleting}
+            disabled={deleting || !!info}
             onClick={confirmDelete}
-            style={{ ...btnPrimary, background: deleting ? '#cbd5e1' : '#b91c1c', cursor: deleting ? 'default' : 'pointer' }}
+            style={{ ...btnPrimary, background: deleting || info ? '#cbd5e1' : '#b91c1c', cursor: deleting || info ? 'default' : 'pointer' }}
           >
-            {deleting ? 'Cancelling…' : (isPlural ? `Cancel ${items.length} records` : 'Confirm cancellation')}
+            {deleting ? 'Submitting…' : (info ? 'Submitted' : (isPlural ? `Submit cancel for approval (${items.length})` : 'Submit cancel for approval'))}
           </button>
         </div>
       </div>
@@ -2078,8 +2203,18 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
         const list = Array.isArray(rows) ? rows.filter((b) => b.isActive !== false) : [];
         setBanks(list);
         setForm((f) => {
-          if (f.firmBankAccountId && list.some((b) => String(b.id) === String(f.firmBankAccountId))) return f;
-          return { ...f, firmBankAccountId: list[0] ? String(list[0].id) : '' };
+          if (f.firmBankAccountId && list.some((b) => String(b.id) === String(f.firmBankAccountId))) {
+            return {
+              ...f,
+              method: coercePaymentMethodForFirmBankAccount(f.method, list, f.firmBankAccountId),
+            };
+          }
+          const newBankId = list[0] ? String(list[0].id) : '';
+          return {
+            ...f,
+            firmBankAccountId: newBankId,
+            method: coercePaymentMethodForFirmBankAccount(f.method, list, newBankId),
+          };
         });
       })
       .catch(() => { if (!cancel) setBanks([]); })
@@ -2145,8 +2280,15 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
             <label style={labelStyle}>
               Payment Method
-              <select style={inputStyle} value={form.method} onChange={e=>set('method',e.target.value)}>
-                {PAYMENT_METHOD_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+              <select
+                style={inputStyle}
+                value={form.method}
+                onChange={(e) => set('method', e.target.value)}
+                disabled={paymentMethodOptionsForFirmBankAccount(banks, form.firmBankAccountId).length === 1}
+              >
+                {paymentMethodOptionsForFirmBankAccount(banks, form.firmBankAccountId).map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
               </select>
             </label>
             <label style={labelStyle}>
@@ -2167,7 +2309,14 @@ function RecordPaymentModal({ onClose, onSave, invoice }) {
             <select
               style={inputStyle}
               value={form.firmBankAccountId}
-              onChange={(e) => set('firmBankAccountId', e.target.value)}
+              onChange={(e) => {
+                const bankId = e.target.value;
+                setForm((f) => ({
+                  ...f,
+                  firmBankAccountId: bankId,
+                  method: coercePaymentMethodForFirmBankAccount(f.method, banks, bankId),
+                }));
+              }}
               disabled={!form.billingProfileCode || banksLoading}
             >
               <option value="">{banksLoading ? 'Loading…' : '— Select account —'}</option>
@@ -2238,8 +2387,18 @@ function PaymentExpenseModal({ onClose, onSave }) {
         const list = Array.isArray(rows) ? rows.filter((b) => b.isActive !== false) : [];
         setBanks(list);
         setForm((f) => {
-          if (f.firmBankAccountId && list.some((b) => String(b.id) === String(f.firmBankAccountId))) return f;
-          return { ...f, firmBankAccountId: list[0] ? String(list[0].id) : '' };
+          if (f.firmBankAccountId && list.some((b) => String(b.id) === String(f.firmBankAccountId))) {
+            return {
+              ...f,
+              method: coercePaymentMethodForFirmBankAccount(f.method, list, f.firmBankAccountId),
+            };
+          }
+          const newBankId = list[0] ? String(list[0].id) : '';
+          return {
+            ...f,
+            firmBankAccountId: newBankId,
+            method: coercePaymentMethodForFirmBankAccount(f.method, list, newBankId),
+          };
         });
       })
       .catch(() => { if (!cancel) setBanks([]); })
@@ -2296,16 +2455,19 @@ function PaymentExpenseModal({ onClose, onSave }) {
   const removeSettleLine = (idx) => {
     setSettlementLines((L) => (L.length <= 1 ? L : L.filter((_, i) => i !== idx)));
   };
+  const isParkedPayment = form.ledgerClass === 'parked';
 
   const handleSave = () => {
     if (!form.entityId || !form.amount || !form.txnDate || !form.description.trim() || !form.billingProfileCode || !form.firmBankAccountId) return;
     const total = parseFloat(form.amount);
     if (Number.isNaN(total) || total <= 0) return;
-    const lines = settlementLines.map((l) => ({
-      target_type: l.targetType,
-      target_txn_id: l.targetType === 'receipt' ? (parseInt(l.targetTxnId, 10) || 0) : undefined,
-      amount: parseFloat(l.amount) || 0,
-    })).filter((l) => l.amount > 0);
+    const lines = isParkedPayment
+      ? [{ target_type: 'unallocated_advance', amount: total }]
+      : settlementLines.map((l) => ({
+        target_type: l.targetType,
+        target_txn_id: l.targetType === 'receipt' ? (parseInt(l.targetTxnId, 10) || 0) : undefined,
+        amount: parseFloat(l.amount) || 0,
+      })).filter((l) => l.amount > 0);
     if (lines.length === 0) {
       window.alert('Add at least one settlement line with a positive amount.');
       return;
@@ -2321,7 +2483,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
         return;
       }
     }
-    onSave({ ...form, settlementLines });
+    onSave({ ...form, settlementLines: lines });
     onClose();
   };
   return (
@@ -2417,8 +2579,15 @@ function PaymentExpenseModal({ onClose, onSave }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Paid via
-              <select style={inputStyle} value={form.method} onChange={(e) => set('method', e.target.value)}>
-                {PAYMENT_METHOD_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+              <select
+                style={inputStyle}
+                value={form.method}
+                onChange={(e) => set('method', e.target.value)}
+                disabled={paymentMethodOptionsForFirmBankAccount(banks, form.firmBankAccountId).length === 1}
+              >
+                {paymentMethodOptionsForFirmBankAccount(banks, form.firmBankAccountId).map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
               </select>
             </label>
             <label style={labelStyle}>
@@ -2441,7 +2610,14 @@ function PaymentExpenseModal({ onClose, onSave }) {
               <select
                 style={inputStyle}
                 value={form.firmBankAccountId}
-                onChange={(e) => set('firmBankAccountId', e.target.value)}
+                onChange={(e) => {
+                  const bankId = e.target.value;
+                  setForm((f) => ({
+                    ...f,
+                    firmBankAccountId: bankId,
+                    method: coercePaymentMethodForFirmBankAccount(f.method, banks, bankId),
+                  }));
+                }}
                 disabled={!form.billingProfileCode || banksLoading}
               >
                 <option value="">{banksLoading ? 'Loading…' : '— Select account —'}</option>
@@ -2457,6 +2633,12 @@ function PaymentExpenseModal({ onClose, onSave }) {
           </label>
 
           <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 8, marginTop: 4 }}>
+            {isParkedPayment ? (
+              <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>
+                Parked payments are recorded as unallocated advance only. Assign to the final client from the Parked ledger when ready.
+              </div>
+            ) : (
+            <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontWeight: 600, fontSize: 13 }}>Settlement (must sum to amount)</span>
               <button type="button" onClick={addSettleLine} style={{ ...btnSecondary, fontSize: 12, padding: '4px 10px' }}>+ Line</button>
@@ -2526,11 +2708,212 @@ function PaymentExpenseModal({ onClose, onSave }) {
                 <button type="button" onClick={() => removeSettleLine(idx)} style={{ ...iconBtn, alignSelf: 'start' }} title="Remove line">−</button>
               </div>
             ))}
+            </>
+            )}
           </div>
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
           <button type="button" onClick={handleSave} style={btnPrimary}>Save payment</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── PaymentClientCostModal (bundled-in-fee expenses; non-recoverable) ───────
+
+function PaymentClientCostModal({ onClose, onSave }) {
+  const [form, setForm] = useState({
+    entityId: '',
+    entityName: '',
+    entityType: 'contact',
+    amount: '',
+    txnDate: new Date().toISOString().slice(0, 10),
+    expensePurpose: 'challan',
+    method: 'NEFT',
+    referenceNumber: '',
+    billingProfileCode: '',
+    firmBankAccountId: '',
+    description: '',
+    notes: '',
+    ledgerMovementKind: 'fees',
+  });
+  const [banks, setBanks] = useState([]);
+  const [banksLoading, setBanksLoading] = useState(false);
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+
+  useEffect(() => {
+    const code = form.billingProfileCode;
+    if (!code) {
+      setBanks([]);
+      return;
+    }
+    let cancel = false;
+    setBanksLoading(true);
+    listFirmBankAccounts(code)
+      .then((rows) => {
+        if (cancel) return;
+        const list = Array.isArray(rows) ? rows.filter((b) => b.isActive !== false) : [];
+        setBanks(list);
+        setForm((f) => {
+          if (f.firmBankAccountId && list.some((b) => String(b.id) === String(f.firmBankAccountId))) {
+            return {
+              ...f,
+              method: coercePaymentMethodForFirmBankAccount(f.method, list, f.firmBankAccountId),
+            };
+          }
+          const newBankId = list[0] ? String(list[0].id) : '';
+          return {
+            ...f,
+            firmBankAccountId: newBankId,
+            method: coercePaymentMethodForFirmBankAccount(f.method, list, newBankId),
+          };
+        });
+      })
+      .catch(() => { if (!cancel) setBanks([]); })
+      .finally(() => { if (!cancel) setBanksLoading(false); });
+    return () => { cancel = true; };
+  }, [form.billingProfileCode]);
+
+  const handleSave = () => {
+    if (!form.entityId || !form.amount || !form.txnDate || !form.description.trim() || !form.billingProfileCode || !form.firmBankAccountId) return;
+    const total = parseFloat(form.amount);
+    if (Number.isNaN(total) || total <= 0) return;
+    onSave({ ...form });
+    onClose();
+  };
+
+  return (
+    <div style={overlayStyle}>
+      <div style={{ ...modalStyle, maxWidth: 580 }}>
+        <div style={modalHeaderStyle}>
+          <span style={{ fontSize: 15, fontWeight: 700 }}>📋 Payment (client cost)</span>
+          <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
+        </div>
+        <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <p style={{ margin: 0, fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>
+            Expenses included in your fees — not charged separately and not posted to the client receivable ledger or recovery list. Firm cash-out is recorded only.
+          </p>
+          <label style={labelStyle}>
+            Client (contact or organization)
+            <EntitySearchDropdown
+              value={form.entityId}
+              displayValue={form.entityName}
+              entityType={form.entityType}
+              onChange={(c) => {
+                setForm((f) => ({
+                  ...f,
+                  entityId: String(c.id),
+                  entityName: c.displayName,
+                  entityType: c.entityType,
+                }));
+              }}
+              placeholder="Search contact or organization…"
+              style={inputStyle}
+            />
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Ledger type
+              <input type="text" style={{ ...inputStyle, background: '#f8fafc' }} value="Client Costs" readOnly />
+            </label>
+            <label style={labelStyle}>
+              Ledger view
+              <select
+                style={inputStyle}
+                value={form.ledgerMovementKind}
+                onChange={(e) => set('ledgerMovementKind', e.target.value)}
+              >
+                {LEDGER_MOVEMENT_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Amount (₹)
+              <AmountInput style={inputStyle} placeholder="e.g. 2500" value={form.amount} onChange={(e) => set('amount', e.target.value)} />
+            </label>
+            <label style={labelStyle}>
+              Payment date
+              <DateInput style={inputStyle} value={form.txnDate} onChange={(e) => set('txnDate', e.target.value)} />
+            </label>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Purpose
+              <select style={inputStyle} value={form.expensePurpose} onChange={(e) => set('expensePurpose', e.target.value)}>
+                {EXPENSE_PURPOSE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Description (shown in list) *
+              <input type="text" style={inputStyle} placeholder="What was paid and why" value={form.description} onChange={(e) => set('description', e.target.value)} aria-required />
+            </label>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Paid via
+              <select
+                style={inputStyle}
+                value={form.method}
+                onChange={(e) => set('method', e.target.value)}
+                disabled={paymentMethodOptionsForFirmBankAccount(banks, form.firmBankAccountId).length === 1}
+              >
+                {paymentMethodOptionsForFirmBankAccount(banks, form.firmBankAccountId).map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            </label>
+            <label style={labelStyle}>
+              Reference no. (UTR / challan / cheque)
+              <input type="text" style={inputStyle} placeholder="Optional" value={form.referenceNumber} onChange={(e) => set('referenceNumber', e.target.value)} />
+            </label>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <label style={labelStyle}>
+              Billing profile
+              <BillingProfileSelect
+                style={inputStyle}
+                value={form.billingProfileCode}
+                onChange={(code) => set('billingProfileCode', code)}
+                placeholder="— Select billing profile —"
+              />
+            </label>
+            <label style={labelStyle}>
+              Bank / cash account *
+              <select
+                style={inputStyle}
+                value={form.firmBankAccountId}
+                onChange={(e) => {
+                  const bankId = e.target.value;
+                  setForm((f) => ({
+                    ...f,
+                    firmBankAccountId: bankId,
+                    method: coercePaymentMethodForFirmBankAccount(f.method, banks, bankId),
+                  }));
+                }}
+                disabled={!form.billingProfileCode || banksLoading}
+              >
+                <option value="">{banksLoading ? 'Loading…' : '— Select account —'}</option>
+                {banks.map((b) => (
+                  <option key={b.id} value={String(b.id)}>{b.name} ({b.accountType})</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <label style={labelStyle}>
+            Internal notes
+            <input type="text" style={inputStyle} placeholder="Optional" value={form.notes} onChange={(e) => set('notes', e.target.value)} />
+          </label>
+        </div>
+        <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+          <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button type="button" onClick={handleSave} style={btnPrimary}>Save client cost</button>
         </div>
       </div>
     </div>
@@ -2726,8 +3109,18 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
         const list = Array.isArray(rows) ? rows.filter((b) => b.isActive !== false) : [];
         setBanks(list);
         setForm((f) => {
-          if (f.firmBankAccountId && list.some((b) => String(b.id) === String(f.firmBankAccountId))) return f;
-          return { ...f, firmBankAccountId: list[0] ? String(list[0].id) : '' };
+          if (f.firmBankAccountId && list.some((b) => String(b.id) === String(f.firmBankAccountId))) {
+            return {
+              ...f,
+              method: coercePaymentMethodForFirmBankAccount(f.method, list, f.firmBankAccountId),
+            };
+          }
+          const newBankId = list[0] ? String(list[0].id) : '';
+          return {
+            ...f,
+            firmBankAccountId: newBankId,
+            method: coercePaymentMethodForFirmBankAccount(f.method, list, newBankId),
+          };
         });
       })
       .catch(() => { if (!cancel) setBanks([]); })
@@ -2776,9 +3169,10 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
   }, [form.amount]);
 
   const ledgerMatchedInvoices = useMemo(
-    () => (openInvoices || []).filter((inv) => (inv.ledgerClass || 'regular') === form.ledgerClass),
+    () => (openInvoices || []).filter((inv) => (inv.ledgerClass || 'regular') === form.ledgerClass && form.ledgerClass !== 'parked'),
     [openInvoices, form.ledgerClass],
   );
+  const isParkedReceipt = form.ledgerClass === 'parked';
 
   const setLine = (idx, patch) => {
     setAllocLines((L) => L.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
@@ -2796,11 +3190,13 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
     if (!form.entityId || !form.amount || !form.txnDate || !form.billingProfileCode || !form.firmBankAccountId) return;
     const total = parseFloat(form.amount);
     if (Number.isNaN(total) || total <= 0) return;
-    const lines = allocLines.map((l) => ({
-      target_type: l.targetType,
-      target_txn_id: l.targetType === 'unallocated_advance' ? undefined : (parseInt(l.targetTxnId, 10) || 0),
-      amount: parseFloat(l.amount) || 0,
-    })).filter((l) => l.amount > 0);
+    const lines = isParkedReceipt
+      ? [{ target_type: 'unallocated_advance', amount: total }]
+      : allocLines.map((l) => ({
+        target_type: l.targetType,
+        target_txn_id: l.targetType === 'unallocated_advance' ? undefined : (parseInt(l.targetTxnId, 10) || 0),
+        amount: parseFloat(l.amount) || 0,
+      })).filter((l) => l.amount > 0);
     if (lines.length === 0) return;
     const sum = lines.reduce((s, l) => s + l.amount, 0);
     if (Math.abs(sum - total) > 0.02) {
@@ -2851,9 +3247,14 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
                 style={inputStyle}
                 value={form.ledgerClass}
                 onChange={(e) => {
-                  setForm((f) => ({ ...f, ledgerClass: e.target.value }));
+                  const lc = e.target.value;
+                  setForm((f) => ({ ...f, ledgerClass: lc }));
                   receiptAmountMirrorRef.current = '';
-                  setAllocLines([{ targetType: 'invoice', targetTxnId: '', amount: '' }]);
+                  if (lc === 'parked') {
+                    setAllocLines([{ targetType: 'unallocated_advance', targetTxnId: '', amount: form.amount }]);
+                  } else {
+                    setAllocLines([{ targetType: 'invoice', targetTxnId: '', amount: '' }]);
+                  }
                 }}
               >
                 {LEDGER_CLASS_OPTIONS.map((o) => (
@@ -2883,8 +3284,15 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
             <label style={labelStyle}>
               Payment Method
-              <select style={inputStyle} value={form.method} onChange={(e) => set('method', e.target.value)}>
-                {PAYMENT_METHOD_OPTIONS.map((m) => <option key={m} value={m}>{m}</option>)}
+              <select
+                style={inputStyle}
+                value={form.method}
+                onChange={(e) => set('method', e.target.value)}
+                disabled={paymentMethodOptionsForFirmBankAccount(banks, form.firmBankAccountId).length === 1}
+              >
+                {paymentMethodOptionsForFirmBankAccount(banks, form.firmBankAccountId).map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
               </select>
             </label>
             <label style={labelStyle}>
@@ -2906,7 +3314,14 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
               <select
                 style={inputStyle}
                 value={form.firmBankAccountId}
-                onChange={(e) => set('firmBankAccountId', e.target.value)}
+                onChange={(e) => {
+                  const bankId = e.target.value;
+                  setForm((f) => ({
+                    ...f,
+                    firmBankAccountId: bankId,
+                    method: coercePaymentMethodForFirmBankAccount(f.method, banks, bankId),
+                  }));
+                }}
                 disabled={!form.billingProfileCode || banksLoading}
               >
                 <option value="">{banksLoading ? 'Loading…' : '— Select account —'}</option>
@@ -2918,6 +3333,12 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
           </div>
 
           <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 8, marginTop: 4 }}>
+            {isParkedReceipt ? (
+              <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>
+                Parked receipts are recorded as full unallocated advance (no bill-by-bill). Assign to the final client from the Parked ledger when the firm name is confirmed.
+              </div>
+            ) : (
+            <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
               <span style={{ fontWeight: 600, fontSize: 13 }}>Settlement (must sum to amount)</span>
               <button type="button" onClick={addAllocLine} style={{ ...btnSecondary, fontSize: 12, padding: '4px 10px' }}>+ Line</button>
@@ -2993,6 +3414,8 @@ function ReceiptModal({ onClose, onSave, openInvoices }) {
                 <button type="button" onClick={() => removeAllocLine(idx)} style={{ ...iconBtn, alignSelf: 'start' }} title="Remove line">−</button>
               </div>
             ))}
+            </>
+            )}
           </div>
 
           <label style={labelStyle}>
@@ -3551,7 +3974,7 @@ function OpeningBalanceModal({
                 value={ledgerClassPick}
                 onChange={(e) => setLedgerClassPick(e.target.value)}
               >
-                {LEDGER_CLASS_OPTIONS.map((o) => (
+                {LEDGER_CLASS_OPTIONS.filter((o) => o.value !== 'parked').map((o) => (
                   <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
@@ -3653,7 +4076,7 @@ function OpeningBalanceModal({
 
 // ── Main Invoices page ────────────────────────────────────────────────────────
 
-const INVOICE_TABS = new Set(['invoices', 'receipts', 'payments', 'tds', 'rebate', 'credit_note', 'service_billing']);
+const INVOICE_TABS = new Set(['invoices', 'receipts', 'payments', 'payment_costs', 'tds', 'rebate', 'credit_note', 'service_billing']);
 const LEDGER_TABS  = new Set(['ledger', 'bill_settlement', 'recovery_list']);
 
 export default function Invoices({ ledgerOnly = false }) {
@@ -3723,6 +4146,17 @@ export default function Invoices({ ledgerOnly = false }) {
   const [paymentsFilterByLedger, setPaymentsFilterByLedger] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [selectedPaymentIds, setSelectedPaymentIds] = useState([]);
+
+  // ── Payments (costs) tab state ──────────────────────────────────────────────
+  const [paymentClientCosts, setPaymentClientCosts] = useState([]);
+  const [payCostLoading, setPayCostLoading] = useState(false);
+  const [showPaymentCostModal, setShowPaymentCostModal] = useState(false);
+  const [selectedPaymentCostIds, setSelectedPaymentCostIds] = useState([]);
+
+  const paymentClientCostFetchParams = useMemo(
+    () => ({ txnType: 'payment_client_cost', perPage: 100 }),
+    [],
+  );
 
   // ── TDS tab state ───────────────────────────────────────────────────────────
   const [tdsFilter, setTdsFilter]       = useState('all');
@@ -4119,6 +4553,15 @@ export default function Invoices({ ledgerOnly = false }) {
       .finally(() => setPayLoading(false));
   }, [tab, paymentExpenseFetchParams]);
 
+  useEffect(() => {
+    if (tab !== 'payment_costs') return;
+    setPayCostLoading(true);
+    getTxns(paymentClientCostFetchParams)
+      .then(({ txns }) => setPaymentClientCosts(txns))
+      .catch(() => {})
+      .finally(() => setPayCostLoading(false));
+  }, [tab, paymentClientCostFetchParams]);
+
   // ── Load TDS when tds tab opened or filter changes ──────────────────────────
   useEffect(() => {
     if (tab !== 'tds') return;
@@ -4165,16 +4608,16 @@ export default function Invoices({ ledgerOnly = false }) {
 
     if (isAll) {
       // Fetch all three ledger classes in parallel
-      const classes = ['regular', 'memorandum', 'optional'];
+      const classes = ['regular', 'memorandum', 'optional', 'parked'];
       const fetches = classes.map((lc) =>
         getLedger({ ...entityBase, ledgerClass: lc, ledgerView: ledgerLedgerView, limit: ledgerLimit || undefined }).catch(() => [])
       );
-      Promise.all([Promise.all(fetches), obPromise]).then(([[regular, memorandum, optional], obs]) => {
-        setLedgerAllClasses({ regular, memorandum, optional });
+      Promise.all([Promise.all(fetches), obPromise]).then(([[regular, memorandum, optional, parked], obs]) => {
+        setLedgerAllClasses({ regular, memorandum, optional, parked });
         setLedger(regular); // keep regular as primary for FY selector
         setOpeningBalances(obs);
         setLedgerFyStartYear((prev) => {
-          const allEntries = [...regular, ...memorandum, ...optional];
+          const allEntries = [...regular, ...memorandum, ...optional, ...parked];
           const fys = collectIndianFYStartYearsWithFallback(allEntries);
           if (prev != null && fys.includes(prev)) return prev;
           return fys[fys.length - 1];
@@ -4403,6 +4846,30 @@ export default function Invoices({ ledgerOnly = false }) {
     ]));
   }, [paymentExpenses, txnListSearchQuery]);
 
+  const visiblePaymentClientCosts = useMemo(() => {
+    if (!txnListSearchQuery.trim()) return paymentClientCosts;
+    const q = txnListSearchQuery;
+    return paymentClientCosts.filter((p) => txnFieldsIncludeQuery(q, [
+      p.publicRef,
+      p.id,
+      p.clientName,
+      paymentExpenseBookedOnLabel(p),
+      p.txnDate,
+      p.paymentMethod,
+      p.referenceNumber,
+      p.narration,
+      p.notes,
+      p.billingProfileCode,
+      p.paidFrom,
+      p.expensePurpose,
+      expensePurposeLabel(p.expensePurpose),
+      'Client Costs',
+      p.ledgerMovementKind,
+      p.status,
+      formatSignedInrAmount(p.txnType, p.amount || 0),
+    ]));
+  }, [paymentClientCosts, txnListSearchQuery]);
+
   const visibleTdsEntries = useMemo(() => {
     if (!txnListSearchQuery.trim()) return tdsEntries;
     const q = txnListSearchQuery;
@@ -4569,11 +5036,14 @@ export default function Invoices({ ledgerOnly = false }) {
     const narration = data.description.trim()
       ? `${purposeLabel} — ${data.description.trim()}`
       : purposeLabel;
-    const lines = (data.settlementLines || []).map((l) => ({
-      target_type: l.targetType,
-      target_txn_id: l.targetType === 'receipt' ? (parseInt(l.targetTxnId, 10) || 0) : undefined,
-      amount: parseFloat(l.amount) || 0,
-    })).filter((l) => l.amount > 0);
+    const lines = (data.settlementLines || []).map((l) => {
+      const tt = l.target_type || l.targetType;
+      return {
+        target_type: tt,
+        target_txn_id: tt === 'receipt' ? (parseInt(l.target_txn_id ?? l.targetTxnId, 10) || 0) : undefined,
+        amount: parseFloat(l.amount) || 0,
+      };
+    }).filter((l) => l.amount > 0);
     if (lines.length === 0) {
       window.alert('Add settlement lines that sum to the payment amount.');
       return;
@@ -4618,6 +5088,37 @@ export default function Invoices({ ledgerOnly = false }) {
       .then(() => getTxns(paymentExpenseFetchParams).then(({ txns }) => setPaymentExpenses(txns)))
       .catch((err) => {
         window.alert(err?.message || 'Could not save payment on behalf.');
+      });
+  }
+
+  function handleSavePaymentClientCost(data) {
+    const idNum = parseInt(data.entityId, 10);
+    if (Number.isNaN(idNum) || idNum <= 0) return;
+    const purposeLabel = expensePurposeLabel(data.expensePurpose);
+    const narration = data.description.trim()
+      ? `${purposeLabel} — ${data.description.trim()}`
+      : purposeLabel;
+    const payload = {
+      amount: parseFloat(data.amount),
+      txn_date: data.txnDate,
+      payment_method: data.method,
+      reference_number: data.referenceNumber || null,
+      billing_profile_code: data.billingProfileCode || null,
+      firm_bank_account_id: parseInt(data.firmBankAccountId, 10),
+      expense_purpose: data.expensePurpose || null,
+      narration,
+      notes: data.notes || null,
+      ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
+    };
+    if (data.entityType === 'organization') {
+      payload.organization_id = idNum;
+    } else {
+      payload.client_id = idNum;
+    }
+    createPaymentClientCost(payload)
+      .then(() => getTxns(paymentClientCostFetchParams).then(({ txns }) => setPaymentClientCosts(txns)))
+      .catch((err) => {
+        window.alert(err?.message || 'Could not save client cost payment.');
       });
   }
 
@@ -4786,12 +5287,14 @@ export default function Invoices({ ledgerOnly = false }) {
     setInvoices((prev) => prev.filter((x) => !idSet.has(String(x.id))));
     setReceipts((prev) => prev.filter((x) => !idSet.has(String(x.id))));
     setPaymentExpenses((prev) => prev.filter((x) => !idSet.has(String(x.id))));
+    setPaymentClientCosts((prev) => prev.filter((x) => !idSet.has(String(x.id))));
     setTdsEntries((prev) => prev.filter((x) => !idSet.has(String(x.id))));
     setRebates((prev) => prev.filter((x) => !idSet.has(String(x.id))));
     setCreditNotes((prev) => prev.filter((x) => !idSet.has(String(x.id))));
     setSelectedInvoiceIds([]);
     setSelectedReceiptIds([]);
     setSelectedPaymentIds([]);
+    setSelectedPaymentCostIds([]);
     setSelectedTds([]);
     setSelectedTdsDeleteIds([]);
     setSelectedRebateIds([]);
@@ -4894,6 +5397,7 @@ export default function Invoices({ ledgerOnly = false }) {
     { key:'invoices',       label:'🧾 Invoices' },
     { key:'receipts',       label:'💵 Receipts' },
     { key:'payments',       label:'💳 Payments (on behalf)' },
+    { key:'payment_costs',  label:'📋 Payments (costs)' },
     { key:'tds',            label:'📋 TDS' },
     { key:'rebate',         label:'💸 Rebate/Discount' },
     { key:'credit_note',    label:'📝 Credit Notes' },
@@ -5024,6 +5528,8 @@ export default function Invoices({ ledgerOnly = false }) {
               getTxns({ txnType: 'receipt' }).then(({ txns }) => setReceipts(txns));
             } else if (tt === 'payment_expense' || tt === 'payment_expense_reversal') {
               getTxns(paymentExpenseFetchParams).then(({ txns }) => setPaymentExpenses(txns));
+            } else if (tt === 'payment_client_cost' || tt === 'payment_client_cost_reversal') {
+              getTxns(paymentClientCostFetchParams).then(({ txns }) => setPaymentClientCosts(txns));
             } else if (tt === 'tds_provisional' || tt === 'tds_final' || tt === 'tds_reversal') {
               const params = tdsFilter === 'all' ? {} : { tdsStatus: tdsFilter };
               getTdsEntries(params).then(setTdsEntries);
@@ -5311,6 +5817,12 @@ export default function Invoices({ ledgerOnly = false }) {
           onSave={(data) => { handleSavePaymentExpense(data); setShowPaymentModal(false); }}
         />
       )}
+      {showPaymentCostModal && (
+        <PaymentClientCostModal
+          onClose={() => setShowPaymentCostModal(false)}
+          onSave={(data) => { handleSavePaymentClientCost(data); setShowPaymentCostModal(false); }}
+        />
+      )}
       {showTdsModal && (
         <TdsModal
           onClose={() => setShowTdsModal(false)}
@@ -5382,6 +5894,9 @@ export default function Invoices({ ledgerOnly = false }) {
         {tab==='payments' && (
           <button onClick={() => setShowPaymentModal(true)} style={{ ...btnPrimary, marginLeft:'auto' }}>+ Payment</button>
         )}
+        {tab==='payment_costs' && (
+          <button onClick={() => setShowPaymentCostModal(true)} style={{ ...btnPrimary, marginLeft:'auto' }}>+ Payment</button>
+        )}
         {tab==='tds' && (
           <button onClick={() => setShowTdsModal(true)} style={{ ...btnPrimary, marginLeft:'auto' }}>+ Book TDS</button>
         )}
@@ -5421,7 +5936,9 @@ export default function Invoices({ ledgerOnly = false }) {
                   ? 'Ref, client, method, notes…'
                   : tab === 'payments'
                     ? 'Ref, client, purpose, narration, notes…'
-                    : tab === 'tds'
+                    : tab === 'payment_costs'
+                      ? 'Ref, client, purpose, narration, notes…'
+                      : tab === 'tds'
                       ? 'Client, section, billing profile…'
                       : tab === 'rebate'
                         ? 'Client, narration, notes…'
@@ -5852,6 +6369,145 @@ export default function Invoices({ ledgerOnly = false }) {
                 </tr>
                 );
               })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Tab: Payments (costs) ─────────────────────────────────────────── */}
+      {tab === 'payment_costs' && (
+        <div style={cardStyle}>
+          <div style={{
+            padding: '10px 14px',
+            background: '#f5f3ff',
+            borderBottom: '1px solid #ddd6fe',
+            fontSize: 12,
+            color: '#5b21b6',
+          }}
+          >
+            Client costs are bundled in your fees — not recoverable. They do not appear on the client Ledger tab or Recovery list; only firm cash-out is recorded.
+          </div>
+          {canDeleteInvoice && selectedPaymentCostIds.length > 0 && (
+            <div style={{ padding: '10px 16px', background: '#fef2f2', borderBottom: '1px solid #fecaca', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#991b1b', fontWeight: 600 }}>{selectedPaymentCostIds.length} selected</span>
+              <button
+                type="button"
+                style={{ ...btnPrimary, background: '#b91c1c', fontSize: 12, padding: '6px 12px' }}
+                onClick={() => setLedgerDeletePrompt({
+                  title: 'Cancel client cost payments',
+                  items: selectedPaymentCostIds.map((id) => {
+                    const p = paymentClientCosts.find((x) => Number(x.id) === Number(id));
+                    return {
+                      id,
+                      label: p
+                        ? `${p.txnDate || '—'} — ${p.clientName} — ${formatSignedInrAmount(p.txnType, p.amount || 0)}`
+                        : `Payment #${id}`,
+                    };
+                  }),
+                })}
+              >
+                Delete selected
+              </button>
+              <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedPaymentCostIds([])}>Clear selection</button>
+            </div>
+          )}
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                {canDeleteInvoice && (
+                  <th style={{ ...thStyle, width: 36 }}>
+                    <input
+                      type="checkbox"
+                      title="Select all"
+                      checked={visiblePaymentClientCosts.length > 0 && visiblePaymentClientCosts.every((p) => selectedPaymentCostIds.some((x) => Number(x) === Number(p.id)))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedPaymentCostIds(visiblePaymentClientCosts.map((x) => x.id));
+                        } else {
+                          setSelectedPaymentCostIds([]);
+                        }
+                      }}
+                    />
+                  </th>
+                )}
+                {['Date', 'Ref', 'Client', 'Booked on', 'Ledger type', 'Status', 'Movement', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Last updated by', 'Actions'].map((h) => (
+                  <th key={h} style={thStyle}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {payCostLoading ? (
+                <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading client cost payments…</td></tr>
+              ) : paymentClientCosts.length === 0 ? (
+                <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No client cost payments found. Click &quot;+ Payment&quot; to record one.</td></tr>
+              ) : visiblePaymentClientCosts.length === 0 ? (
+                <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
+              ) : visiblePaymentClientCosts.map((p) => (
+                <tr key={p.id} style={trStyle}>
+                  {canDeleteInvoice && (
+                    <td style={{ ...tdStyle, width: 36 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedPaymentCostIds.some((x) => Number(x) === Number(p.id))}
+                        onChange={() => setSelectedPaymentCostIds((prev) => {
+                          const has = prev.some((x) => Number(x) === Number(p.id));
+                          return has ? prev.filter((x) => Number(x) !== Number(p.id)) : [...prev, p.id];
+                        })}
+                      />
+                    </td>
+                  )}
+                  <td style={tdStyle}>{p.txnDate}</td>
+                  <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{p.publicRef || '—'}</td>
+                  <td style={tdStyle}>{p.clientName}</td>
+                  <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>{paymentExpenseBookedOnLabel(p) || '—'}</td>
+                  <td style={tdStyle}>Client Costs</td>
+                  <td style={{
+                    ...tdStyle,
+                    fontSize: 11,
+                    fontWeight: (p.status && p.status !== 'active') ? 600 : 400,
+                    color: (p.status === 'cancelled' || p.status === 'reversed') ? '#b91c1c' : '#334155',
+                  }}
+                  >
+                    {p.status || '—'}
+                  </td>
+                  <td style={tdStyle}>
+                    {p.ledgerMovementKind === 'reimbursement'
+                      ? 'Reimbursement'
+                      : p.ledgerMovementKind === 'fees'
+                        ? 'Fees'
+                        : '—'}
+                  </td>
+                  <td style={{ ...tdStyle, fontWeight: 600, color: '#5b21b6' }} title="Firm cash out (non-recoverable)">{formatSignedInrAmount(p.txnType, p.amount || 0)}</td>
+                  <td style={tdStyle}>{expensePurposeLabel(p.expensePurpose)}</td>
+                  <td style={tdStyle}>{p.paymentMethod || '—'}</td>
+                  <td style={{ ...tdStyle, maxWidth: 140, whiteSpace: 'normal' }}>{p.paidFrom || '—'}</td>
+                  <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{p.referenceNumber || '—'}</td>
+                  <td style={{ ...tdStyle, maxWidth: 200, whiteSpace: 'normal' }}>{p.narration || '—'}</td>
+                  <td style={tdStyle}><BillingProfileBadge code={p.billingProfileCode} /></td>
+                  <td style={{ ...tdStyle, maxWidth: 160, whiteSpace: 'normal' }}>{p.notes || '—'}</td>
+                  <LastUpdatedByCell txn={p} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
+                  <td style={tdStyle}>
+                    {canEditInvoice && (
+                      <button type="button" style={iconBtn} onClick={() => setEditLedgerTxnId(p.id)}>✏️ Edit</button>
+                    )}
+                    {canDeleteInvoice && (
+                      <button
+                        type="button"
+                        style={iconBtn}
+                        onClick={() => setLedgerDeletePrompt({
+                          title: 'Cancel client cost payment',
+                          items: [{
+                            id: p.id,
+                            label: `${p.txnDate || '—'} — ${p.clientName} — ${formatSignedInrAmount(p.txnType, p.amount || 0)}`,
+                          }],
+                        })}
+                      >
+                        🗑 Delete
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -6412,7 +7068,7 @@ export default function Invoices({ ledgerOnly = false }) {
             <div>
               {ledgerLoading ? (
                 <div style={{ padding: 32, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>Loading ledger…</div>
-              ) : (['regular', 'memorandum', 'optional'].map((cls) => {
+              ) : (['regular', 'memorandum', 'optional', 'parked'].map((cls) => {
                 const clsRows = ledgerAllClasses?.[cls] || [];
                 return (
                   <div key={cls}>
@@ -6605,13 +7261,14 @@ export default function Invoices({ ledgerOnly = false }) {
               )}
             </div>
           </div>
-          <table style={{ ...tableStyle, minWidth: 1100 }}>
+          <table style={{ ...tableStyle, minWidth: 1400 }}>
             <thead>
               <tr>
                 <th rowSpan={2} style={thStyle}>Entity</th>
                 <th colSpan={3} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Regular</th>
                 <th colSpan={3} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Memorandum</th>
                 <th colSpan={3} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Optional</th>
+                <th colSpan={3} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0' }}>Parked</th>
                 <th rowSpan={2} style={{ ...thStyle, textAlign: 'right', borderLeft: '1px solid #e2e8f0' }}>Total</th>
                 {recoveryBucket === 'active' && (
                   <th rowSpan={2} style={{ ...thStyle, textAlign: 'center', borderLeft: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>Due Date</th>
@@ -6633,7 +7290,7 @@ export default function Invoices({ ledgerOnly = false }) {
                 )}
               </tr>
               <tr>
-                {['regular', 'memorandum', 'optional'].flatMap((k) => (
+                {['regular', 'memorandum', 'optional', 'parked'].flatMap((k) => (
                   ['Fees', 'Taxes', 'Reimb.'].map((h) => (
                     <th key={`${k}-${h}`} style={{ ...thStyle, textAlign: 'right', fontSize: 11, borderLeft: '1px solid #e2e8f0' }}>{h}</th>
                   ))
@@ -6642,7 +7299,7 @@ export default function Invoices({ ledgerOnly = false }) {
             </thead>
             <tbody>
               {(() => {
-                const recoveryColSpan = recoveryBucket === 'npa' ? 14 : 13;
+                const recoveryColSpan = recoveryBucket === 'npa' ? 17 : 16;
                 return (
                   <>
               {recoveryLoading && (
@@ -6686,6 +7343,7 @@ export default function Invoices({ ledgerOnly = false }) {
                 const sr = recoverySumSlot(g.entities, 'regular');
                 const sm = recoverySumSlot(g.entities, 'memorandum');
                 const so = recoverySumSlot(g.entities, 'optional');
+                const sp = recoverySumSlot(g.entities, 'parked');
                 return (
                   <Fragment key={g.groupKey}>
                     <tr style={{ background: '#eef2ff' }}>
@@ -6708,9 +7366,25 @@ export default function Invoices({ ledgerOnly = false }) {
                             {ent.entityType === 'organization' ? 'Organization' : 'Contact'}
                           </div>
                         </td>
-                        {(['regular', 'memorandum', 'optional']).map((slot) => (
+                        {(['regular', 'memorandum', 'optional', 'parked']).map((slot) => (
                           <Fragment key={slot}>
-                            <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(ent[slot]?.fees)}</td>
+                            <td
+                              style={{ ...tdStyle, textAlign: 'right' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setLedgerEntityType(ent.entityType === 'organization' ? 'organization' : 'contact');
+                                setLedgerClientId(String(ent.entityId));
+                                setLedgerClientName(ent.displayName || '');
+                                setLedgerLedgerClass(slot);
+                                setLedgerLedgerView('consolidated');
+                                setLedgerLimit(0);
+                                setLedgerAllClasses(null);
+                                setTab('ledger');
+                              }}
+                              title={`Open ${slot} ledger`}
+                            >
+                              {recoveryMoney(ent[slot]?.fees)}
+                            </td>
                             <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(ent[slot]?.taxes)}</td>
                             <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(ent[slot]?.reimbursement)}</td>
                           </Fragment>
@@ -6783,7 +7457,7 @@ export default function Invoices({ ledgerOnly = false }) {
                     ))}
                     <tr style={{ background: '#f8fafc', fontWeight: 600 }}>
                       <td style={{ ...tdStyle, fontStyle: 'italic', color: '#475569' }}>Subtotal — {g.groupLabel}</td>
-                      {[sr, sm, so].map((s, i) => (
+                      {[sr, sm, so, sp].map((s, i) => (
                         <Fragment key={i}>
                           <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(s.fees)}</td>
                           <td style={{ ...tdStyle, textAlign: 'right' }}>{recoveryMoney(s.taxes)}</td>
@@ -6807,7 +7481,7 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={tdStyle}>
                     {recoverySearch.trim() ? 'Filtered total' : 'Grand total'}
                   </td>
-                  {(['regular', 'memorandum', 'optional']).map((slot) => {
+                  {(['regular', 'memorandum', 'optional', 'parked']).map((slot) => {
                     const t = recoveryDisplayTotals[slot] || {};
                     return (
                       <Fragment key={slot}>

@@ -332,6 +332,11 @@ final class LedgerPresentation
             'paid_from'            => $t['paid_from'] ?? null,
             'ledger_class'         => (string)($t['ledger_class'] ?? LedgerDimensions::CLASS_REGULAR),
             'ledger_movement_kind' => $t['ledger_movement_kind'] ?? null,
+            'parked_transfer_target_txn_id'   => isset($t['parked_transfer_target_txn_id']) ? (int)$t['parked_transfer_target_txn_id'] : null,
+            'parked_transfer_reversal_txn_id'   => isset($t['parked_transfer_reversal_txn_id']) ? (int)$t['parked_transfer_reversal_txn_id'] : null,
+            'linked_txn_id'        => isset($t['linked_txn_id']) ? (int)$t['linked_txn_id'] : null,
+            'public_ref'           => $t['public_ref'] ?? null,
+            'status'               => (string)($t['status'] ?? 'active'),
             'balance'              => 0.0,
         ];
     }

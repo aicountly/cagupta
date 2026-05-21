@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Approval decision – CA Rahul Gupta</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .logo-strip { background: #ffffff; padding: 20px 32px; text-align: center; border-bottom: 3px solid #F37920; }
+    .logo-strip img { height: 52px; width: auto; display: block; margin: 0 auto; }
+    .header { background: #1a3c6e; padding: 24px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; }
+    .body { padding: 28px 32px; color: #333333; line-height: 1.6; font-size: 14px; }
+    .kv { margin: 12px 0; }
+    .k { color: #64748b; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .v { font-weight: 600; color: #0f172a; margin-top: 4px; }
+    .reason { margin-top: 16px; padding: 12px 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; color: #0f172a; white-space: pre-wrap; }
+    .footer { background: #f4f6f8; padding: 16px 32px; text-align: center; font-size: 12px; color: #888888; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo-strip">
+      <img src="https://carahulgupta.in/cropped_logo.png" alt="CA Rahul Gupta" height="52" style="display:block;margin:0 auto;" />
+    </div>
+    <div class="header">
+      <h1>Approval request — {{decisionLabel}}</h1>
+    </div>
+    <div class="body">
+      <p>Your approval request has been reviewed by the team. Summary below.</p>
+      <div class="kv"><div class="k">Request type</div><div class="v">{{approvalType}}</div></div>
+      <div class="kv"><div class="k">Request ID</div><div class="v">#{{approvalId}}</div></div>
+      <div class="kv"><div class="k">Decision</div><div class="v">{{decisionLabel}}</div></div>
+      <div class="kv"><div class="k">Summary</div><div class="v">{{summary}}</div></div>
+      <div class="kv"><div class="k">Decided by</div><div class="v">{{decidedBy}} &lt;{{decidedByEmail}}&gt;</div></div>
+      <div class="kv"><div class="k">Time</div><div class="v">{{timestamp}}</div></div>
+      {{details}}
+    </div>
+    <div class="footer">
+      <p>© CA Rahul Gupta Office Portal</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
+use App\Libraries\ApprovalDecisionNotifier;
 use App\Models\AdminAuditLogModel;
 use App\Models\PartnerPayoutCycleAmendmentModel;
 use App\Models\PartnerPayoutCycleModel;
@@ -80,6 +81,16 @@ final class PartnerPayoutCycleAmendmentApprovalController extends BaseController
 
         $amend->markApproved($id, $actorId);
         $this->audit('partner_payout_cycle_amendment.approved', $id);
+        $this->notifyAmendmentRequester(
+            (int)($row['requested_by_user_id'] ?? 0),
+            $id,
+            $cycleId,
+            $cycle,
+            'approved',
+            'Partner payout amendment approved',
+            $actor,
+            null
+        );
         $this->success([
             'amendment_id' => $id,
             'cycle'        => $cycles->find($cycleId),
@@ -109,7 +120,69 @@ final class PartnerPayoutCycleAmendmentApprovalController extends BaseController
 
         $amend->markRejected($id, $actorId, $reason);
         $this->audit('partner_payout_cycle_amendment.rejected', $id);
+        $cycleId = (int)($row['partner_payout_cycle_id'] ?? 0);
+        $cycle   = $cycleId > 0 ? (new PartnerPayoutCycleModel())->find($cycleId) : null;
+        $this->notifyAmendmentRequester(
+            (int)($row['requested_by_user_id'] ?? 0),
+            $id,
+            $cycleId,
+            $cycle,
+            'rejected',
+            'Partner payout amendment rejected',
+            $actor,
+            $reason
+        );
         $this->success(['id' => $id, 'status' => 'rejected'], 'Amendment rejected');
+    }
+
+    /**
+     * @param array<string, mixed>|null $cycle
+     * @param array<string, mixed>|null $actor
+     */
+    private function notifyAmendmentRequester(
+        int $userId,
+        int $amendmentId,
+        int $cycleId,
+        ?array $cycle,
+        string $decision,
+        string $title,
+        ?array $actor,
+        ?string $rejectReason
+    ): void {
+        $period = '';
+        if ($cycle !== null) {
+            $period = (string)($cycle['period_start'] ?? '') . ' → ' . (string)($cycle['period_end'] ?? '');
+        }
+        $periodPart = $period !== '' && $period !== ' → ' ? " ({$period})" : '';
+        $summary    = $decision === 'rejected'
+            ? "Amendment #{$amendmentId} for partner payout cycle #{$cycleId}{$periodPart} was rejected."
+            : "Amendment #{$amendmentId} for partner payout cycle #{$cycleId}{$periodPart} was approved and the cycle was finalised.";
+
+        $body = $summary;
+        if ($rejectReason !== null && $rejectReason !== '') {
+            $body .= ' Reason: ' . $rejectReason;
+        }
+
+        $detailHtml = null;
+        if ($rejectReason !== null && $rejectReason !== '') {
+            $detailHtml = ApprovalDecisionNotifier::detailBlock(
+                'Reason: ' . ApprovalDecisionNotifier::escapeDetail($rejectReason)
+            );
+        }
+
+        ApprovalDecisionNotifier::notifyRequester(
+            $userId,
+            'partner_payout_cycle_amendment_decided',
+            $title,
+            $body,
+            'partner_payout_cycle_amendment',
+            $amendmentId,
+            'Partner payout amendment',
+            $decision,
+            $summary,
+            $actor,
+            $detailHtml
+        );
     }
 
     /** @param array<string, mixed>|null $actor */

@@ -98,7 +98,7 @@ class EngagementTypeModel
     }
 
     /**
-     * Partial update (name, standard_fee_amount, standard_allowable_hours).
+     * Partial update (name, invoice standards, quotation pricing fields).
      *
      * @param array<string, mixed> $fields
      */
@@ -127,6 +127,31 @@ class EngagementTypeModel
             } else {
                 $set[]                          = 'standard_allowable_hours = :standard_allowable_hours';
                 $params[':standard_allowable_hours'] = round((float)$v, 4);
+            }
+        }
+        if (array_key_exists('pricing_model', $fields)) {
+            $set[]                   = 'pricing_model = :pricing_model';
+            $params[':pricing_model'] = trim((string)$fields['pricing_model']);
+        }
+        foreach (['quotation_base_amount', 'quotation_hourly_rate'] as $col) {
+            if (array_key_exists($col, $fields)) {
+                $v = $fields[$col];
+                if ($v === null || $v === '') {
+                    $set[] = "{$col} = NULL";
+                } else {
+                    $param = ':' . $col;
+                    $set[] = "{$col} = {$param}";
+                    $params[$param] = round((float)$v, 2);
+                }
+            }
+        }
+        if (array_key_exists('quotation_estimated_hours', $fields)) {
+            $v = $fields['quotation_estimated_hours'];
+            if ($v === null || $v === '') {
+                $set[] = 'quotation_estimated_hours = NULL';
+            } else {
+                $set[] = 'quotation_estimated_hours = :quotation_estimated_hours';
+                $params[':quotation_estimated_hours'] = round((float)$v, 4);
             }
         }
 

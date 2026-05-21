@@ -149,7 +149,9 @@ SQL;
         int    $orgId    = 0,
         ?int   $actorUserId = null,
         bool   $isSuperAdmin = false,
-        ?int   $scopeUserId = null
+        ?int   $scopeUserId = null,
+        string $kpiSlug = '',
+        string $asOf = ''
     ): array {
         $where  = ['1=1'];
         $params = [];
@@ -163,9 +165,10 @@ SQL;
                                    OR s.client_name ILIKE :search)";
             $params[':search'] = "%{$search}%";
         }
-        if ($status !== '' && strtolower($status) !== 'all') {
-            $where[]           = 's.status = :status';
-            $params[':status'] = $status;
+        if ($kpiSlug !== '') {
+            $this->applyKpiSlugFilter($where, $params, $kpiSlug, $asOf, 's');
+        } else {
+            $this->applyStatusFilter($where, $params, $status);
         }
         if ($clientId > 0) {
             $where[]              = 's.client_id = :filter_client_id';
@@ -223,6 +226,74 @@ SQL;
         $rows = $this->hydrateRelevantPeriodFromRegisters($rows);
 
         return ['total' => $total, 'services' => $rows];
+    }
+
+    /**
+     * @param array<int, string>        $where
+     * @param array<string, int|string> $params
+     */
+    private function applyStatusFilter(array &$where, array &$params, string $status): void
+    {
+        if ($status === '' || strtolower($status) === 'all') {
+            return;
+        }
+        if (strtolower($status) === 'pending_on_me') {
+            $where[] = "s.status IN ('not_started', 'in_progress', 'pending_info', 'review')";
+            return;
+        }
+        $where[]           = 's.status = :status';
+        $params[':status'] = $status;
+    }
+
+    /**
+     * KPI drill-down filter (aligns with computeKpiSnapshot / web serviceKpiFilters.js).
+     *
+     * @param array<int, string>        $where
+     * @param array<string, int|string> $params
+     */
+    private function applyKpiSlugFilter(
+        array &$where,
+        array &$params,
+        string $kpiSlug,
+        string $asOfYmd,
+        string $alias = 's'
+    ): void {
+        $slug = strtolower(trim($kpiSlug));
+        $valid = ['due-week', 'overdue', 'pending-info', 'completed'];
+        if (!in_array($slug, $valid, true)) {
+            throw new \InvalidArgumentException('Invalid kpi_slug');
+        }
+
+        $d = \DateTimeImmutable::createFromFormat('Y-m-d', $asOfYmd);
+        if ($d === false) {
+            throw new \InvalidArgumentException('as_of must be YYYY-MM-DD');
+        }
+
+        $todayS   = $d->format('Y-m-d');
+        $weekEndS = $d->modify('+7 days')->format('Y-m-d');
+        $open     = "{$alias}.status NOT IN ('completed', 'cancelled')";
+
+        if ($slug === 'due-week') {
+            $where[] = $open;
+            $where[] = "{$alias}.due_date IS NOT NULL";
+            $where[] = "{$alias}.due_date >= :kpi_due_from";
+            $where[] = "{$alias}.due_date <= :kpi_due_to";
+            $params[':kpi_due_from'] = $todayS;
+            $params[':kpi_due_to']   = $weekEndS;
+            return;
+        }
+        if ($slug === 'overdue') {
+            $where[] = $open;
+            $where[] = "{$alias}.due_date IS NOT NULL";
+            $where[] = "{$alias}.due_date < :kpi_as_of";
+            $params[':kpi_as_of'] = $todayS;
+            return;
+        }
+        if ($slug === 'pending-info') {
+            $where[] = "{$alias}.status = 'pending_info'";
+            return;
+        }
+        $where[] = "{$alias}.status = 'completed'";
     }
 
     /**

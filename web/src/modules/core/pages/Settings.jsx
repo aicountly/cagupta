@@ -28,6 +28,8 @@ import { API_BASE_URL } from '../../../constants/config';
 import { Link, useNavigate } from 'react-router-dom';
 import { getZoomIntegrationStatus, getZoomAuthorizeUrl } from '../../../services/zoomIntegrationService';
 import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
+import EngagementTypePricingConfig from '../../../components/crm/EngagementTypePricingConfig';
+import { draftFromEngagementType, draftToApiPayload } from '../../../utils/quotationPricing';
 
 function registerDeleteBlockedReason(key) {
   try {
@@ -687,7 +689,6 @@ export default function Settings() {
     const next = {};
     quotationRows.forEach((r) => {
       next[r.engagement_type_id] = {
-        price: r.default_price != null ? String(r.default_price) : '',
         documentsText: Array.isArray(r.documents_required) ? r.documents_required.join('\n') : '',
       };
     });
@@ -803,15 +804,11 @@ export default function Settings() {
     serviceCategories.forEach((cat) => {
       (cat.subcategories || []).forEach((sub) => {
         (sub.engagementTypes || []).forEach((et) => {
-          next[et.id] = {
-            fee: et.standard_fee_amount != null && et.standard_fee_amount !== ''
-              ? String(et.standard_fee_amount)
-              : '',
-            hours: et.standard_allowable_hours != null && et.standard_allowable_hours !== ''
-              ? String(et.standard_allowable_hours)
-              : '',
-          };
+          next[et.id] = draftFromEngagementType(et);
         });
+      });
+      (cat.engagementTypes || []).forEach((et) => {
+        next[et.id] = draftFromEngagementType(et);
       });
     });
     setEtStandardsDraft(next);
@@ -836,7 +833,6 @@ export default function Settings() {
         .map(s => s.trim())
         .filter(Boolean);
       await saveQuotationDefault(eid, {
-        defaultPrice: draft.price,
         documentsRequired: docs,
       });
       const refreshed = await getQuotationDefaults();
@@ -881,7 +877,6 @@ export default function Settings() {
       await saveQuotationDefault(row.engagement_type_id, {
         otp: quoteOtpCode,
         otpRecipient: quoteOtpRecipient,
-        defaultPrice: draft.price,
         documentsRequired: docs,
       });
       const refreshed = await getQuotationDefaults();
@@ -1136,18 +1131,19 @@ export default function Settings() {
 
 
   async function handleSaveEngagementStandards(etId) {
-    const draft = etStandardsDraft[etId] || { fee: '', hours: '' };
+    const draft = etStandardsDraft[etId] || draftFromEngagementType({});
     setEtStandardsSaving((prev) => ({ ...prev, [etId]: true }));
     setSvcCatError('');
     try {
-      await updateEngagementType(etId, {
-        standard_fee_amount: draft.fee === '' ? null : draft.fee,
-        standard_allowable_hours: draft.hours === '' ? null : draft.hours,
-      });
+      await updateEngagementType(etId, draftToApiPayload(draft));
       const refreshed = await getCategories();
       setServiceCategories(refreshed);
+      const qRows = await getQuotationDefaults();
+      setQuotationRows(qRows);
+      const pending = await getQuotationPendingSummary();
+      setQuotationPending(pending);
     } catch (e) {
-      setSvcCatError(e.message || 'Failed to save engagement standards.');
+      setSvcCatError(e.message || 'Failed to save engagement pricing.');
     } finally {
       setEtStandardsSaving((prev) => ({ ...prev, [etId]: false }));
     }
@@ -2211,7 +2207,8 @@ export default function Settings() {
           <p style={{ fontSize:13, color:'#64748b', marginBottom:20 }}>
             Manage service categories, subcategories, and engagement types. These drive the dropdowns in New Service Engagement.
             Renaming keeps the same database IDs; existing engagements (and cached labels on services and leads) are updated automatically.
-            Set <strong>Standard fee (₹)</strong> and <strong>Standard hours</strong> per engagement type for invoice prefill and variance reporting; optional per-service overrides live on the engagement detail screen.
+            Set quotation pricing per engagement type (fixed, hourly, or fixed + conditional additional events). These pre-fill lead quotations.
+            Set <strong>Std fee (₹)</strong> and <strong>Std hours</strong> separately as the invoice variance benchmark; optional per-service overrides live on the engagement detail screen.
           </p>
           {!canManageServiceCatalog && (
             <div style={{ fontSize:12, color:'#92400e', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', marginBottom:16 }}>
@@ -2295,7 +2292,7 @@ export default function Settings() {
                             <div style={{ fontSize:12, color:'#94a3b8', marginBottom:6 }}>No engagement types yet.</div>
                           )}
                           {(sub.engagementTypes || []).map(et => {
-                            const d = etStandardsDraft[et.id] || { fee: '', hours: '' };
+                            const d = etStandardsDraft[et.id] || draftFromEngagementType(et);
                             const saving = etStandardsSaving[et.id];
                             return (
                               <div key={et.id} style={{ padding:'8px 0', borderBottom:'1px solid #f8fafc' }}>
@@ -2308,50 +2305,21 @@ export default function Settings() {
                                   </>
                                   )}
                                 </div>
-                                <div style={{ display:'flex', flexWrap:'wrap', gap:8, marginTop:6, alignItems:'center', fontSize:11 }}>
-                                  <label style={{ display:'flex', alignItems:'center', gap:4, color:'#64748b' }}>
-                                    Std fee ₹
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="0.01"
-                                      value={d.fee}
-                                      onChange={(e) => setEtStandardsDraft((prev) => ({
-                                        ...prev,
-                                        [et.id]: { ...d, fee: e.target.value },
-                                      }))}
-                                      disabled={!canManageServiceCatalog}
-                                      style={{ ...inputStyle, width:100, fontSize:11, padding:'4px 6px', opacity: canManageServiceCatalog ? 1 : 0.7 }}
-                                      placeholder="—"
-                                    />
-                                  </label>
-                                  <label style={{ display:'flex', alignItems:'center', gap:4, color:'#64748b' }}>
-                                    Std hours
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="0.01"
-                                      value={d.hours}
-                                      disabled={!canManageServiceCatalog}
-                                      onChange={(e) => setEtStandardsDraft((prev) => ({
-                                        ...prev,
-                                        [et.id]: { ...d, hours: e.target.value },
-                                      }))}
-                                      style={{ ...inputStyle, width:88, fontSize:11, padding:'4px 6px', opacity: canManageServiceCatalog ? 1 : 0.7 }}
-                                      placeholder="—"
-                                    />
-                                  </label>
-                                  {canManageServiceCatalog && (
+                                <EngagementTypePricingConfig
+                                  draft={d}
+                                  disabled={!canManageServiceCatalog}
+                                  onChange={(next) => setEtStandardsDraft((prev) => ({ ...prev, [et.id]: next }))}
+                                />
+                                {canManageServiceCatalog && (
                                   <button
                                     type="button"
-                                    disabled={saving || !canManageServiceCatalog}
+                                    disabled={saving}
                                     onClick={() => handleSaveEngagementStandards(et.id)}
-                                    style={{ ...btnPrimary, fontSize:11, padding:'4px 10px', opacity: saving ? 0.6 : 1 }}
+                                    style={{ ...btnPrimary, fontSize:11, padding:'4px 10px', marginTop: 6, opacity: saving ? 0.6 : 1 }}
                                   >
-                                    {saving ? '…' : 'Save'}
+                                    {saving ? '…' : 'Save pricing'}
                                   </button>
-                                  )}
-                                </div>
+                                )}
                               </div>
                             );
                           })}
@@ -2401,12 +2369,12 @@ export default function Settings() {
         <div style={{ ...cardStyle, marginTop: 20 }}>
           <h3 style={sectionTitle}>📋 Quotation defaults</h3>
           <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>
-            Default price and required documents per engagement type. Used to pre-fill lead quotations. Saving changes requires the setup passphrase and an email OTP (usually to the super admin).
+            Required documents per engagement type for lead quotations. Pricing is configured on each engagement type above. Saving document changes requires the setup passphrase and an email OTP (usually to the super admin).
           </p>
           {quotationPending && (
             <div style={{ background:'#f0f9ff', border:'1px solid #bae6fd', borderRadius:8, padding:'10px 14px', fontSize:13, color:'#0369a1', marginBottom:14 }}>
               <strong>Pending:</strong>{' '}
-              {quotationPending.engagement_types_incomplete} of {quotationPending.engagement_types_total} engagement type(s) lack a complete quotation setup (price or document list).{' '}
+              {quotationPending.engagement_types_incomplete} of {quotationPending.engagement_types_total} engagement type(s) lack a complete quotation setup (pricing or document list).{' '}
               {quotationPending.leads_needing_final_quotation > 0 && (
                 <span>
                   {quotationPending.leads_needing_final_quotation} lead(s) in Qualified / Proposal sent have no final quotation yet.
@@ -2423,12 +2391,11 @@ export default function Settings() {
           {quotationLoading && <div style={{ color:'#64748b', fontSize:13 }}>Loading quotation defaults…</div>}
           {!quotationLoading && quotationRows.length > 0 && (
             <div style={{ overflowX:'auto' }}>
-              <table style={{ ...tableStyle, minWidth: 640 }}>
+              <table style={{ ...tableStyle, minWidth: 520 }}>
                 <thead>
                   <tr>
                     <th style={thStyle}>Engagement type</th>
                     <th style={thStyle}>Category</th>
-                    <th style={thStyle}>Default price (₹)</th>
                     <th style={thStyle}>Documents (one per line)</th>
                     <th style={thStyle}>Status</th>
                     <th style={thStyle}> </th>
@@ -2436,7 +2403,7 @@ export default function Settings() {
                 </thead>
                 <tbody>
                   {quotationRows.map((r) => {
-                    const draft = quoteRowDrafts[r.engagement_type_id] || { price: '', documentsText: '' };
+                    const draft = quoteRowDrafts[r.engagement_type_id] || { documentsText: '' };
                     const canSetup = hasPermission('quotations.setup');
                     return (
                       <tr key={r.engagement_type_id} style={trStyle}>
@@ -2447,19 +2414,6 @@ export default function Settings() {
                           )}
                         </td>
                         <td style={tdStyle}>{r.category_name}</td>
-                        <td style={tdStyle}>
-                          <input
-                            type="number"
-                            disabled={!canSetup}
-                            value={draft.price}
-                            onChange={e => setQuoteRowDrafts(prev => ({
-                              ...prev,
-                              [r.engagement_type_id]: { ...draft, price: e.target.value },
-                            }))}
-                            style={{ ...inputStyle, width:120 }}
-                            placeholder="—"
-                          />
-                        </td>
                         <td style={{ ...tdStyle, minWidth:220 }}>
                           <textarea
                             disabled={!canSetup}

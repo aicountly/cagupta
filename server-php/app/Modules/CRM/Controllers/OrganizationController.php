@@ -11,6 +11,7 @@ use App\Libraries\ClientMasterNameChangeService;
 use App\Libraries\DigestQueue;
 use App\Libraries\OtpService;
 use App\Models\AdminAuditLogModel;
+use App\Models\BillingFirmModel;
 use App\Models\OrganizationModel;
 use App\Models\UserModel;
 
@@ -119,6 +120,7 @@ class OrganizationController extends BaseController
         }
 
         $referral = $this->referralFieldsFromBody($body);
+        $billingDefault = $this->defaultBillingFieldsFromBody($body);
         $orgStatus = strtolower(trim((string)($body['organization_status'] ?? '')));
         if ($orgStatus === '') {
             if (array_key_exists('is_active', $body)) {
@@ -153,7 +155,7 @@ class OrganizationController extends BaseController
             'organization_status' => $orgStatus,
             'is_active'          => $orgStatus !== 'inactive',
             'created_by'         => $actingUser ? (int)$actingUser['id'] : null,
-        ], $referral));
+        ], $referral, $billingDefault ?? []));
 
         $org = $this->orgs->find($newId);
 
@@ -274,6 +276,10 @@ class OrganizationController extends BaseController
         }
         if (array_key_exists('client_facing_restricted', $body)) {
             $data['client_facing_restricted'] = (bool)$body['client_facing_restricted'];
+        }
+        $billingDefault = $this->defaultBillingFieldsFromBody($body);
+        if ($billingDefault !== null) {
+            $data = array_merge($data, $billingDefault);
         }
 
         $effPan = array_key_exists('pan', $data)
@@ -419,6 +425,26 @@ class OrganizationController extends BaseController
         $this->success($updated, 'Organization status updated');
     }
 
+    // ── GET /api/admin/organizations/:id/delete-eligibility ─────────────────
+
+    /**
+     * Return linked records that block or warn before organization delete.
+     */
+    public function deleteEligibility(int $id): never
+    {
+        $org = $this->orgs->find($id);
+        if ($org === null) {
+            $this->error('Organization not found.', 404);
+        }
+
+        $deps = $this->orgs->getDeleteDependencies($id);
+        $this->success([
+            'can_delete' => $deps['blockers'] === [],
+            'blockers'   => $deps['blockers'],
+            'warnings'   => $deps['warnings'],
+        ]);
+    }
+
     // ── POST /api/admin/organizations/:id/request-delete-otp ─────────────────
 
     /**
@@ -430,6 +456,8 @@ class OrganizationController extends BaseController
         if ($org === null) {
             $this->error('Organization not found.', 404);
         }
+
+        $this->assertOrganizationDeletable($id);
 
         $super = $this->users->findByEmail(AuthConfig::SUPER_ADMIN_EMAIL);
         if ($super === null || !$super['is_active']) {
@@ -481,6 +509,8 @@ class OrganizationController extends BaseController
             $this->error('Organization not found.', 404);
         }
 
+        $this->assertOrganizationDeletable($id);
+
         $otp = $this->readSuperadminOtpFromRequest();
         if ($otp === '' || !$this->verifySuperadminOtp($otp)) {
             $this->error('Valid superadmin OTP is required to delete an organization. Request a code first.', 403);
@@ -490,7 +520,16 @@ class OrganizationController extends BaseController
         $beforeSnap = ClientMasterAudit::organizationSnapshot($org);
         $this->sendSuperadminAlert('Deleted', $org, $actingUser);
 
-        $this->orgs->delete($id);
+        try {
+            $this->orgs->delete($id);
+        } catch (\Throwable $e) {
+            error_log('[OrganizationController] Delete failed for org ' . $id . ': ' . $e->getMessage());
+            $this->error(
+                'This organization could not be deleted due to linked data. '
+                . 'Check services, documents, invoices, credentials, registers, portal types, and ledger entries.',
+                409
+            );
+        }
 
         $actorId = $actingUser ? (int)$actingUser['id'] : null;
         try {
@@ -503,6 +542,27 @@ class OrganizationController extends BaseController
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    private function assertOrganizationDeletable(int $id): void
+    {
+        $deps = $this->orgs->getDeleteDependencies($id);
+        if ($deps['blockers'] === []) {
+            return;
+        }
+
+        $summary = implode(', ', array_map(
+            static fn (array $b): string => $b['count'] . ' ' . strtolower($b['label']),
+            $deps['blockers']
+        ));
+
+        $this->error(
+            'This organization cannot be deleted because it has active linked data: ' . $summary . '. '
+            . 'Remove or reassign those records first, then try again.',
+            409,
+            [],
+            ['blockers' => $deps['blockers'], 'warnings' => $deps['warnings']]
+        );
+    }
 
     /**
      * @param mixed $v Raw JSON (may be 0, "0", "", null) — never return 0 (invalid FK).
@@ -614,6 +674,29 @@ class OrganizationController extends BaseController
             'commission_mode'             => $mode,
             'client_facing_restricted'    => !empty($body['client_facing_restricted']),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $body
+     *
+     * @return array{default_billing_profile_code: ?string}|null
+     */
+    private function defaultBillingFieldsFromBody(array $body): ?array
+    {
+        if (!array_key_exists('default_billing_profile_code', $body)
+            && !array_key_exists('defaultBillingProfileCode', $body)) {
+            return null;
+        }
+        $raw  = $body['default_billing_profile_code'] ?? $body['defaultBillingProfileCode'] ?? '';
+        $code = strtoupper(trim((string)$raw));
+        if ($code === '') {
+            return ['default_billing_profile_code' => null];
+        }
+        if ((new BillingFirmModel())->findByCode($code) === null) {
+            $this->error('Unknown billing firm code for default billing profile.', 422);
+        }
+
+        return ['default_billing_profile_code' => $code];
     }
 
     /**

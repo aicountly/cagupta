@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
+use App\Libraries\ApprovalDecisionNotifier;
 use App\Models\ServiceModel;
 use App\Models\TimeEntryModel;
 use App\Models\TimesheetOverflowRequestModel;
@@ -134,6 +135,23 @@ final class TimesheetOverflowApprovalController extends BaseController
             $this->error('Could not approve request.', 500);
         }
 
+        $summary = $status === 'approved_modified'
+            ? "Request #{$id} approved — {$approvedM} min applied (you requested {$requested} min)."
+            : "Request #{$id} approved — {$approvedM} min applied.";
+        $detailLines = $this->timesheetDetailLines($service, $req);
+        if ($notes !== null) {
+            $detailLines[] = 'Decision notes: ' . $notes;
+        }
+        $this->notifyTimesheetRequester(
+            (int)$req['user_id'],
+            $id,
+            $status,
+            'Timesheet overflow request approved',
+            $summary,
+            $actor,
+            $detailLines
+        );
+
         $this->success($this->requests->find($id), 'Request approved');
     }
 
@@ -172,7 +190,82 @@ final class TimesheetOverflowApprovalController extends BaseController
             $this->error('Could not reject request.', 500);
         }
 
+        $service = $this->services->find((int)$req['service_id']);
+        $summary = "Request #{$id} was rejected.";
+        $detailLines = $service !== null ? $this->timesheetDetailLines($service, $req) : [];
+        $detailLines[] = 'Reason: ' . $reason;
+        $this->notifyTimesheetRequester(
+            (int)$req['user_id'],
+            $id,
+            'rejected',
+            'Timesheet overflow request rejected',
+            $summary . ' Reason: ' . $reason,
+            $actor,
+            $detailLines
+        );
+
         $this->success(['id' => $id, 'status' => 'rejected'], 'Request rejected');
+    }
+
+    /**
+     * @param array<string, mixed> $service
+     * @param array<string, mixed> $req
+     * @return array<int, string>
+     */
+    private function timesheetDetailLines(array $service, array $req): array
+    {
+        $lines = [];
+        $stype = trim((string)($service['service_type'] ?? ''));
+        $client = trim((string)($service['client_name'] ?? ''));
+        if ($stype !== '') {
+            $lines[] = 'Service: ' . $stype;
+        }
+        if ($client !== '') {
+            $lines[] = 'Client: ' . $client;
+        }
+        $wd = (string)($req['work_date'] ?? '');
+        if ($wd !== '') {
+            $lines[] = 'Work date: ' . $wd;
+        }
+
+        return $lines;
+    }
+
+    /**
+     * @param array<int, string> $detailLines
+     * @param array<string, mixed>|null $actor
+     */
+    private function notifyTimesheetRequester(
+        int $userId,
+        int $requestId,
+        string $decision,
+        string $title,
+        string $body,
+        ?array $actor,
+        array $detailLines
+    ): void {
+        $detailHtml = '';
+        if ($detailLines !== []) {
+            $escaped = array_map(
+                static fn (string $line): string => ApprovalDecisionNotifier::escapeDetail($line),
+                $detailLines
+            );
+            $detailHtml = ApprovalDecisionNotifier::detailBlock(implode('<br>', $escaped));
+        }
+
+        ApprovalDecisionNotifier::notifyRequester(
+            $userId,
+            'timesheet_overflow_decided',
+            $title,
+            $body,
+            'timesheet_overflow_request',
+            $requestId,
+            'Timesheet overflow',
+            $decision,
+            $body,
+            $actor,
+            $detailHtml !== '' ? $detailHtml : null
+        );
     }
 
     /** @param array<string, mixed>|null $actor */

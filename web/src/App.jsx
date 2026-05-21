@@ -27,6 +27,7 @@ import Organizations from './modules/crm/pages/Organizations';
 import OrganizationCreatePage from './modules/crm/pages/OrganizationCreatePage';
 import OrganizationExceptionsReport from './modules/crm/pages/OrganizationExceptionsReport';
 import OrganizationKycExceptionsReport from './modules/crm/pages/OrganizationKycExceptionsReport';
+import BillingFirmExceptionsReport from './modules/crm/pages/BillingFirmExceptionsReport';
 import ClientEngagementGaps from './modules/crm/pages/ClientEngagementGaps';
 import Clients from './modules/crm/pages/Clients';
 import ClientGroups from './modules/crm/pages/ClientGroups';
@@ -60,6 +61,7 @@ import BankFirmLedgerPage from './modules/finance/pages/bank-firm/BankFirmLedger
 import BankFirmTransferPage from './modules/finance/pages/bank-firm/BankFirmTransferPage';
 import BankFirmInterTransferPage from './modules/finance/pages/bank-firm/BankFirmInterTransferPage';
 import BankFirmExpensePage from './modules/finance/pages/bank-firm/BankFirmExpensePage';
+import BankFirmInflowPage from './modules/finance/pages/bank-firm/BankFirmInflowPage';
 import BankFirmReportPage from './modules/finance/pages/bank-firm/BankFirmReportPage';
 import InvoiceCostVarianceReport from './modules/finance/pages/InvoiceCostVarianceReport';
 import AffiliatePayoutCycles from './modules/finance/pages/AffiliatePayoutCycles';
@@ -158,6 +160,7 @@ const pageTitles = {
   '/reports/exceptions/contact-kyc':       '📋 Contact KYC Exceptions',
   '/reports/exceptions/organization-kyc':  '📋 Organization KYC Exceptions',
   '/reports/exceptions/verification':      '🔒 Verification Exceptions',
+  '/reports/exceptions/billing-firm':        '🧾 Default Billing Firm Exceptions',
   '/reports/client-engagement':            '📊 Client Engagement Gaps',
   '/reports/invoice-cost-variance':        '📉 Invoice Cost Variance',
   '/calendar':                  '📅 Calendar & Appointments',
@@ -260,6 +263,7 @@ export default function App() {
             <Route path="transfer" element={<BankFirmTransferPage />} />
             <Route path="inter-transfer" element={<BankFirmInterTransferPage />} />
             <Route path="expense" element={<BankFirmExpensePage />} />
+            <Route path="inflow" element={<BankFirmInflowPage />} />
             <Route path="report" element={<BankFirmReportPage />} />
           </Route>
           <Route path="/reports/invoice-cost-variance" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/reports/invoice-cost-variance"><InvoiceCostVarianceReport /></Layout></ProtectedRoute>} />
@@ -317,6 +321,11 @@ export default function App() {
           <Route path="/reports/exceptions/verification" element={
             <ProtectedRoute staffOnly requiredPermission="clients.view">
               <Layout routePath="/reports/exceptions/verification"><ContactVerificationExceptions /></Layout>
+            </ProtectedRoute>
+          } />
+          <Route path="/reports/exceptions/billing-firm" element={
+            <ProtectedRoute staffOnly requiredPermission="clients.view">
+              <Layout routePath="/reports/exceptions/billing-firm"><BillingFirmExceptionsReport /></Layout>
             </ProtectedRoute>
           } />
           <Route path="/reports/client-engagement" element={

@@ -292,6 +292,12 @@ class Routes
                 'middleware' => ['auth', 'role:super_admin,admin'],
             ],
             [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/organizations/:id/delete-eligibility',
+                'handler'    => 'Admin\OrganizationController@deleteEligibility',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/organizations/:id',
                 'handler'    => 'Admin\OrganizationController@destroy',
@@ -562,6 +568,24 @@ class Routes
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/approvals/client-master-name-changes/:id/reject',
                 'handler'    => 'Admin\ClientMasterNameChangeApprovalController@reject',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/approvals/ledger-txn-changes',
+                'handler'    => 'Admin\LedgerTxnChangeApprovalController@index',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/ledger-txn-changes/:id/approve',
+                'handler'    => 'Admin\LedgerTxnChangeApprovalController@approve',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/ledger-txn-changes/:id/reject',
+                'handler'    => 'Admin\LedgerTxnChangeApprovalController@reject',
                 'middleware' => ['auth', 'role:super_admin'],
             ],
             [
@@ -1440,6 +1464,12 @@ class Routes
                 'pattern'    => '/api/admin/txn/:id/reverse',
                 'handler'    => 'Admin\TxnController@reverseLedger',
                 'middleware' => ['auth', 'permission:invoices.delete'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/:id/assign-parked',
+                'handler'    => 'Admin\TxnController@assignParked',
+                'middleware' => ['auth', 'permission:invoices.edit'],
             ],
             [
                 'method'     => 'POST',

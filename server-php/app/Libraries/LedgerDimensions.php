@@ -5,13 +5,17 @@ namespace App\Libraries;
 
 /**
  * Validation and helpers for client ledger classification:
- * ledger_class (regular | memorandum | optional) and ledger_movement_kind (fees | reimbursement).
+ * ledger_class (regular | memorandum | optional | parked | client_costs) and ledger_movement_kind (fees | reimbursement).
  */
 final class LedgerDimensions
 {
     public const CLASS_REGULAR     = 'regular';
     public const CLASS_MEMORANDUM  = 'memorandum';
     public const CLASS_OPTIONAL    = 'optional';
+    /** Temporary incorporation-pending ledger; assign moves entries to final client. */
+    public const CLASS_PARKED      = 'parked';
+    /** Non-recoverable client-attributed costs; excluded from entity ledger and recovery. */
+    public const CLASS_CLIENT_COSTS = 'client_costs';
     public const VIEW_CONSOLIDATED = 'consolidated';
     public const VIEW_FEES         = 'fees';
     public const VIEW_REIMBURSEMENT = 'reimbursement';
@@ -26,6 +30,7 @@ final class LedgerDimensions
             self::CLASS_REGULAR    => true,
             self::CLASS_MEMORANDUM => true,
             self::CLASS_OPTIONAL   => true,
+            self::CLASS_PARKED     => true,
         ];
     }
 
@@ -38,11 +43,37 @@ final class LedgerDimensions
     public static function assertLedgerClass(mixed $v): string
     {
         $s = is_string($v) ? trim($v) : '';
+        if ($s === self::CLASS_CLIENT_COSTS) {
+            throw new \InvalidArgumentException(
+                'ledger_class client_costs is only for payment_client_cost transactions.'
+            );
+        }
         if ($s === '' || !isset(self::validClasses()[$s])) {
-            throw new \InvalidArgumentException('ledger_class must be regular, memorandum, or optional.');
+            throw new \InvalidArgumentException('ledger_class must be regular, memorandum, optional, or parked.');
         }
 
         return $s;
+    }
+
+    /** Target class when assigning a parked entry to a final client ledger. */
+    public static function assertAssignableTargetLedgerClass(mixed $v): string
+    {
+        $s = is_string($v) ? trim($v) : '';
+        if (!in_array($s, [self::CLASS_REGULAR, self::CLASS_MEMORANDUM, self::CLASS_OPTIONAL], true)) {
+            throw new \InvalidArgumentException('target_ledger_class must be regular, memorandum, or optional.');
+        }
+
+        return $s;
+    }
+
+    public static function assertClientCostsLedgerClass(mixed $v): string
+    {
+        $s = is_string($v) ? trim($v) : '';
+        if ($s !== self::CLASS_CLIENT_COSTS) {
+            throw new \InvalidArgumentException('ledger_class must be client_costs for this transaction.');
+        }
+
+        return self::CLASS_CLIENT_COSTS;
     }
 
     public static function normalizeLedgerClass(mixed $v): string
@@ -51,11 +82,24 @@ final class LedgerDimensions
         if ($s === '') {
             return self::CLASS_REGULAR;
         }
+        if ($s === self::CLASS_CLIENT_COSTS) {
+            return self::CLASS_CLIENT_COSTS;
+        }
         if (!isset(self::validClasses()[$s])) {
             return self::CLASS_REGULAR;
         }
 
         return $s;
+    }
+
+    public static function isClientCostsLedgerClass(mixed $v): bool
+    {
+        return is_string($v) && trim($v) === self::CLASS_CLIENT_COSTS;
+    }
+
+    public static function isParkedLedgerClass(mixed $v): bool
+    {
+        return is_string($v) && trim($v) === self::CLASS_PARKED;
     }
 
     /**

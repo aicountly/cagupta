@@ -13,3 +13,7 @@ export const EXPENSE_CATS = [
   { value: 'electricity', label: 'Electricity' },
   { value: 'other', label: 'Other' },
 ];
+
+export const INFLOW_CATS = [
+  { value: 'fund_infusion', label: 'Fund infusion' },
+];

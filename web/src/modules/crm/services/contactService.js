@@ -149,6 +149,7 @@ function normalizeContact(c) {
     referralStartDate: c.referral_start_date || '',
     commissionMode: c.commission_mode || 'referral_only',
     clientFacingRestricted: Boolean(c.client_facing_restricted),
+    defaultBillingProfileCode: c.default_billing_profile_code || '',
     pendingNameChange: c.pending_name_change || null,
   };
 }
@@ -352,6 +353,9 @@ export async function createContact(payload) {
     referral_start_date: payload.referralStartDate || null,
     commission_mode: payload.commissionMode || 'referral_only',
     client_facing_restricted: Boolean(payload.clientFacingRestricted),
+    default_billing_profile_code: payload.defaultBillingProfileCode
+      ? String(payload.defaultBillingProfileCode).trim().toUpperCase()
+      : null,
   };
 
   const res = await fetch(`${API_BASE}/admin/contacts`, {
@@ -417,6 +421,12 @@ export async function updateContact(id, payload) {
   if (hasOwn(payload, 'referralStartDate')) body.referral_start_date = payload.referralStartDate || null;
   if (hasOwn(payload, 'commissionMode')) body.commission_mode = payload.commissionMode || 'referral_only';
   if (hasOwn(payload, 'clientFacingRestricted')) body.client_facing_restricted = Boolean(payload.clientFacingRestricted);
+  if (hasOwn(payload, 'defaultBillingProfileCode')) {
+    const v = payload.defaultBillingProfileCode;
+    body.default_billing_profile_code = v && String(v).trim()
+      ? String(v).trim().toUpperCase()
+      : null;
+  }
 
   const res = await fetch(`${API_BASE}/admin/contacts/${id}`, {
     method:  'PUT',
