@@ -573,7 +573,6 @@ export default function ContactCreatePage() {
     } catch (err) {
       const data = err && typeof err === 'object' ? err.data : null;
       const meta = err && typeof err === 'object' ? err.meta : null;
-      const data = err && typeof err === 'object' ? err.data : null;
       const pending = meta?.pending_name_change || data?.pending_name_change;
       if (pending) {
         setPendingNameChange(pending);
