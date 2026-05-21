@@ -4,8 +4,10 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
-use App\Models\RecurringServiceDefinitionModel;
+use App\Models\ClientModel;
 use App\Models\EngagementTypeModel;
+use App\Models\OrganizationModel;
+use App\Models\RecurringServiceDefinitionModel;
 
 /**
  * RecurringServiceDefinitionController
@@ -85,9 +87,6 @@ class RecurringServiceDefinitionController extends BaseController
         if ($this->engagementTypes->find($etId) === null) {
             $this->error('Engagement type not found.', 422);
         }
-        if (empty($body['client_id']) && empty($body['organization_id'])) {
-            $this->error('Either client_id or organization_id is required.', 422);
-        }
         if (empty($body['start_date'])) {
             $this->error('start_date is required.', 422);
         }
@@ -95,22 +94,68 @@ class RecurringServiceDefinitionController extends BaseController
             $this->error('frequency must be one of: monthly, quarterly, half_yearly, annual.', 422);
         }
 
-        $id  = $this->rsd->create([
-            'client_id'           => isset($body['client_id'])       ? (int)$body['client_id']       : null,
-            'organization_id'     => isset($body['organization_id']) ? (int)$body['organization_id'] : null,
-            'engagement_type_id'  => $etId,
-            'frequency'           => $body['frequency'],
-            'due_day'             => isset($body['due_day'])             ? (int)$body['due_day']             : 20,
-            'due_offset_months'   => isset($body['due_offset_months'])   ? (int)$body['due_offset_months']   : 0,
-            'return_type'         => $body['return_type']         ?? '',
-            'start_date'          => $body['start_date'],
-            'end_date'            => $body['end_date']            ?? null,
-            'is_active'           => isset($body['is_active'])    ? (bool)$body['is_active'] : true,
-            'notes'               => $body['notes']               ?? null,
-            'created_by'          => $actor ? (int)$actor['id']   : null,
-        ]);
+        $clientId = array_key_exists('client_id', $body)
+            ? self::normalizeForeignKey($body['client_id'])
+            : null;
+        $orgId = array_key_exists('organization_id', $body)
+            ? self::normalizeForeignKey($body['organization_id'])
+            : null;
+
+        if (($clientId === null && $orgId === null) || ($clientId !== null && $orgId !== null)) {
+            $this->error('Exactly one of client_id or organization_id must be provided.', 422);
+        }
+
+        if ($clientId !== null && (new ClientModel())->find($clientId) === null) {
+            $this->error('Client not found.', 422);
+        }
+        if ($orgId !== null && (new OrganizationModel())->find($orgId) === null) {
+            $this->error('Organization not found.', 422);
+        }
+
+        $createdBy = $actor ? (int)($actor['id'] ?? 0) : null;
+        if ($createdBy !== null && $createdBy <= 0) {
+            $createdBy = null;
+        }
+
+        try {
+            $id = $this->rsd->create([
+                'client_id'           => $clientId,
+                'organization_id'     => $orgId,
+                'engagement_type_id'  => $etId,
+                'frequency'           => $body['frequency'],
+                'due_day'             => isset($body['due_day']) ? (int)$body['due_day'] : 20,
+                'due_offset_months'   => isset($body['due_offset_months']) ? (int)$body['due_offset_months'] : 0,
+                'return_type'         => $body['return_type'] ?? '',
+                'start_date'          => $body['start_date'],
+                'end_date'            => $body['end_date'] ?? null,
+                'is_active'           => isset($body['is_active']) ? (bool)$body['is_active'] : true,
+                'notes'               => $body['notes'] ?? null,
+                'created_by'          => $createdBy,
+            ]);
+        } catch (\PDOException $e) {
+            error_log('[RecurringServiceDefinitionController] create failed: ' . $e->getMessage());
+            $msg   = $e->getMessage();
+            $ei    = $e->errorInfo ?? null;
+            $state = is_array($ei) ? (string)($ei[0] ?? '') : '';
+            if (str_contains($msg, 'foreign key') || str_contains($msg, '23503') || $state === '23503') {
+                $this->error(
+                    'Could not create recurring service. Check that the client or organization and engagement type exist, and that database migrations are up to date.',
+                    422
+                );
+            }
+            if (str_contains($msg, 'does not exist') || $state === '42P01') {
+                $this->error(
+                    'Recurring services are not set up on the server yet. Run database migration 044_registers_recurring.sql.',
+                    500
+                );
+            }
+            $this->error('Could not create recurring service definition.', 500);
+        }
 
         $def = $this->rsd->find($id);
+        if ($def === null) {
+            $this->error('Recurring service definition was created but could not be loaded.', 500);
+        }
         $this->success($def, 'Recurring service definition created', 201);
     }
 
@@ -124,16 +169,6 @@ class RecurringServiceDefinitionController extends BaseController
         }
 
         $body = $this->getJsonBody();
-
-        $body = $this->getJsonBody();
-
-        $normalizeFK = static function ($val): ?int {
-            if ($val === null || $val === '') {
-                return null;
-            }
-
-            return (int)$val > 0 ? (int)$val : null;
-        };
 
         $data = [];
 
@@ -163,11 +198,11 @@ class RecurringServiceDefinitionController extends BaseController
 
         if (array_key_exists('client_id', $body) || array_key_exists('organization_id', $body)) {
             $clientId = array_key_exists('client_id', $body)
-                ? $normalizeFK($body['client_id'] ?? null)
-                : $normalizeFK($def['client_id'] ?? null);
+                ? self::normalizeForeignKey($body['client_id'] ?? null)
+                : self::normalizeForeignKey($def['client_id'] ?? null);
             $orgId = array_key_exists('organization_id', $body)
-                ? $normalizeFK($body['organization_id'] ?? null)
-                : $normalizeFK($def['organization_id'] ?? null);
+                ? self::normalizeForeignKey($body['organization_id'] ?? null)
+                : self::normalizeForeignKey($def['organization_id'] ?? null);
 
             if (($clientId === null && $orgId === null) || ($clientId !== null && $orgId !== null)) {
                 $this->error('Exactly one of client_id or organization_id must be provided.', 422);
@@ -225,5 +260,17 @@ class RecurringServiceDefinitionController extends BaseController
             'inserted'   => $inserted,
             'up_to_date' => $upToDate,
         ], "{$inserted} register period(s) created.");
+    }
+
+    /**
+     * Normalize optional FK ids from JSON (null, "", 0 → null; positive int kept).
+     */
+    private static function normalizeForeignKey(mixed $val): ?int
+    {
+        if ($val === null || $val === '') {
+            return null;
+        }
+
+        return (int)$val > 0 ? (int)$val : null;
     }
 }

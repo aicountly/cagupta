@@ -158,7 +158,7 @@ class RecurringServiceDefinitionModel
             ':return_type'        => $data['return_type']        ?? '',
             ':start_date'         => $data['start_date'],
             ':end_date'           => $data['end_date']           ?? null,
-            ':is_active'          => isset($data['is_active']) ? (bool)$data['is_active'] : true,
+            ':is_active'          => (isset($data['is_active']) ? (bool)$data['is_active'] : true) ? 'true' : 'false',
             ':notes'              => $data['notes']              ?? null,
             ':created_by'         => $data['created_by']        ?? null,
         ]);
