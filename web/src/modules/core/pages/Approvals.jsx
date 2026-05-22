@@ -59,7 +59,7 @@ function parseAdj(raw) {
   } catch { return []; }
 }
 
-function busyKey(type, id) {
+function makeBusyKey(type, id) {
   return `${type}:${id}`;
 }
 
@@ -579,7 +579,7 @@ export default function Approvals() {
         {!loading && !err && items.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {items.map((item) => {
-              const key = busyKey(item.type, item.id);
+              const key = makeBusyKey(item.type, item.id);
               const busy = busyKey === key;
 
               if (item.type === 'timesheet') {

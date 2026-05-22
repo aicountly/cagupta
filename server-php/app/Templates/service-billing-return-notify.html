@@ -28,12 +28,13 @@
       <h1>Service returned — action required</h1>
     </div>
     <div class="body">
-      <p>Finance has returned a completed service engagement to your team. Please review the remarks and take the necessary action.</p>
+      <p>{{introText}}</p>
       <div class="kv"><div class="k">Service ID</div><div class="v">{{serviceId}}</div></div>
       <div class="kv"><div class="k">Client</div><div class="v">{{clientName}}</div></div>
       <div class="kv"><div class="k">Service type</div><div class="v">{{serviceType}}</div></div>
+      <div class="kv"><div class="k">Returned to (team)</div><div class="v">{{assigneeNames}}</div></div>
       <div class="kv"><div class="k">Status change</div><div class="v">{{fromStatus}} → {{toStatus}}</div></div>
-      <div class="kv"><div class="k">Returned by</div><div class="v">{{actorName}} &lt;{{actorEmail}}&gt;</div></div>
+      <div class="kv"><div class="k">Returned by</div><div class="v">{{actorName}}</div></div>
       <div class="kv"><div class="k">Time</div><div class="v">{{timestamp}}</div></div>
       <div class="k">Finance remarks</div>
       <div class="reason">{{returnReason}}</div>

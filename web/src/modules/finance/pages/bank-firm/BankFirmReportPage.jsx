@@ -191,7 +191,6 @@ export default function BankFirmReportPage() {
     closeAuditFirmTxn,
   } = useBankFirmWorkspace();
 
-  const profiles = getBillingProfiles();
   const [interFromAccounts, setInterFromAccounts] = useState([]);
   const [interToAccounts, setInterToAccounts] = useState([]);
 
@@ -201,10 +200,11 @@ export default function BankFirmReportPage() {
 
   useEffect(() => {
     if (!editTxn || editTxn.txnType !== 'firm_bank_transfer' || editTxn.transferScope !== 'inter') {
-      setInterFromAccounts([]);
-      setInterToAccounts([]);
+      setInterFromAccounts((prev) => (prev.length === 0 ? prev : []));
+      setInterToAccounts((prev) => (prev.length === 0 ? prev : []));
       return;
     }
+    const profiles = getBillingProfiles();
     let cancelled = false;
     (async () => {
       try {
@@ -236,7 +236,7 @@ export default function BankFirmReportPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [editTxn, profiles]);
+  }, [editTxn]);
 
   const allAccountsForEdit = useMemo(() => {
     if (!firmCode) return accounts;

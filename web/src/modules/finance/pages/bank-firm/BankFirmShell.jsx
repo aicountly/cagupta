@@ -109,12 +109,15 @@ export default function BankFirmShell() {
           gap: 6,
           padding: '4px 0',
           borderBottom: '2px solid #E6E8F0',
+          position: 'relative',
+          zIndex: 2,
         }}
       >
         {tabs.map((t) => (
           <NavLink
             key={t.to}
             to={t.to}
+            end
             style={({ isActive }) => ({
               padding: '10px 16px',
               borderRadius: '10px 10px 0 0',

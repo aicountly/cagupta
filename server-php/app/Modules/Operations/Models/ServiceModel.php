@@ -396,15 +396,19 @@ SQL;
             }
         }
 
-        // Ensure the incharge (assigned_to) is always at position 0.
+        // Ensure the incharge (assigned_to) is always included and at position 0.
         $assignedTo = isset($row['assigned_to']) && is_numeric($row['assigned_to'])
             ? (int)$row['assigned_to']
             : null;
-        if ($assignedTo !== null && in_array($assignedTo, $ids, true)) {
-            $ids = array_merge(
-                [$assignedTo],
-                array_values(array_filter($ids, fn($x) => $x !== $assignedTo))
-            );
+        if ($assignedTo !== null && $assignedTo > 0) {
+            if (in_array($assignedTo, $ids, true)) {
+                $ids = array_merge(
+                    [$assignedTo],
+                    array_values(array_filter($ids, fn($x) => $x !== $assignedTo))
+                );
+            } else {
+                array_unshift($ids, $assignedTo);
+            }
         }
 
         $row['assignee_user_ids'] = $ids;
