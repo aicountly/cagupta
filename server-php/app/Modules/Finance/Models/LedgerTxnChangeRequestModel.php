@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Config\Database;
+use App\Libraries\LedgerTxnChangeService;
 use PDO;
 
 final class LedgerTxnChangeRequestModel
@@ -143,14 +144,22 @@ final class LedgerTxnChangeRequestModel
         $payload = self::decodeJsonField($row['payload'] ?? []);
         $snap    = self::decodeJsonField($row['txn_snapshot'] ?? []);
 
+        $action = (string)($row['action'] ?? '');
+
         return [
             'approval_id'    => (int)$row['id'],
             'txn_id'         => $row['txn_id'] !== null ? (int)$row['txn_id'] : null,
-            'action'         => (string)($row['action'] ?? ''),
+            'action'         => $action,
             'payload'        => $payload,
             'txn_snapshot'   => $snap,
             'request_reason' => $row['request_reason'] ?? null,
             'created_at'     => $row['created_at'] ?? null,
+            'change_rows'    => LedgerTxnChangeService::buildChangeRows(
+                $snap,
+                $payload,
+                $action,
+                (string)($snap['txn_type'] ?? '')
+            ),
         ];
     }
 

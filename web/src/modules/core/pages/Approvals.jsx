@@ -227,6 +227,33 @@ function PayoutAmendmentCard({ kind, row, busy, onApprove, onReject }) {
   );
 }
 
+function LedgerChangeDiffTable({ rows }) {
+  if (!Array.isArray(rows) || rows.length === 0) return null;
+
+  return (
+    <div style={{ overflowX: 'auto', marginTop: 12, marginBottom: 4 }}>
+      <table style={tableStyle}>
+        <thead>
+          <tr style={{ background: '#F8FAFC' }}>
+            <th style={thStyle}>Field</th>
+            <th style={thStyle}>Before</th>
+            <th style={thStyle}>Proposed</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={`${r.field}-${i}`} style={{ borderBottom: '1px solid #F1F5F9' }}>
+              <td style={{ ...tdStyle, fontWeight: 600, color: '#475569', whiteSpace: 'nowrap' }}>{r.field}</td>
+              <td style={{ ...tdStyle, color: '#64748b' }}>{r.before || '—'}</td>
+              <td style={{ ...tdStyle, color: '#0B1F3B', fontWeight: 600 }}>{r.after || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function LedgerTxnChangeCard({ row, busy, onApprove, onReject }) {
   const [decisionNotes, setDecisionNotes] = useState('');
   const [rejectReason, setRejectReason] = useState('');
@@ -237,6 +264,7 @@ function LedgerTxnChangeCard({ row, busy, onApprove, onReject }) {
   const label = row.action_label || ledgerActionLabel(action);
   const ids = row.payload?.ids;
   const isBulkCancel = action === 'cancel' && Array.isArray(ids) && ids.length > 1;
+  const changeRows = row.change_rows || row.changeRows || [];
 
   return (
     <div style={card}>
@@ -269,12 +297,18 @@ function LedgerTxnChangeCard({ row, busy, onApprove, onReject }) {
           <div><strong>Txn ids:</strong> {ids.join(', ')}</div>
         )}
         <div><strong>Requested by:</strong> {row.requested_by_name || row.requested_by_user_id || '—'}</div>
-        {row.request_reason && <div><strong>Reason:</strong> {row.request_reason}</div>}
-        {action === 'update' && row.payload && (
-          <div style={{ marginTop: 6, fontSize: 12, color: '#64748b' }}>
-            Proposed field changes are stored in the approval payload and applied on approve.
+        {row.request_reason ? (
+          <div><strong>Reason for change:</strong> {row.request_reason}</div>
+        ) : action === 'update' ? (
+          <div style={{ color: '#B45309', fontSize: 12 }}><strong>Note:</strong> No reason was provided by the requester.</div>
+        ) : null}
+        {changeRows.length > 0 ? (
+          <LedgerChangeDiffTable rows={changeRows} />
+        ) : action === 'update' ? (
+          <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>
+            No field-level differences could be derived from this request.
           </div>
-        )}
+        ) : null}
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 14, alignItems: 'center' }}>
         <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: '#64748b', flex: '1 1 200px' }}>

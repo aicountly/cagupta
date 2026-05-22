@@ -59,6 +59,7 @@ function FirmTxnEditModal({ txn, accounts, interFromAccounts, interToAccounts, b
   const [category, setCategory] = useState(txn.firmExpenseCategory || 'other');
   const [fromAccountId, setFromAccountId] = useState(String(txn.firmBankAccountId || ''));
   const [toAccountId, setToAccountId] = useState(String(txn.counterpartyFirmBankAccountId || ''));
+  const [requestReason, setRequestReason] = useState('');
 
   const fromList = scope === 'inter' ? interFromAccounts : accounts;
   const toList = scope === 'inter' ? interToAccounts : accounts;
@@ -74,6 +75,7 @@ function FirmTxnEditModal({ txn, accounts, interFromAccounts, interToAccounts, b
       fromAccountId,
       toAccountId,
       transferScope: scope,
+      requestReason: requestReason.trim(),
     });
   };
 
@@ -153,6 +155,13 @@ function FirmTxnEditModal({ txn, accounts, interFromAccounts, interToAccounts, b
             </>
           )}
           <input style={inputStyle} placeholder="Narration" value={narration} onChange={(e) => setNarration(e.target.value)} />
+          <textarea
+            style={{ ...inputStyle, minHeight: 72, resize: 'vertical' }}
+            placeholder="Reason for this change (required for approval review)"
+            value={requestReason}
+            onChange={(e) => setRequestReason(e.target.value)}
+            required
+          />
           <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
             <button type="button" style={btnSecondary} onClick={onClose} disabled={busy}>
               Cancel

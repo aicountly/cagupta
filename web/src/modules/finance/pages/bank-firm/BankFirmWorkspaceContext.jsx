@@ -391,6 +391,7 @@ export function BankFirmWorkspaceProvider({ children }) {
             from_firm_bank_account_id: parseInt(form.fromAccountId, 10),
             to_firm_bank_account_id: parseInt(form.toAccountId, 10),
             transfer_scope: scope,
+            request_reason: form.requestReason || null,
           };
         } else {
           payload = {
@@ -399,6 +400,7 @@ export function BankFirmWorkspaceProvider({ children }) {
             narration: form.narration,
             firm_bank_account_id: parseInt(form.bankAccountId, 10),
             firm_expense_category: form.category,
+            request_reason: form.requestReason || null,
           };
         }
         const result = await updateTxn(editTxn.id, payload);

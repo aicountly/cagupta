@@ -1223,6 +1223,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
   const [tdsNarr, setTdsNarr] = useState('');
   const [tdsSection, setTdsSection] = useState('');
   const [tdsRate, setTdsRate] = useState('');
+  const [editReason, setEditReason] = useState('');
 
   const [banks, setBanks] = useState([]);
   const [banksLoading, setBanksLoading] = useState(false);
@@ -1256,6 +1257,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     setRevReason('');
     setRevUserOtp('');
     setRevUserOtpSent(false);
+    setEditReason('');
     setRow(null);
     getTxn(txnId)
       .then((r) => {
@@ -1541,6 +1543,11 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     setErr('');
     setInfo('');
     if (!row) return;
+    const reason = editReason.trim();
+    if (!reason) {
+      setErr('Please enter a reason for this change.');
+      return;
+    }
     setSaving(true);
     try {
       let payload;
@@ -1628,6 +1635,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
       } else {
         throw new Error('This transaction type cannot be edited here.');
       }
+      payload.request_reason = reason;
       const updated = await updateTxn(txnId, payload);
       if (updated?.pendingLedgerChange) {
         setPendingChange(updated.pendingLedgerChange);
@@ -2063,6 +2071,18 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
               </div>
               )}
             </>
+          )}
+          {!loading && row && (
+            <label style={labelStyle}>
+              Reason for change *
+              <textarea
+                style={{ ...inputStyle, minHeight: 72, resize: 'vertical' }}
+                value={editReason}
+                onChange={(e) => setEditReason(e.target.value)}
+                placeholder="Explain why this ledger entry is being edited"
+                disabled={!!pendingChange}
+              />
+            </label>
           )}
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
