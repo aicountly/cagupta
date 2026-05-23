@@ -1,13 +1,18 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { getGroups, createGroup, updateGroup, deleteGroup, getGroupMembers, getGroup } from '../services/clientGroupService';
 import { updateContact } from '../services/contactService';
 import { updateOrganization } from '../services/organizationService';
 import MasterChangeLogSection from '../components/MasterChangeLogSection';
 import PendingNameChangeBanner from '../components/PendingNameChangeBanner';
+import { useAuth } from '../../../auth/AuthContext';
+import { ROLES } from '../../../constants/roles';
 
 const PRESET_COLORS = ['#6366f1', '#2563eb', '#16a34a', '#d97706', '#dc2626', '#7c3aed'];
 
 export default function ClientGroups() {
+  const { user } = useAuth();
+  const isSuperAdmin = String(user?.role || '').toLowerCase() === ROLES.SUPER_ADMIN
+    || user?.permissions?.includes('*');
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -26,6 +31,7 @@ export default function ClientGroups() {
   const [saving, setSaving] = useState(false);
   const [pendingNameChange, setPendingNameChange] = useState(null);
   const [saveNotice, setSaveNotice] = useState('');
+  const [requestReason, setRequestReason] = useState('');
 
   /** In-app delete flow: blocked when members exist, otherwise confirm then delete. */
   const [deleteDialog, setDeleteDialog] = useState(null); // { mode: 'blocked'|'confirm', group } | null
@@ -47,6 +53,7 @@ export default function ClientGroups() {
     setModalErrors({});
     setPendingNameChange(null);
     setSaveNotice('');
+    setRequestReason('');
     setShowModal(true);
   }
 
@@ -56,6 +63,7 @@ export default function ClientGroups() {
     setModalForm({ name: g.name || '', description: g.description || '', color: g.color || '#6366f1' });
     setModalErrors({});
     setSaveNotice('');
+    setRequestReason('');
     setPendingNameChange(null);
     setShowModal(true);
     getGroup(g.id)
@@ -68,12 +76,19 @@ export default function ClientGroups() {
     setEditingGroup(null);
     setPendingNameChange(null);
     setSaveNotice('');
+    setRequestReason('');
   }
 
   async function handleSave() {
     const errs = {};
     const trimmedName = modalForm.name.trim();
     if (!trimmedName) errs.name = 'Group name is required.';
+    const nameChanged = Boolean(editingGroup)
+      && trimmedName.toLowerCase() !== (editingGroup.name || '').trim().toLowerCase();
+    const needsReason = nameChanged && !isSuperAdmin;
+    if (needsReason && !requestReason.trim()) {
+      errs.requestReason = 'Please enter a reason for this name change.';
+    }
     const nameNorm = trimmedName.toLowerCase();
     const duplicate = groups.some(
       g => g.id !== editingGroup?.id && (g.name || '').trim().toLowerCase() === nameNorm
@@ -83,7 +98,13 @@ export default function ClientGroups() {
     setSaving(true);
     try {
       if (editingGroup) {
-        const result = await updateGroup(editingGroup.id, { name: trimmedName, description: modalForm.description.trim() || null, color: modalForm.color });
+        const payload = {
+          name: trimmedName,
+          description: modalForm.description.trim() || null,
+          color: modalForm.color,
+        };
+        if (needsReason) payload.request_reason = requestReason.trim();
+        const result = await updateGroup(editingGroup.id, payload);
         const pending = result?.meta?.pending_name_change || null;
         if (pending) {
           setPendingNameChange(pending);
@@ -194,7 +215,7 @@ export default function ClientGroups() {
   );
 
   return (
-    <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%', display: 'flex', gap: 20 }}>
+    <div style={{ padding: 24, background: 'var(--portal-bg)', minHeight: '100%', display: 'flex', gap: 20 }}>
       {/* Main content */}
       <div style={{ flex: 1, minWidth: 0 }}>
         {error && (
@@ -488,6 +509,34 @@ export default function ClientGroups() {
               />
             </div>
 
+            {editingGroup && !isSuperAdmin
+              && modalForm.name.trim().toLowerCase() !== (editingGroup.name || '').trim().toLowerCase()
+              && !pendingNameChange && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={labelStyle}>
+                  Reason for name change <span style={{ color: '#ef4444' }}>*</span>
+                </label>
+                <textarea
+                  value={requestReason}
+                  onChange={(e) => {
+                    setRequestReason(e.target.value);
+                    setModalErrors((prev) => ({ ...prev, requestReason: undefined }));
+                  }}
+                  placeholder="Explain why this name change needs Super Admin approval"
+                  rows={3}
+                  style={{
+                    ...inputStyle,
+                    resize: 'vertical',
+                    fontFamily: 'inherit',
+                    borderColor: modalErrors.requestReason ? '#ef4444' : '#E6E8F0',
+                  }}
+                />
+                {modalErrors.requestReason && (
+                  <div style={{ color: '#dc2626', fontSize: 11, marginTop: 3 }}>{modalErrors.requestReason}</div>
+                )}
+              </div>
+            )}
+
             {/* Color picker */}
             <div style={{ marginBottom: 20 }}>
               <label style={labelStyle}>Color</label>
@@ -515,7 +564,17 @@ export default function ClientGroups() {
 
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
               <button onClick={closeModal} style={btnOutline} disabled={saving}>Cancel</button>
-              <button onClick={handleSave} style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }} disabled={saving}>
+              <button
+                onClick={handleSave}
+                style={{ ...btnPrimary, opacity: saving ? 0.7 : 1 }}
+                disabled={
+                  saving
+                  || (editingGroup && !isSuperAdmin
+                    && modalForm.name.trim().toLowerCase() !== (editingGroup.name || '').trim().toLowerCase()
+                    && !pendingNameChange
+                    && !requestReason.trim())
+                }
+              >
                 {saving ? '⏳ Saving…' : editingGroup ? 'Save Changes' : 'Create Group'}
               </button>
             </div>
@@ -571,7 +630,7 @@ const inputStyle = {
 const labelStyle = { fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 5 };
 
 const btnPrimary = {
-  background: '#F37920',
+  background: 'var(--portal-primary)',
   color: '#fff',
   border: 'none',
   borderRadius: 8,

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+﻿import { useEffect, useState, useCallback } from 'react';
 import { Inbox, Mail, Search, MailOpen, CheckCircle, UserPlus, AlertCircle, Send, RefreshCw } from 'lucide-react';
 import {
   fetchInboundEmails, fetchSupportTickets, fetchSupportTicket,
@@ -84,7 +84,7 @@ export default function InboxAndTickets() {
       {/* Header */}
       <div style={headerCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={iconWrap}><Inbox size={20} color="#F37920" /></div>
+          <div style={iconWrap}><Inbox size={20} color="var(--portal-primary)" /></div>
           <div>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Inbox & Tickets</h1>
             <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
@@ -126,7 +126,7 @@ export default function InboxAndTickets() {
 
             {!loading && tab === 'tickets' && filteredTickets.length === 0 && <div style={emptyState}>No tickets found</div>}
             {!loading && tab === 'tickets' && filteredTickets.map((t) => (
-              <button key={t.id} type="button" onClick={() => openTicket(t.id)} style={{ ...listItem, background: selTicket?.id === t.id ? '#FFF7ED' : '#fff', borderLeft: selTicket?.id === t.id ? '3px solid #F37920' : '3px solid transparent' }}>
+              <button key={t.id} type="button" onClick={() => openTicket(t.id)} style={{ ...listItem, background: selTicket?.id === t.id ? '#FFF7ED' : '#fff', borderLeft: selTicket?.id === t.id ? '3px solid var(--portal-primary)' : '3px solid transparent' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                   <span style={{ fontWeight: 700, fontSize: 13, color: '#0B1F3B' }}>{t.public_id}</span>
                   <TicketStatus status={t.status} />
@@ -141,7 +141,7 @@ export default function InboxAndTickets() {
               <div key={e.id} style={{ ...listItem, background: '#fff' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
                   <span style={{ fontWeight: 600, fontSize: 13, color: '#0B1F3B', flex: 1 }}>{e.subject || '(no subject)'}</span>
-                  {!e.read && <span style={{ width: 8, height: 8, borderRadius: 4, background: '#F37920', flexShrink: 0, marginTop: 4 }} />}
+                  {!e.read && <span style={{ width: 8, height: 8, borderRadius: 4, background: 'var(--portal-primary)', flexShrink: 0, marginTop: 4 }} />}
                 </div>
                 <div style={{ fontSize: 12, color: '#64748b' }}>{e.from_email}</div>
                 <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{e.received_at}</div>
@@ -198,7 +198,7 @@ export default function InboxAndTickets() {
                         background: isInbound ? '#F8FAFC' : '#FFF7ED',
                         border: `1px solid ${isInbound ? '#E6E8F0' : '#FDE6CC'}`,
                       }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: isInbound ? '#64748b' : '#F37920', marginBottom: 4 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: isInbound ? '#64748b' : 'var(--portal-primary)', marginBottom: 4 }}>
                           {isInbound ? 'Client' : (m.sent_by_name || 'Agent')}
                         </div>
                         <div style={{ fontSize: 13, color: '#334155', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
@@ -230,15 +230,15 @@ export default function InboxAndTickets() {
   );
 }
 
-const pageWrap = { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--portal-bg)', minHeight: '100%' };
 const headerCard = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '20px 24px', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' };
-const iconWrap = { width: 44, height: 44, borderRadius: 12, background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
+const iconWrap = { width: 44, height: 44, borderRadius: 12, background: 'var(--portal-primary-tint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const panelCard = { background: '#fff', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden', display: 'flex', flexDirection: 'column' };
-const tabBtn = (active) => ({ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '12px 18px', background: 'none', border: 'none', borderBottom: active ? '2px solid #F37920' : '2px solid transparent', color: active ? '#F37920' : '#64748b', fontWeight: 600, fontSize: 13, cursor: 'pointer' });
+const tabBtn = (active) => ({ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '12px 18px', background: 'none', border: 'none', borderBottom: active ? '2px solid var(--portal-primary)' : '2px solid transparent', color: active ? 'var(--portal-primary)' : '#64748b', fontWeight: 600, fontSize: 13, cursor: 'pointer' });
 const listItem = { width: '100%', textAlign: 'left', display: 'block', padding: '12px 16px', border: 'none', borderBottom: '1px solid #F8FAFC', cursor: 'pointer' };
 const inputStyle = { width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #E6E8F0', fontSize: 13, boxSizing: 'border-box', outline: 'none' };
 const emptyState = { padding: 20, textAlign: 'center', color: '#94a3b8', fontSize: 13 };
 const errorBanner = { display: 'flex', alignItems: 'center', gap: 8, background: '#FEE2E2', color: '#991B1B', borderRadius: 10, padding: '10px 16px', fontSize: 13 };
 const btnRefresh = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E6E8F0', background: '#fff', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
 const btnSmGhost = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 8px', borderRadius: 6, border: '1px solid #E6E8F0', background: '#fff', color: '#475569', fontWeight: 500, fontSize: 11, cursor: 'pointer', marginTop: 6 };
-const actionBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', fontWeight: 600, fontSize: 12, cursor: 'pointer', boxShadow: '0 2px 6px rgba(243,121,32,0.2)' };
+const actionBtn = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--portal-primary)', color: '#fff', fontWeight: 600, fontSize: 12, cursor: 'pointer', boxShadow: '0 2px 6px rgba(var(--portal-primary-rgb),0.2)' };

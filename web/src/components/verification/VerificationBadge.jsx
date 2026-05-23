@@ -1,4 +1,4 @@
-/**
+﻿/**
  * VerificationBadge — Shows email/mobile verification status with verify button.
  *
  * Props:
@@ -118,7 +118,7 @@ function VerifyModal({ field, value, clientId, onClose, onVerified }) {
       <div style={modalBox}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ShieldCheck size={18} color="#F37920" />
+            <ShieldCheck size={18} color="var(--portal-primary)" />
             <h3 style={{ fontSize: 15, fontWeight: 700, color: '#0f172a', margin: 0 }}>
               Verify {field === 'email' ? 'Email' : 'Mobile'}
             </h3>
@@ -141,9 +141,9 @@ function VerifyModal({ field, value, clientId, onClose, onVerified }) {
                   {availableChannels.map((ch) => (
                     <button key={ch.id} onClick={() => setChannel(ch.id)} style={{
                       flex: 1, padding: '8px 0', fontSize: 13, fontWeight: 600, borderRadius: 8, cursor: 'pointer',
-                      border: channel === ch.id ? '2px solid #F37920' : '1px solid #e2e8f0',
-                      background: channel === ch.id ? '#FEF0E6' : '#f8fafc',
-                      color: channel === ch.id ? '#F37920' : '#64748b',
+                      border: channel === ch.id ? '2px solid var(--portal-primary)' : '1px solid #e2e8f0',
+                      background: channel === ch.id ? 'var(--portal-primary-tint)' : '#f8fafc',
+                      color: channel === ch.id ? 'var(--portal-primary)' : '#64748b',
                     }}>{ch.label}</button>
                   ))}
                 </div>
@@ -176,7 +176,7 @@ function VerifyModal({ field, value, clientId, onClose, onVerified }) {
                 <span>Resend OTP in {resendTimer}s</span>
               ) : (
                 <button onClick={handleSendOtp} disabled={loading}
-                  style={{ background: 'none', border: 'none', color: '#F37920', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
+                  style={{ background: 'none', border: 'none', color: 'var(--portal-primary)', fontSize: 12, fontWeight: 600, cursor: 'pointer', padding: 0 }}>
                   Resend OTP
                 </button>
               )}
@@ -190,6 +190,6 @@ function VerifyModal({ field, value, clientId, onClose, onVerified }) {
 
 const overlay = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: 16 };
 const modalBox = { background: '#fff', borderRadius: 14, padding: '24px', boxShadow: '0 20px 60px rgba(0,0,0,0.15)', width: '100%', maxWidth: 380 };
-const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
+const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--portal-primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const inputStyle = { width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' };
 const errorStyle = { background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#dc2626', marginBottom: 10 };

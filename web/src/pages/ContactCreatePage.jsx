@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+﻿import { useState, useCallback, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import KycDocumentTab from '../components/documents/KycDocumentTab';
@@ -656,7 +656,7 @@ export default function ContactCreatePage() {
 
   if (isEdit && contactLoading) {
     return (
-      <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%', color: '#64748b', fontSize: 14 }}>
+      <div style={{ padding: 24, background: 'var(--portal-bg)', minHeight: '100%', color: '#64748b', fontSize: 14 }}>
         Loading contact…
       </div>
     );
@@ -664,7 +664,7 @@ export default function ContactCreatePage() {
 
   if (isEdit && loadError) {
     return (
-      <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
+      <div style={{ padding: 24, background: 'var(--portal-bg)', minHeight: '100%' }}>
         <div style={{ padding: 16, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, color: '#991b1b', fontSize: 14, maxWidth: 480 }}>
           {loadError}
         </div>
@@ -680,7 +680,7 @@ export default function ContactCreatePage() {
   }
 
   return (
-    <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
+    <div style={{ padding: 24, background: 'var(--portal-bg)', minHeight: '100%' }}>
       {toast && <Toast message={toast} onClose={() => setToast(null)} />}
       <NameCollisionModal
         open={Boolean(collisionModal?.matches?.length)}
@@ -1006,7 +1006,7 @@ export default function ContactCreatePage() {
                 type="checkbox"
                 checked={waMobileSameAsPrimary}
                 onChange={e => toggleWaMobileSameAsPrimary(e.target.checked)}
-                style={{ accentColor: '#F37920' }}
+                style={{ accentColor: 'var(--portal-primary)' }}
               />
               Same as Primary Mobile
             </label>
@@ -1181,7 +1181,7 @@ const inputStyle = {
 
 const btnPrimary = {
   padding: '9px 20px',
-  background: '#F37920',
+  background: 'var(--portal-primary)',
   color: '#fff',
   border: 'none',
   borderRadius: 8,
@@ -1195,8 +1195,8 @@ const btnPrimary = {
 const btnOutline = {
   padding: '9px 20px',
   background: '#fff',
-  color: '#F37920',
-  border: '1.5px solid #F37920',
+  color: 'var(--portal-primary)',
+  border: '1.5px solid var(--portal-primary)',
   borderRadius: 8,
   cursor: 'pointer',
   fontSize: 13,
@@ -1207,7 +1207,7 @@ const btnOutline = {
 
 const btnSecondary = {
   padding: '9px 20px',
-  background: '#F6F7FB',
+  background: 'var(--portal-bg)',
   color: '#64748b',
   border: '1px solid #E6E8F0',
   borderRadius: 8,
@@ -1269,9 +1269,9 @@ const tabActive = {
   padding: '9px 22px',
   background: 'none',
   border: 'none',
-  borderBottom: '2px solid #F37920',
+  borderBottom: '2px solid var(--portal-primary)',
   marginBottom: -2,
-  color: '#F37920',
+  color: 'var(--portal-primary)',
   fontWeight: 700,
   fontSize: 13,
   cursor: 'pointer',

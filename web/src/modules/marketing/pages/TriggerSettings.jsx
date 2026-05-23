@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Bell, Mail, Smartphone, MessageSquare, CheckCircle2, AlertCircle, RefreshCw, Info } from 'lucide-react';
 import { API_BASE_URL } from '../../../constants/config';
 
@@ -104,7 +104,7 @@ export default function TriggerSettings() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 14 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <Bell size={14} color="#F37920" />
+                      <Bell size={14} color="var(--portal-primary)" />
                       <span style={{ fontSize: 14, fontWeight: 700, color: '#1e293b' }}>{meta.label}</span>
                       {wasSaved && <CheckCircle2 size={14} color="#16a34a" />}
                     </div>
@@ -113,7 +113,7 @@ export default function TriggerSettings() {
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', flexShrink: 0, marginLeft: 16 }}>
                     <div style={{
                       width: 40, height: 22, borderRadius: 11,
-                      background: trigger.enabled ? '#F37920' : '#e2e8f0',
+                      background: trigger.enabled ? 'var(--portal-primary)' : '#e2e8f0',
                       position: 'relative', transition: 'background 0.2s', cursor: 'pointer',
                     }} onClick={() => saveTrigger(trigger.id, { enabled: !trigger.enabled })}>
                       <div style={{
@@ -122,7 +122,7 @@ export default function TriggerSettings() {
                         transition: 'left 0.2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
                       }} />
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: trigger.enabled ? '#F37920' : '#94a3b8' }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: trigger.enabled ? 'var(--portal-primary)' : '#94a3b8' }}>
                       {trigger.enabled ? 'Enabled' : 'Disabled'}
                     </span>
                   </label>

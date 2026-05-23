@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from 'react';
+﻿import { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../auth/AuthContext';
 import { getDashboardStats } from '../services/dashboardService';
@@ -26,7 +26,7 @@ const StatCard = ({ icon, label, value, sub, color, bg, to, onNavigate, valueToo
     title={`Open ${label}`}
     aria-label={`${label}: ${valueTooltip || value}`}
   >
-    <div style={{ width: 48, height: 48, borderRadius: 12, background: bg || '#F6F7FB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{icon}</div>
+    <div style={{ width: 48, height: 48, borderRadius: 12, background: bg || 'var(--portal-bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22, flexShrink: 0 }}>{icon}</div>
     <div style={{ flex: 1, minWidth: 0, textAlign: 'left' }}>
       <div style={{ fontSize: 13, color: '#64748b', marginBottom: 4, overflowWrap: 'break-word' }}>{label}</div>
       <div
@@ -130,7 +130,7 @@ export default function Dashboard() {
   };
 
   return (
-    <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
+    <div style={{ padding: 24, background: 'var(--portal-bg)', minHeight: '100%' }}>
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px,1fr))', gap: 16, marginBottom: 28 }}>
         {METRIC_CARD_CONFIG.map((card) => (
@@ -258,6 +258,6 @@ const cardTitle = { margin: '0 0 14px 0', fontSize: 15, fontWeight: 700, color: 
 const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
 const thStyle = { textAlign: 'left', padding: '8px 10px', color: '#64748b', fontWeight: 600, fontSize: 11, borderBottom: '1px solid #F0F2F8', background: '#F8FAFC', textTransform: 'uppercase', letterSpacing: '0.04em' };
 const tdStyle = { padding: '9px 10px', color: '#334155', verticalAlign: 'middle' };
-const trStyle = { borderBottom: '1px solid #F6F7FB' };
-const actionBtn = { padding: '9px 12px', background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 10, cursor: 'pointer', fontSize: 13, textAlign: 'left', fontWeight: 500, color: '#334155' };
+const trStyle = { borderBottom: '1px solid var(--portal-bg)' };
+const actionBtn = { padding: '9px 12px', background: 'var(--portal-bg)', border: '1px solid #E6E8F0', borderRadius: 10, cursor: 'pointer', fontSize: 13, textAlign: 'left', fontWeight: 500, color: '#334155' };
 

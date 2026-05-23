@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   MessageSquare, Search, RefreshCw, Send, AlertCircle, Hash, User, Plus, LogOut,
@@ -237,7 +237,7 @@ export default function ChatWorkspace({
       {!isFloating && (
         <div style={headerCard}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={iconWrap}><MessageSquare size={20} color="#F37920" /></div>
+            <div style={iconWrap}><MessageSquare size={20} color="var(--portal-primary)" /></div>
             <div>
               <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Team Chat</h1>
               <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
@@ -312,7 +312,7 @@ export default function ChatWorkspace({
                 style={{
                   ...listItem,
                   background: selectedId === c.id ? '#FFF7ED' : '#fff',
-                  borderLeft: selectedId === c.id ? '3px solid #F37920' : '3px solid transparent',
+                  borderLeft: selectedId === c.id ? '3px solid var(--portal-primary)' : '3px solid transparent',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -374,7 +374,7 @@ export default function ChatWorkspace({
                         maxWidth: '75%',
                         padding: '10px 14px',
                         borderRadius: mine ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                        background: mine ? '#F37920' : '#F1F5F9',
+                        background: mine ? 'var(--portal-primary)' : '#F1F5F9',
                         color: mine ? '#fff' : '#0B1F3B',
                       }}
                       >
@@ -458,7 +458,7 @@ const listItem = {
   cursor: 'pointer', textAlign: 'left',
 };
 const unreadBadge = {
-  background: '#F37920', color: '#fff', fontSize: 10, fontWeight: 700,
+  background: 'var(--portal-primary)', color: '#fff', fontSize: 10, fontWeight: 700,
   borderRadius: 999, padding: '2px 7px', minWidth: 18, textAlign: 'center',
 };
 const errorBanner = {
@@ -475,10 +475,10 @@ const btnOutlineCompact = {
 };
 const btnSend = {
   alignSelf: 'flex-end', padding: '10px 14px', borderRadius: 10, border: 'none',
-  background: '#F37920', color: '#fff', cursor: 'pointer',
+  background: 'var(--portal-primary)', color: '#fff', cursor: 'pointer',
 };
 const tabBtn = (active) => ({
   flex: 1, padding: '10px 8px', border: 'none', background: active ? '#FFF7ED' : '#fff',
-  cursor: 'pointer', fontSize: 12, fontWeight: 600, color: active ? '#F37920' : '#64748b',
-  borderBottom: active ? '2px solid #F37920' : '2px solid transparent',
+  cursor: 'pointer', fontSize: 12, fontWeight: 600, color: active ? 'var(--portal-primary)' : '#64748b',
+  borderBottom: active ? '2px solid var(--portal-primary)' : '2px solid transparent',
 });

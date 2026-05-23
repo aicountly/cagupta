@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import logoUrl from '../../assets/cropped_logo.png';
 import { useAuth } from '../../auth/AuthContext';
@@ -302,8 +302,8 @@ const styles = {
     marginBottom: 1,
   },
   navLinkActive: {
-    color: '#F37920',
-    background: '#FEF0E6',
+    color: 'var(--portal-primary)',
+    background: 'var(--portal-primary-tint)',
     fontWeight: 600,
   },
   navIcon: {
@@ -312,7 +312,7 @@ const styles = {
     justifyContent: 'center',
     opacity: 0.6,
   },
-  navIconActive: { opacity: 1, color: '#F37920' },
+  navIconActive: { opacity: 1, color: 'var(--portal-primary)' },
   navText: { flex: 1 },
   userCard: {
     padding: '14px 16px',
@@ -326,7 +326,7 @@ const styles = {
     width: 34,
     height: 34,
     borderRadius: 10,
-    background: 'linear-gradient(135deg, #F37920 0%, #f5a623 100%)',
+    background: 'linear-gradient(135deg, var(--portal-primary) 0%, var(--portal-primary-light) 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

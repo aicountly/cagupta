@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import {
   Megaphone, Plus, Send, Clock, CheckCircle2, AlertCircle,
   BarChart3, Users, Mail, MessageSquare, Share2, Eye, Trash2,
@@ -49,7 +49,7 @@ export default function MarketingCampaigns() {
       {/* Stats */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
         {[
-          { label: 'Total Campaigns', value: '12', icon: Megaphone, color: '#F37920', bg: '#FEF0E6' },
+          { label: 'Total Campaigns', value: '12', icon: Megaphone, color: 'var(--portal-primary)', bg: 'var(--portal-primary-tint)' },
           { label: 'Messages Sent', value: '3,482', icon: Send, color: '#2563eb', bg: '#eff6ff' },
           { label: 'Avg. Open Rate', value: '68%', icon: TrendingUp, color: '#16a34a', bg: '#f0fdf4' },
           { label: 'Conversions', value: '142', icon: CheckCircle2, color: '#7c3aed', bg: '#f5f3ff' },
@@ -143,6 +143,6 @@ export default function MarketingCampaigns() {
 }
 
 const card = { background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' };
-const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
+const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--portal-primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const btnOutline = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#334155', border: '1px solid #e2e8f0', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer' };
 const inputStyle = { padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' };

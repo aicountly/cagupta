@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+﻿import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getAllEngagements, getServiceKpiSnapshot } from '../services/engagementService';
 import { getMyTemporaryCharges } from '../services/leaveService';
@@ -33,8 +33,8 @@ function kpiData(services, snapshot) {
       label: 'Due This Week',
       slug: KPI_SLUGS.DUE_WEEK,
       icon: Clock,
-      color: '#F37920',
-      bg: '#FEF0E6',
+      color: 'var(--portal-primary)',
+      bg: 'var(--portal-primary-tint)',
       subtitle: 'Open engagements · engagement due date in next 7 days',
     },
     {
@@ -49,8 +49,8 @@ function kpiData(services, snapshot) {
       label: 'Pending Info',
       slug: KPI_SLUGS.PENDING_INFO,
       icon: Info,
-      color: '#F37920',
-      bg: '#FEF0E6',
+      color: 'var(--portal-primary)',
+      bg: 'var(--portal-primary-tint)',
       subtitle: 'By engagement status',
     },
     {
@@ -92,7 +92,7 @@ function KpiCard({ item, to }) {
         color: 'inherit',
         cursor: 'pointer',
         boxShadow: hover ? '0 4px 12px rgba(0,0,0,0.08)' : '0 1px 4px rgba(0,0,0,0.05)',
-        borderColor: hover ? 'rgba(243,121,32,0.35)' : '#E6E8F0',
+        borderColor: hover ? 'rgba(var(--portal-primary-rgb),0.35)' : '#E6E8F0',
         transition: 'box-shadow 0.15s, border-color 0.15s',
       }}
       aria-label={`${item.label}, ${item.value} engagements. Open list.`}
@@ -313,7 +313,7 @@ function TempChargeView({ charges }) {
       {Object.values(grouped).map((group) => (
         <div key={group.user} style={tempCard}>
           <div style={tempCardHeader}>
-            <Briefcase size={16} color="#F37920" />
+            <Briefcase size={16} color="var(--portal-primary)" />
             <div style={{ flex: 1 }}>
               <span style={{ fontWeight: 700, fontSize: 14, color: '#0B1F3B' }}>
                 Covering for {group.user}
@@ -363,7 +363,7 @@ function TempChargeView({ charges }) {
                     <Link
                       to={`/services/${c.service_id}`}
                       style={{
-                        fontSize: 12, fontWeight: 600, color: '#F37920',
+                        fontSize: 12, fontWeight: 600, color: 'var(--portal-primary)',
                         textDecoration: 'none',
                       }}
                     >
@@ -381,7 +381,7 @@ function TempChargeView({ charges }) {
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
-const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--portal-bg)', minHeight: '100%' };
 const kpiRow = { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 };
 const kpiCard = {
   background: '#fff',
@@ -409,20 +409,20 @@ const tabBtn = {
   cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
 };
 const tabBtnActive = {
-  background: '#FEF0E6', color: '#F37920', border: '1px solid rgba(243,121,32,0.25)',
+  background: 'var(--portal-primary-tint)', color: 'var(--portal-primary)', border: '1px solid rgba(var(--portal-primary-rgb),0.25)',
 };
 const tempBadge = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-  background: '#F37920', color: '#fff', borderRadius: 10,
+  background: 'var(--portal-primary)', color: '#fff', borderRadius: 10,
   fontSize: 11, fontWeight: 700, minWidth: 18, height: 18, padding: '0 5px',
   marginLeft: 6,
 };
 
-const searchBox = { display: 'flex', alignItems: 'center', gap: 8, background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 8, padding: '6px 10px', maxWidth: 260 };
+const searchBox = { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--portal-bg)', border: '1px solid #E6E8F0', borderRadius: 8, padding: '6px 10px', maxWidth: 260 };
 const searchInputStyle = { border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: '#334155', width: '100%' };
 
 const selectStyle = { padding: '7px 12px', border: '1px solid #E6E8F0', borderRadius: 8, fontSize: 13, background: '#fff', color: '#334155', outline: 'none', cursor: 'pointer' };
-const btnPrimary = { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, boxShadow: '0 2px 8px rgba(243,121,32,0.30)' };
+const btnPrimary = { display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px', background: 'var(--portal-primary)', color: '#fff', border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, boxShadow: '0 2px 8px rgba(var(--portal-primary-rgb),0.30)' };
 
 const tempCard = {
   background: '#fff', borderRadius: 14, border: '1px solid #FBD5B5',
@@ -433,8 +433,8 @@ const tempCardHeader = {
   padding: '14px 18px', background: '#FEF7F1', borderBottom: '1px solid #FBD5B5',
 };
 const tempBanner = {
-  fontSize: 11, fontWeight: 700, color: '#F37920',
-  background: '#FEF0E6', border: '1px solid rgba(243,121,32,0.3)',
+  fontSize: 11, fontWeight: 700, color: 'var(--portal-primary)',
+  background: 'var(--portal-primary-tint)', border: '1px solid rgba(var(--portal-primary-rgb),0.3)',
   borderRadius: 8, padding: '2px 10px',
 };
 const tempTh = {

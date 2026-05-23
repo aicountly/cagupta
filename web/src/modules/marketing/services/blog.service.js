@@ -14,6 +14,8 @@
  *   POST   marketing/blog/drafts/:id/approve
  *   POST   marketing/blog/drafts/:id/reject
  *   POST   marketing/blog/generate-ai-drafts
+ *   GET    marketing/blog/ai-settings
+ *   PUT    marketing/blog/ai-settings
  *   POST   marketing/blog/upload-image
  */
 
@@ -260,6 +262,22 @@ export async function generateAiDraftsStream(body = {}, opts = {}) {
   }
   return donePayload;
 }
+
+/** Blog AI text/image provider settings (persisted server-side). */
+export async function fetchBlogAiSettings() {
+  const res = await fetch(`${BASE}/marketing/blog/ai-settings`, { headers: authHeaders() });
+  return handleResponse(res);
+}
+
+export async function updateBlogAiSettings({ text_provider, image_provider }) {
+  const res = await fetch(`${BASE}/marketing/blog/ai-settings`, {
+    method: 'PUT',
+    headers: authHeaders(),
+    body: JSON.stringify({ text_provider, image_provider }),
+  });
+  return handleResponse(res);
+}
+
 // ── Public API (no auth — for /blog public pages) ────────────────────────────
 
 /**

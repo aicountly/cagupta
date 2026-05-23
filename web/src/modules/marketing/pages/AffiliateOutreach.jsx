@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import {
   Users, Plus, Send, MessageSquare, Mail, Phone,
   TrendingUp, Star, Target, Handshake, Building2,
@@ -130,7 +130,7 @@ export default function AffiliateOutreach() {
         {[['prospects', 'Prospects'], ['campaigns', 'Campaigns'], ['commission', 'Commission Model']].map(([tab, label]) => (
           <button key={tab} onClick={() => setActiveTab(tab)} style={{
             padding: '8px 20px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
-            background: activeTab === tab ? '#F37920' : '#f8fafc',
+            background: activeTab === tab ? 'var(--portal-primary)' : '#f8fafc',
             color: activeTab === tab ? '#fff' : '#64748b',
             borderRight: '1px solid #e2e8f0',
           }}>{label}</button>
@@ -243,7 +243,7 @@ export default function AffiliateOutreach() {
           <div style={card}>
             <h3 style={{ fontSize: 14, fontWeight: 700, color: '#1e293b', margin: '0 0 16px' }}>Commission Structure</h3>
             {[
-              { tier: 'Base', desc: 'Per client referred', amount: '₹1,000', color: '#F37920' },
+              { tier: 'Base', desc: 'Per client referred', amount: '₹1,000', color: 'var(--portal-primary)' },
               { tier: 'Silver', desc: '3+ clients/month', amount: '₹1,500 per client', color: '#94a3b8' },
               { tier: 'Gold', desc: '6+ clients/month', amount: '₹2,000 per client', color: '#d97706' },
               { tier: 'Platinum', desc: '10+ clients/month', amount: '5% of revenue', color: '#7c3aed' },
@@ -266,7 +266,7 @@ export default function AffiliateOutreach() {
             ].map((doc) => (
               <div key={doc.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <Target size={14} color="#F37920" />
+                  <Target size={14} color="var(--portal-primary)" />
                   <div>
                     <div style={{ fontSize: 13, color: '#1e293b' }}>{doc.name}</div>
                     <div style={{ fontSize: 11, color: '#94a3b8' }}>{doc.size}</div>
@@ -341,8 +341,8 @@ export default function AffiliateOutreach() {
               {OUTREACH_TEMPLATES.map((t) => (
                 <div key={t.id} onClick={() => setSelectedTemplate(t)} style={{
                   padding: '12px', borderRadius: 8, cursor: 'pointer',
-                  border: selectedTemplate?.id === t.id ? '2px solid #F37920' : '1px solid #e2e8f0',
-                  background: selectedTemplate?.id === t.id ? '#FEF0E6' : '#f8fafc',
+                  border: selectedTemplate?.id === t.id ? '2px solid var(--portal-primary)' : '1px solid #e2e8f0',
+                  background: selectedTemplate?.id === t.id ? 'var(--portal-primary-tint)' : '#f8fafc',
                 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b', marginBottom: 4 }}>{t.name}</div>
                   <div style={{ fontSize: 11, color: '#94a3b8' }}>via {t.channel}</div>
@@ -367,7 +367,7 @@ export default function AffiliateOutreach() {
 }
 
 const card = { background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' };
-const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
+const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--portal-primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const btnOutline = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#334155', border: '1px solid #e2e8f0', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer' };
 const inputStyle = { width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' };
 const labelStyle = { fontSize: 12, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 };

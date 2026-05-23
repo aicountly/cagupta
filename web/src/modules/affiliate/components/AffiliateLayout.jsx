@@ -20,7 +20,7 @@ export default function AffiliateLayout({ title, children }) {
   const name = session?.user?.name || 'Affiliate';
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#F6F7FB' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--portal-bg)' }}>
       <aside style={{
         width: 220, background: '#fff', borderRight: '1px solid #E6E8F0', display: 'flex', flexDirection: 'column',
       }}
@@ -40,10 +40,10 @@ export default function AffiliateLayout({ title, children }) {
                 padding: '10px 16px',
                 fontSize: 13,
                 fontWeight: 600,
-                color: isActive ? '#5b21b6' : '#475569',
-                background: isActive ? '#f5f3ff' : 'transparent',
+                color: isActive ? 'var(--portal-primary)' : '#475569',
+                background: isActive ? 'var(--portal-primary-tint)' : 'transparent',
                 textDecoration: 'none',
-                borderLeft: isActive ? '3px solid #7c3aed' : '3px solid transparent',
+                borderLeft: isActive ? '3px solid var(--portal-primary)' : '3px solid transparent',
               })}
             >
               {item.label}

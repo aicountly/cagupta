@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import {
   Pin, PinOff, CheckCircle2, Bell, Trash2,
   Eye, Users, Lock, ChevronDown, ChevronUp,
@@ -124,7 +124,7 @@ export default function ServiceLogEntry({
 
           {/* Pin indicator */}
           {isPinned && (
-            <span style={{ fontSize: 11, color: '#F37920', display: 'flex', alignItems: 'center', gap: 3 }}>
+            <span style={{ fontSize: 11, color: 'var(--portal-primary)', display: 'flex', alignItems: 'center', gap: 3 }}>
               <Pin size={11} /> Pinned
             </span>
           )}
@@ -301,9 +301,9 @@ const entryWrap = {
   gap: 8,
 };
 const pinnedStyle = {
-  borderColor: 'rgba(243,121,32,0.35)',
+  borderColor: 'rgba(var(--portal-primary-rgb),0.35)',
   background: '#FFFDF9',
-  boxShadow: '0 0 0 2px rgba(243,121,32,0.08)',
+  boxShadow: '0 0 0 2px rgba(var(--portal-primary-rgb),0.08)',
 };
 const resolvedStyle = {
   opacity: 0.7,
@@ -340,7 +340,7 @@ const messageText = {
 };
 const expandBtn = {
   background: 'none', border: 'none', cursor: 'pointer',
-  color: '#F37920', fontSize: 12, fontWeight: 600,
+  color: 'var(--portal-primary)', fontSize: 12, fontWeight: 600,
   padding: 0, display: 'inline-flex', alignItems: 'center', gap: 3, marginTop: 2,
 };
 const actionRow = {
@@ -349,7 +349,7 @@ const actionRow = {
 };
 const actionBtn = {
   display: 'inline-flex', alignItems: 'center', gap: 4,
-  padding: '4px 10px', background: '#F6F7FB', border: '1px solid #E6E8F0',
+  padding: '4px 10px', background: 'var(--portal-bg)', border: '1px solid #E6E8F0',
   borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer',
   color: '#475569',
 };

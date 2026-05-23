@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import {
   MessageSquare, Send, Paperclip, FileText, X,
   Settings, CheckCircle2, AlertCircle, ExternalLink,
@@ -101,8 +101,8 @@ export default function WANativeMarketing() {
           {PROVIDERS.map((p) => (
             <div key={p.id} onClick={() => setProvider(p.id)} style={{
               padding: '10px 12px', borderRadius: 8, cursor: 'pointer', marginBottom: 8,
-              border: provider === p.id ? '2px solid #F37920' : '1px solid #e2e8f0',
-              background: provider === p.id ? '#FEF0E6' : '#f8fafc',
+              border: provider === p.id ? '2px solid var(--portal-primary)' : '1px solid #e2e8f0',
+              background: provider === p.id ? 'var(--portal-primary-tint)' : '#f8fafc',
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 18 }}>{p.logo}</span>
@@ -147,7 +147,7 @@ export default function WANativeMarketing() {
             {[['compose', 'Compose'], ['templates', 'Templates'], ['logs', 'Delivery Logs']].map(([tab, label]) => (
               <button key={tab} onClick={() => setActiveTab(tab)} style={{
                 padding: '8px 20px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
-                background: activeTab === tab ? '#F37920' : '#f8fafc',
+                background: activeTab === tab ? 'var(--portal-primary)' : '#f8fafc',
                 color: activeTab === tab ? '#fff' : '#64748b',
                 borderRight: '1px solid #e2e8f0',
               }}>{label}</button>
@@ -256,6 +256,6 @@ export default function WANativeMarketing() {
 }
 
 const card = { background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' };
-const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
+const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--portal-primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const inputStyle = { width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' };
 const labelStyle = { fontSize: 12, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 };

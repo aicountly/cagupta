@@ -207,7 +207,12 @@ final class PartnerPayoutCycleController extends BaseController
             $this->error('At least one adjustment must differ from the system amount.', 422);
         }
 
-        $aid = $amend->insertPending($id, $actorId, $normalized);
+        $requestReason = trim((string)($body['request_reason'] ?? ''));
+        if (\App\Libraries\ApprovalReason::validateRequestReason($requestReason) !== null) {
+            $this->error(\App\Libraries\ApprovalReason::ERROR_MESSAGE, 422);
+        }
+
+        $aid = $amend->insertPending($id, $actorId, $normalized, \App\Libraries\ApprovalReason::normalize($requestReason));
         $this->audit('partner_payout_cycle_amendment.submitted', $aid);
 
         $uids = (new UserModel())->idsHavingRoleNames(['super_admin']);

@@ -195,6 +195,9 @@ class TimeEntryController extends BaseController
             if ($notes === '') {
                 $notes = null;
             }
+            if (\App\Libraries\ApprovalReason::validateOverflowNotes($notes) !== null) {
+                $this->error(\App\Libraries\ApprovalReason::OVERFLOW_NOTES_MESSAGE, 422);
+            }
 
             $overflow = new TimesheetOverflowRequestModel();
             $rid        = $overflow->create([
@@ -502,6 +505,10 @@ class TimeEntryController extends BaseController
         }
 
         if ($eval['has_cap'] && $eval['would_exceed'] && $wantOverflow) {
+            $overflowNotes = isset($body['notes']) ? trim((string)$body['notes']) : trim((string)($snap['notes'] ?? ''));
+            if (\App\Libraries\ApprovalReason::validateOverflowNotes($overflowNotes !== '' ? $overflowNotes : null) !== null) {
+                $this->error(\App\Libraries\ApprovalReason::OVERFLOW_NOTES_MESSAGE, 422);
+            }
             $db = Database::getConnection();
             $db->beginTransaction();
             try {
@@ -515,7 +522,7 @@ class TimeEntryController extends BaseController
                     'work_date'                  => $snap['work_date'],
                     'activity_type'              => $snap['activity'],
                     'is_billable'                => $snap['is_billable'],
-                    'notes'                      => $snap['notes'],
+                    'notes'                      => $overflowNotes,
                     'task_id'                    => $snap['task_id'],
                 ]);
                 $failReason = null;
@@ -715,6 +722,9 @@ class TimeEntryController extends BaseController
                     : (($existingEntry['notes'] ?? null) !== null ? trim((string)$existingEntry['notes']) : null);
                 if ($notes === '') {
                     $notes = null;
+                }
+                if (\App\Libraries\ApprovalReason::validateOverflowNotes($notes) !== null) {
+                    $this->error(\App\Libraries\ApprovalReason::OVERFLOW_NOTES_MESSAGE, 422);
                 }
 
                 $overflow = new TimesheetOverflowRequestModel();

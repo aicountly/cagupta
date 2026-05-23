@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { X } from 'lucide-react';
 
 export default function NewChannelModal({ contacts, onClose, onCreate, busy }) {
@@ -63,4 +63,4 @@ const label = { display: 'block', fontSize: 12, fontWeight: 600, color: '#475569
 const checkRow = { display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderBottom: '1px solid #F8FAFC', cursor: 'pointer', fontSize: 13 };
 const iconBtn = { background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 4 };
 const btnSecondary = { padding: '8px 16px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13 };
-const btnPrimary = { padding: '8px 16px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13 };
+const btnPrimary = { padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--portal-primary)', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13 };

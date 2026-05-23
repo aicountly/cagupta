@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import {
   Sparkles, RefreshCw, AlertCircle, Search, TrendingUp,
   FileText, Megaphone, Users, Link2, Share2, Clock,
@@ -9,7 +9,7 @@ const CATEGORY_META = {
   SEO:          { icon: Search,    color: '#2563eb', bg: '#eff6ff' },
   Content:      { icon: FileText,  color: '#16a34a', bg: '#f0fdf4' },
   Campaigns:    { icon: Megaphone, color: '#9333ea', bg: '#faf5ff' },
-  'Lead Funnel':{ icon: TrendingUp,color: '#F37920', bg: '#FEF0E6' },
+  'Lead Funnel':{ icon: TrendingUp,color: 'var(--portal-primary)', bg: 'var(--portal-primary-tint)' },
   Affiliate:    { icon: Link2,     color: '#0891b2', bg: '#ecfeff' },
   Social:       { icon: Share2,    color: '#db2777', bg: '#fdf2f8' },
 };
@@ -153,7 +153,7 @@ export default function AIMarketingInsights() {
       {/* Header */}
       <div style={s.header}>
         <div style={s.headerLeft}>
-          <div style={s.headerIcon}><Sparkles size={24} color="#F37920" /></div>
+          <div style={s.headerIcon}><Sparkles size={24} color="var(--portal-primary)" /></div>
           <div>
             <h1 style={s.pageTitle}>AI Marketing Insights</h1>
             <p style={s.pageSub}>
@@ -263,7 +263,7 @@ const s = {
   headerLeft: { display: 'flex', alignItems: 'center', gap: 14 },
   headerIcon: {
     width: 48, height: 48, borderRadius: 12,
-    background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'var(--portal-primary-tint)', display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   pageTitle: { margin: 0, fontSize: 20, fontWeight: 700, color: '#1e293b' },
   pageSub:   { margin: '3px 0 0', fontSize: 13, color: '#64748b' },
@@ -275,7 +275,7 @@ const s = {
   refreshBtn: {
     display: 'flex', alignItems: 'center', gap: 6,
     padding: '9px 16px', border: 'none', borderRadius: 8,
-    background: '#F37920', color: '#fff', cursor: 'pointer',
+    background: 'var(--portal-primary)', color: '#fff', cursor: 'pointer',
     fontSize: 13, fontWeight: 700, transition: 'opacity 0.15s',
   },
   refreshBtnLoading: { opacity: 0.7, cursor: 'not-allowed' },
@@ -306,7 +306,7 @@ const s = {
     color: '#64748b', transition: 'all 0.15s',
   },
   filterBtnActive: {
-    background: '#F37920', color: '#fff', border: '1px solid #F37920', fontWeight: 700,
+    background: 'var(--portal-primary)', color: '#fff', border: '1px solid var(--portal-primary)', fontWeight: 700,
   },
   loadingState: { color: '#94a3b8', padding: '40px 0', textAlign: 'center', fontSize: 14 },
   emptyState:   { color: '#94a3b8', padding: '40px 0', textAlign: 'center', fontSize: 14 },

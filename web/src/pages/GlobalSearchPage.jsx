@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { getContacts } from '../services/contactService';
 import { getOrganizationsForSearch } from '../services/organizationService';
@@ -227,7 +227,7 @@ export default function GlobalSearchPage() {
   const totalHits = sections.reduce((n, s) => n + s.rows.length, 0);
 
   return (
-    <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
+    <div style={{ padding: 24, background: 'var(--portal-bg)', minHeight: '100%' }}>
       <h1 style={{ margin: '0 0 8px', fontSize: 22, fontWeight: 700, color: '#0B1F3B' }}>Search</h1>
       <p style={{ margin: '0 0 20px', fontSize: 13, color: '#64748b' }}>
         Find contacts, organizations, services, leads, invoices, and appointments in one place. Open a row to go to that record.
@@ -256,7 +256,7 @@ export default function GlobalSearchPage() {
             type="submit"
             style={{
               padding: '10px 20px',
-              background: '#F37920',
+              background: 'var(--portal-primary)',
               color: '#fff',
               border: 'none',
               borderRadius: 10,
@@ -305,7 +305,7 @@ export default function GlobalSearchPage() {
                     padding: '12px 14px',
                     border: 'none',
                     borderBottom: '1px solid #f1f5f9',
-                    background: hl ? '#FEF0E6' : '#fff',
+                    background: hl ? 'var(--portal-primary-tint)' : '#fff',
                     cursor: 'pointer',
                   }}
                 >
@@ -318,7 +318,7 @@ export default function GlobalSearchPage() {
                       {rowSublabel(section.type, row)}
                     </div>
                   </div>
-                  <span style={{ fontSize: 12, color: '#F37920', fontWeight: 600, flexShrink: 0 }}>Open →</span>
+                  <span style={{ fontSize: 12, color: 'var(--portal-primary)', fontWeight: 600, flexShrink: 0 }}>Open →</span>
                 </button>
               );
             })}

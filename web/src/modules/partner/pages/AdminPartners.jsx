@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { Briefcase, Users, ShieldCheck, Wallet, Search, Plus, RefreshCw, ClipboardList } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -81,7 +81,7 @@ export default function AdminPartners() {
     <div style={pageWrap}>
       <div style={headerCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={iconWrap}><Briefcase size={20} color="#F37920" /></div>
+          <div style={iconWrap}><Briefcase size={20} color="var(--portal-primary)" /></div>
           <div>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Partners</h1>
             <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
@@ -103,9 +103,9 @@ export default function AdminPartners() {
               display: 'inline-flex', alignItems: 'center', gap: 5,
               padding: '8px 14px', borderRadius: 8, border: '1px solid',
               fontWeight: 600, fontSize: 12, cursor: 'pointer',
-              background: active ? '#F37920' : '#fff',
+              background: active ? 'var(--portal-primary)' : '#fff',
               color: active ? '#fff' : '#475569',
-              borderColor: active ? '#F37920' : '#E6E8F0',
+              borderColor: active ? 'var(--portal-primary)' : '#E6E8F0',
             }}>
               <Icon size={13} /> {t.label}
             </button>
@@ -267,9 +267,9 @@ function CreatePartnerForm({ onCreated }) {
   );
 }
 
-const pageWrap = { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--portal-bg)', minHeight: '100%' };
 const headerCard = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '20px 24px', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', flexWrap: 'wrap', gap: 12 };
-const iconWrap = { width: 44, height: 44, borderRadius: 12, background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
+const iconWrap = { width: 44, height: 44, borderRadius: 12, background: 'var(--portal-primary-tint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const toolbarCard = { display: 'flex', gap: 8, background: '#fff', padding: '12px 16px', borderRadius: 12, border: '1px solid #E6E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', flexWrap: 'wrap' };
 const contentCard = { background: '#fff', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden' };
 const errorBanner = { background: '#FEE2E2', color: '#991B1B', borderRadius: 10, padding: '10px 16px', fontSize: 13 };
@@ -278,7 +278,7 @@ const thStyle = { textAlign: 'left', padding: '10px 14px', color: '#64748b', fon
 const tdStyle = { padding: '10px 14px', color: '#334155', borderBottom: '1px solid #F8FAFC' };
 const inputStyle = { width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid #E6E8F0', fontSize: 13, boxSizing: 'border-box' };
 const labelStyle = { display: 'block', fontSize: 11, fontWeight: 600, color: '#64748b', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' };
-const btnPrimary = { padding: '10px 20px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', boxShadow: '0 2px 8px rgba(243,121,32,0.2)' };
+const btnPrimary = { padding: '10px 20px', borderRadius: 8, border: 'none', background: 'var(--portal-primary)', color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer', boxShadow: '0 2px 8px rgba(var(--portal-primary-rgb),0.2)' };
 const btnSecondary = { padding: '8px 14px', borderRadius: 8, border: '1px solid #E6E8F0', background: '#fff', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
 const btnApprove = { padding: '5px 10px', borderRadius: 6, border: 'none', background: '#16A34A', color: '#fff', fontWeight: 600, fontSize: 11, cursor: 'pointer' };
 const btnDanger = { padding: '5px 10px', borderRadius: 6, border: '1px solid #FECACA', background: '#FEF2F2', color: '#DC2626', fontWeight: 600, fontSize: 11, cursor: 'pointer' };

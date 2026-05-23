@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import {
   Smartphone, QrCode, RefreshCw, Users, MessageSquare,
   Send, Paperclip, Image, FileText, Clock, CheckCircle2,
@@ -337,7 +337,7 @@ export default function WAWebMarketing() {
               ].map(({ key, label }) => (
                 <button key={key} onClick={() => { setActiveTab(key); setSearch(''); }} style={{
                   flex: 1, padding: '8px 0', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
-                  background: activeTab === key ? '#F37920' : '#f8fafc',
+                  background: activeTab === key ? 'var(--portal-primary)' : '#f8fafc',
                   color: activeTab === key ? '#fff' : '#64748b',
                 }}>
                   {label}
@@ -411,7 +411,7 @@ export default function WAWebMarketing() {
                 onClick={toggleSelectAll}
                 style={{
                   fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'none', border: 'none', padding: '2px 0',
-                  color: allFilteredSelected ? '#ef4444' : '#F37920',
+                  color: allFilteredSelected ? '#ef4444' : 'var(--portal-primary)',
                   textDecoration: 'underline', textUnderlineOffset: 2,
                 }}
               >
@@ -442,13 +442,13 @@ export default function WAWebMarketing() {
                   <div key={item.id ?? item.name} style={{
                     display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
                     borderRadius: 8, marginBottom: 4, userSelect: 'none',
-                    background: selected ? '#FEF0E6' : 'transparent',
-                    border: selected ? '1px solid #F37920' : '1px solid transparent',
+                    background: selected ? 'var(--portal-primary-tint)' : 'transparent',
+                    border: selected ? '1px solid var(--portal-primary)' : '1px solid transparent',
                     transition: 'background 0.12s, border-color 0.12s',
                   }}>
                     <div onClick={() => toggleTarget(item)} style={{
                       width: 32, height: 32, borderRadius: isChannel ? 8 : '50%',
-                      background: selected ? '#F37920' : isChannel ? '#dcfce7' : '#e2e8f0',
+                      background: selected ? 'var(--portal-primary)' : isChannel ? '#dcfce7' : '#e2e8f0',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
                       color: selected ? '#fff' : isChannel ? '#16a34a' : '#64748b', flexShrink: 0, cursor: 'pointer',
                     }}>
@@ -459,7 +459,7 @@ export default function WAWebMarketing() {
                       {item.membersCount && <div style={{ fontSize: 11, color: '#94a3b8' }}>{item.membersCount} members</div>}
                       {isChannel && <div style={{ fontSize: 11, color: '#94a3b8' }}>WhatsApp Channel</div>}
                     </div>
-                    {selected && <CheckCircle2 size={14} color="#F37920" />}
+                    {selected && <CheckCircle2 size={14} color="var(--portal-primary)" />}
                     {isChannel && (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleRemoveChannel(item.id); }}
@@ -581,7 +581,7 @@ export default function WAWebMarketing() {
               <div style={{ background: '#e2e8f0', borderRadius: 4, height: 6, overflow: 'hidden' }}>
                 <div style={{
                   width: `${Math.round(((sendProgress.sent + sendProgress.failed) / sendProgress.total) * 100)}%`,
-                  height: '100%', background: '#F37920', transition: 'width 0.3s',
+                  height: '100%', background: 'var(--portal-primary)', transition: 'width 0.3s',
                 }} />
               </div>
               <div style={{ maxHeight: 160, overflowY: 'auto', marginTop: 12 }}>
@@ -657,13 +657,13 @@ export default function WAWebMarketing() {
             <button onClick={() => setShowQrModal(false)} style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}>
               <X size={18} />
             </button>
-            <QrCode size={32} color="#F37920" style={{ marginBottom: 12 }} />
+            <QrCode size={32} color="var(--portal-primary)" style={{ marginBottom: 12 }} />
             <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', margin: '0 0 6px' }}>Scan with WhatsApp</h3>
             <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>
               Open WhatsApp → Menu → Linked Devices → Link a Device
             </p>
             {qrCode ? (
-              <img src={qrCode} alt="WhatsApp QR Code" style={{ width: 200, height: 200, borderRadius: 12, border: '4px solid #F37920' }} />
+              <img src={qrCode} alt="WhatsApp QR Code" style={{ width: 200, height: 200, borderRadius: 12, border: '4px solid var(--portal-primary)' }} />
             ) : (
               <div style={{ width: 200, height: 200, borderRadius: 12, border: '2px dashed #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto' }}>
                 <RefreshCw size={24} color="#94a3b8" style={{ animation: 'spin 1s linear infinite' }} />
@@ -683,7 +683,7 @@ const card = {
 };
 const btnPrimary = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
-  background: '#F37920', color: '#fff', border: 'none',
+  background: 'var(--portal-primary)', color: '#fff', border: 'none',
   borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
 };
 const btnOutline = {

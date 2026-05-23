@@ -18,18 +18,19 @@ final class PartnerPayoutCycleAmendmentModel
     /**
      * @param array<int, array{partner_payout_accrual_id: int, amount_final: float, note?: string|null}> $adjustments
      */
-    public function insertPending(int $cycleId, int $requestedByUserId, array $adjustments): int
+    public function insertPending(int $cycleId, int $requestedByUserId, array $adjustments, ?string $requestReason = null): int
     {
         $stmt = $this->db->prepare(
             'INSERT INTO partner_payout_cycle_amendments (
-                partner_payout_cycle_id, status, adjustments_json, requested_by_user_id
-            ) VALUES (:cid, \'pending\', CAST(:adj AS jsonb), :uid)
+                partner_payout_cycle_id, status, adjustments_json, requested_by_user_id, request_reason
+            ) VALUES (:cid, \'pending\', CAST(:adj AS jsonb), :uid, :reason)
             RETURNING id'
         );
         $stmt->execute([
-            ':cid' => $cycleId,
-            ':adj' => json_encode(array_values($adjustments), JSON_THROW_ON_ERROR),
-            ':uid' => $requestedByUserId,
+            ':cid'    => $cycleId,
+            ':adj'    => json_encode(array_values($adjustments), JSON_THROW_ON_ERROR),
+            ':uid'    => $requestedByUserId,
+            ':reason' => $requestReason,
         ]);
 
         return (int)$stmt->fetchColumn();

@@ -8,8 +8,8 @@ namespace App\Libraries;
  */
 final class BlogAiGenerator
 {
-    /** Set when the last openaiChat() call fails; appended to the generator log next to ERROR lines. */
-    private static ?string $lastOpenAiChatFailure = null;
+    /** Set when the last llmChat() call fails; appended to the generator log next to ERROR lines. */
+    private static ?string $lastLlmChatFailure = null;
 
     /** Shared system instructions — topic and article calls both use this. */
     private const SYSTEM_PROMPT = <<<'SYS'
@@ -67,7 +67,9 @@ SUFFIX;
      *   only_category?: ?string,
      *   options_per_category?: int,
      *   stream_callback?: ?callable(string):void,
-     *   model_emit?: ?callable(string $context, string $phase, string $chunk):void
+     *   model_emit?: ?callable(string $context, string $phase, string $chunk):void,
+     *   text_provider?: ?string,
+     *   image_provider?: ?string
      * } $cfg
      * @return array{total_generated: int, log: string[], error?: string}
      */
@@ -89,18 +91,31 @@ SUFFIX;
             }
         };
 
-        $openAiKey  = (string)(getenv('OPENAI_API_KEY') ?: '');
-        $textModel  = (string)(getenv('OPENAI_MODEL') ?: 'gpt-5.1');
-        $imageModel = (string)(getenv('OPENAI_IMAGE_MODEL') ?: 'dall-e-3');
-        /** Minimum seconds between each OpenAI API call (set to ~21 on low-RPM tiers; 0 disables). */
+        $settings = BlogAiSettings::get($pdo);
+        $textProvider  = BlogAiSettings::normalizeTextProvider((string)($cfg['text_provider'] ?? $settings['text_provider']));
+        $imageProvider = BlogAiSettings::normalizeImageProvider((string)($cfg['image_provider'] ?? $settings['image_provider']));
+
+        $openAiKey    = (string)(getenv('OPENAI_API_KEY') ?: '');
+        $geminiKey    = (string)(getenv('GEMINI_API_KEY') ?: '');
+        $textModel    = (string)(getenv('OPENAI_MODEL') ?: 'gpt-5.1');
+        $geminiModel  = (string)(getenv('GEMINI_BLOG_MODEL') ?: 'gemini-2.5-flash');
+        $imageModel   = (string)(getenv('OPENAI_IMAGE_MODEL') ?: 'dall-e-3');
+        /** Minimum seconds between each LLM API call (set to ~21 on low-RPM tiers; 0 disables). */
         $minInterval = max(0.0, (float)(getenv('OPENAI_MIN_REQUEST_INTERVAL_SEC') ?: '0'));
         /** Max completion tokens for the long JSON article response. */
         $draftMaxTok = max(4096, min(32768, (int)(getenv('OPENAI_DRAFT_MAX_COMPLETION_TOKENS') ?: '8192')));
-        /** After last OpenAI completion (Unix seconds.micro); null = skip spacing before first call. */
+        /** After last LLM completion (Unix seconds.micro); null = skip spacing before first call. */
         $afterLastAi = null;
 
-        if ($openAiKey === '') {
-            return ['total_generated' => 0, 'log' => $log, 'error' => 'OPENAI_API_KEY is not set in .env'];
+        $textModelLabel = $textProvider === 'gemini' ? $geminiModel : $textModel;
+        $imageModelLabel = $imageProvider === 'dalle' ? $imageModel : $imageProvider;
+        $add('[blog-ai] Text: ' . $textProvider . ' (' . $textModelLabel . ') | Images: ' . $imageProvider . ' (' . $imageModelLabel . ')');
+
+        if ($textProvider === 'openai' && $openAiKey === '') {
+            return ['total_generated' => 0, 'log' => $log, 'error' => 'OPENAI_API_KEY is not set in .env (required for OpenAI text generation)'];
+        }
+        if ($textProvider === 'gemini' && $geminiKey === '') {
+            return ['total_generated' => 0, 'log' => $log, 'error' => 'GEMINI_API_KEY is not set in .env (required for Gemini text generation)'];
         }
 
         $blogUploadDir = self::resolveBlogUploadDir($serverPhpRoot);
@@ -130,10 +145,13 @@ SUFFIX;
             for ($optIdx = 1; $optIdx <= $optionsPerCat; $optIdx++) {
                 $add("[blog-ai]   Option {$optIdx}/{$optionsPerCat}...");
 
-                self::ensureOpenAiSpacing($afterLastAi, $minInterval, $add);
-                $topic = self::openaiChat(
+                self::ensureAiSpacing($afterLastAi, $minInterval, $add);
+                $topic = self::llmChat(
+                    $textProvider,
                     $openAiKey,
                     $textModel,
+                    $geminiKey,
+                    $geminiModel,
                     [
                         ['role' => 'system', 'content' => self::SYSTEM_PROMPT],
                         ['role' => 'user', 'content' => $config['topicPrompt'] . self::TOPIC_USER_SUFFIX],
@@ -147,8 +165,8 @@ SUFFIX;
 
                 if ($topic === null) {
                     $add("[blog-ai] ERROR: Failed to generate topic for {$category} option {$optIdx}");
-                    if (self::$lastOpenAiChatFailure !== null && self::$lastOpenAiChatFailure !== '') {
-                        $add('[blog-ai]   → ' . self::$lastOpenAiChatFailure);
+                    if (self::$lastLlmChatFailure !== null && self::$lastLlmChatFailure !== '') {
+                        $add('[blog-ai]   → ' . self::$lastLlmChatFailure);
                     }
                     continue;
                 }
@@ -157,10 +175,13 @@ SUFFIX;
 
                 $blogPrompt = self::buildArticlePrompt($topic, $catLabel);
 
-                self::ensureOpenAiSpacing($afterLastAi, $minInterval, $add);
-                $draftJson = self::openaiChat(
+                self::ensureAiSpacing($afterLastAi, $minInterval, $add);
+                $draftJson = self::llmChat(
+                    $textProvider,
                     $openAiKey,
                     $textModel,
+                    $geminiKey,
+                    $geminiModel,
                     [
                         ['role' => 'system', 'content' => self::SYSTEM_PROMPT],
                         ['role' => 'user', 'content' => $blogPrompt],
@@ -174,8 +195,8 @@ SUFFIX;
 
                 if ($draftJson === null) {
                     $add("[blog-ai] ERROR: Failed to generate draft for {$category} option {$optIdx}");
-                    if (self::$lastOpenAiChatFailure !== null && self::$lastOpenAiChatFailure !== '') {
-                        $add('[blog-ai]   → ' . self::$lastOpenAiChatFailure);
+                    if (self::$lastLlmChatFailure !== null && self::$lastLlmChatFailure !== '') {
+                        $add('[blog-ai]   → ' . self::$lastLlmChatFailure);
                     }
                     continue;
                 }
@@ -195,17 +216,21 @@ SUFFIX;
                 $add("[blog-ai]   Title: {$draftTitle}");
 
                 $coverPath = null;
-                if (!$dryRun) {
+                if (!$dryRun && $imageProvider === 'dalle') {
                     $imagePromptFull = "Professional blog cover image for a CA firm website article titled \"{$draftTitle}\". "
                         . $config['imagePrompt']
                         . ' Wide landscape format, visually striking, suitable as a hero banner.';
-                    self::ensureOpenAiSpacing($afterLastAi, $minInterval, $add);
-                    $coverPath = self::openaiGenerateImage($openAiKey, $imageModel, $imagePromptFull, $blogUploadDir);
-                    $afterLastAi = microtime(true);
-                    if ($coverPath === null) {
-                        $add('[blog-ai]   Cover image generation failed — proceeding without cover.');
+                    if ($openAiKey === '') {
+                        $add('[blog-ai]   Cover image skipped — OPENAI_API_KEY not set for DALL-E');
                     } else {
-                        $add("[blog-ai]   Cover image saved: {$coverPath}");
+                        self::ensureAiSpacing($afterLastAi, $minInterval, $add);
+                        $coverPath = self::openaiGenerateImage($openAiKey, $imageModel, $imagePromptFull, $blogUploadDir);
+                        $afterLastAi = microtime(true);
+                        if ($coverPath === null) {
+                            $add('[blog-ai]   Cover image generation failed — proceeding without cover.');
+                        } else {
+                            $add("[blog-ai]   Cover image saved: {$coverPath}");
+                        }
                     }
                 }
 
@@ -225,19 +250,21 @@ SUFFIX;
                 try {
                     $stmt = $pdo->prepare('
                         INSERT INTO blog_ai_drafts
-                            (topic, category, option_index, title, excerpt, content, cover_image_path, status)
+                            (topic, category, option_index, title, excerpt, content, cover_image_path, status, text_provider, image_provider)
                         VALUES
-                            (:topic, :cat, :opt, :title, :excerpt, :content, :cover, :status)
+                            (:topic, :cat, :opt, :title, :excerpt, :content, :cover, :status, :text_provider, :image_provider)
                     ');
                     $stmt->execute([
-                        ':topic'   => $topic,
-                        ':cat'     => $category,
-                        ':opt'     => $optIdx,
-                        ':title'   => $draftTitle,
-                        ':excerpt' => $draftExcerpt,
-                        ':content' => $draftContent,
-                        ':cover'   => $coverPath ?? '',
-                        ':status'  => 'pending',
+                        ':topic'          => $topic,
+                        ':cat'            => $category,
+                        ':opt'            => $optIdx,
+                        ':title'          => $draftTitle,
+                        ':excerpt'        => $draftExcerpt,
+                        ':content'        => $draftContent,
+                        ':cover'          => $coverPath ?? '',
+                        ':status'         => 'pending',
+                        ':text_provider'  => $textProvider,
+                        ':image_provider' => $imageProvider,
                     ]);
                     $add('[blog-ai]   Saved to DB (id: ' . $pdo->lastInsertId() . ')');
                     $totalGenerated++;
@@ -332,7 +359,7 @@ PROMPT;
     /**
      * @param callable(string):void $logLine
      */
-    private static function ensureOpenAiSpacing(?float &$afterLast, float $minIntervalSec, callable $logLine): void
+    private static function ensureAiSpacing(?float &$afterLast, float $minIntervalSec, callable $logLine): void
     {
         if ($minIntervalSec <= 0.0 || $afterLast === null) {
             return;
@@ -341,9 +368,158 @@ PROMPT;
         $elapsed = microtime(true) - $afterLast;
         if ($elapsed < $minIntervalSec) {
             $wait = $minIntervalSec - $elapsed;
-            $logLine(sprintf('[blog-ai]   Waiting %.0fs before next OpenAI call', $wait));
+            $logLine(sprintf('[blog-ai]   Waiting %.0fs before next LLM call', $wait));
             usleep(max(1000, (int)floor($wait * 1e6)));
         }
+    }
+
+    /**
+     * @param array<int, array{role: string, content: string}> $messages
+     * @param ?callable(string $context, string $phase, string $chunk):void $modelEmit
+     */
+    private static function llmChat(
+        string $textProvider,
+        string $openAiKey,
+        string $openAiModel,
+        string $geminiKey,
+        string $geminiModel,
+        array $messages,
+        int $maxCompletionTokens = 2000,
+        bool $jsonObject = false,
+        ?callable $modelEmit = null,
+        string $emitContext = 'chat',
+    ): ?string {
+        if ($textProvider === 'gemini') {
+            return self::geminiChat($geminiKey, $geminiModel, $messages, $maxCompletionTokens, $jsonObject, $modelEmit, $emitContext);
+        }
+
+        return self::openaiChat($openAiKey, $openAiModel, $messages, $maxCompletionTokens, $jsonObject, $modelEmit, $emitContext);
+    }
+
+    /**
+     * @param array<int, array{role: string, content: string}> $messages
+     * @param ?callable(string $context, string $phase, string $chunk):void $modelEmit
+     */
+    private static function geminiChat(
+        string $apiKey,
+        string $model,
+        array $messages,
+        int $maxOutputTokens,
+        bool $jsonObject,
+        ?callable $modelEmit,
+        string $emitContext,
+    ): ?string {
+        self::$lastLlmChatFailure = null;
+
+        $systemInstruction = '';
+        $contents = [];
+
+        foreach ($messages as $msg) {
+            $role = (string)($msg['role'] ?? '');
+            $content = (string)($msg['content'] ?? '');
+            if ($content === '') {
+                continue;
+            }
+            if ($role === 'system') {
+                $systemInstruction .= ($systemInstruction !== '' ? "\n\n" : '') . $content;
+                continue;
+            }
+            $geminiRole = $role === 'assistant' ? 'model' : 'user';
+            $contents[] = [
+                'role'  => $geminiRole,
+                'parts' => [['text' => $content]],
+            ];
+        }
+
+        if ($contents === []) {
+            self::$lastLlmChatFailure = 'No user/assistant messages for Gemini';
+
+            return null;
+        }
+
+        $modelPath = rawurlencode($model);
+        $url = 'https://generativelanguage.googleapis.com/v1beta/models/' . $modelPath . ':generateContent?key=' . rawurlencode($apiKey);
+
+        $generationConfig = [
+            'maxOutputTokens' => $maxOutputTokens,
+            'temperature'     => $jsonObject ? 0.25 : 0.35,
+        ];
+        if ($jsonObject) {
+            $generationConfig['responseMimeType'] = 'application/json';
+        }
+
+        $body = [
+            'contents'         => $contents,
+            'generationConfig' => $generationConfig,
+        ];
+        if ($systemInstruction !== '') {
+            $body['systemInstruction'] = [
+                'parts' => [['text' => $systemInstruction]],
+            ];
+        }
+
+        $timeout = $jsonObject ? 300 : 120;
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_POST           => true,
+            CURLOPT_POSTFIELDS     => json_encode($body, JSON_UNESCAPED_UNICODE),
+            CURLOPT_TIMEOUT        => $timeout,
+            CURLOPT_CONNECTTIMEOUT => 15,
+            CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        ]);
+
+        $response = curl_exec($ch);
+        $err      = curl_error($ch);
+        $code     = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($err !== '') {
+            self::$lastLlmChatFailure = 'Gemini curl_error: ' . self::collapseWhitespace($err);
+
+            return null;
+        }
+
+        if ($code !== 200) {
+            $preview = self::collapseWhitespace(substr((string)$response, 0, 800));
+            self::$lastLlmChatFailure = "Gemini HTTP {$code}" . ($preview !== '' ? ': ' . $preview : '');
+
+            return null;
+        }
+
+        $data = json_decode((string)$response, true);
+        if (!is_array($data)) {
+            self::$lastLlmChatFailure = 'Gemini HTTP 200 but invalid JSON envelope';
+
+            return null;
+        }
+
+        $parts = $data['candidates'][0]['content']['parts'] ?? [];
+        if (!is_array($parts)) {
+            self::$lastLlmChatFailure = 'Gemini response missing content parts';
+
+            return null;
+        }
+
+        $text = '';
+        foreach ($parts as $part) {
+            if (is_array($part) && isset($part['text']) && is_string($part['text'])) {
+                $text .= $part['text'];
+            }
+        }
+
+        $text = trim($text);
+        if ($text === '') {
+            self::$lastLlmChatFailure = 'Gemini returned empty text';
+
+            return null;
+        }
+
+        if ($modelEmit !== null) {
+            $modelEmit($emitContext, 'assistant', $text);
+        }
+
+        return $text;
     }
 
     /**
@@ -478,7 +654,7 @@ PROMPT;
         ?callable $modelEmit = null,
         string $emitContext = 'chat',
     ): ?string {
-        self::$lastOpenAiChatFailure = null;
+        self::$lastLlmChatFailure = null;
 
         if ($modelEmit !== null) {
             return self::openaiChatViaStream($apiKey, $model, $messages, $maxCompletionTokens, $jsonObject, $modelEmit, $emitContext)
@@ -671,7 +847,7 @@ PROMPT;
 
             if ($xfer === false) {
                 $lastFailureTail = self::collapseWhitespace($cerr);
-                self::$lastOpenAiChatFailure = 'stream curl_error: ' . $lastFailureTail;
+                self::$lastLlmChatFailure = 'stream curl_error: ' . $lastFailureTail;
                 sleep(min(3, 1 + $attempt));
 
                 continue;
@@ -683,7 +859,7 @@ PROMPT;
                     sleep(self::sleepBefore429Retry($streamErr));
                     continue;
                 }
-                self::$lastOpenAiChatFailure = 'OpenAI stream error: ' . $lastFailureTail;
+                self::$lastLlmChatFailure = 'OpenAI stream error: ' . $lastFailureTail;
 
                 return null;
             }
@@ -699,13 +875,13 @@ PROMPT;
                     $tail = self::collapseWhitespace($assembled);
                 }
                 $lastFailureTail                = substr($tail, 0, 800);
-                self::$lastOpenAiChatFailure    = 'stream HTTP ' . $code . ($lastFailureTail !== '' ? ': ' . $lastFailureTail : '');
+                self::$lastLlmChatFailure    = 'stream HTTP ' . $code . ($lastFailureTail !== '' ? ': ' . $lastFailureTail : '');
 
                 return null;
             }
 
             if ($assembled !== '') {
-                self::$lastOpenAiChatFailure = null;
+                self::$lastLlmChatFailure = null;
 
                 return $assembled;
             }
@@ -717,7 +893,7 @@ PROMPT;
             sleep(1);
         }
 
-        self::$lastOpenAiChatFailure = 'streaming failed: ' . substr($lastFailureTail, 0, 400);
+        self::$lastLlmChatFailure = 'streaming failed: ' . substr($lastFailureTail, 0, 400);
 
         return null;
     }
@@ -759,7 +935,7 @@ PROMPT;
             curl_close($ch);
 
             if ($err !== '') {
-                self::$lastOpenAiChatFailure = 'curl_error: ' . self::collapseWhitespace($err);
+                self::$lastLlmChatFailure = 'curl_error: ' . self::collapseWhitespace($err);
 
                 return null;
             }
@@ -771,7 +947,7 @@ PROMPT;
 
             if ($code !== 200) {
                 $preview = self::collapseWhitespace(substr((string)$response, 0, 800));
-                self::$lastOpenAiChatFailure = "HTTP {$code}" . ($preview !== '' ? ': ' . $preview : '');
+                self::$lastLlmChatFailure = "HTTP {$code}" . ($preview !== '' ? ': ' . $preview : '');
 
                 return null;
             }
@@ -779,25 +955,25 @@ PROMPT;
             $data = json_decode((string)$response, true);
             if (!is_array($data)) {
                 $preview = self::collapseWhitespace(substr((string)$response, 0, 600));
-                self::$lastOpenAiChatFailure = 'HTTP 200 but invalid chat JSON envelope — body: ' . $preview;
+                self::$lastLlmChatFailure = 'HTTP 200 but invalid chat JSON envelope — body: ' . $preview;
 
                 return null;
             }
 
             $content = $data['choices'][0]['message']['content'] ?? null;
             if (is_string($content) && $content !== '') {
-                self::$lastOpenAiChatFailure = null;
+                self::$lastLlmChatFailure = null;
 
                 return $content;
             }
 
             $preview = self::collapseWhitespace(substr((string)$response, 0, 600));
-            self::$lastOpenAiChatFailure = 'HTTP 200 but empty or missing assistant text — body: ' . $preview;
+            self::$lastLlmChatFailure = 'HTTP 200 but empty or missing assistant text — body: ' . $preview;
 
             return null;
         }
 
-        self::$lastOpenAiChatFailure = 'Retries exhausted for OpenAI chat';
+        self::$lastLlmChatFailure = 'Retries exhausted for OpenAI chat';
 
         return null;
     }

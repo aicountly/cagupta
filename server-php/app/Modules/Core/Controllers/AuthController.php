@@ -22,6 +22,15 @@ use App\Models\RoleModel;
  */
 class AuthController extends BaseController
 {
+    /** @var string[] Allowed portal theme IDs (mirrors web/src/theme/portalThemes.js) */
+    private const PORTAL_THEME_IDS = [
+        'classic_orange',
+        'sage_mist',
+        'slate_blue',
+        'warm_clay',
+        'soft_lilac',
+    ];
+
     private UserModel    $users;
     private SessionModel $sessions;
     private ClientPortalIdentityModel $clientIdentity;
@@ -298,7 +307,7 @@ class AuthController extends BaseController
     /**
      * Update the authenticated user's own profile (name, avatar URL).
      *
-     * Body: { name?, avatar_url? } — at least one field required.
+     * Body: { name?, avatar_url?, portal_theme? } — at least one field required.
      * Requires: Bearer token (enforced by AuthFilter).
      */
     public function updateMe(): never
@@ -306,6 +315,14 @@ class AuthController extends BaseController
         $user = $this->authUser();
         $body = $this->getJsonBody();
         $updates = [];
+
+        if (array_key_exists('portal_theme', $body)) {
+            $theme = trim((string)$body['portal_theme']);
+            if (!in_array($theme, self::PORTAL_THEME_IDS, true)) {
+                $this->error('Invalid portal theme.', 422);
+            }
+            $updates['portal_theme'] = $theme;
+        }
 
         if (array_key_exists('name', $body)) {
             $name = trim((string)$body['name']);
@@ -334,7 +351,7 @@ class AuthController extends BaseController
         }
 
         if ($updates === []) {
-            $this->error('No valid fields to update. Send name and/or avatar_url.', 422);
+            $this->error('No valid fields to update. Send name, avatar_url, and/or portal_theme.', 422);
         }
 
         $this->users->update((int)$user['id'], $updates);
@@ -522,7 +539,16 @@ class AuthController extends BaseController
             'contact_id'           => $user['contact_id'] ?? null,
             'organization_id'      => $user['organization_id'] ?? null,
             'ledger_user_reversal_enabled' => $app->ledgerUserReversalEnabled,
+            'portal_theme'         => $this->resolvePortalTheme($user['portal_theme'] ?? null),
         ];
+    }
+
+    private function resolvePortalTheme(?string $theme): string
+    {
+        if ($theme !== null && in_array($theme, self::PORTAL_THEME_IDS, true)) {
+            return $theme;
+        }
+        return 'classic_orange';
     }
 
     /**

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Navigate } from 'react-router-dom';
 import { ArrowLeft, Search } from 'lucide-react';
 import { getAllEngagements } from '../services/engagementService';
@@ -75,13 +75,13 @@ export default function ServicesKpiList() {
   );
 }
 
-const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 16, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 16, background: 'var(--portal-bg)', minHeight: '100%' };
 const headerBlock = { display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8 };
 const backBtn = {
   display: 'inline-flex', alignItems: 'center', gap: 6,
   padding: '6px 0',
   background: 'none', border: 'none', cursor: 'pointer',
-  color: '#F37920', fontSize: 13, fontWeight: 600,
+  color: 'var(--portal-primary)', fontSize: 13, fontWeight: 600,
 };
 const h1 = { fontSize: 20, fontWeight: 700, color: '#0B1F3B', margin: 0 };
 const muted = { fontSize: 13, color: '#64748b' };
@@ -91,5 +91,5 @@ const toolbar = {
   background: '#fff', padding: '12px 16px', borderRadius: 12,
   border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', maxWidth: 420,
 };
-const searchBox = { display: 'flex', alignItems: 'center', gap: 8, background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 8, padding: '6px 10px', flex: 1, width: '100%' };
+const searchBox = { display: 'flex', alignItems: 'center', gap: 8, background: 'var(--portal-bg)', border: '1px solid #E6E8F0', borderRadius: 8, padding: '6px 10px', flex: 1, width: '100%' };
 const searchInputStyle = { border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: '#334155', width: '100%' };

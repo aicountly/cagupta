@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+﻿import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
 import logoUrl from '../../assets/cropped_logo.png';
 
@@ -15,7 +15,7 @@ export default function ClientLayout({ title, children }) {
   const name = session?.user?.name || 'Client';
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#F6F7FB' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--portal-bg)' }}>
       <aside style={{ width: 240, background: '#fff', borderRight: '1px solid #E6E8F0', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: 16, borderBottom: '1px solid #f1f5f9' }}>
           <img src={logoUrl} alt="" style={{ height: 36, display: 'block' }} />
@@ -32,10 +32,10 @@ export default function ClientLayout({ title, children }) {
                 padding: '10px 16px',
                 fontSize: 13,
                 fontWeight: 600,
-                color: isActive ? '#166534' : '#475569',
-                background: isActive ? '#f0fdf4' : 'transparent',
+                color: isActive ? 'var(--portal-primary)' : '#475569',
+                background: isActive ? 'var(--portal-primary-tint)' : 'transparent',
                 textDecoration: 'none',
-                borderLeft: isActive ? '3px solid #16a34a' : '3px solid transparent',
+                borderLeft: isActive ? '3px solid var(--portal-primary)' : '3px solid transparent',
               })}
             >
               {item.label}

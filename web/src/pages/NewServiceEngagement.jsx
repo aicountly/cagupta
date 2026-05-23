@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+﻿import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ChevronRight, User, Building2, Search, X, CheckSquare, Square, Loader2 } from 'lucide-react';
 import { getCategories } from '../services/serviceCategoryService';
@@ -126,7 +126,7 @@ function AsyncClientSearchDropdown({ clientType, value, displayName, onSelect, p
   return (
     <div style={{ position: 'relative' }}>
       <div
-        style={{ ...searchDropdownBox, borderColor: open ? '#F37920' : '#E6E8F0' }}
+        style={{ ...searchDropdownBox, borderColor: open ? 'var(--portal-primary)' : '#E6E8F0' }}
         onClick={() => setOpen(v => !v)}
       >
         <Search size={13} color="#94a3b8" style={{ flexShrink: 0 }} />
@@ -175,9 +175,9 @@ function AsyncClientSearchDropdown({ clientType, value, displayName, onSelect, p
             return suggestions.map(item => (
               <div
                 key={item.id}
-                style={{ ...searchDropdownItem, background: String(item.id) === String(value) ? '#FEF0E6' : undefined }}
+                style={{ ...searchDropdownItem, background: String(item.id) === String(value) ? 'var(--portal-primary-tint)' : undefined }}
                 onClick={() => selectRow(item)}
-                onMouseEnter={e => { if (String(item.id) !== String(value)) e.currentTarget.style.background = '#F6F7FB'; }}
+                onMouseEnter={e => { if (String(item.id) !== String(value)) e.currentTarget.style.background = 'var(--portal-bg)'; }}
                 onMouseLeave={e => { if (String(item.id) !== String(value)) e.currentTarget.style.background = ''; }}
               >
                 <div style={{ fontWeight: 600, fontSize: 13, color: '#0B1F3B' }}>{item.displayName}</div>
@@ -445,7 +445,7 @@ export default function NewServiceEngagement() {
 
       {catalogStatus === 'loading' && (
         <div style={{ ...emptyCatalogCard, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-          <Loader2 size={28} color="#F37920" style={{ animation: 'spin 0.8s linear infinite' }} />
+          <Loader2 size={28} color="var(--portal-primary)" style={{ animation: 'spin 0.8s linear infinite' }} />
           <div style={{ fontSize: 14, color: '#64748b' }}>Loading service catalog…</div>
         </div>
       )}
@@ -657,7 +657,7 @@ export default function NewServiceEngagement() {
                 onKeyDown={e => e.key === ' ' && setCreateChecklist(v => !v)}
               >
                 {createChecklist
-                  ? <CheckSquare size={18} color="#F37920" />
+                  ? <CheckSquare size={18} color="var(--portal-primary)" />
                   : <Square size={18} color="#94a3b8" />
                 }
                 <div>
@@ -730,8 +730,8 @@ function ToggleButton({ active, onClick, icon, label, side }) {
       style={{
         display: 'flex', alignItems: 'center', gap: 6,
         padding: '8px 18px',
-        border: `1.5px solid ${active ? '#F37920' : '#E6E8F0'}`,
-        background: active ? '#FEF0E6' : '#fff',
+        border: `1.5px solid ${active ? 'var(--portal-primary)' : '#E6E8F0'}`,
+        background: active ? 'var(--portal-primary-tint)' : '#fff',
         color: active ? '#C25A0A' : '#64748b',
         fontWeight: active ? 700 : 500,
         fontSize: 13,
@@ -746,10 +746,10 @@ function ToggleButton({ active, onClick, icon, label, side }) {
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
-const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--portal-bg)', minHeight: '100%' };
 const breadcrumbRow = { display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' };
 const crumb = { fontSize: 12, color: '#94a3b8', fontWeight: 500, cursor: 'pointer', textDecoration: 'none' };
-const crumbActive = { fontSize: 12, color: '#F37920', fontWeight: 600 };
+const crumbActive = { fontSize: 12, color: 'var(--portal-primary)', fontWeight: 600 };
 const pageTitle = { fontSize: 22, fontWeight: 700, color: '#0B1F3B', lineHeight: 1.2 };
 
 const emptyCatalogCard = {
@@ -783,18 +783,18 @@ const textareaStyle = {
 
 const feeWrap = { display: 'flex', alignItems: 'center' };
 const feePrefix = {
-  padding: '8px 10px', background: '#F6F7FB', border: '1px solid #E6E8F0',
+  padding: '8px 10px', background: 'var(--portal-bg)', border: '1px solid #E6E8F0',
   borderRight: 'none', borderRadius: '8px 0 0 8px', fontSize: 13, color: '#64748b', fontWeight: 600, flexShrink: 0,
 };
 
 const clientCardStyle = {
   display: 'flex', alignItems: 'center', gap: 10,
-  background: '#F6F7FB', border: '1px solid #E6E8F0',
+  background: 'var(--portal-bg)', border: '1px solid #E6E8F0',
   borderRadius: 10, padding: '10px 14px', maxWidth: 420,
 };
 const clientCardAvatar = {
   width: 34, height: 34, borderRadius: 9,
-  background: 'linear-gradient(135deg, #F37920 0%, #f5a623 100%)',
+  background: 'linear-gradient(135deg, var(--portal-primary) 0%, var(--portal-primary-light) 100%)',
   color: '#fff', fontWeight: 700, fontSize: 13,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   flexShrink: 0,
@@ -826,7 +826,7 @@ const overlay = { position: 'fixed', inset: 0, zIndex: 199 };
 
 const checklistToggle = {
   display: 'flex', alignItems: 'flex-start', gap: 10,
-  background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 10,
+  background: 'var(--portal-bg)', border: '1px solid #E6E8F0', borderRadius: 10,
   padding: '12px 14px', cursor: 'pointer', marginTop: 16, userSelect: 'none',
 };
 const checklistPreview = {
@@ -842,9 +842,9 @@ const actionRow = {
 };
 const btnPrimary = {
   display: 'flex', alignItems: 'center', gap: 6, padding: '10px 22px',
-  background: '#F37920', color: '#fff', border: 'none', borderRadius: 8,
+  background: 'var(--portal-primary)', color: '#fff', border: 'none', borderRadius: 8,
   cursor: 'pointer', fontSize: 14, fontWeight: 600,
-  boxShadow: '0 2px 8px rgba(243,121,32,0.30)',
+  boxShadow: '0 2px 8px rgba(var(--portal-primary-rgb),0.30)',
 };
 const btnSecondary = {
   display: 'flex', alignItems: 'center', gap: 6, padding: '10px 18px',

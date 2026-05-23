@@ -1306,13 +1306,16 @@ class TxnController extends BaseController
             );
         }
 
+        $body          = $this->getJsonBody();
+        $requestReason = trim((string)($body['request_reason'] ?? ''));
+
         if ($this->txnRequiresSuperadminDelete($type)) {
             if (!$this->userHasPermission($this->authUser(), 'invoices.delete')) {
                 $this->error('Access denied. Required permission: invoices.delete.', 403);
             }
             $acting = $this->authUser();
             if (!$this->isSuperAdminActor($acting)) {
-                $intercept = LedgerTxnChangeService::queueCancel([$id], $acting);
+                $intercept = LedgerTxnChangeService::queueCancel([$id], $requestReason !== '' ? $requestReason : null, $acting);
                 if ($intercept !== null) {
                     $this->respondLedgerChangeQueued($intercept, $row, $acting);
                 }
@@ -1329,7 +1332,7 @@ class TxnController extends BaseController
             $acting    = $this->authUser();
             $cancelIds = $this->expandCancelIdsForFirmRow($id, $row);
             if (!$this->isSuperAdminActor($acting)) {
-                $intercept = LedgerTxnChangeService::queueCancel($cancelIds, $acting);
+                $intercept = LedgerTxnChangeService::queueCancel($cancelIds, $requestReason !== '' ? $requestReason : null, $acting);
                 if ($intercept !== null) {
                     $this->respondLedgerChangeQueued($intercept, $row, $acting);
                 }
@@ -1693,7 +1696,12 @@ class TxnController extends BaseController
                 $mode = 'user_otp';
                 $this->assertTxnCancelReversalForUserFlow($row, true);
             } else {
-                $intercept = LedgerTxnChangeService::queueCancelReversal($id, $acting);
+                $requestReason = trim((string)($body['request_reason'] ?? ''));
+                $intercept = LedgerTxnChangeService::queueCancelReversal(
+                    $id,
+                    $requestReason !== '' ? $requestReason : null,
+                    $acting
+                );
                 if ($intercept !== null) {
                     $this->respondLedgerChangeQueued($intercept, $row);
                 }
@@ -1844,8 +1852,10 @@ class TxnController extends BaseController
         $rows = $this->collectValidatedLedgerCancelRows($ids);
 
         if (!$this->isSuperAdminActor($acting)) {
+            $requestReason = trim((string)($body['request_reason'] ?? ''));
             $intercept = LedgerTxnChangeService::queueCancel(
                 array_map(static fn (array $r): int => (int)($r['id'] ?? 0), $rows),
+                $requestReason !== '' ? $requestReason : null,
                 $acting
             );
             if ($intercept !== null) {
@@ -3081,6 +3091,9 @@ class TxnController extends BaseController
                 [],
                 ['pending_ledger_change' => $intercept['summary']]
             );
+        }
+        if (($intercept['type'] ?? '') === 'reason_required') {
+            $this->error(\App\Libraries\ApprovalReason::ERROR_MESSAGE, 422);
         }
 
         $approvalId = (int)($intercept['summary']['approval_id'] ?? 0);

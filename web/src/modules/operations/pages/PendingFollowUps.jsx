@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CheckCircle2, Bell, AlertTriangle, Clock, CalendarDays, ExternalLink } from 'lucide-react';
 import {
@@ -293,7 +293,7 @@ function Group({ title, color, bg, icon, entries, onResolve, onRemind, busy, act
                       <button
                         type="button"
                         onClick={() => navigate(`/services/${entry.service_id}`)}
-                        style={{ ...actionBtn, color: '#F37920', borderColor: 'rgba(243,121,32,0.3)' }}
+                        style={{ ...actionBtn, color: 'var(--portal-primary)', borderColor: 'rgba(var(--portal-primary-rgb),0.3)' }}
                         title="Open service"
                       >
                         <ExternalLink size={12} />
@@ -312,7 +312,7 @@ function Group({ title, color, bg, icon, entries, onResolve, onRemind, busy, act
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
-const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--portal-bg)', minHeight: '100%' };
 const pageHeader = { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 };
 const pageTitle = { margin: 0, fontSize: 22, fontWeight: 700, color: '#0B1F3B' };
 const pageSubtitle = { margin: '6px 0 0', fontSize: 13, color: '#64748b' };
@@ -354,6 +354,6 @@ const statusPill = {
 };
 const actionBtn = {
   display: 'inline-flex', alignItems: 'center', gap: 4,
-  padding: '4px 10px', background: '#F6F7FB', border: '1px solid #E6E8F0',
+  padding: '4px 10px', background: 'var(--portal-bg)', border: '1px solid #E6E8F0',
   borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: 'pointer', color: '#475569',
 };

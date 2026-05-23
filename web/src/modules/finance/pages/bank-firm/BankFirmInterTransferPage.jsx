@@ -1,4 +1,4 @@
-import { ArrowRightLeft } from 'lucide-react';
+﻿import { ArrowRightLeft } from 'lucide-react';
 import { getBillingProfiles } from '../../../../constants/billingProfiles';
 import { useBankFirmWorkspace } from './BankFirmWorkspaceContext';
 import { btnPrimary, inputStyle, labelStyle, sectionCard, sectionHeader, sectionTitle } from './bankFirmStyles';
@@ -44,7 +44,7 @@ export default function BankFirmInterTransferPage() {
     <div style={{ maxWidth: 520 }}>
       <div style={sectionCard}>
         <div style={sectionHeader}>
-          <ArrowRightLeft size={15} color="#F37920" style={{ marginRight: 8 }} />
+          <ArrowRightLeft size={15} color="var(--portal-primary)" style={{ marginRight: 8 }} />
           <span style={sectionTitle}>Inter Transfer</span>
         </div>
         <p style={{ margin: '0 0 0', padding: '0 20px 12px', fontSize: 12, color: '#64748b' }}>

@@ -28,10 +28,15 @@ final class ClientMasterNameChangeService
         array $current,
         array &$data,
         ?array $actor,
-        bool $isSuperAdmin
+        bool $isSuperAdmin,
+        ?string $requestReason = null
     ): ?array {
         if ($isSuperAdmin || !ClientMasterAudit::nameFieldsChanged($entityType, $current, $data)) {
             return null;
+        }
+
+        if (ApprovalReason::normalize($requestReason) === null) {
+            return ['type' => 'reason_required'];
         }
 
         $model    = new ClientMasterNameChangeRequestModel();
@@ -58,7 +63,7 @@ final class ClientMasterNameChangeService
             $currentName,
             $proposedValues,
             $actorId,
-            null
+            ApprovalReason::normalize($requestReason)
         );
 
         self::notifySuperAdmins($entityType, $entityId, $currentName, $approvalId);

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, FolderOpen, ArrowRight } from 'lucide-react';
 import { getEngagement } from '../services/engagementService';
@@ -78,13 +78,13 @@ export default function ServiceEngagementFiles() {
   );
 }
 
-const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--portal-bg)', minHeight: '100%' };
 const breadcrumbRow = { display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' };
 const crumb = { fontSize: 12, color: '#94a3b8', fontWeight: 500, cursor: 'pointer' };
-const crumbActive = { fontSize: 12, color: '#F37920', fontWeight: 600 };
+const crumbActive = { fontSize: 12, color: 'var(--portal-primary)', fontWeight: 600 };
 const pageTitleRow = { display: 'flex', alignItems: 'flex-start', gap: 14 };
 const iconWrap = {
-  width: 48, height: 48, borderRadius: 12, background: '#FEF0E6',
+  width: 48, height: 48, borderRadius: 12, background: 'var(--portal-primary-tint)',
   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
 };
 const pageTitle = { margin: 0, fontSize: 22, fontWeight: 700, color: '#0B1F3B', lineHeight: 1.2 };
@@ -101,6 +101,6 @@ const metaLabel = { fontSize: 11, fontWeight: 600, color: '#64748b', textTransfo
 const metaValue = { fontSize: 14, fontWeight: 600, color: '#0B1F3B' };
 const btnPrimary = {
   display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-  padding: '10px 18px', background: '#F37920', color: '#fff', border: 'none', borderRadius: 8,
-  cursor: 'pointer', fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(243,121,32,0.30)', alignSelf: 'flex-start',
+  padding: '10px 18px', background: 'var(--portal-primary)', color: '#fff', border: 'none', borderRadius: 8,
+  cursor: 'pointer', fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(var(--portal-primary-rgb),0.30)', alignSelf: 'flex-start',
 };

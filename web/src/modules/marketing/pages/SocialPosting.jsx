@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import {
   Share2, Send, Image, FileText, Link2, Calendar,
   CheckCircle2, AlertCircle, Settings, Plus, Trash2,
@@ -99,7 +99,7 @@ export default function SocialPosting() {
         {[['compose', 'Compose'], ['scheduled', 'Scheduled'], ['history', 'History'], ['settings', 'Settings']].map(([tab, label]) => (
           <button key={tab} onClick={() => setActiveTab(tab)} style={{
             padding: '8px 20px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
-            background: activeTab === tab ? '#F37920' : '#f8fafc',
+            background: activeTab === tab ? 'var(--portal-primary)' : '#f8fafc',
             color: activeTab === tab ? '#fff' : '#64748b',
             borderRight: '1px solid #e2e8f0',
           }}>{label}</button>
@@ -217,12 +217,12 @@ export default function SocialPosting() {
                   <label key={val} style={{
                     display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px',
                     borderRadius: 8, cursor: 'pointer', flex: 1,
-                    border: scheduleType === val ? '2px solid #F37920' : '1px solid #e2e8f0',
-                    background: scheduleType === val ? '#FEF0E6' : '#f8fafc',
+                    border: scheduleType === val ? '2px solid var(--portal-primary)' : '1px solid #e2e8f0',
+                    background: scheduleType === val ? 'var(--portal-primary-tint)' : '#f8fafc',
                   }}>
                     <input type="radio" value={val} checked={scheduleType === val} onChange={() => setScheduleType(val)} style={{ display: 'none' }} />
-                    <Icon size={14} color={scheduleType === val ? '#F37920' : '#94a3b8'} />
-                    <span style={{ fontSize: 13, fontWeight: 600, color: scheduleType === val ? '#F37920' : '#64748b' }}>{label}</span>
+                    <Icon size={14} color={scheduleType === val ? 'var(--portal-primary)' : '#94a3b8'} />
+                    <span style={{ fontSize: 13, fontWeight: 600, color: scheduleType === val ? 'var(--portal-primary)' : '#64748b' }}>{label}</span>
                   </label>
                 ))}
               </div>
@@ -268,9 +268,9 @@ export default function SocialPosting() {
               {[['ayrshare', 'Ayrshare'], ['buffer', 'Buffer'], ['socialpilot', 'SocialPilot']].map(([val, label]) => (
                 <button key={val} onClick={() => setApiProvider(val)} style={{
                   flex: 1, padding: '8px 0', fontSize: 13, fontWeight: 600, borderRadius: 8, cursor: 'pointer',
-                  border: apiProvider === val ? '2px solid #F37920' : '1px solid #e2e8f0',
-                  background: apiProvider === val ? '#FEF0E6' : '#f8fafc',
-                  color: apiProvider === val ? '#F37920' : '#64748b',
+                  border: apiProvider === val ? '2px solid var(--portal-primary)' : '1px solid #e2e8f0',
+                  background: apiProvider === val ? 'var(--portal-primary-tint)' : '#f8fafc',
+                  color: apiProvider === val ? 'var(--portal-primary)' : '#64748b',
                 }}>{label}</button>
               ))}
             </div>
@@ -320,7 +320,7 @@ export default function SocialPosting() {
 }
 
 const card = { background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' };
-const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
+const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--portal-primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const btnOutline = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#334155', border: '1px solid #e2e8f0', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer' };
 const inputStyle = { width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' };
 const labelStyle = { fontSize: 12, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 };

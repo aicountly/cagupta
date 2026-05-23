@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import {
   Sparkles, CheckCircle2, XCircle, Pencil, Loader2,
   AlertCircle, RefreshCw, Upload, X, ChevronDown, ChevronUp, Mail, Globe, Radio,
 } from 'lucide-react';
 import {
   fetchDrafts, updateDraft, approveDraft, rejectDraft, uploadBlogImage,
-  generateAiDraftsStream,
+  generateAiDraftsStream, fetchBlogAiSettings,
 } from '../services/blog.service';
 import { RichTextEditor } from '../components/RichTextEditor';
 import AiDraftPlannerModal from '../components/AiDraftPlannerModal';
@@ -34,6 +34,11 @@ function formatDate(iso) {
   return new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function providerLabel(id, available = []) {
+  const match = available.find((p) => p.id === id);
+  return match?.label || id;
+}
+
 export default function BlogAIApprovals() {
   const [drafts, setDrafts]         = useState([]);
   const [loading, setLoading]       = useState(true);
@@ -54,6 +59,7 @@ export default function BlogAIApprovals() {
   const [plannerModelAssistant, setPlannerModelAssistant] = useState('');
   const [plannerSummary, setPlannerSummary] = useState(null);
   const [plannerErr, setPlannerErr] = useState('');
+  const [aiSettings, setAiSettings] = useState(null);
   const [approveModal, setApproveModal] = useState(null);
   const [approving, setApproving]   = useState(false);
   const [approveError, setApproveError] = useState('');
@@ -75,6 +81,13 @@ export default function BlogAIApprovals() {
   };
 
   useEffect(() => { load(); }, [filterSt, filterCat]);
+
+  useEffect(() => {
+    if (!API_BASE_URL) return;
+    fetchBlogAiSettings()
+      .then((res) => setAiSettings(res.data ?? null))
+      .catch(() => {});
+  }, []);
 
   const startEdit = (draft) => {
     setEditingId(draft.id);
@@ -177,10 +190,14 @@ export default function BlogAIApprovals() {
   const pendingCount = drafts.filter(d => d.status === 'pending').length;
 
   const handleGenerateNow = async () => {
+    const textLabel = providerLabel(aiSettings?.text_provider, aiSettings?.available?.text) || 'OpenAI';
+    const imageLabel = providerLabel(aiSettings?.image_provider, aiSettings?.available?.image) || 'OpenAI DALL-E';
     if (!window.confirm(
       'Run the AI blog generator now?\n\n'
-      + 'This uses the same process as the daily 6 AM cron job: new topics and drafts '
-      + 'from OpenAI, plus cover images when enabled. It can take several minutes.',
+      + `Uses saved settings from Blog Management:\n`
+      + `• Text: ${textLabel}\n`
+      + `• Images: ${imageLabel}\n\n`
+      + 'Same process as the daily 6 AM cron job. It can take several minutes.',
     )) return;
 
     setPlannerOpen(true);
@@ -225,7 +242,7 @@ export default function BlogAIApprovals() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0f172a', margin: 0 }}>AI Draft Approvals</h1>
             {pendingCount > 0 && (
-              <span style={{ background: '#F37920', color: '#fff', borderRadius: 99, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>
+              <span style={{ background: 'var(--portal-primary)', color: '#fff', borderRadius: 99, padding: '2px 10px', fontSize: 12, fontWeight: 700 }}>
                 {pendingCount} pending
               </span>
             )}
@@ -233,6 +250,14 @@ export default function BlogAIApprovals() {
           <p style={{ fontSize: 13, color: '#64748b', margin: '4px 0 0' }}>
             Review, edit and approve AI-generated blog drafts before they go live
           </p>
+          {aiSettings && (
+            <p style={{ fontSize: 12, color: '#94a3b8', margin: '6px 0 0' }}>
+              Generator: Text — {providerLabel(aiSettings.text_provider, aiSettings.available?.text)}
+              {' · '}
+              Images — {providerLabel(aiSettings.image_provider, aiSettings.available?.image)}
+              {' '}(change in Blog Management)
+            </p>
+          )}
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
           <button
@@ -240,7 +265,7 @@ export default function BlogAIApprovals() {
             onClick={handleGenerateNow}
             style={btn.primary}
             disabled={generating || loading}
-            title="Same pipeline as the 6 AM cron; adjust prompts and categories in server-php/app/Libraries/BlogAiGenerator.php and .env keys."
+            title="Same pipeline as the 6 AM cron; provider settings are configured in Blog Management."
           >
             {generating ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={14} />}
             {generating ? 'Generating…' : 'Run generator now'}
@@ -303,7 +328,7 @@ export default function BlogAIApprovals() {
               <div key={draft.id} style={{
                 background: '#fff', border: '1px solid #e2e8f0',
                 borderRadius: 12, overflow: 'hidden',
-                boxShadow: isEditing ? '0 0 0 2px #F37920' : 'none',
+                boxShadow: isEditing ? '0 0 0 2px var(--portal-primary)' : 'none',
               }}>
                 {/* Card header */}
                 <div style={{ padding: '16px 20px', display: 'flex', gap: 16, alignItems: 'flex-start' }}>
@@ -596,7 +621,7 @@ const STATUS_COLOR = { pending: '#ca8a04', approved: '#16a34a', rejected: '#dc26
 const btn = {
   primary: {
     display: 'inline-flex', alignItems: 'center', gap: 5,
-    background: '#F37920', color: '#fff', border: 'none',
+    background: 'var(--portal-primary)', color: '#fff', border: 'none',
     borderRadius: 8, padding: '7px 16px', fontSize: 13,
     fontWeight: 600, cursor: 'pointer',
   },

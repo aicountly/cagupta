@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { X } from 'lucide-react';
 import { getContactsForSearch } from '../../services/contactService';
 
@@ -40,8 +40,8 @@ const chipBtn = {
   borderRadius: 20,
   fontSize: 12,
   fontWeight: 600,
-  border: '1.5px solid #F37920',
-  background: '#FEF0E6',
+  border: '1.5px solid var(--portal-primary)',
+  background: 'var(--portal-primary-tint)',
   color: '#C25A0A',
   cursor: 'pointer',
   transition: 'all 0.15s',

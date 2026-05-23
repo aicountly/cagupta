@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import {
   BookOpen, Plus, Pencil, Trash2, Globe, EyeOff, Upload,
   X, Check, Loader2, Image as ImageIcon, AlertCircle, ChevronDown, Sparkles,
@@ -7,6 +7,7 @@ import {
 import {
   fetchBlogPosts, createBlogPost, updateBlogPost,
   deleteBlogPost, publishBlogPost, resendBlogEmail, uploadBlogImage, generateAiDraftsStream,
+  fetchBlogAiSettings, updateBlogAiSettings,
   shareToWaChannel,
 } from '../services/blog.service';
 import { RichTextEditor } from '../components/RichTextEditor';
@@ -21,6 +22,33 @@ const CATEGORIES = [
   { value: 'subsidies_promotions',  label: 'Subsidies Promotions' },
   { value: 'funding_promotions',    label: 'Funding Promotions' },
 ];
+
+const MOCK_AI_SETTINGS = {
+  text_provider: 'openai',
+  image_provider: 'dalle',
+  available: {
+    text: [
+      { id: 'openai', label: 'OpenAI', configured: true },
+      { id: 'gemini', label: 'Gemini', configured: true },
+    ],
+    image: [
+      { id: 'dalle', label: 'OpenAI DALL-E', configured: true },
+    ],
+  },
+};
+
+function providerLabel(id, available = []) {
+  const match = available.find((p) => p.id === id);
+  return match?.label || id;
+}
+
+function loadMockAiSettings() {
+  return {
+    ...MOCK_AI_SETTINGS,
+    text_provider: localStorage.getItem('blog_ai_text_provider') || MOCK_AI_SETTINGS.text_provider,
+    image_provider: localStorage.getItem('blog_ai_image_provider') || MOCK_AI_SETTINGS.image_provider,
+  };
+}
 
 const MOCK_POSTS = [
   {
@@ -249,6 +277,9 @@ export default function BlogManagement() {
   const [plannerSummary, setPlannerSummary] = useState(null);
   const [plannerErr, setPlannerErr] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [aiSettings, setAiSettings] = useState(null);
+  const [aiSettingsSaving, setAiSettingsSaving] = useState(false);
+  const [aiSettingsError, setAiSettingsError] = useState('');
   const fileRef = useRef();
 
   const load = async (opts = {}) => {
@@ -282,6 +313,56 @@ export default function BlogManagement() {
   };
 
   useEffect(() => { load(); }, [filterCat, filterSt]);
+
+  const loadAiSettings = async () => {
+    if (!import.meta.env.VITE_API_BASE_URL) {
+      setAiSettings(loadMockAiSettings());
+      return;
+    }
+    try {
+      const res = await fetchBlogAiSettings();
+      setAiSettings(res.data ?? null);
+      setAiSettingsError('');
+    } catch (e) {
+      setAiSettingsError(e.message || 'Could not load AI settings');
+    }
+  };
+
+  useEffect(() => { loadAiSettings(); }, []);
+
+  const saveAiSettings = async (updates) => {
+    const next = { ...(aiSettings || MOCK_AI_SETTINGS), ...updates };
+    setAiSettings(next);
+    if (!import.meta.env.VITE_API_BASE_URL) {
+      localStorage.setItem('blog_ai_text_provider', next.text_provider);
+      localStorage.setItem('blog_ai_image_provider', next.image_provider);
+      return;
+    }
+    setAiSettingsSaving(true);
+    setAiSettingsError('');
+    try {
+      const res = await updateBlogAiSettings({
+        text_provider: next.text_provider,
+        image_provider: next.image_provider,
+      });
+      setAiSettings(res.data ?? next);
+    } catch (e) {
+      setAiSettingsError(e.message || 'Could not save AI settings');
+      await loadAiSettings();
+    } finally {
+      setAiSettingsSaving(false);
+    }
+  };
+
+  const handleTextProviderChange = (value) => {
+    if (!value || value === aiSettings?.text_provider) return;
+    saveAiSettings({ text_provider: value });
+  };
+
+  const handleImageProviderChange = (value) => {
+    if (!value || value === aiSettings?.image_provider) return;
+    saveAiSettings({ image_provider: value });
+  };
 
   const openNew = () => {
     setEditingPost(null);
@@ -440,11 +521,14 @@ export default function BlogManagement() {
   };
 
   const handlePlanNow = async () => {
+    const textLabel = providerLabel(aiSettings?.text_provider, aiSettings?.available?.text);
+    const imageLabel = providerLabel(aiSettings?.image_provider, aiSettings?.available?.image);
     if (!window.confirm(
       'Run the AI blog generator now?\n\n'
-      + 'This uses the same process as the daily 6 AM cron job: new topics and drafts '
-      + 'from OpenAI, plus cover images when enabled. It can take several minutes.\n\n'
-      + 'New drafts will appear in the AI Approvals page for review.',
+      + `This uses the same process as the daily 6 AM cron job with your saved settings:\n`
+      + `• Text: ${textLabel}\n`
+      + `• Images: ${imageLabel}\n\n`
+      + 'It can take several minutes. New drafts will appear in the AI Approvals page for review.',
     )) return;
 
     setPlannerOpen(true);
@@ -491,13 +575,47 @@ export default function BlogManagement() {
             Create, edit and publish blog articles to the marketing site
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: '#64748b', fontWeight: 600 }}>
+              Text generation
+              <select
+                value={aiSettings?.text_provider || 'openai'}
+                onChange={(e) => handleTextProviderChange(e.target.value)}
+                disabled={generating || aiSettingsSaving || !aiSettings}
+                style={sel}
+                title="LLM provider for topic and article text (saved for cron and Plan now)"
+              >
+                {(aiSettings?.available?.text || MOCK_AI_SETTINGS.available.text).map((p) => (
+                  <option key={p.id} value={p.id} disabled={!p.configured}>
+                    {p.label}{!p.configured ? ' (not configured)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 11, color: '#64748b', fontWeight: 600 }}>
+              Image generation
+              <select
+                value={aiSettings?.image_provider || 'dalle'}
+                onChange={(e) => handleImageProviderChange(e.target.value)}
+                disabled={generating || aiSettingsSaving || !aiSettings}
+                style={sel}
+                title="Provider for cover images (DALL-E only for now)"
+              >
+                {(aiSettings?.available?.image || MOCK_AI_SETTINGS.available.image).map((p) => (
+                  <option key={p.id} value={p.id} disabled={!p.configured}>
+                    {p.label}{!p.configured ? ' (not configured)' : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
           <button
             type="button"
             onClick={handlePlanNow}
             style={btn.secondary}
-            disabled={generating || loading}
-            title="Same pipeline as the 6 AM cron — generates AI drafts via OpenAI for review in AI Approvals."
+            disabled={generating || loading || aiSettingsSaving}
+            title="Same pipeline as the 6 AM cron — uses saved text/image provider settings."
           >
             {generating ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Sparkles size={14} />}
             {generating ? 'Planning…' : 'Plan now'}
@@ -507,6 +625,12 @@ export default function BlogManagement() {
           </button>
         </div>
       </div>
+
+      {aiSettingsError && (
+        <div style={{ ...alertBox, background: '#fef2f2', border: '1px solid #fecaca', color: '#dc2626', marginBottom: 16 }}>
+          <AlertCircle size={14} /> {aiSettingsError}
+        </div>
+      )}
 
       {/* Filters */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginBottom: 18, alignItems: 'center' }}>
@@ -956,13 +1080,13 @@ export default function BlogManagement() {
                 background: '#f8fafc', borderBottom: '1px solid #e2e8f0',
                 padding: '7px 14px', display: 'flex', alignItems: 'center', gap: 8,
               }}>
-                <Mail size={13} style={{ color: '#F37920' }} />
+                <Mail size={13} style={{ color: 'var(--portal-primary)' }} />
                 <span style={{ fontSize: 12, fontWeight: 600, color: '#475569' }}>
                   CTA section — shown below every published post
                 </span>
               </div>
               <div style={{
-                background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 60%, #F37920 100%)',
+                background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 60%, var(--portal-primary) 100%)',
                 padding: '18px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16,
               }}>
                 <div>
@@ -1017,7 +1141,7 @@ export default function BlogManagement() {
 const btn = {
   primary: {
     display: 'inline-flex', alignItems: 'center', gap: 6,
-    background: '#F37920', color: '#fff', border: 'none',
+    background: 'var(--portal-primary)', color: '#fff', border: 'none',
     borderRadius: 8, padding: '8px 16px', fontSize: 13,
     fontWeight: 600, cursor: 'pointer',
   },

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import ServiceLogPanel from '../services/ServiceLogPanel';
 import { postInvoiceCostAnalysisPreview } from '../../modules/finance/services/txnService';
@@ -278,7 +278,7 @@ export default function ServiceBillingDetailModal({
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
             {row.isMasterService && (
-              <span style={badge('#F37920', '#fff')}>Master</span>
+              <span style={badge('var(--portal-primary)', '#fff')}>Master</span>
             )}
             {row.completionFlags?.engagementCompleted && (
               <span style={badge('#e0f2fe', '#0369a1')}>Engagement completed</span>

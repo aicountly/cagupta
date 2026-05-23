@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../../auth/AuthContext';
 import { getOrganizationKycExceptions } from '../../../services/reportService';
@@ -180,7 +180,7 @@ export default function OrganizationKycExceptionsReport() {
                   <td style={{ padding: '10px 12px' }}>
                     <Link
                       to={`/clients/organizations/${r.id}/edit`}
-                      style={{ fontSize: 12, fontWeight: 600, color: '#F37920' }}
+                      style={{ fontSize: 12, fontWeight: 600, color: 'var(--portal-primary)' }}
                     >
                       Edit
                     </Link>

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * BlogCTA.jsx
  *
  * Call-to-action section displayed at the bottom of every public blog post
@@ -183,7 +183,7 @@ export default function BlogCTA() {
 
 const styles = {
   section: {
-    background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 60%, #F37920 100%)',
+    background: 'linear-gradient(135deg, #1e3a5f 0%, #2d5a8e 60%, var(--portal-primary) 100%)',
     borderRadius: 16,
     margin: '48px 0 0',
     padding: '48px 40px',
@@ -346,7 +346,7 @@ const styles = {
   },
   submitBtn: {
     padding: '9px 22px',
-    background: '#F37920',
+    background: 'var(--portal-primary)',
     color: '#fff',
     border: 'none',
     borderRadius: 8,
@@ -390,7 +390,7 @@ const styles = {
   },
   doneBtn: {
     padding: '10px 28px',
-    background: '#F37920',
+    background: 'var(--portal-primary)',
     color: '#fff',
     border: 'none',
     borderRadius: 8,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
   MessageSquare, Search, RefreshCw, Send, AlertCircle, Bot, Users, User,
@@ -127,7 +127,7 @@ export default function ClientChatInbox() {
     <div>
       <div style={headerCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={iconWrap}><MessageSquare size={20} color="#F37920" /></div>
+          <div style={iconWrap}><MessageSquare size={20} color="var(--portal-primary)" /></div>
           <div>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Client Chat</h1>
             <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
@@ -174,7 +174,7 @@ export default function ClientChatInbox() {
                 style={{
                   ...listItem,
                   background: selectedId === t.id ? '#FFF7ED' : '#fff',
-                  borderLeft: selectedId === t.id ? '3px solid #F37920' : t.needs_attention ? '3px solid #DC2626' : '3px solid transparent',
+                  borderLeft: selectedId === t.id ? '3px solid var(--portal-primary)' : t.needs_attention ? '3px solid #DC2626' : '3px solid transparent',
                 }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -300,7 +300,7 @@ const composerWrap = {
 };
 const btnSend = {
   alignSelf: 'flex-end', padding: '10px 14px', borderRadius: 10, border: 'none',
-  background: '#F37920', color: '#fff', cursor: 'pointer',
+  background: 'var(--portal-primary)', color: '#fff', cursor: 'pointer',
 };
 const errorBanner = {
   background: '#FEF2F2', color: '#B91C1C', padding: '10px 14px', borderRadius: 8,
@@ -313,6 +313,6 @@ const btnOutline = {
 };
 const tabBtn = (active) => ({
   flex: 1, padding: '10px 8px', border: 'none', background: active ? '#FFF7ED' : '#fff',
-  cursor: 'pointer', fontSize: 12, fontWeight: 600, color: active ? '#F37920' : '#64748b',
-  borderBottom: active ? '2px solid #F37920' : '2px solid transparent',
+  cursor: 'pointer', fontSize: 12, fontWeight: 600, color: active ? 'var(--portal-primary)' : '#64748b',
+  borderBottom: active ? '2px solid var(--portal-primary)' : '2px solid transparent',
 });

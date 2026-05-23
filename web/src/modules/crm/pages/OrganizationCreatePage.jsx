@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import KycDocumentTab from '../../../components/documents/KycDocumentTab';
@@ -23,6 +23,7 @@ import BillingProfileSelect from '../../../components/common/BillingProfileSelec
 import { getBillingProfileByCode } from '../../../constants/billingProfiles';
 import WorkHoldSection from '../components/WorkHoldSection';
 import MasterChangeLogSection from '../components/MasterChangeLogSection';
+import { ROLES } from '../../../constants/roles';
 import PendingNameChangeBanner from '../components/PendingNameChangeBanner';
 import PendingClientMasterEditBanner from '../components/PendingClientMasterEditBanner';
 
@@ -255,6 +256,9 @@ export default function OrganizationCreatePage() {
   // Dynamic staff/manager list
   const { staffUsers } = useStaffUsers();
   const { hasPermission, user } = useAuth();
+  const requireApprovalReason = isEdit
+    && String(user?.role || '').toLowerCase() !== ROLES.SUPER_ADMIN
+    && !user?.permissions?.includes('*');
   const canWorkHoldAdmin = user?.role === 'super_admin' || user?.role === 'accounts';
   const canListAffiliates = hasPermission('affiliates.manage');
   const [approvedAffiliates, setApprovedAffiliates] = useState([]);
@@ -541,13 +545,14 @@ export default function OrganizationCreatePage() {
     setPreviewSaveOpen(true);
   }
 
-  async function executeConfirmedSave() {
+  async function executeConfirmedSave(requestReason) {
     const pending = previewSave || pendingOrgSaveRef.current;
     if (!pending?.afterSave) return;
     setSubmitting(true);
     try {
       if (isEdit && orgId) {
-        const result = await updateOrganizationApi(orgId, pending.org);
+        const orgPayload = requestReason ? { ...pending.org, requestReason } : pending.org;
+        const result = await updateOrganizationApi(orgId, orgPayload);
         const canContinue = applyOrgUpdateResult(result);
         setPreviewSaveOpen(false);
         setPreviewSave(null);
@@ -751,7 +756,8 @@ export default function OrganizationCreatePage() {
         displayLabels={previewSave?.displayLabels || {}}
         mode={isEdit ? 'update' : 'create'}
         saveMode={previewSave?.saveMode || 'quit'}
-        onConfirm={() => { void executeConfirmedSave(); }}
+        requireReason={requireApprovalReason}
+        onConfirm={(reason) => { void executeConfirmedSave(reason); }}
         onCancel={closeOrgSavePreview}
         busy={submitting}
       />
@@ -960,7 +966,7 @@ export default function OrganizationCreatePage() {
                 onClick={openNewContactModal}
                 style={{
                   padding: '7px 12px',
-                  background: '#F37920',
+                  background: 'var(--portal-primary)',
                   color: '#fff',
                   border: 'none',
                   borderRadius: 8,
@@ -1345,11 +1351,11 @@ export default function OrganizationCreatePage() {
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
-const pageWrap = { padding: 24, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: 24, background: 'var(--portal-bg)', minHeight: '100%' };
 
 const breadcrumbRow = { display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8, flexWrap: 'wrap' };
 const crumb = { fontSize: 11, color: '#94a3b8', fontWeight: 500, cursor: 'pointer' };
-const crumbActive = { fontSize: 11, color: '#F37920', fontWeight: 600 };
+const crumbActive = { fontSize: 11, color: 'var(--portal-primary)', fontWeight: 600 };
 
 const pageTitleStyle = { fontSize: 22, fontWeight: 700, color: '#0B1F3B', marginBottom: 24 };
 
@@ -1416,7 +1422,7 @@ const actionBar = {
 
 const btnPrimary = {
   padding: '9px 20px',
-  background: '#F37920',
+  background: 'var(--portal-primary)',
   color: '#fff',
   border: 'none',
   borderRadius: 8,
@@ -1428,8 +1434,8 @@ const btnPrimary = {
 const btnSecondary = {
   padding: '9px 20px',
   background: '#fff',
-  color: '#F37920',
-  border: '1px solid #F37920',
+  color: 'var(--portal-primary)',
+  border: '1px solid var(--portal-primary)',
   borderRadius: 8,
   cursor: 'pointer',
   fontSize: 13,
@@ -1483,9 +1489,9 @@ const orgTabActive = {
   padding: '9px 22px',
   background: 'none',
   border: 'none',
-  borderBottom: '2px solid #F37920',
+  borderBottom: '2px solid var(--portal-primary)',
   marginBottom: -2,
-  color: '#F37920',
+  color: 'var(--portal-primary)',
   fontWeight: 700,
   fontSize: 13,
   cursor: 'pointer',

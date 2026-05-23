@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+﻿import { useState, useRef, useEffect, useCallback } from 'react';
 import { Search, Bell, ChevronRight } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../auth/AuthContext';
@@ -380,7 +380,7 @@ const styles = {
   breadcrumb: { display: 'flex', alignItems: 'center', flexWrap: 'wrap' },
   crumbWrap: { display: 'flex', alignItems: 'center' },
   crumb: { fontSize: 11, color: '#94a3b8', fontWeight: 500 },
-  crumbActive: { fontSize: 11, color: '#F37920', fontWeight: 600 },
+  crumbActive: { fontSize: 11, color: 'var(--portal-primary)', fontWeight: 600 },
   title: { fontSize: 20, fontWeight: 700, color: '#0B1F3B', lineHeight: 1.2 },
   right: { display: 'flex', alignItems: 'center', gap: 12 },
   searchWrap: {
@@ -398,7 +398,7 @@ const styles = {
     borderRadius: 8,
     fontSize: 13,
     color: '#334155',
-    background: '#F6F7FB',
+    background: 'var(--portal-bg)',
     outline: 'none',
     width: 220,
   },
@@ -482,7 +482,7 @@ const styles = {
     width: 28,
     height: 28,
     borderRadius: 8,
-    background: 'linear-gradient(135deg, #F37920 0%, #f5a623 100%)',
+    background: 'linear-gradient(135deg, var(--portal-primary) 0%, var(--portal-primary-light) 100%)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

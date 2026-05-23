@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
+﻿import { useState, useEffect, useMemo, useRef, Fragment } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createPaymentClientCost, createTds, finalizeTds,
@@ -1300,6 +1300,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
   const [revRequesting, setRevRequesting] = useState(false);
   const [revReversing, setRevReversing] = useState(false);
   const [revCancelReversing, setRevCancelReversing] = useState(false);
+  const [cancelRevReason, setCancelRevReason] = useState('');
 
   const [recTxnDate, setRecTxnDate] = useState('');
   const [recAmount, setRecAmount] = useState('');
@@ -1361,6 +1362,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     setRevUserOtp('');
     setRevUserOtpSent(false);
     setEditReason('');
+    setCancelRevReason('');
     setRow(null);
     getTxn(txnId)
       .then((r) => {
@@ -1625,8 +1627,14 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     setRevCancelReversing(true);
     setErr('');
     setInfo('');
+    const reason = cancelRevReason.trim();
+    if (!reason) {
+      setErr('Please enter a reason for cancel reversal.');
+      setRevCancelReversing(false);
+      return;
+    }
     try {
-      const result = await cancelLedgerReversalTxn(txnId, {});
+      const result = await cancelLedgerReversalTxn(txnId, { request_reason: reason });
       if (result?.pendingLedgerChange) {
         setPendingChange(result.pendingLedgerChange);
         setInfo(result.queuedMessage || 'Cancel reversal submitted for Super Admin approval.');
@@ -2139,6 +2147,18 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                         Outside the 30-day self-service window — cancel reversal will be submitted for Super Admin approval.
                       </p>
                     )}
+                    {needsCancelRevApproval && (
+                      <label style={labelStyle}>
+                        Reason for cancel reversal (required) *
+                        <textarea
+                          style={{ ...inputStyle, minHeight: 72, resize: 'vertical' }}
+                          rows={2}
+                          value={cancelRevReason}
+                          onChange={(e) => setCancelRevReason(e.target.value)}
+                          placeholder="Explain why this reversal should be cancelled"
+                        />
+                      </label>
+                    )}
                     {userCancelRevEligible && (
                       <>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', marginBottom: 8 }}>
@@ -2164,6 +2184,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                       }}
                       disabled={
                         revCancelReversing || loading || !row || row.status !== 'reversed' || pendingChange
+                        || (needsCancelRevApproval && !cancelRevReason.trim())
                       }
                       onClick={handleCancelLedgerReversal}
                     >
@@ -2203,16 +2224,22 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
   const [err, setErr] = useState('');
   const [info, setInfo] = useState('');
   const [deleting, setDeleting] = useState(false);
+  const [requestReason, setRequestReason] = useState('');
   const ids = useMemo(() => items.map((i) => i.id), [items]);
   const isPlural = items.length !== 1;
   const heading = title || (isPlural ? `Cancel ${items.length} ledger records` : 'Cancel ledger record');
 
   async function confirmDelete() {
+    const reason = requestReason.trim();
+    if (!reason) {
+      setErr('Please enter a reason for this cancellation.');
+      return;
+    }
     setDeleting(true);
     setErr('');
     setInfo('');
     try {
-      const raw = await bulkDeleteTxns(ids);
+      const raw = await bulkDeleteTxns(ids, { request_reason: reason });
       if (raw?.pendingLedgerChange) {
         setInfo(raw.queuedMessage || 'Cancellation submitted for Super Admin approval.');
         return;
@@ -2276,6 +2303,17 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
           <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
             Cancellation is submitted for Super Admin approval from Team Approvals (unless you are Super Admin).
           </p>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginTop: 8 }}>
+            Reason for cancellation (required) *
+            <textarea
+              value={requestReason}
+              onChange={(e) => setRequestReason(e.target.value)}
+              rows={3}
+              placeholder="Explain why these ledger records should be cancelled"
+              style={{ ...inputStyle, width: '100%', marginTop: 6, minHeight: 72, resize: 'vertical' }}
+              disabled={deleting || !!info}
+            />
+          </label>
           {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
           {info && <div style={{ color: '#047857', fontSize: 13 }}>{info}</div>}
         </div>
@@ -2293,7 +2331,7 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
           <button type="button" disabled={deleting} onClick={onClose} style={btnSecondary}>Cancel</button>
           <button
             type="button"
-            disabled={deleting || !!info}
+            disabled={deleting || !!info || !requestReason.trim()}
             onClick={confirmDelete}
             style={{ ...btnPrimary, background: deleting || info ? '#cbd5e1' : '#b91c1c', cursor: deleting || info ? 'default' : 'pointer' }}
           >
@@ -8057,7 +8095,7 @@ export default function Invoices({ ledgerOnly = false }) {
                             <div style={{
                               height: '100%',
                               borderRadius: 2,
-                              background: row.linkedServicesSummary.completed === row.linkedServicesSummary.total ? '#16a34a' : '#F37920',
+                              background: row.linkedServicesSummary.completed === row.linkedServicesSummary.total ? '#16a34a' : 'var(--portal-primary)',
                               width: `${Math.round((row.linkedServicesSummary.completed / row.linkedServicesSummary.total) * 100)}%`,
                             }} />
                           </div>
@@ -8069,7 +8107,7 @@ export default function Invoices({ ledgerOnly = false }) {
                     </td>
                     <td style={{ ...tdStyle, fontSize: 11 }}>
                       {row.isMasterService && (
-                        <span style={{ background: '#F37920', color: '#fff', padding: '2px 6px', borderRadius: 4, marginRight: 4, fontWeight: 700, letterSpacing: '0.03em' }}>Master</span>
+                        <span style={{ background: 'var(--portal-primary)', color: '#fff', padding: '2px 6px', borderRadius: 4, marginRight: 4, fontWeight: 700, letterSpacing: '0.03em' }}>Master</span>
                       )}
                       {row.completionFlags?.engagementCompleted && (
                         <span style={{ background: '#e0f2fe', color: '#0369a1', padding: '2px 6px', borderRadius: 4, marginRight: 4 }}>Engagement</span>

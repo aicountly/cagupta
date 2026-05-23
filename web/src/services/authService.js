@@ -224,13 +224,14 @@ export async function fetchCurrentUser(token) {
  * Update the signed-in user's display name and/or avatar URL.
  *
  * @param {string} token
- * @param {{ name?: string, avatar_url?: string|null }} fields
+ * @param {{ name?: string, avatar_url?: string|null, portal_theme?: string }} fields
  * @returns {Promise<object>} Updated user object from API (or merged mock user).
  */
 export async function updateCurrentUserProfile(token, fields) {
   const body = {};
   if (fields.name !== undefined) body.name = fields.name;
   if (fields.avatar_url !== undefined) body.avatar_url = fields.avatar_url;
+  if (fields.portal_theme !== undefined) body.portal_theme = fields.portal_theme;
 
   if (API_BASE) {
     const res = await fetch(`${API_BASE}/auth/me`, {
@@ -256,6 +257,10 @@ export async function updateCurrentUserProfile(token, fields) {
   }
   if (fields.avatar_url !== undefined) {
     next.avatar_url = fields.avatar_url === '' || fields.avatar_url == null ? null : fields.avatar_url;
+  }
+  if (fields.portal_theme !== undefined) {
+    next.portal_theme = fields.portal_theme;
+    localStorage.setItem(`portal_theme_${next.id}`, fields.portal_theme);
   }
   localStorage.setItem('auth_user', JSON.stringify(next));
   return next;

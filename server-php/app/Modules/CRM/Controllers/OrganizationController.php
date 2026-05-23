@@ -333,6 +333,9 @@ class OrganizationController extends BaseController
                     ['pending_client_master_edit' => $editIntercept['summary']]
                 );
             }
+            if ($editIntercept['type'] === 'reason_required') {
+                $this->error(\App\Libraries\ApprovalReason::ERROR_MESSAGE, 422);
+            }
             $approvalId = (int)$editIntercept['summary']['approval_id'];
             $this->success(
                 $org,
@@ -348,7 +351,8 @@ class OrganizationController extends BaseController
             $org,
             $data,
             $actingUser,
-            $isSuperAdmin
+            $isSuperAdmin,
+            $requestReason !== '' ? $requestReason : null
         );
         if ($intercept !== null) {
             if ($intercept['type'] === 'blocked') {
@@ -359,6 +363,9 @@ class OrganizationController extends BaseController
                     [],
                     ['pending_name_change' => $intercept['summary']]
                 );
+            }
+            if ($intercept['type'] === 'reason_required') {
+                $this->error(\App\Libraries\ApprovalReason::ERROR_MESSAGE, 422);
             }
             $pendingMeta = $intercept['summary'];
         }

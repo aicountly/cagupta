@@ -28,12 +28,15 @@ final class LedgerTxnChangeService
             $requestReason = trim((string)$payload['request_reason']);
             unset($payload['request_reason']);
         }
+        if (ApprovalReason::normalize($requestReason) === null) {
+            return ['type' => 'reason_required'];
+        }
 
         return self::queue(
             $txnId,
             LedgerTxnChangeRequestModel::ACTION_UPDATE,
             $payload,
-            $requestReason !== '' ? $requestReason : null,
+            ApprovalReason::normalize($requestReason),
             $actor
         );
     }
@@ -59,13 +62,17 @@ final class LedgerTxnChangeService
      *
      * @return array{type: string, summary: array<string, mixed>}|null
      */
-    public static function queueCancelReversal(int $txnId, ?array $actor): ?array
+    public static function queueCancelReversal(int $txnId, ?string $requestReason, ?array $actor): ?array
     {
+        if (ApprovalReason::normalize($requestReason) === null) {
+            return ['type' => 'reason_required'];
+        }
+
         return self::queue(
             $txnId,
             LedgerTxnChangeRequestModel::ACTION_CANCEL_REVERSAL,
             [],
-            null,
+            ApprovalReason::normalize($requestReason),
             $actor
         );
     }
@@ -76,8 +83,12 @@ final class LedgerTxnChangeService
      *
      * @return array{type: string, summary: array<string, mixed>}|null
      */
-    public static function queueCancel(array $ids, ?array $actor): ?array
+    public static function queueCancel(array $ids, ?string $requestReason, ?array $actor): ?array
     {
+        if (ApprovalReason::normalize($requestReason) === null) {
+            return ['type' => 'reason_required'];
+        }
+
         $ids = array_values(array_unique(array_filter(array_map('intval', $ids), static fn (int $n): bool => $n > 0)));
         if ($ids === []) {
             return null;
@@ -122,7 +133,7 @@ final class LedgerTxnChangeService
             ['ids' => $ids],
             count($snapshots) === 1 ? $snapshots[0] : ['bulk' => $snapshots],
             $actorId,
-            null
+            ApprovalReason::normalize($requestReason)
         );
 
         self::notifySuperAdmins($approvalId, LedgerTxnChangeRequestModel::ACTION_CANCEL, $txnId);

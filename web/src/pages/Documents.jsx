@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Documents — Global KYC Document Management Page (/documents)
  *
  * Browse all uploaded KYC documents across contacts and organisations.
@@ -283,7 +283,7 @@ export default function Documents() {
     : ALL_CATEGORIES;
 
   return (
-    <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
+    <div style={{ padding: 24, background: 'var(--portal-bg)', minHeight: '100%' }}>
       {/* Header */}
       <div style={{ marginBottom: 20 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Document Management</h2>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { Wallet, RefreshCw, CheckCircle2, Clock, AlertTriangle, XCircle, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 import {
   listPartnerPayoutCycles,
@@ -44,6 +44,7 @@ function SummaryCard({ label, value, icon: Icon, color }) {
 
 function AmendmentForm({ cycleId, onSuccess }) {
   const [rows, setRows] = useState([{ accrual_id: '', amount: '', note: '' }]);
+  const [requestReason, setRequestReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -59,10 +60,13 @@ function AmendmentForm({ cycleId, onSuccess }) {
       .filter((r) => r.accrual_id && r.amount)
       .map((r) => ({ partner_payout_accrual_id: parseInt(r.accrual_id, 10), amount_final: parseFloat(r.amount), note: r.note || undefined }));
     if (adjustments.length === 0) { setErr('Add at least one valid adjustment'); return; }
+    const reason = requestReason.trim();
+    if (!reason) { setErr('Please enter a reason for this amendment.'); return; }
     setBusy(true); setErr('');
     try {
-      await submitPartnerPayoutCycleAmendment(cycleId, adjustments);
+      await submitPartnerPayoutCycleAmendment(cycleId, adjustments, reason);
       setRows([{ accrual_id: '', amount: '', note: '' }]);
+      setRequestReason('');
       onSuccess?.();
     } catch (ex) { setErr(ex.message || 'Submit failed'); }
     finally { setBusy(false); }
@@ -72,6 +76,16 @@ function AmendmentForm({ cycleId, onSuccess }) {
     <form onSubmit={submit} style={{ marginTop: 16, padding: 16, background: '#FAFBFD', borderRadius: 10, border: '1px solid #E6E8F0' }}>
       <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, color: '#0B1F3B' }}>Submit Amendment</div>
       {err && <div style={{ background: '#FEE2E2', color: '#991B1B', padding: '8px 12px', borderRadius: 8, fontSize: 12, marginBottom: 10 }}>{err}</div>}
+      <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginBottom: 10 }}>
+        Reason for amendment (required) *
+        <textarea
+          value={requestReason}
+          onChange={(e) => setRequestReason(e.target.value)}
+          rows={2}
+          placeholder="Explain why these payout amounts should change"
+          style={{ ...inputSm, width: '100%', marginTop: 6, minHeight: 56, resize: 'vertical', display: 'block', boxSizing: 'border-box' }}
+        />
+      </label>
       <div style={{ overflowX: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead><tr><th style={thSm}>Accrual ID</th><th style={thSm}>Proposed Amount (₹)</th><th style={thSm}>Note</th><th style={thSm}></th></tr></thead>
@@ -89,7 +103,7 @@ function AmendmentForm({ cycleId, onSuccess }) {
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
         <button type="button" onClick={addRow} style={btnSmGhost}><Plus size={12} /> Add Row</button>
-        <button type="submit" disabled={busy} style={btnSmPrimary}>{busy ? 'Submitting...' : 'Submit for Approval'}</button>
+        <button type="submit" disabled={busy || !requestReason.trim()} style={btnSmPrimary}>{busy ? 'Submitting...' : 'Submit for Approval'}</button>
       </div>
     </form>
   );
@@ -182,7 +196,7 @@ function CycleDetailPanel({ cycle, onAction }) {
 
       <div style={{ display: 'flex', borderBottom: '1px solid #F1F5F9', padding: '0 20px', overflowX: 'auto' }}>
         {TABS.map((t) => (
-          <button key={t.key} type="button" onClick={() => setTab(t.key)} style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: tab === t.key ? '2px solid #F37920' : '2px solid transparent', color: tab === t.key ? '#F37920' : '#64748b', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <button key={t.key} type="button" onClick={() => setTab(t.key)} style={{ padding: '10px 16px', fontSize: 12, fontWeight: 600, background: 'none', border: 'none', borderBottom: tab === t.key ? '2px solid var(--portal-primary)' : '2px solid transparent', color: tab === t.key ? 'var(--portal-primary)' : '#64748b', cursor: 'pointer', whiteSpace: 'nowrap' }}>
             {t.label}
             {t.key === 'hold_kyc' && kycHeld.length > 0 && <span style={{ marginLeft: 4, background: '#FEE2E2', color: '#DC2626', borderRadius: 8, padding: '1px 6px', fontSize: 10 }}>{kycHeld.length}</span>}
             {t.key === 'hold_unrealised' && unrealisedHeld.length > 0 && <span style={{ marginLeft: 4, background: '#FEF3C7', color: '#92400E', borderRadius: 8, padding: '1px 6px', fontSize: 10 }}>{unrealisedHeld.length}</span>}
@@ -321,7 +335,7 @@ export default function PartnerPayoutCycles() {
     <div style={pageWrap}>
       <div style={headerCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={iconWrap}><Wallet size={20} color="#F37920" /></div>
+          <div style={iconWrap}><Wallet size={20} color="var(--portal-primary)" /></div>
           <div>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Partner Payout Cycles</h1>
             <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
@@ -333,7 +347,7 @@ export default function PartnerPayoutCycles() {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 14 }}>
-        <SummaryCard label="Total Cycles" value={cycles.length} icon={Wallet} color="#F37920" />
+        <SummaryCard label="Total Cycles" value={cycles.length} icon={Wallet} color="var(--portal-primary)" />
         <SummaryCard label="Open" value={openCount} icon={Clock} color="#2563EB" />
         <SummaryCard label="Finalised" value={finalisedCount} icon={AlertTriangle} color="#D97706" />
         <SummaryCard label="Disbursed" value={disbursedCount} icon={CheckCircle2} color="#16A34A" />
@@ -381,16 +395,16 @@ export default function PartnerPayoutCycles() {
   );
 }
 
-const pageWrap = { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--portal-bg)', minHeight: '100%' };
 const headerCard = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '20px 24px', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', flexWrap: 'wrap', gap: 12 };
-const iconWrap = { width: 44, height: 44, borderRadius: 12, background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
+const iconWrap = { width: 44, height: 44, borderRadius: 12, background: 'var(--portal-primary-tint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const toolbarCard = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '12px 20px', borderRadius: 12, border: '1px solid #E6E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.04)', flexWrap: 'wrap', gap: 10 };
 const listCard = { background: '#fff', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden' };
 const cycleRow = { width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' };
 const errorBanner = { background: '#FEE2E2', color: '#991B1B', borderRadius: 10, padding: '10px 16px', fontSize: 13 };
 const btnRefresh = { display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px', borderRadius: 8, border: '1px solid #E6E8F0', background: '#fff', color: '#475569', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
-const btnAction = { padding: '7px 14px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', fontWeight: 600, fontSize: 12, cursor: 'pointer', boxShadow: '0 2px 6px rgba(243,121,32,0.2)' };
-const btnSmPrimary = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '7px 14px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
+const btnAction = { padding: '7px 14px', borderRadius: 8, border: 'none', background: 'var(--portal-primary)', color: '#fff', fontWeight: 600, fontSize: 12, cursor: 'pointer', boxShadow: '0 2px 6px rgba(var(--portal-primary-rgb),0.2)' };
+const btnSmPrimary = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '7px 14px', borderRadius: 8, border: 'none', background: 'var(--portal-primary)', color: '#fff', fontWeight: 600, fontSize: 12, cursor: 'pointer' };
 const btnSmGhost = { display: 'inline-flex', alignItems: 'center', gap: 4, padding: '5px 10px', borderRadius: 6, border: '1px solid #E6E8F0', background: '#fff', color: '#475569', fontWeight: 500, fontSize: 11, cursor: 'pointer' };
 const inputSm = { padding: '7px 10px', borderRadius: 8, border: '1px solid #E6E8F0', fontSize: 12, boxSizing: 'border-box' };
 const thSm = { textAlign: 'left', padding: '8px 10px', color: '#64748b', fontWeight: 600, fontSize: 10, borderBottom: '1px solid #E6E8F0', textTransform: 'uppercase', letterSpacing: '0.05em' };

@@ -1,4 +1,4 @@
-import { Navigate } from 'react-router-dom';
+﻿import { Navigate } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 
 /**
@@ -69,7 +69,7 @@ export default function ProtectedRoute({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        background: '#F6F7FB',
+        background: 'var(--portal-bg)',
         gap: 16,
       }}>
         <div style={{ fontSize: 64 }}>🚫</div>
@@ -91,7 +91,7 @@ export default function ProtectedRoute({
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: '100vh',
-        background: '#F6F7FB',
+        background: 'var(--portal-bg)',
         gap: 16,
       }}>
         <div style={{ fontSize: 64 }}>🚫</div>

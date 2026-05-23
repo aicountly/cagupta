@@ -1,4 +1,4 @@
-/**
+﻿/**
  * LeaveManagement page — /admin/leaves
  *
  * Admin view to:
@@ -322,7 +322,7 @@ export default function LeaveManagement() {
       {/* Page header */}
       <div style={pageHeader}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={iconWrap}><Users size={20} color="#F37920" /></div>
+          <div style={iconWrap}><Users size={20} color="var(--portal-primary)" /></div>
           <div>
             <div style={{ fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Leave Management</div>
             <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
@@ -352,9 +352,9 @@ export default function LeaveManagement() {
               onClick={() => setFilterStatus(opt.value)}
               style={{
                 ...filterTabBtn,
-                background: filterStatus === opt.value ? '#F37920' : '#fff',
+                background: filterStatus === opt.value ? 'var(--portal-primary)' : '#fff',
                 color:      filterStatus === opt.value ? '#fff' : '#475569',
-                borderColor: filterStatus === opt.value ? '#F37920' : '#E6E8F0',
+                borderColor: filterStatus === opt.value ? 'var(--portal-primary)' : '#E6E8F0',
               }}
             >
               {opt.label}
@@ -417,7 +417,7 @@ export default function LeaveManagement() {
 
 const pageWrap = {
   padding: '24px', display: 'flex', flexDirection: 'column', gap: 20,
-  background: '#F6F7FB', minHeight: '100%',
+  background: 'var(--portal-bg)', minHeight: '100%',
 };
 const pageHeader = {
   display: 'flex', justifyContent: 'space-between', alignItems: 'center',
@@ -425,7 +425,7 @@ const pageHeader = {
   border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
 };
 const iconWrap = {
-  width: 44, height: 44, borderRadius: 12, background: '#FEF0E6',
+  width: 44, height: 44, borderRadius: 12, background: 'var(--portal-primary-tint)',
   display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
 };
 const toolbar = {
@@ -446,9 +446,9 @@ const tableRow = { transition: 'background 0.15s' };
 
 const primaryBtnStyle = {
   display: 'flex', alignItems: 'center', gap: 6,
-  padding: '8px 18px', background: '#F37920', color: '#fff',
+  padding: '8px 18px', background: 'var(--portal-primary)', color: '#fff',
   border: 'none', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-  boxShadow: '0 2px 8px rgba(243,121,32,0.30)',
+  boxShadow: '0 2px 8px rgba(var(--portal-primary-rgb),0.30)',
 };
 const outlineBtnStyle = {
   padding: '6px 14px', border: '1px solid #E6E8F0', borderRadius: 8,

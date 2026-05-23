@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../../auth/AuthContext';
 import { ROLES } from '../../../constants/roles';
 import { CheckSquare, Clock, Wallet, AlertCircle, Users, Filter, FileText } from 'lucide-react';
@@ -92,6 +92,18 @@ function StatusBadge({ label, color }) {
   );
 }
 
+function RequestReasonDisplay({ reason }) {
+  const text = typeof reason === 'string' ? reason.trim() : '';
+  if (text) {
+    return <div><strong>Reason for change:</strong> {text}</div>;
+  }
+  return (
+    <div style={{ color: '#B45309', fontSize: 12 }}>
+      <strong>Note:</strong> No reason was provided by the requester.
+    </div>
+  );
+}
+
 function TypeBadge({ type }) {
   const meta = TYPE_META[type] || { label: type, color: '#475569', bg: '#F1F5F9' };
   return (
@@ -129,7 +141,7 @@ function OverflowCard({ row, busy, onApprove, onReject }) {
         <div><strong>Service:</strong> {row.service_type || '—'} — {row.client_name || '—'}</div>
         <div><strong>User:</strong> {row.user_name || row.user_id}</div>
         <div><strong>Requested:</strong> {row.duration_minutes_requested} min on {row.work_date}</div>
-        {row.notes && <div style={{ marginTop: 4 }}><strong>Notes:</strong> {row.notes}</div>}
+        <RequestReasonDisplay reason={row.notes} />
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 14, alignItems: 'center' }}>
         <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: '#64748b' }}>
@@ -179,8 +191,9 @@ function PayoutAmendmentCard({ kind, row, busy, onApprove, onReject }) {
           <StatusBadge label="Pending approval" color="pending" />
         </div>
       </div>
-      <div style={{ fontSize: 13, color: '#475569', marginBottom: 10 }}>
-        Requested by: <strong>{row.requested_by_name || row.requested_by_user_id}</strong>
+      <div style={{ fontSize: 13, color: '#475569', marginBottom: 10, lineHeight: 1.6 }}>
+        <div>Requested by: <strong>{row.requested_by_name || row.requested_by_user_id}</strong></div>
+        <RequestReasonDisplay reason={row.request_reason} />
       </div>
       {adj.length > 0 && (
         <div style={{ overflowX: 'auto', marginBottom: 12 }}>
@@ -321,11 +334,7 @@ function LedgerTxnChangeCard({ row, busy, onApprove, onReject }) {
           />
         ) : null}
         <div><strong>Requested by:</strong> {row.requested_by_name || row.requested_by_user_id || '—'}</div>
-        {row.request_reason ? (
-          <div><strong>Reason for change:</strong> {row.request_reason}</div>
-        ) : action === 'update' ? (
-          <div style={{ color: '#B45309', fontSize: 12 }}><strong>Note:</strong> No reason was provided by the requester.</div>
-        ) : null}
+        <RequestReasonDisplay reason={row.request_reason} />
         {changeRows.length > 0 && (!isBulkCancel || txnRows.length === 0) ? (
           <LedgerChangeDiffTable rows={changeRows} />
         ) : action === 'update' ? (
@@ -403,7 +412,7 @@ function ClientMasterNameCard({ row, busy, onApprove, onReject }) {
         <div><strong>Current name:</strong> {row.current_name || '—'}</div>
         <div><strong>Proposed name:</strong> {row.proposed_name || '—'}</div>
         <div><strong>Requested by:</strong> {row.requested_by_name || row.requested_by_user_id || '—'}</div>
-        {row.request_reason && <div><strong>Note:</strong> {row.request_reason}</div>}
+        <RequestReasonDisplay reason={row.request_reason} />
       </div>
       <div style={{ marginTop: 10 }}>
         <Link to={entityEditPath(row.entity_type, entityId)} style={{ fontSize: 12, color: '#0369a1' }}>
@@ -479,7 +488,7 @@ function ClientMasterEditCard({ row, busy, onApprove, onReject }) {
       </div>
       <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
         <div><strong>Requested by:</strong> {row.requested_by_name || row.requested_by_user_id || '—'}</div>
-        {row.request_reason && <div><strong>Note:</strong> {row.request_reason}</div>}
+        <RequestReasonDisplay reason={row.request_reason} />
       </div>
       <LedgerChangeDiffTable rows={changeRows} />
       <div style={{ marginTop: 10 }}>
@@ -643,7 +652,7 @@ export default function Approvals() {
       <div style={pageWrap}>
         <div style={pageHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={iconWrap}><CheckSquare size={20} color="#F37920" /></div>
+            <div style={iconWrap}><CheckSquare size={20} color="var(--portal-primary)" /></div>
             <div>
               <div style={{ fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Approvals</div>
               <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>Super Admin access required.</div>
@@ -658,7 +667,7 @@ export default function Approvals() {
     <div style={pageWrap}>
       <div style={pageHeader}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={iconWrap}><CheckSquare size={20} color="#F37920" /></div>
+          <div style={iconWrap}><CheckSquare size={20} color="var(--portal-primary)" /></div>
           <div>
             <div style={{ fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Team Approvals</div>
             <div style={{ fontSize: 13, color: '#64748b', marginTop: 2 }}>
@@ -689,9 +698,9 @@ export default function Approvals() {
                 padding: '8px 14px', borderRadius: 8,
                 border: '1px solid', cursor: 'pointer',
                 fontSize: 13, fontWeight: 600,
-                background: isActive ? '#F37920' : '#fff',
+                background: isActive ? 'var(--portal-primary)' : '#fff',
                 color: isActive ? '#fff' : '#475569',
-                borderColor: isActive ? '#F37920' : '#E6E8F0',
+                borderColor: isActive ? 'var(--portal-primary)' : '#E6E8F0',
               }}
             >
               {Icon && <Icon size={14} />}
@@ -819,15 +828,15 @@ export default function Approvals() {
   );
 }
 
-const pageWrap = { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: 24, display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--portal-bg)', minHeight: '100%' };
 const pageHeader = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '20px 24px', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' };
-const iconWrap = { width: 44, height: 44, borderRadius: 12, background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
+const iconWrap = { width: 44, height: 44, borderRadius: 12, background: 'var(--portal-primary-tint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
 const toolbar = { display: 'flex', gap: 8, background: '#fff', padding: '12px 16px', borderRadius: 12, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', flexWrap: 'wrap', alignItems: 'center' };
 const contentArea = { background: '#fff', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)', padding: 20, minHeight: 200 };
 const card = { border: '1px solid #E6E8F0', borderRadius: 12, padding: 16, background: '#FAFBFD' };
 const emptyState = { fontSize: 13, color: '#94a3b8', padding: 20, textAlign: 'center' };
 const errorBanner = { display: 'flex', alignItems: 'center', gap: 8, background: '#FEE2E2', color: '#991B1B', borderRadius: 8, padding: '10px 14px', fontSize: 13, marginBottom: 12 };
-const btnApprove = { padding: '8px 16px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13, boxShadow: '0 2px 8px rgba(243,121,32,0.25)' };
+const btnApprove = { padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--portal-primary)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13, boxShadow: '0 2px 8px rgba(var(--portal-primary-rgb),0.25)' };
 const btnReject = { padding: '8px 16px', borderRadius: 8, border: '1px solid #FCA5A5', background: '#fff', color: '#DC2626', fontWeight: 600, cursor: 'pointer', fontSize: 13 };
 const inputSm = { padding: '6px 10px', borderRadius: 6, border: '1px solid #E6E8F0', fontSize: 13, boxSizing: 'border-box' };
 const tableStyle = { width: '100%', borderCollapse: 'collapse', fontSize: 12 };

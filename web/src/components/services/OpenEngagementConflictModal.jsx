@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+﻿import { useNavigate } from 'react-router-dom';
 import { X } from 'lucide-react';
 
 const overlay = {
@@ -27,7 +27,7 @@ const header = {
   borderBottom: '1px solid #F0F2F8',
 };
 const closeBtn = {
-  background: '#F6F7FB',
+  background: 'var(--portal-bg)',
   border: '1px solid #E6E8F0',
   borderRadius: 6,
   cursor: 'pointer',
@@ -45,7 +45,7 @@ const dt = { fontWeight: 600, color: '#475569' };
 const actions = { display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16, paddingTop: 14, borderTop: '1px solid #F0F2F8' };
 const btnPrimary = {
   padding: '8px 16px',
-  background: '#F37920',
+  background: 'var(--portal-primary)',
   color: '#fff',
   border: 'none',
   borderRadius: 8,

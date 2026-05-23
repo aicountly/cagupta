@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+﻿import { useRef, useEffect, useCallback } from 'react';
 
 /**
  * Tags whose content we preserve when sanitizing a paste.
@@ -181,7 +181,7 @@ export function RichTextEditor({ defaultValue = '', onChange, placeholder, style
           [contenteditable] li { margin-bottom: 0.25em; }
           [contenteditable] strong, [contenteditable] b { font-weight: 700; }
           [contenteditable] em, [contenteditable] i { font-style: italic; }
-          [contenteditable] a { color: #F37920; text-decoration: underline; }
+          [contenteditable] a { color: var(--portal-primary); text-decoration: underline; }
           [contenteditable] blockquote { border-left: 3px solid #e2e8f0; padding-left: 1em; color: #64748b; margin: 0.5em 0; }
           [contenteditable] pre, [contenteditable] code { font-family: monospace; background: #f1f5f9; padding: 2px 5px; border-radius: 4px; }
         `}</style>

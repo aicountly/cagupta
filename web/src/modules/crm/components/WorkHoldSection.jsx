@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import {
   fetchWorkHoldContact,
   fetchWorkHoldOrganization,
@@ -23,7 +23,7 @@ const title = { fontSize: 13, fontWeight: 700, color: '#0B1F3B', marginBottom: 1
 const muted = { fontSize: 12, color: '#64748b', marginBottom: 8 };
 const btnPrimary = {
   padding: '8px 16px',
-  background: '#F37920',
+  background: 'var(--portal-primary)',
   color: '#fff',
   border: 'none',
   borderRadius: 8,

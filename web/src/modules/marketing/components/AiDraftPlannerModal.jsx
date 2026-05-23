@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+﻿import { useEffect, useRef } from 'react';
 import { Loader2, X } from 'lucide-react';
 
 /**
@@ -77,7 +77,7 @@ export default function AiDraftPlannerModal({
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {running && (
-              <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', color: '#F37920' }} />
+              <Loader2 size={18} style={{ animation: 'spin 1s linear infinite', color: 'var(--portal-primary)' }} />
             )}
             <div>
               <h2 id="ai-planner-title" style={{ margin: 0, fontSize: 16, fontWeight: 700, color: '#0f172a' }}>

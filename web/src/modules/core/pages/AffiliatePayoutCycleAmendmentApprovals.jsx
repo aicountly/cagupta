@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../../../auth/AuthContext';
 import { ROLES } from '../../../constants/roles';
 import { SUPER_ADMIN_EMAIL } from '../../../constants/config';
@@ -8,7 +8,7 @@ import {
   rejectAffiliatePayoutCycleAmendment,
 } from '../../../services/affiliatePayoutCycleService';
 
-const btnPrimary = { padding: '8px 14px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 };
+const btnPrimary = { padding: '8px 14px', borderRadius: 8, border: 'none', background: 'var(--portal-primary)', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 };
 const btnGhost = { padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 13 };
 
 function parseAdj(raw) {

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { Search, X } from 'lucide-react';
 
 export default function NewDmModal({ contacts, onClose, onCreate, busy }) {
@@ -46,7 +46,7 @@ export default function NewDmModal({ contacts, onClose, onCreate, busy }) {
               style={{
                 ...rowBtn,
                 background: selectedId === c.id ? '#FFF7ED' : '#fff',
-                borderLeft: selectedId === c.id ? '3px solid #F37920' : '3px solid transparent',
+                borderLeft: selectedId === c.id ? '3px solid var(--portal-primary)' : '3px solid transparent',
               }}
             >
               <div style={{ fontWeight: 600, fontSize: 13, color: '#0B1F3B' }}>{c.name}</div>
@@ -71,4 +71,4 @@ const input = { width: '100%', padding: '10px 12px', borderRadius: 8, border: '1
 const rowBtn = { width: '100%', textAlign: 'left', padding: '12px 14px', border: 'none', borderBottom: '1px solid #F8FAFC', cursor: 'pointer' };
 const iconBtn = { background: 'none', border: 'none', cursor: 'pointer', color: '#64748b', padding: 4 };
 const btnSecondary = { padding: '8px 16px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13 };
-const btnPrimary = { padding: '8px 16px', borderRadius: 8, border: 'none', background: '#F37920', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13 };
+const btnPrimary = { padding: '8px 16px', borderRadius: 8, border: 'none', background: 'var(--portal-primary)', color: '#fff', cursor: 'pointer', fontWeight: 600, fontSize: 13 };

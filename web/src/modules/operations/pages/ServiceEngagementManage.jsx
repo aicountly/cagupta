@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+﻿import { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, Plus, CheckSquare, Square, Trash2, FolderOpen, History, Pencil, ChevronDown } from 'lucide-react';
 import ServiceLogPanel from '../../../components/services/ServiceLogPanel';
@@ -649,6 +649,10 @@ export default function ServiceEngagementManage() {
             'This exceeds the engagement time allowance (3 × standard hours in Settings). '
             + 'Submit for Super Admin approval instead?',
           )) {
+          if (!timeForm.notes.trim()) {
+            setTimeError('Notes are required when submitting overflow time for Super Admin approval.');
+            return;
+          }
           result = await submit(true);
         } else {
           throw err;
@@ -737,6 +741,10 @@ export default function ServiceEngagementManage() {
             'Stopping exceeds the engagement time allowance (3 × standard hours). '
             + 'Stop the timer and request Super Admin approval for the extra time?',
           )) {
+          if (!stopBody.notes?.trim()) {
+            setTimeError('Notes are required when submitting overflow time for Super Admin approval.');
+            return;
+          }
           stoppedWithOverflowApproval = true;
           stopped = await stopForService(id, activeTimer.id, {
             ...stopBody,
@@ -1342,7 +1350,7 @@ export default function ServiceEngagementManage() {
                     checked={true}
                     onChange={() => handleToggleMaster(false)}
                     disabled={masterToggleSaving}
-                    style={{ width: 16, height: 16, accentColor: '#F37920' }}
+                    style={{ width: 16, height: 16, accentColor: 'var(--portal-primary)' }}
                   />
                   {masterToggleSaving ? 'Saving…' : 'This is a Master Service'}
                 </label>
@@ -1481,7 +1489,7 @@ export default function ServiceEngagementManage() {
                         <div>
                           <div style={{ fontSize: 13, fontWeight: 600, color: '#0B1F3B' }}>{u.name}</div>
                           {isIncharge && (
-                            <div style={{ fontSize: 11, color: '#F37920', fontWeight: 500 }}>Incharge</div>
+                            <div style={{ fontSize: 11, color: 'var(--portal-primary)', fontWeight: 500 }}>Incharge</div>
                           )}
                         </div>
                       </div>
@@ -1685,13 +1693,13 @@ export default function ServiceEngagementManage() {
                 <span>Billable</span>
               </label>
               <label style={fieldLabel}>
-                Notes (optional)
+                Notes
                 <input
                   type="text"
                   value={timeForm.notes}
                   onChange={(e) => setTimeForm((f) => ({ ...f, notes: e.target.value }))}
                   style={inputStyle}
-                  placeholder="Short note"
+                  placeholder="Required if you submit over-cap time for approval"
                 />
               </label>
               <button type="submit" disabled={timeSaving} style={{ ...btnPrimary, justifySelf: 'start' }}>
@@ -1934,7 +1942,7 @@ function SystemAuditSection({ auditRows, auditLoading, auditError }) {
                 <li
                   key={String(row.id)}
                   style={{
-                    borderLeft: '3px solid #F37920',
+                    borderLeft: '3px solid var(--portal-primary)',
                     paddingLeft: 14,
                     paddingBottom: 12,
                     borderBottom: '1px solid #f1f5f9',
@@ -1957,7 +1965,7 @@ function SystemAuditSection({ auditRows, auditLoading, auditError }) {
   );
 }
 
-const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: '24px', display: 'flex', flexDirection: 'column', gap: 20, background: 'var(--portal-bg)', minHeight: '100%' };
 const hubHeader = {
   display: 'flex',
   flexWrap: 'wrap',
@@ -1979,7 +1987,7 @@ const hubStatusPill = {
   display: 'inline-block',
   padding: '2px 10px',
   borderRadius: 99,
-  background: 'rgba(243,121,32,0.25)',
+  background: 'rgba(var(--portal-primary-rgb),0.25)',
   color: '#FBD38D',
   fontSize: 12,
   fontWeight: 600,
@@ -2020,12 +2028,12 @@ const tabBtn = {
   display: 'inline-flex',
   alignItems: 'center',
 };
-const tabBtnActive = { background: '#FEF0E6', color: '#C25A0A' };
+const tabBtnActive = { background: 'var(--portal-primary-tint)', color: '#C25A0A' };
 const tabPanel = { minHeight: 200 };
 
 const breadcrumbRow = { display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' };
 const crumb = { fontSize: 12, color: '#94a3b8', fontWeight: 500, cursor: 'pointer' };
-const crumbActive = { fontSize: 12, color: '#F37920', fontWeight: 600 };
+const crumbActive = { fontSize: 12, color: 'var(--portal-primary)', fontWeight: 600 };
 const formGrid = { display: 'flex', flexDirection: 'column', gap: 16 };
 const sectionCard = {
   background: '#fff', borderRadius: 14, border: '1px solid #E6E8F0',
@@ -2044,7 +2052,7 @@ const selectStyle = { ...inputStyle, cursor: 'pointer' };
 const textareaStyle = { ...inputStyle, resize: 'vertical', fontFamily: 'inherit' };
 const feeWrap = { display: 'flex', alignItems: 'center' };
 const feePrefix = {
-  padding: '8px 10px', background: '#F6F7FB', border: '1px solid #E6E8F0',
+  padding: '8px 10px', background: 'var(--portal-bg)', border: '1px solid #E6E8F0',
   borderRight: 'none', borderRadius: '8px 0 0 8px', fontSize: 13, color: '#64748b', fontWeight: 600, flexShrink: 0,
 };
 const hint = { fontSize: 12, color: '#64748b', margin: '0 0 12px', lineHeight: 1.45 };
@@ -2053,13 +2061,13 @@ const taskRow = {
 };
 const btnSmall = {
   display: 'inline-flex', alignItems: 'center', gap: 4, padding: '6px 12px',
-  background: '#FEF0E6', color: '#F37920', border: '1px solid rgba(243,121,32,0.35)', borderRadius: 6,
+  background: 'var(--portal-primary-tint)', color: 'var(--portal-primary)', border: '1px solid rgba(var(--portal-primary-rgb),0.35)', borderRadius: 6,
   cursor: 'pointer', fontSize: 12, fontWeight: 600,
 };
 const actionRow = { display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 4 };
 const btnPrimary = {
-  padding: '10px 22px', background: '#F37920', color: '#fff', border: 'none', borderRadius: 8,
-  cursor: 'pointer', fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(243,121,32,0.30)',
+  padding: '10px 22px', background: 'var(--portal-primary)', color: '#fff', border: 'none', borderRadius: 8,
+  cursor: 'pointer', fontSize: 14, fontWeight: 600, boxShadow: '0 2px 8px rgba(var(--portal-primary-rgb),0.30)',
 };
 const btnSecondary = {
   padding: '10px 18px', background: '#fff', color: '#64748b', border: '1px solid #E6E8F0', borderRadius: 8,
@@ -2076,7 +2084,7 @@ const teamMemberRow = {
   padding: '10px 14px', borderRadius: 10, border: '1px solid #E6E8F0', background: '#fff',
 };
 const memberAvatar = {
-  width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, #F37920 0%, #C25A0A 100%)',
+  width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, var(--portal-primary) 0%, #C25A0A 100%)',
   color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
   fontSize: 13, fontWeight: 700, flexShrink: 0,
 };
@@ -2090,7 +2098,7 @@ const teamBtnReplace = {
 };
 const teamBtnSetIncharge = {
   padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
-  background: '#FEF0E6', color: '#F37920', border: '1px solid rgba(243,121,32,0.35)',
+  background: 'var(--portal-primary-tint)', color: 'var(--portal-primary)', border: '1px solid rgba(var(--portal-primary-rgb),0.35)',
 };
 const teamBtnCancel = {
   padding: '5px 12px', fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: 'pointer',
@@ -2103,7 +2111,7 @@ const teamPickerSelect = {
 const deleteOverlayStyle = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', zIndex: 1001, display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const deleteModalStyle = { background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', minWidth: 400, maxWidth: 480, width: '100%' };
 const deleteModalHeaderStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #F0F2F8' };
-const deleteCloseBtnStyle = { background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' };
+const deleteCloseBtnStyle = { background: 'var(--portal-bg)', border: '1px solid #E6E8F0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' };
 const deleteLabelStyle = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#475569' };
 const deleteInputStyle = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, color: '#334155', outline: 'none', width: '100%', boxSizing: 'border-box' };
 const deleteBtnSecondaryStyle = { padding: '8px 14px', background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 };

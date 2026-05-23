@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useAuth } from '../../../auth/AuthContext';
 import { ROLES } from '../../../constants/roles';
 import { getPortalTypes } from '../../../constants/portalTypes';
@@ -30,6 +30,7 @@ import { getZoomIntegrationStatus, getZoomAuthorizeUrl } from '../../../services
 import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
 import EngagementTypePricingConfig from '../../../components/crm/EngagementTypePricingConfig';
 import { draftFromEngagementType, draftToApiPayload } from '../../../utils/quotationPricing';
+import PortalThemePicker from '../../../components/settings/PortalThemePicker';
 
 function registerDeleteBlockedReason(key) {
   try {
@@ -562,6 +563,7 @@ const roleColors = { super_admin:'#fce7f3', admin:'#ffedd5', manager:'#dbeafe', 
 const roleTextColors = { super_admin:'#9d174d', admin:'#9a3412', manager:'#1e40af', staff:'#166534', viewer:'#374151', affiliate:'#5b21b6', client:'#166534' };
 
 const SETTINGS_SECTIONS = [
+  { key: 'appearance', label: 'Appearance', desc: 'Portal color theme and visual preferences', icon: '🎨' },
   { key: 'firm', label: 'Firm Profile', desc: 'Company name, GSTIN, PAN, contact info', icon: '🏢' },
   { key: 'team', label: 'Team & Users', desc: 'Staff accounts, rates, and invitations', icon: '👥' },
   { key: 'roles', label: 'Roles & Permissions', desc: 'Manage access levels and permissions', icon: '🔐' },
@@ -1373,12 +1375,12 @@ export default function Settings() {
   }
 
   return (
-    <div style={{ padding:24, background: '#F6F7FB', minHeight: '100%' }}>
+    <div style={{ padding:24, background: 'var(--portal-bg)', minHeight: '100%' }}>
       {/* Card-based landing when no section selected */}
       {tab === null && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 28, background: '#fff', padding: '20px 24px', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.05)' }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>⚙️</div>
+            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'var(--portal-primary-tint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>⚙️</div>
             <div>
               <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Settings</h1>
               <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>Configure your portal, team, integrations, and preferences</p>
@@ -1391,10 +1393,10 @@ export default function Settings() {
                 type="button"
                 onClick={() => setTab(s.key)}
                 style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 20px', background: '#fff', border: '1px solid #E6E8F0', borderRadius: 12, cursor: 'pointer', textAlign: 'left', boxShadow: '0 1px 4px rgba(0,0,0,0.04)', transition: 'box-shadow 0.15s, border-color 0.15s, transform 0.15s' }}
-                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(243,121,32,0.12)'; e.currentTarget.style.borderColor = '#F37920'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
+                onMouseEnter={(e) => { e.currentTarget.style.boxShadow = '0 4px 16px rgba(var(--portal-primary-rgb),0.12)'; e.currentTarget.style.borderColor = 'var(--portal-primary)'; e.currentTarget.style.transform = 'translateY(-1px)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)'; e.currentTarget.style.borderColor = '#E6E8F0'; e.currentTarget.style.transform = 'none'; }}
               >
-                <div style={{ width: 40, height: 40, borderRadius: 10, background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{s.icon}</div>
+                <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--portal-primary-tint)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>{s.icon}</div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 14, fontWeight: 600, color: '#0B1F3B', marginBottom: 2 }}>{s.label}</div>
                   <div style={{ fontSize: 12, color: '#64748b', lineHeight: 1.3 }}>{s.desc}</div>
@@ -1490,13 +1492,21 @@ export default function Settings() {
         </DestructiveConfirmModal>
       )}
       <div style={{ display:'flex', gap:4, marginBottom:24, borderBottom:'2px solid #e2e8f0', alignItems: 'center' }}>
-        <button onClick={() => setTab(null)} style={{ padding:'8px 12px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600, color:'#F37920', marginRight: 8 }}>← Back</button>
+        <button onClick={() => setTab(null)} style={{ padding:'8px 12px', background:'none', border:'none', cursor:'pointer', fontSize:13, fontWeight:600, color:'var(--portal-primary)', marginRight: 8 }}>← Back</button>
         {SETTINGS_SECTIONS.map(({ key, label: l }) => (
-          <button key={key} onClick={()=>setTab(key)} style={{ padding:'8px 16px', background:'none', border:'none', cursor:'pointer', fontSize:12, fontWeight:600, color:tab===key?'#F37920':'#64748b', borderBottom:tab===key?'2px solid #F37920':'2px solid transparent', marginBottom:-2, whiteSpace: 'nowrap' }}>
+          <button key={key} onClick={()=>setTab(key)} style={{ padding:'8px 16px', background:'none', border:'none', cursor:'pointer', fontSize:12, fontWeight:600, color:tab===key?'var(--portal-primary)':'#64748b', borderBottom:tab===key?'2px solid var(--portal-primary)':'2px solid transparent', marginBottom:-2, whiteSpace: 'nowrap' }}>
             {l}
           </button>
         ))}
       </div>
+
+      {tab==='appearance' && (
+        <div style={{ maxWidth: 720 }}>
+          <div style={cardStyle}>
+            <PortalThemePicker />
+          </div>
+        </div>
+      )}
 
       {tab==='firm' && (
         <div style={{ maxWidth:640 }}>

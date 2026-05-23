@@ -68,6 +68,7 @@ export function BankFirmWorkspaceProvider({ children }) {
   const [editBusy, setEditBusy] = useState(false);
   const [deleteTxnRow, setDeleteTxnRow] = useState(null);
   const [deleteTxnBusy, setDeleteTxnBusy] = useState(false);
+  const [deleteRequestReason, setDeleteRequestReason] = useState('');
   const [auditTxn, setAuditTxn] = useState(null);
 
   const [newName, setNewName] = useState('');
@@ -378,6 +379,11 @@ export function BankFirmWorkspaceProvider({ children }) {
   const saveEditFirmTxn = useCallback(
     async (form) => {
       if (!editTxn?.id || !canEditFirmTxn) return;
+      const reason = String(form.requestReason || '').trim();
+      if (!reason) {
+        flash('Please enter a reason for this change.', 'error');
+        return;
+      }
       setEditBusy(true);
       try {
         const type = editTxn.txnType;
@@ -391,7 +397,7 @@ export function BankFirmWorkspaceProvider({ children }) {
             from_firm_bank_account_id: parseInt(form.fromAccountId, 10),
             to_firm_bank_account_id: parseInt(form.toAccountId, 10),
             transfer_scope: scope,
-            request_reason: form.requestReason || null,
+            request_reason: reason,
           };
         } else {
           payload = {
@@ -400,7 +406,7 @@ export function BankFirmWorkspaceProvider({ children }) {
             narration: form.narration,
             firm_bank_account_id: parseInt(form.bankAccountId, 10),
             firm_expense_category: form.category,
-            request_reason: form.requestReason || null,
+            request_reason: reason,
           };
         }
         const result = await updateTxn(editTxn.id, payload);
@@ -430,14 +436,22 @@ export function BankFirmWorkspaceProvider({ children }) {
   );
 
   const closeDeleteFirmTxnModal = useCallback(() => {
-    if (!deleteTxnBusy) setDeleteTxnRow(null);
+    if (!deleteTxnBusy) {
+      setDeleteTxnRow(null);
+      setDeleteRequestReason('');
+    }
   }, [deleteTxnBusy]);
 
   const confirmDeleteFirmTxn = useCallback(async () => {
     if (!deleteTxnRow?.id || !canEditFirmTxn) return;
+    const reason = deleteRequestReason.trim();
+    if (!reason) {
+      flash('Please enter a reason for this cancellation.', 'error');
+      return;
+    }
     setDeleteTxnBusy(true);
     try {
-      const result = await deleteTxn(deleteTxnRow.id);
+      const result = await deleteTxn(deleteTxnRow.id, { request_reason: reason });
       if (result?.pendingLedgerChange) {
         flash(result.queuedMessage || 'Cancel submitted for Super Admin approval.', 'success');
       } else {
@@ -451,7 +465,7 @@ export function BankFirmWorkspaceProvider({ children }) {
     } finally {
       setDeleteTxnBusy(false);
     }
-  }, [deleteTxnRow, canEditFirmTxn, flash, loadReport, refreshAccounts]);
+  }, [deleteTxnRow, deleteRequestReason, canEditFirmTxn, flash, loadReport, refreshAccounts]);
 
   const openAuditFirmTxn = useCallback((row) => {
     if (row?.id) setAuditTxn(row);
@@ -539,6 +553,8 @@ export function BankFirmWorkspaceProvider({ children }) {
       saveEditFirmTxn,
       deleteTxnRow,
       deleteTxnBusy,
+      deleteRequestReason,
+      setDeleteRequestReason,
       promptDeleteFirmTxn,
       closeDeleteFirmTxnModal,
       confirmDeleteFirmTxn,
@@ -625,6 +641,8 @@ export function BankFirmWorkspaceProvider({ children }) {
       saveEditFirmTxn,
       deleteTxnRow,
       deleteTxnBusy,
+      deleteRequestReason,
+      setDeleteRequestReason,
       promptDeleteFirmTxn,
       closeDeleteFirmTxnModal,
       confirmDeleteFirmTxn,

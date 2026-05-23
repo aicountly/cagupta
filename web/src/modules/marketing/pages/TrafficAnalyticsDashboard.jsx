@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import {
   BarChart2, Users, Eye, TrendingUp, ArrowUpRight, ArrowDownRight,
   Minus, RefreshCw, AlertCircle, Globe, ExternalLink,
@@ -21,7 +21,7 @@ const DAY_OPTIONS = [
 ];
 
 const CHANNEL_COLORS = [
-  '#F37920', '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2',
+  'var(--portal-primary)', '#2563eb', '#16a34a', '#9333ea', '#db2777', '#0891b2',
 ];
 
 function formatDate(dateStr) {
@@ -41,7 +41,7 @@ function KPICard({ icon: Icon, label, value, sub, trend, inverseColor }) {
   return (
     <div style={s.kpiCard}>
       <div style={s.kpiTop}>
-        <span style={s.kpiIcon}><Icon size={18} color="#F37920" /></span>
+        <span style={s.kpiIcon}><Icon size={18} color="var(--portal-primary)" /></span>
         <TrendBadge value={trend ?? 0} inverse={inverseColor} />
       </div>
       <div style={s.kpiValue}>{value ?? '—'}</div>
@@ -118,7 +118,7 @@ export default function TrafficAnalyticsDashboard() {
       {/* Header */}
       <div style={s.header}>
         <div style={s.headerLeft}>
-          <div style={s.headerIcon}><BarChart2 size={24} color="#F37920" /></div>
+          <div style={s.headerIcon}><BarChart2 size={24} color="var(--portal-primary)" /></div>
           <div>
             <h1 style={s.pageTitle}>Traffic Analytics</h1>
             <p style={s.pageSub}>Website traffic across all portals — public site, affiliate, partner &amp; client.</p>
@@ -179,7 +179,7 @@ export default function TrafficAnalyticsDashboard() {
                     formatter={(v, n) => [v.toLocaleString('en-IN'), n]}
                   />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line type="monotone" dataKey="sessions"  stroke="#F37920" dot={false} strokeWidth={2} name="Sessions" />
+                  <Line type="monotone" dataKey="sessions"  stroke="var(--portal-primary)" dot={false} strokeWidth={2} name="Sessions" />
                   <Line type="monotone" dataKey="users"     stroke="#2563eb" dot={false} strokeWidth={2} name="Users" />
                   <Line type="monotone" dataKey="pageviews" stroke="#16a34a" dot={false} strokeWidth={1.5} name="Page Views" strokeDasharray="4 2" />
                 </LineChart>
@@ -242,7 +242,7 @@ export default function TrafficAnalyticsDashboard() {
                           <span style={s.funnelCount}>{row.count.toLocaleString('en-IN')}</span>
                         </div>
                         <div style={s.funnelBarWrap}>
-                          <div style={{ ...s.funnelBar, width: `${pct}%`, background: CHANNEL_COLORS[idx] ?? '#F37920' }} />
+                          <div style={{ ...s.funnelBar, width: `${pct}%`, background: CHANNEL_COLORS[idx] ?? 'var(--portal-primary)' }} />
                         </div>
                       </div>
                     );
@@ -310,7 +310,7 @@ const s = {
   headerLeft: { display: 'flex', alignItems: 'center', gap: 14 },
   headerIcon: {
     width: 48, height: 48, borderRadius: 12,
-    background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: 'var(--portal-primary-tint)', display: 'flex', alignItems: 'center', justifyContent: 'center',
   },
   pageTitle: { margin: 0, fontSize: 20, fontWeight: 700, color: '#1e293b' },
   pageSub:   { margin: '3px 0 0', fontSize: 13, color: '#64748b' },
@@ -323,7 +323,7 @@ const s = {
     fontSize: 12, fontWeight: 500, color: '#64748b', background: 'transparent',
     transition: 'all 0.15s',
   },
-  dayTabActive: { background: '#fff', color: '#F37920', fontWeight: 700, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' },
+  dayTabActive: { background: '#fff', color: 'var(--portal-primary)', fontWeight: 700, boxShadow: '0 1px 3px rgba(0,0,0,0.08)' },
   refreshBtn: {
     display: 'flex', alignItems: 'center', gap: 6,
     padding: '7px 14px', border: '1px solid #e2e8f0', borderRadius: 8,
@@ -372,7 +372,7 @@ const s = {
   funnelList:   { display: 'flex', flexDirection: 'column', gap: 12 },
   funnelRow:    {},
   funnelMeta:   { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 },
-  funnelStep:   { width: 20, height: 20, borderRadius: 6, background: '#FEF0E6', color: '#F37920', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  funnelStep:   { width: 20, height: 20, borderRadius: 6, background: 'var(--portal-primary-tint)', color: 'var(--portal-primary)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' },
   funnelName:   { flex: 1, fontSize: 13, color: '#475569' },
   funnelCount:  { fontSize: 13, fontWeight: 700, color: '#1e293b' },
   funnelBarWrap: { height: 6, background: '#f1f5f9', borderRadius: 3 },

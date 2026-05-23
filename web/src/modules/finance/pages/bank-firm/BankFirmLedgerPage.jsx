@@ -1,4 +1,4 @@
-import { BookOpen } from 'lucide-react';
+﻿import { BookOpen } from 'lucide-react';
 import DateInput from '../../../../components/common/DateInput';
 import { useBankFirmWorkspace } from './BankFirmWorkspaceContext';
 import {
@@ -37,7 +37,7 @@ export default function BankFirmLedgerPage() {
   return (
     <div style={sectionCard}>
       <div style={sectionHeader}>
-        <BookOpen size={15} color="#F37920" style={{ marginRight: 8 }} />
+        <BookOpen size={15} color="var(--portal-primary)" style={{ marginRight: 8 }} />
         <span style={sectionTitle}>Bank ledger</span>
       </div>
       <div style={{ padding: 20 }}>

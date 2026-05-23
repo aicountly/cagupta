@@ -1,4 +1,4 @@
-import { Receipt } from 'lucide-react';
+﻿import { Receipt } from 'lucide-react';
 import { useBankFirmWorkspace } from './BankFirmWorkspaceContext';
 import { EXPENSE_CATS } from './bankFirmConstants';
 import { btnPrimary, inputStyle, sectionCard, sectionHeader, sectionTitle } from './bankFirmStyles';
@@ -24,7 +24,7 @@ export default function BankFirmExpensePage() {
     <div style={{ maxWidth: 520 }}>
       <div style={sectionCard}>
         <div style={sectionHeader}>
-          <Receipt size={15} color="#F37920" style={{ marginRight: 8 }} />
+          <Receipt size={15} color="var(--portal-primary)" style={{ marginRight: 8 }} />
           <span style={sectionTitle}>Firm expense</span>
         </div>
         {!firmCode || accounts.length === 0 ? (

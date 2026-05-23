@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { getGroups, createGroup, updateGroup, deleteGroup, getGroupMembers } from '../services/clientGroupService';
 import { updateContact } from '../services/contactService';
 import { updateOrganization } from '../services/organizationService';
@@ -165,7 +165,7 @@ export default function ClientGroups() {
   );
 
   return (
-    <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%', display: 'flex', gap: 20 }}>
+    <div style={{ padding: 24, background: 'var(--portal-bg)', minHeight: '100%', display: 'flex', gap: 20 }}>
       {/* Main content */}
       <div style={{ flex: 1, minWidth: 0 }}>
         {error && (
@@ -525,7 +525,7 @@ const inputStyle = {
 const labelStyle = { fontSize: 12, fontWeight: 600, color: '#475569', display: 'block', marginBottom: 5 };
 
 const btnPrimary = {
-  background: '#F37920',
+  background: 'var(--portal-primary)',
   color: '#fff',
   border: 'none',
   borderRadius: 8,

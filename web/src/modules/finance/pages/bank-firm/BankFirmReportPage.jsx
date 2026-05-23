@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { useBankFirmWorkspace } from './BankFirmWorkspaceContext';
 import { REPORT_KINDS, EXPENSE_CATS, INFLOW_CATS } from './bankFirmConstants';
 import { firmTxnTypeLabel } from '../../services/txnService';
@@ -27,7 +27,7 @@ const subNavBtn = (active) => ({
   fontSize: 12,
   fontWeight: 600,
   border: '1px solid',
-  borderColor: active ? '#F37920' : '#E2E8F0',
+  borderColor: active ? 'var(--portal-primary)' : '#E2E8F0',
   background: active ? '#FFF7ED' : '#fff',
   color: active ? '#C2410C' : '#64748b',
   cursor: 'pointer',
@@ -192,6 +192,8 @@ export default function BankFirmReportPage() {
     saveEditFirmTxn,
     deleteTxnRow,
     deleteTxnBusy,
+    deleteRequestReason,
+    setDeleteRequestReason,
     promptDeleteFirmTxn,
     closeDeleteFirmTxnModal,
     confirmDeleteFirmTxn,
@@ -366,6 +368,7 @@ export default function BankFirmReportPage() {
           title="Cancel this transaction?"
           busy={deleteTxnBusy}
           confirmLabel="Cancel transaction"
+          confirmDisabled={!deleteRequestReason.trim()}
           onClose={closeDeleteFirmTxnModal}
           onConfirm={confirmDeleteFirmTxn}
         >
@@ -375,10 +378,21 @@ export default function BankFirmReportPage() {
             <strong>₹{Number(deleteTxnRow.amount || deleteTxnRow.debit || deleteTxnRow.credit).toLocaleString('en-IN')}</strong>?
           </p>
           {deleteTxnRow.txnType === 'firm_bank_transfer' && (
-            <p style={{ margin: 0, fontSize: 12, color: '#64748b' }}>
+            <p style={{ margin: '0 0 8px', fontSize: 12, color: '#64748b' }}>
               Both legs of this transfer will be cancelled together after Super Admin approval (if required).
             </p>
           )}
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569' }}>
+            Reason for cancellation (required) *
+            <textarea
+              value={deleteRequestReason}
+              onChange={(e) => setDeleteRequestReason(e.target.value)}
+              rows={3}
+              placeholder="Explain why this transaction should be cancelled"
+              style={{ ...inputStyle, width: '100%', marginTop: 6, minHeight: 72, resize: 'vertical' }}
+              disabled={deleteTxnBusy}
+            />
+          </label>
         </DestructiveConfirmModal>
       )}
 

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import { History, ChevronDown } from 'lucide-react';
 import {
   fetchMasterAuditLog,
@@ -48,7 +48,7 @@ export default function MasterChangeLogSection({ entityType, entityId, collapsib
 
   const header = (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 700, color: '#0B1F3B' }}>
-      <History size={14} color="#F37920" />
+      <History size={14} color="var(--portal-primary)" />
       Change log
     </div>
   );
@@ -74,7 +74,7 @@ export default function MasterChangeLogSection({ entityType, entityId, collapsib
               <li
                 key={String(row.id)}
                 style={{
-                  borderLeft: '3px solid #F37920',
+                  borderLeft: '3px solid var(--portal-primary)',
                   paddingLeft: 14,
                   paddingBottom: 12,
                   borderBottom: '1px solid #f1f5f9',

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { useEffect } from 'react';
 import { AuthProvider } from './auth/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { initAnalytics, trackPageView } from './utils/analytics';
 import ProtectedRoute from './auth/ProtectedRoute';
 // ── Core module ──────────────────────────────────────────────────────────────
@@ -201,7 +202,7 @@ function Layout({ routePath, children }) {
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <Sidebar />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#F6F7FB', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'var(--portal-bg)', overflow: 'hidden' }}>
         <TopBar title={pageTitles[routePath] || 'CA Office Portal'} />
         <main style={{ flex: 1, overflowY: 'auto' }}>
           {children}
@@ -217,6 +218,7 @@ export default function App() {
     <BrowserRouter basename={ROUTER_BASENAME}>
       <AnalyticsTracker />
       <AuthProvider>
+        <ThemeProvider>
         <NotificationProvider>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
@@ -502,6 +504,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </NotificationProvider>
+        </ThemeProvider>
       </AuthProvider>
     </BrowserRouter>
   );

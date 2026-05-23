@@ -318,10 +318,15 @@ export async function updateTxn(id, payload) {
 }
 
 /** DELETE /api/admin/txn/:id — protected ledger rows queue cancel for approval */
-export async function deleteTxn(id) {
+export async function deleteTxn(id, { request_reason: requestReason } = {}) {
+  const body = {};
+  if (requestReason != null && String(requestReason).trim()) {
+    body.request_reason = String(requestReason).trim();
+  }
   const res = await fetch(`${API_BASE}/admin/txn/${id}`, {
     method:  'DELETE',
     headers: authHeaders(),
+    body:    JSON.stringify(body),
   });
   const json = await parseResponse(res);
   return attachMutationMeta(json.data ?? null, json);
@@ -340,12 +345,16 @@ export async function requestLedgerDeleteOtp(ids) {
 }
 
 /** POST /api/admin/txn/bulk-delete — staff batch queues cancel for Team Approvals */
-export async function bulkDeleteTxns(ids) {
+export async function bulkDeleteTxns(ids, { request_reason: requestReason } = {}) {
   const idArr = Array.isArray(ids) ? ids.map((x) => parseInt(x, 10)).filter((n) => n > 0) : [];
+  const body = { ids: idArr };
+  if (requestReason != null && String(requestReason).trim()) {
+    body.request_reason = String(requestReason).trim();
+  }
   const res = await fetch(`${API_BASE}/admin/txn/bulk-delete`, {
     method:  'POST',
     headers: authHeaders(),
-    body:    JSON.stringify({ ids: idArr }),
+    body:    JSON.stringify(body),
   });
   const json = await parseResponse(res);
   return attachMutationMeta(json.data || {}, json);
@@ -393,10 +402,13 @@ export async function assignParkedTxn(txnId, payload) {
 }
 
 /** POST /api/admin/txn/:id/cancel-reversal — user otp within 30d, else Team Approvals queue. */
-export async function cancelLedgerReversalTxn(txnId, { otp } = {}) {
+export async function cancelLedgerReversalTxn(txnId, { otp, request_reason: requestReason } = {}) {
   const body = {};
   if (otp) {
     body.otp = String(otp).trim();
+  }
+  if (requestReason != null && String(requestReason).trim()) {
+    body.request_reason = String(requestReason).trim();
   }
   const res = await fetch(`${API_BASE}/admin/txn/${txnId}/cancel-reversal`, {
     method:  'POST',

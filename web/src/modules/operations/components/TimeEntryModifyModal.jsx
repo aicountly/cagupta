@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { X, ShieldCheck } from 'lucide-react';
 import { TIME_ACTIVITY_TYPES, requestTimeEntryModifyOtp, updateTimeEntry } from '../services/timeEntryService';
 
@@ -156,7 +156,7 @@ export default function TimeEntryModifyModal({ entry, serviceId, onSaved, onClos
         {/* Header */}
         <div style={header}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ShieldCheck size={16} color="#F37920" />
+            <ShieldCheck size={16} color="var(--portal-primary)" />
             <span style={{ fontSize: 14, fontWeight: 700, color: '#0B1F3B' }}>
               {isToday
                 ? "Edit Today's Timesheet Entry"
@@ -454,10 +454,10 @@ function DiffRow({ label, old: oldVal, next: newVal }) {
 const overlay = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.4)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
 const modal = { background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.2)', width: '100%', maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' };
 const header = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #f0f2f8', flexShrink: 0 };
-const closeBtn = { background: '#f6f7fb', border: '1px solid #e6e8f0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' };
+const closeBtn = { background: 'var(--portal-bg)', border: '1px solid #e6e8f0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' };
 const phaseBar = { display: 'flex', alignItems: 'center', padding: '8px 20px', background: '#f8fafc', borderBottom: '1px solid #f0f2f8', gap: 6, flexShrink: 0 };
 const phaseStep = { fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 20 };
-const phaseStepActive = { background: '#F37920', color: '#fff' };
+const phaseStepActive = { background: 'var(--portal-primary)', color: '#fff' };
 const phaseStepDone = { background: '#dcfce7', color: '#16a34a' };
 const phaseStepInactive = { background: '#f1f5f9', color: '#94a3b8' };
 const phaseDivider = { height: 1, flex: 1, background: '#e2e8f0' };
@@ -475,5 +475,5 @@ const diffTable = { width: '100%', borderCollapse: 'collapse', fontSize: 12 };
 const diffTh = { padding: '6px 8px', textAlign: 'left', background: '#f8fafc', color: '#64748b', fontWeight: 700, border: '1px solid #e2e8f0' };
 const diffTd = { padding: '6px 8px', border: '1px solid #e2e8f0', verticalAlign: 'top' };
 const footer = { display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 8, borderTop: '1px solid #f0f2f8', marginTop: 4 };
-const btnPrimary = { padding: '8px 16px', background: '#F37920', color: '#fff', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
+const btnPrimary = { padding: '8px 16px', background: 'var(--portal-primary)', color: '#fff', border: 'none', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 };
 const btnSecondary = { padding: '8px 16px', background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 7, cursor: 'pointer', fontSize: 13, fontWeight: 600 };

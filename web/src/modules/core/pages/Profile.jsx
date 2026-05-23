@@ -1,7 +1,8 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../../auth/AuthContext';
 import { ROLE_LABELS } from '../../../constants/roles';
 import { updateCurrentUserProfile, changePassword, fetchCurrentUser } from '../services/authService';
+import PortalThemePicker from '../../../components/settings/PortalThemePicker';
 import { API_BASE_URL } from '../../../constants/config';
 import { getInitials } from '../../../utils/getInitials';
 
@@ -34,7 +35,7 @@ const btnPrimary = {
   padding:      '10px 20px',
   borderRadius: 8,
   border:       'none',
-  background:   'linear-gradient(135deg, #F37920 0%, #f5a623 100%)',
+  background:   'linear-gradient(135deg, var(--portal-primary) 0%, var(--portal-primary-light) 100%)',
   color:        '#fff',
   fontWeight:   600,
   fontSize:     14,
@@ -143,7 +144,7 @@ export default function Profile() {
   const previewSrc = (avatarUrl || '').trim() || user.avatar_url;
 
   return (
-    <div style={{ padding: 24, background: '#F6F7FB', minHeight: '100%' }}>
+    <div style={{ padding: 24, background: 'var(--portal-bg)', minHeight: '100%' }}>
       <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1F3B', margin: '0 0 8px' }}>My profile</h1>
       <p style={{ fontSize: 14, color: '#64748b', margin: '0 0 24px' }}>
         Update how your name appears in the app and optionally set a profile picture URL.
@@ -165,7 +166,7 @@ export default function Profile() {
                 width: 56,
                 height: 56,
                 borderRadius: 12,
-                background: 'linear-gradient(135deg, #F37920 0%, #f5a623 100%)',
+                background: 'linear-gradient(135deg, var(--portal-primary) 0%, var(--portal-primary-light) 100%)',
                 color: '#fff',
                 fontWeight: 700,
                 fontSize: 18,
@@ -229,6 +230,10 @@ export default function Profile() {
             {profileSaving ? 'Saving…' : 'Save profile'}
           </button>
         </form>
+      </section>
+
+      <section style={cardStyle}>
+        <PortalThemePicker compact />
       </section>
 
       <section style={cardStyle} ref={passwordBlockRef} id="password">

@@ -9,7 +9,10 @@ import { MsalProvider } from '@azure/msal-react'
 import { msalInstance } from './auth/MsalConfig.js'
 import { loginWithMicrosoft } from './services/authService.js'
 import './index.css'
+import { bootstrapPortalTheme } from './theme/portalThemes.js'
 import App from './App.jsx'
+
+bootstrapPortalTheme()
 
 /** Surfaces React render errors on production (e.g. MSAL misconfig) instead of a blank page. */
 class RootErrorBoundary extends Component {

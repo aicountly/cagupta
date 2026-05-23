@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, createElement } from 'react';
+﻿import { useState, useEffect, useMemo, createElement } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createTask, deleteEngagement, requestServiceDeleteOtp, updateEngagement, getEngagement } from '../../../services/engagementService';
 import StatusBadge from '../../../components/common/StatusBadge';
@@ -27,7 +27,7 @@ function ActionBtn({ icon, title, onClick }) {
       onClick={onClick}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{ ...actionBtn, background: hover ? '#FEF0E6' : '#F6F7FB', borderColor: hover ? 'rgba(243,121,32,0.4)' : '#E6E8F0', color: hover ? '#F37920' : '#64748b' }}
+      style={{ ...actionBtn, background: hover ? 'var(--portal-primary-tint)' : 'var(--portal-bg)', borderColor: hover ? 'rgba(var(--portal-primary-rgb),0.4)' : '#E6E8F0', color: hover ? 'var(--portal-primary)' : '#64748b' }}
     >
       {createElement(icon, { size: 13 })}
     </button>
@@ -349,7 +349,7 @@ export default function ServicesEngagementTableBlock({
                   const isOdd = idx % 2 === 0;
                   const isOverdue = isEngagementOverdue(s);
                   let rowBg = isOdd ? '#FAFBFD' : '#ffffff';
-                  if (isActive) rowBg = '#FEF0E6';
+                  if (isActive) rowBg = 'var(--portal-primary-tint)';
                   else if (isHover) rowBg = '#FFF5EE';
                   return (
                     <tr
@@ -501,7 +501,7 @@ export default function ServicesEngagementTableBlock({
               <div key={t.id} style={taskRow}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, flex: 1, minWidth: 0 }}>
-                    <div style={{ ...taskDot, background: t.status === 'done' ? '#55B848' : t.status === 'in_progress' ? '#F37920' : '#e2e8f0', marginTop: 4, flexShrink: 0 }} />
+                    <div style={{ ...taskDot, background: t.status === 'done' ? '#55B848' : t.status === 'in_progress' ? 'var(--portal-primary)' : '#e2e8f0', marginTop: 4, flexShrink: 0 }} />
                     <span style={{ fontSize: 13, fontWeight: t.status === 'done' ? 400 : 600, textDecoration: t.status === 'done' ? 'line-through' : 'none', color: t.status === 'done' ? '#94a3b8' : '#1e293b' }}>
                       {t.title}
                     </span>
@@ -554,13 +554,13 @@ const trStyle = { transition: 'background 0.12s' };
 const clientCell = { display: 'flex', alignItems: 'center', gap: 9 };
 const clientAvatar = {
   width: 28, height: 28, borderRadius: 8,
-  background: 'linear-gradient(135deg, #F37920 0%, #f5a623 100%)',
+  background: 'linear-gradient(135deg, var(--portal-primary) 0%, var(--portal-primary-light) 100%)',
   color: '#fff', fontWeight: 700, fontSize: 11,
   display: 'flex', alignItems: 'center', justifyContent: 'center',
   flexShrink: 0,
 };
 const serviceTag = {
-  background: '#FEF0E6', color: '#C25A0A',
+  background: 'var(--portal-primary-tint)', color: '#C25A0A',
   padding: '2px 8px', borderRadius: 5,
   fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap',
 };
@@ -581,11 +581,11 @@ const tableFooter = {
 };
 
 const sidePanel = { background: '#fff', borderRadius: 14, border: '1px solid #E6E8F0', boxShadow: '0 1px 6px rgba(0,0,0,0.06)', padding: 20, overflowY: 'auto', alignSelf: 'start' };
-const closeBtn = { background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', flexShrink: 0 };
-const openEditBtn = { background: '#FEF0E6', border: '1px solid rgba(243,121,32,0.35)', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#F37920', flexShrink: 0 };
+const closeBtn = { background: 'var(--portal-bg)', border: '1px solid #E6E8F0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', flexShrink: 0 };
+const openEditBtn = { background: 'var(--portal-primary-tint)', border: '1px solid rgba(var(--portal-primary-rgb),0.35)', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--portal-primary)', flexShrink: 0 };
 const progressTrack = { height: 7, background: '#E6E8F0', borderRadius: 99, overflow: 'hidden' };
 const progressFill = { height: '100%', background: 'linear-gradient(90deg, #55B848 0%, #7dcc72 100%)', borderRadius: 99, transition: 'width 0.4s ease' };
-const taskRow = { padding: '10px 0', borderBottom: '1px solid #F6F7FB' };
+const taskRow = { padding: '10px 0', borderBottom: '1px solid var(--portal-bg)' };
 const taskDot = { width: 8, height: 8, borderRadius: '50%' };
 
 const selectStyle = { padding: '7px 12px', border: '1px solid #E6E8F0', borderRadius: 8, fontSize: 13, background: '#fff', color: '#334155', outline: 'none', cursor: 'pointer' };
@@ -596,12 +596,12 @@ const rowStatusSelectStyle = {
   maxWidth: 140,
   cursor: 'pointer',
 };
-const btnSecondary = { display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: '#FEF0E6', color: '#F37920', border: '1px solid rgba(243,121,32,0.35)', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 };
+const btnSecondary = { display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px', background: 'var(--portal-primary-tint)', color: 'var(--portal-primary)', border: '1px solid rgba(var(--portal-primary-rgb),0.35)', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600 };
 
 const deleteEngOverlayStyle = { position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.35)', zIndex: 1001, display: 'flex', alignItems: 'center', justifyContent: 'center' };
 const deleteEngModalStyle = { background: '#fff', borderRadius: 12, boxShadow: '0 8px 32px rgba(0,0,0,0.18)', minWidth: 400, maxWidth: 480, width: '100%' };
 const deleteEngHeaderStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid #F0F2F8' };
-const deleteEngCloseStyle = { background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' };
+const deleteEngCloseStyle = { background: 'var(--portal-bg)', border: '1px solid #E6E8F0', borderRadius: 6, cursor: 'pointer', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' };
 const deleteEngLabelStyle = { display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#475569' };
 const deleteEngInputStyle = { padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 6, fontSize: 13, color: '#334155', outline: 'none', width: '100%', boxSizing: 'border-box' };
 const deleteEngBtnSecondary = { padding: '8px 14px', background: '#f8fafc', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600 };

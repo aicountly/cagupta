@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { MessageSquare, X } from 'lucide-react';
 import { useAuth } from '../../../auth/AuthContext';
@@ -116,7 +116,7 @@ export default function FloatingChatWidget() {
       >
         <span style={{ fontWeight: 600, fontSize: 14, color: '#1e293b' }}>Chat</span>
         <span style={onlineDot} aria-hidden />
-        <MessageSquare size={20} color="#F37920" />
+        <MessageSquare size={20} color="var(--portal-primary)" />
         {unreadCount > 0 && (
           <span style={fabBadge}>{badgeLabel}</span>
         )}
@@ -156,7 +156,7 @@ const fabBadge = {
   position: 'absolute',
   top: -6,
   right: -6,
-  background: '#F37920',
+  background: 'var(--portal-primary)',
   color: '#fff',
   fontSize: 10,
   fontWeight: 700,
@@ -176,7 +176,7 @@ const panelStyle = {
   maxWidth: 'calc(100vw - 24px)',
   background: '#fff',
   borderRadius: 14,
-  border: '1.5px solid #F37920',
+  border: '1.5px solid var(--portal-primary)',
   boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
   display: 'flex',
   flexDirection: 'column',
@@ -194,7 +194,7 @@ const panelHeader = {
 const fullPageLink = {
   fontSize: 12,
   fontWeight: 600,
-  color: '#F37920',
+  color: 'var(--portal-primary)',
   textDecoration: 'none',
 };
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+﻿import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronRight, X } from 'lucide-react';
 import KycDocumentTab from '../components/documents/KycDocumentTab';
@@ -839,7 +839,7 @@ export default function OrganizationCreatePage() {
                 onClick={openNewContactModal}
                 style={{
                   padding: '7px 12px',
-                  background: '#F37920',
+                  background: 'var(--portal-primary)',
                   color: '#fff',
                   border: 'none',
                   borderRadius: 8,
@@ -1224,11 +1224,11 @@ export default function OrganizationCreatePage() {
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
-const pageWrap = { padding: 24, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: 24, background: 'var(--portal-bg)', minHeight: '100%' };
 
 const breadcrumbRow = { display: 'flex', alignItems: 'center', gap: 4, marginBottom: 8, flexWrap: 'wrap' };
 const crumb = { fontSize: 11, color: '#94a3b8', fontWeight: 500, cursor: 'pointer' };
-const crumbActive = { fontSize: 11, color: '#F37920', fontWeight: 600 };
+const crumbActive = { fontSize: 11, color: 'var(--portal-primary)', fontWeight: 600 };
 
 const pageTitleStyle = { fontSize: 22, fontWeight: 700, color: '#0B1F3B', marginBottom: 24 };
 
@@ -1295,7 +1295,7 @@ const actionBar = {
 
 const btnPrimary = {
   padding: '9px 20px',
-  background: '#F37920',
+  background: 'var(--portal-primary)',
   color: '#fff',
   border: 'none',
   borderRadius: 8,
@@ -1307,8 +1307,8 @@ const btnPrimary = {
 const btnSecondary = {
   padding: '9px 20px',
   background: '#fff',
-  color: '#F37920',
-  border: '1px solid #F37920',
+  color: 'var(--portal-primary)',
+  border: '1px solid var(--portal-primary)',
   borderRadius: 8,
   cursor: 'pointer',
   fontSize: 13,
@@ -1362,9 +1362,9 @@ const orgTabActive = {
   padding: '9px 22px',
   background: 'none',
   border: 'none',
-  borderBottom: '2px solid #F37920',
+  borderBottom: '2px solid var(--portal-primary)',
   marginBottom: -2,
-  color: '#F37920',
+  color: 'var(--portal-primary)',
   fontWeight: 700,
   fontSize: 13,
   cursor: 'pointer',

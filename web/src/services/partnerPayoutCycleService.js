@@ -81,12 +81,16 @@ export async function disbursePartnerPayoutCycle(cycleId) {
 /**
  * @param {number|string} cycleId
  * @param {Array<{ partner_payout_accrual_id: number, amount_final: number, note?: string }>} adjustments
+ * @param {string} requestReason
  */
-export async function submitPartnerPayoutCycleAmendment(cycleId, adjustments) {
+export async function submitPartnerPayoutCycleAmendment(cycleId, adjustments, requestReason) {
   const res = await fetch(`${API_BASE}/admin/partner-payout-cycles/${cycleId}/amendments`, {
     method: 'POST',
     headers: authHeaders(),
-    body: JSON.stringify({ adjustments }),
+    body: JSON.stringify({
+      adjustments,
+      request_reason: String(requestReason || '').trim(),
+    }),
   });
   return parseResponse(res);
 }

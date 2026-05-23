@@ -1,3 +1,5 @@
+﻿import { useEffect, useState } from 'react';
+
 const COMMISSION_MODE_LABELS = {
   referral_only: 'Referral only (tiered %)',
   direct_interaction: 'Direct interaction (50/50 split)',
@@ -104,11 +106,21 @@ export default function RecordSavePreviewModal({
   displayLabels = {},
   mode = 'create',
   saveMode = 'quit',
+  requireReason = false,
   onConfirm,
   onCancel,
   busy = false,
 }) {
+  const [requestReason, setRequestReason] = useState('');
+
+  useEffect(() => {
+    if (open) setRequestReason('');
+  }, [open, payload]);
+
   if (!open || !payload) return null;
+
+  const needsReason = requireReason && mode === 'update';
+  const reasonOk = !needsReason || requestReason.trim().length > 0;
 
   const entityLabel = entityType === 'organization' ? 'organization' : 'contact';
   const rows = entityType === 'organization'
@@ -189,11 +201,36 @@ export default function RecordSavePreviewModal({
           )}
         </div>
 
+        {needsReason && (
+          <label style={{ display: 'block', marginBottom: 16, fontSize: 12, fontWeight: 600, color: '#475569' }}>
+            Reason for this change (required) *
+            <textarea
+              value={requestReason}
+              onChange={(e) => setRequestReason(e.target.value)}
+              rows={3}
+              placeholder="Explain why this update needs Super Admin approval"
+              style={{
+                display: 'block',
+                width: '100%',
+                marginTop: 6,
+                padding: '8px 10px',
+                fontSize: 13,
+                borderRadius: 8,
+                border: '1px solid #e2e8f0',
+                minHeight: 72,
+                resize: 'vertical',
+                boxSizing: 'border-box',
+              }}
+              disabled={busy}
+            />
+          </label>
+        )}
+
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, flexWrap: 'wrap' }}>
           <button
             type="button"
-            onClick={onConfirm}
-            disabled={busy}
+            onClick={() => onConfirm(needsReason ? requestReason.trim() : undefined)}
+            disabled={busy || !reasonOk}
             style={{
               ...modalBtnPrimary,
               opacity: busy ? 0.7 : 1,
@@ -222,7 +259,7 @@ export default function RecordSavePreviewModal({
 
 const modalBtnPrimary = {
   padding: '8px 16px',
-  background: '#F37920',
+  background: 'var(--portal-primary)',
   color: '#fff',
   border: 'none',
   borderRadius: 8,

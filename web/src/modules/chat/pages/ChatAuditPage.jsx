@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+﻿import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Search, AlertCircle, ArrowLeft, MessageSquare } from 'lucide-react';
 import { SUPER_ADMIN_EMAIL } from '../../../constants/config';
@@ -191,7 +191,7 @@ const input = {
   padding: '9px 12px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 13,
 };
 const btnPrimary = {
-  padding: '9px 18px', borderRadius: 8, border: 'none', background: '#F37920',
+  padding: '9px 18px', borderRadius: 8, border: 'none', background: 'var(--portal-primary)',
   color: '#fff', fontWeight: 600, fontSize: 13, cursor: 'pointer',
 };
 const resultRow = {

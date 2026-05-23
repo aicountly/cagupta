@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+﻿import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Clock, Target, UserRound, Building2, ShieldCheck, Receipt,
@@ -109,7 +109,7 @@ export default function ReportsHub() {
       {/* Header */}
       <div style={styles.header}>
         <div style={styles.headerIcon}>
-          <BarChart3 size={28} color="#F37920" />
+          <BarChart3 size={28} color="var(--portal-primary)" />
         </div>
         <div>
           <h1 style={styles.headerTitle}>Reports</h1>
@@ -167,8 +167,8 @@ export default function ReportsHub() {
                       style={styles.card}
                       onClick={() => navigate(report.to)}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.boxShadow = '0 4px 20px rgba(243,121,32,0.13)';
-                        e.currentTarget.style.borderColor = '#F37920';
+                        e.currentTarget.style.boxShadow = '0 4px 20px rgba(var(--portal-primary-rgb),0.13)';
+                        e.currentTarget.style.borderColor = 'var(--portal-primary)';
                         e.currentTarget.style.transform = 'translateY(-2px)';
                       }}
                       onMouseLeave={(e) => {
@@ -178,7 +178,7 @@ export default function ReportsHub() {
                       }}
                     >
                       <div style={styles.cardIconWrap}>
-                        <Icon size={20} color="#F37920" />
+                        <Icon size={20} color="var(--portal-primary)" />
                       </div>
                       <div style={styles.cardBody}>
                         <div style={styles.cardTitle}>{report.label}</div>
@@ -212,7 +212,7 @@ const styles = {
     width: 52,
     height: 52,
     borderRadius: 14,
-    background: '#FEF0E6',
+    background: 'var(--portal-primary-tint)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -322,7 +322,7 @@ const styles = {
     width: 42,
     height: 42,
     borderRadius: 10,
-    background: '#FEF0E6',
+    background: 'var(--portal-primary-tint)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

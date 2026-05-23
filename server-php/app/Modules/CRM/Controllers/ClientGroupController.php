@@ -181,13 +181,16 @@ class ClientGroupController extends BaseController
         $beforeSnap   = ClientMasterAudit::clientGroupSnapshot($group);
         $pendingMeta  = null;
 
+        $requestReason = trim((string)($body['request_reason'] ?? ''));
+
         $intercept = ClientMasterNameChangeService::interceptNameChange(
             'client_group',
             $id,
             $group,
             $data,
             $actingUser,
-            $isSuperAdmin
+            $isSuperAdmin,
+            $requestReason !== '' ? $requestReason : null
         );
         if ($intercept !== null) {
             if ($intercept['type'] === 'blocked') {
@@ -198,6 +201,9 @@ class ClientGroupController extends BaseController
                     [],
                     ['pending_name_change' => $intercept['summary']]
                 );
+            }
+            if ($intercept['type'] === 'reason_required') {
+                $this->error(\App\Libraries\ApprovalReason::ERROR_MESSAGE, 422);
             }
             $pendingMeta = $intercept['summary'];
         }

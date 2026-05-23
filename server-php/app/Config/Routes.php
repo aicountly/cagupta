@@ -2476,6 +2476,18 @@ class Routes
                 'handler'    => 'Admin\BlogController@generateAiDrafts',
                 'middleware' => ['auth'],
             ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/marketing/blog/ai-settings',
+                'handler'    => 'Admin\BlogController@aiSettingsIndex',
+                'middleware' => ['auth'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/marketing/blog/ai-settings',
+                'handler'    => 'Admin\BlogController@aiSettingsUpdate',
+                'middleware' => ['auth'],
+            ],
 
             // ── Marketing — Blog Image Upload ─────────────────────────────────
             [

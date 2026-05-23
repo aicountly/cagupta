@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+﻿import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   MessageSquare, Smartphone, Share2, Megaphone, BookOpen,
@@ -140,7 +140,7 @@ export default function MarketingToolsHub() {
     <div style={styles.page}>
       <div style={styles.header}>
         <div style={styles.headerIcon}>
-          <Zap size={28} color="#F37920" />
+          <Zap size={28} color="var(--portal-primary)" />
         </div>
         <div>
           <h1 style={styles.headerTitle}>Marketing Tools</h1>
@@ -196,8 +196,8 @@ export default function MarketingToolsHub() {
                       style={styles.card}
                       onClick={() => navigate(tool.to)}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.boxShadow = '0 4px 20px rgba(243,121,32,0.13)';
-                        e.currentTarget.style.borderColor = '#F37920';
+                        e.currentTarget.style.boxShadow = '0 4px 20px rgba(var(--portal-primary-rgb),0.13)';
+                        e.currentTarget.style.borderColor = 'var(--portal-primary)';
                         e.currentTarget.style.transform = 'translateY(-2px)';
                       }}
                       onMouseLeave={(e) => {
@@ -207,7 +207,7 @@ export default function MarketingToolsHub() {
                       }}
                     >
                       <div style={styles.cardIconWrap}>
-                        <Icon size={20} color="#F37920" />
+                        <Icon size={20} color="var(--portal-primary)" />
                       </div>
                       <div style={styles.cardBody}>
                         <div style={styles.cardTitle}>{tool.label}</div>
@@ -241,7 +241,7 @@ const styles = {
     width: 52,
     height: 52,
     borderRadius: 14,
-    background: '#FEF0E6',
+    background: 'var(--portal-primary-tint)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -351,7 +351,7 @@ const styles = {
     width: 42,
     height: 42,
     borderRadius: 10,
-    background: '#FEF0E6',
+    background: 'var(--portal-primary-tint)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',

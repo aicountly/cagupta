@@ -428,6 +428,9 @@ export async function updateContact(id, payload) {
       ? String(v).trim().toUpperCase()
       : null;
   }
+  if (hasOwn(payload, 'requestReason')) {
+    body.request_reason = payload.requestReason != null ? String(payload.requestReason).trim() : '';
+  }
 
   const res = await fetch(`${API_BASE}/admin/contacts/${id}`, {
     method:  'PUT',

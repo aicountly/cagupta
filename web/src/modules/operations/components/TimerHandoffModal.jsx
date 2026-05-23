@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import DateInput from '../../../components/common/DateInput';
 import { TIME_ACTIVITY_TYPES } from '../services/timeEntryService';
 import { useElapsedTimer } from '../../../hooks/useElapsedTimer';
@@ -231,4 +231,4 @@ const closeBtn = { border: '1px solid #e2e8f0', background: '#f8fafc', borderRad
 const fieldLabel = { display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, color: '#475569', fontWeight: 600 };
 const inputStyle = { width: '100%', padding: '8px 10px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, boxSizing: 'border-box' };
 const twoCol = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 };
-const primaryBtn = { border: 'none', background: '#F37920', color: '#fff', borderRadius: 8, padding: '9px 14px', fontWeight: 600, cursor: 'pointer' };
+const primaryBtn = { border: 'none', background: 'var(--portal-primary)', color: '#fff', borderRadius: 8, padding: '9px 14px', fontWeight: 600, cursor: 'pointer' };

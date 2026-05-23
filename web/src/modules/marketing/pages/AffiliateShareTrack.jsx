@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { Link2, Copy, Check, Users, BarChart2, ExternalLink, AlertCircle } from 'lucide-react';
 import { getAffiliatesAdmin } from '../../affiliate/services/affiliateAdminService';
 import { fetchTrafficSources } from '../services/traffic.service';
@@ -95,7 +95,7 @@ export default function AffiliateShareTrack() {
     <div style={s.page}>
       {/* Header */}
       <div style={s.header}>
-        <div style={s.headerIcon}><Link2 size={22} color="#F37920" /></div>
+        <div style={s.headerIcon}><Link2 size={22} color="var(--portal-primary)" /></div>
         <div>
           <h1 style={s.pageTitle}>Affiliate Share &amp; Track</h1>
           <p style={s.pageSub}>
@@ -115,7 +115,7 @@ export default function AffiliateShareTrack() {
       {referralChannel && (
         <div style={s.summaryCard}>
           <div style={s.summaryItem}>
-            <BarChart2 size={18} color="#F37920" />
+            <BarChart2 size={18} color="var(--portal-primary)" />
             <div>
               <div style={s.summaryNum}>{referralChannel.sessions?.toLocaleString('en-IN')}</div>
               <div style={s.summaryLabel}>Referral sessions (30 days)</div>
@@ -282,7 +282,7 @@ const s = {
   header: { display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 },
   headerIcon: {
     width: 48, height: 48, borderRadius: 12,
-    background: '#FEF0E6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+    background: 'var(--portal-primary-tint)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   pageTitle: { margin: 0, fontSize: 20, fontWeight: 700, color: '#1e293b' },
   pageSub:   { margin: '3px 0 0', fontSize: 13, color: '#64748b' },
@@ -297,7 +297,7 @@ const s = {
     marginBottom: 20, boxShadow: '0 1px 4px rgba(0,0,0,0.04)', flexWrap: 'wrap',
   },
   summaryItem: { display: 'flex', alignItems: 'center', gap: 12 },
-  summaryNum:  { fontSize: 24, fontWeight: 800, color: '#F37920', lineHeight: 1 },
+  summaryNum:  { fontSize: 24, fontWeight: 800, color: 'var(--portal-primary)', lineHeight: 1 },
   summaryLabel:{ fontSize: 12, color: '#64748b', marginTop: 2 },
   twoCol: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: 16, marginBottom: 16 },
   card: {
@@ -327,18 +327,18 @@ const s = {
   },
   previewLink: {
     display: 'flex', alignItems: 'center', gap: 4,
-    fontSize: 12, color: '#F37920', textDecoration: 'none', fontWeight: 600,
+    fontSize: 12, color: 'var(--portal-primary)', textDecoration: 'none', fontWeight: 600,
   },
   utmBreakdown: { marginTop: 14 },
   utmTitle: { fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 },
   utmRow:  { display: 'flex', gap: 8, marginBottom: 5, alignItems: 'center' },
   utmKey:  { fontSize: 11, fontFamily: 'monospace', color: '#64748b', minWidth: 130 },
-  utmVal:  { fontSize: 12, fontFamily: 'monospace', color: '#F37920', fontWeight: 600 },
+  utmVal:  { fontSize: 12, fontFamily: 'monospace', color: 'var(--portal-primary)', fontWeight: 600 },
   howToList: { padding: '0 0 0 4px', margin: '0 0 20px', listStyle: 'none' },
   howToItem: { display: 'flex', gap: 10, marginBottom: 10, fontSize: 13, color: '#475569', alignItems: 'flex-start' },
   howToNum: {
-    width: 22, height: 22, borderRadius: 6, background: '#FEF0E6',
-    color: '#F37920', fontSize: 11, fontWeight: 700,
+    width: 22, height: 22, borderRadius: 6, background: 'var(--portal-primary-tint)',
+    color: 'var(--portal-primary)', fontSize: 11, fontWeight: 700,
     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1,
   },
   tipBox: { background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 8, padding: '12px 14px' },

@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from 'react-router-dom';
+﻿import { NavLink, Outlet } from 'react-router-dom';
 import { Landmark } from 'lucide-react';
 import { getBillingProfiles } from '../../../../constants/billingProfiles';
 import DestructiveConfirmModal from '../../../../components/common/DestructiveConfirmModal';
@@ -63,7 +63,7 @@ export default function BankFirmShell() {
 
       <div style={headerCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={iconWrap}><Landmark size={20} color="#F37920" /></div>
+          <div style={iconWrap}><Landmark size={20} color="var(--portal-primary)" /></div>
           <div>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Bank & Firm Transactions</h1>
             <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
@@ -123,9 +123,9 @@ export default function BankFirmShell() {
               borderRadius: '10px 10px 0 0',
               fontSize: 13,
               fontWeight: 600,
-              color: isActive ? '#F37920' : '#64748b',
+              color: isActive ? 'var(--portal-primary)' : '#64748b',
               textDecoration: 'none',
-              borderBottom: isActive ? '3px solid #F37920' : '3px solid transparent',
+              borderBottom: isActive ? '3px solid var(--portal-primary)' : '3px solid transparent',
               marginBottom: -2,
             })}
           >

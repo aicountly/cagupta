@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import {
   Smartphone, Send, Plus, Search, Filter, BarChart3,
   CheckCircle2, AlertCircle, Clock, Users, FileText,
@@ -107,7 +107,7 @@ export default function SMSMarketing() {
       {/* Stats Row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
         {[
-          { label: 'Messages Sent', value: '413', icon: Send, color: '#F37920', bg: '#FEF0E6' },
+          { label: 'Messages Sent', value: '413', icon: Send, color: 'var(--portal-primary)', bg: 'var(--portal-primary-tint)' },
           { label: 'Delivered', value: '397', icon: CheckCircle2, color: '#22c55e', bg: '#f0fdf4' },
           { label: 'Failed', value: '6', icon: AlertCircle, color: '#ef4444', bg: '#fef2f2' },
           { label: 'Scheduled', value: '248', icon: Clock, color: '#8b5cf6', bg: '#f5f3ff' },
@@ -132,7 +132,7 @@ export default function SMSMarketing() {
         {[['compose', 'Compose & Send'], ['templates', 'Templates'], ['logs', 'Delivery Logs'], ['settings', 'API Settings']].map(([tab, label]) => (
           <button key={tab} onClick={() => setActiveTab(tab)} style={{
             padding: '8px 20px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer',
-            background: activeTab === tab ? '#F37920' : '#f8fafc',
+            background: activeTab === tab ? 'var(--portal-primary)' : '#f8fafc',
             color: activeTab === tab ? '#fff' : '#64748b',
             borderRight: '1px solid #e2e8f0',
           }}>{label}</button>
@@ -153,11 +153,11 @@ export default function SMSMarketing() {
                     style={{
                       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                       padding: '8px 10px', borderRadius: 8, cursor: 'pointer', marginBottom: 4,
-                      border: selected ? '1px solid #F37920' : '1px solid #e2e8f0',
-                      background: selected ? '#FEF0E6' : '#f8fafc',
+                      border: selected ? '1px solid var(--portal-primary)' : '1px solid #e2e8f0',
+                      background: selected ? 'var(--portal-primary-tint)' : '#f8fafc',
                     }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <Users size={13} color={selected ? '#F37920' : '#94a3b8'} />
+                      <Users size={13} color={selected ? 'var(--portal-primary)' : '#94a3b8'} />
                       <span style={{ fontSize: 13, fontWeight: selected ? 600 : 400, color: '#1e293b' }}>{g.name}</span>
                     </div>
                     <span style={{ fontSize: 11, color: '#64748b' }}>{g.count}</span>
@@ -185,8 +185,8 @@ export default function SMSMarketing() {
               {MOCK_TEMPLATES.filter((t) => t.status === 'approved').map((t) => (
                 <div key={t.id} onClick={() => setSelectedTemplate(t)} style={{
                   padding: '12px 14px', borderRadius: 8, cursor: 'pointer', marginBottom: 10,
-                  border: selectedTemplate?.id === t.id ? '2px solid #F37920' : '1px solid #e2e8f0',
-                  background: selectedTemplate?.id === t.id ? '#FEF0E6' : '#f8fafc',
+                  border: selectedTemplate?.id === t.id ? '2px solid var(--portal-primary)' : '1px solid #e2e8f0',
+                  background: selectedTemplate?.id === t.id ? 'var(--portal-primary-tint)' : '#f8fafc',
                 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#1e293b' }}>{t.name}</div>
@@ -344,7 +344,7 @@ export default function SMSMarketing() {
 }
 
 const card = { background: '#fff', borderRadius: 12, border: '1px solid #e2e8f0', padding: '20px', boxShadow: '0 1px 3px rgba(0,0,0,0.04)' };
-const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#F37920', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
+const btnPrimary = { display: 'inline-flex', alignItems: 'center', gap: 6, background: 'var(--portal-primary)', color: '#fff', border: 'none', borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer' };
 const btnOutline = { display: 'inline-flex', alignItems: 'center', gap: 6, background: '#fff', color: '#334155', border: '1px solid #e2e8f0', borderRadius: 8, padding: '7px 14px', fontSize: 13, fontWeight: 500, cursor: 'pointer' };
 const inputStyle = { width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: 8, fontSize: 13, color: '#1e293b', background: '#f8fafc', boxSizing: 'border-box', fontFamily: 'inherit', outline: 'none' };
 const labelStyle = { fontSize: 12, fontWeight: 600, color: '#64748b', display: 'block', marginBottom: 4 };

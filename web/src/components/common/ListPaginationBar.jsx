@@ -1,4 +1,4 @@
-const baseBarStyle = {
+﻿const baseBarStyle = {
   padding: '10px 16px',
   fontSize: 12,
   display: 'flex',
@@ -18,7 +18,7 @@ function pageBtn(disabled) {
     borderRadius: 6,
     border: '1px solid #E6E8F0',
     background: disabled ? '#f1f5f9' : '#fff',
-    color: disabled ? '#94a3b8' : '#F37920',
+    color: disabled ? '#94a3b8' : 'var(--portal-primary)',
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
 }

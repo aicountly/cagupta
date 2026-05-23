@@ -270,6 +270,9 @@ export async function updateOrganization(id, payload) {
       ? String(payload.defaultBillingProfileCode).trim().toUpperCase()
       : null,
   };
+  if (payload.requestReason != null) {
+    body.request_reason = String(payload.requestReason).trim();
+  }
 
   const res = await fetch(`${API_BASE}/admin/organizations/${id}`, {
     method:  'PUT',

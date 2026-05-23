@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Modal for duplicate / similar directory names (organizations) or
  * suspicious name duplicates vs identical PAN (contacts).
  *
@@ -230,7 +230,7 @@ export default function NameCollisionModal({
                     background: '#fff',
                     cursor: 'pointer',
                     fontWeight: 600,
-                    color: '#F37920',
+                    color: 'var(--portal-primary)',
                   }}
                 >
                   Open this {entityNoun}
@@ -266,7 +266,7 @@ export default function NameCollisionModal({
 
 const modalBtnPrimary = {
   padding: '8px 16px',
-  background: '#F37920',
+  background: 'var(--portal-primary)',
   color: '#fff',
   border: 'none',
   borderRadius: 8,

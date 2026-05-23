@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+﻿import { useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 const METRIC_DETAIL_CONFIG = {
@@ -38,9 +38,9 @@ export default function DashboardMetricDetail() {
   );
 }
 
-const pageWrap = { padding: 24, background: '#F6F7FB', minHeight: '100%' };
+const pageWrap = { padding: 24, background: 'var(--portal-bg)', minHeight: '100%' };
 const cardStyle = { background: '#fff', borderRadius: 14, padding: 24, border: '1px solid #E6E8F0', boxShadow: '0 1px 4px rgba(0,0,0,.06)', maxWidth: 720 };
 const h1 = { fontSize: 20, margin: 0, color: '#0f172a' };
 const mutedText = { marginTop: 8, marginBottom: 16, color: '#64748b', fontSize: 14 };
 const linkGrid = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 };
-const actionBtn = { padding: '10px 12px', background: '#F6F7FB', border: '1px solid #E6E8F0', borderRadius: 10, cursor: 'pointer', fontSize: 13, color: '#334155', textAlign: 'left' };
+const actionBtn = { padding: '10px 12px', background: 'var(--portal-bg)', border: '1px solid #E6E8F0', borderRadius: 10, cursor: 'pointer', fontSize: 13, color: '#334155', textAlign: 'left' };

@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Libraries\BlogAiGenerator;
+use App\Libraries\BlogAiSettings;
 use App\Libraries\BrevoMailer;
 
 /**
@@ -26,6 +27,8 @@ use App\Libraries\BrevoMailer;
  *   POST   /api/marketing/blog/drafts/:id/approve — approve → publishes post
  *   POST   /api/marketing/blog/drafts/:id/reject  — reject draft
  *   POST   /api/marketing/blog/generate-ai-drafts — run daily AI generator (same as cron)
+ *   GET    /api/marketing/blog/ai-settings        — text/image provider settings
+ *   PUT    /api/marketing/blog/ai-settings        — update provider settings
  *
  * Uploads:
  *   POST   /api/marketing/blog/upload-image       — upload cover image
@@ -687,6 +690,35 @@ class BlogController extends BaseController
         ')->execute([':status' => 'rejected', ':id' => $id]);
 
         $this->success(null, 'Draft rejected');
+    }
+
+    /** GET /api/marketing/blog/ai-settings */
+    public function aiSettingsIndex(): never
+    {
+        $this->success(BlogAiSettings::getWithAvailability($this->db()));
+    }
+
+    /** PUT /api/marketing/blog/ai-settings */
+    public function aiSettingsUpdate(): never
+    {
+        $body = $this->getJsonBody();
+        $textProvider  = trim((string)($body['text_provider'] ?? ''));
+        $imageProvider = trim((string)($body['image_provider'] ?? ''));
+
+        if ($textProvider === '' || $imageProvider === '') {
+            $this->error('text_provider and image_provider are required.', 422);
+        }
+
+        $user = $this->authUser();
+        $userId = is_array($user) && isset($user['id']) ? (int)$user['id'] : null;
+
+        try {
+            $updated = BlogAiSettings::update($this->db(), $textProvider, $imageProvider, $userId);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
+        $this->success($updated, 'Blog AI settings updated');
     }
 
     /**

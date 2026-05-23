@@ -1,4 +1,4 @@
-import { useState } from 'react';
+﻿import { useState } from 'react';
 import { X, Pin, Lock, Eye, Users } from 'lucide-react';
 import { createServiceLog } from '../../services/serviceLogService';
 
@@ -218,13 +218,13 @@ const fieldLabel = {
 const typeGrid = { display: 'flex', flexWrap: 'wrap', gap: 6 };
 const typeBtn = {
   padding: '6px 12px', border: '1px solid #E6E8F0', borderRadius: 8,
-  background: '#F6F7FB', color: '#475569', fontSize: 12, fontWeight: 600,
+  background: 'var(--portal-bg)', color: '#475569', fontSize: 12, fontWeight: 600,
   cursor: 'pointer', display: 'inline-flex', alignItems: 'center',
   transition: 'all 0.12s',
 };
 const typeBtnActive = {
-  background: '#FEF0E6', color: '#F37920',
-  borderColor: 'rgba(243,121,32,0.4)',
+  background: 'var(--portal-primary-tint)', color: 'var(--portal-primary)',
+  borderColor: 'rgba(var(--portal-primary-rgb),0.4)',
 };
 const hintText = { fontSize: 11, color: '#94a3b8', fontStyle: 'italic' };
 const lockedBadge = {
@@ -234,7 +234,7 @@ const lockedBadge = {
 };
 const visBtn = {
   flex: 1, padding: '8px 10px', border: '1px solid #E6E8F0', borderRadius: 8,
-  background: '#F6F7FB', color: '#475569', fontSize: 12, fontWeight: 500,
+  background: 'var(--portal-bg)', color: '#475569', fontSize: 12, fontWeight: 500,
   cursor: 'pointer', display: 'flex', alignItems: 'center', textAlign: 'left',
   transition: 'all 0.12s',
 };
@@ -257,12 +257,12 @@ const errBox = {
   padding: '10px 14px', fontSize: 13, color: '#dc2626',
 };
 const btnPrimary = {
-  padding: '9px 20px', background: '#F37920', color: '#fff', border: 'none',
+  padding: '9px 20px', background: 'var(--portal-primary)', color: '#fff', border: 'none',
   borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600,
-  boxShadow: '0 2px 8px rgba(243,121,32,0.3)',
+  boxShadow: '0 2px 8px rgba(var(--portal-primary-rgb),0.3)',
 };
 const btnSecondary = {
-  padding: '9px 18px', background: '#F6F7FB', color: '#475569',
+  padding: '9px 18px', background: 'var(--portal-bg)', color: '#475569',
   border: '1px solid #E6E8F0', borderRadius: 8, cursor: 'pointer',
   fontSize: 13, fontWeight: 600,
 };

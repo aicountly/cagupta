@@ -1,4 +1,4 @@
-/**
+﻿/**
  * ShareModal — Universal document / content sharing modal.
  *
  * Props:
@@ -49,8 +49,8 @@ const CHANNELS = [
     id: 'wa_api',
     label: 'WA API',
     icon: MessageSquare,
-    color: '#F37920',
-    bg: '#FEF0E6',
+    color: 'var(--portal-primary)',
+    bg: 'var(--portal-primary-tint)',
     desc: 'Send via WhatsApp Business API',
   },
 ];
@@ -223,7 +223,7 @@ export default function ShareModal({
             onClick={handleShare}
             disabled={sending || !documentId}
             style={{ ...btnPrimary, flex: 2, justifyContent: 'center', opacity: (sending || !documentId) ? 0.7 : 1,
-              background: selectedChannel?.color || '#F37920',
+              background: selectedChannel?.color || 'var(--portal-primary)',
             }}
           >
             <Send size={13} />

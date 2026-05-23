@@ -364,6 +364,9 @@ class ContactController extends BaseController
                     ['pending_client_master_edit' => $editIntercept['summary']]
                 );
             }
+            if ($editIntercept['type'] === 'reason_required') {
+                $this->error(\App\Libraries\ApprovalReason::ERROR_MESSAGE, 422);
+            }
             $approvalId = (int)$editIntercept['summary']['approval_id'];
             $this->success(
                 $contact,
@@ -379,7 +382,8 @@ class ContactController extends BaseController
             $contact,
             $data,
             $actingUser,
-            $isSuperAdmin
+            $isSuperAdmin,
+            $requestReason !== '' ? $requestReason : null
         );
         if ($intercept !== null) {
             if ($intercept['type'] === 'blocked') {
@@ -390,6 +394,9 @@ class ContactController extends BaseController
                     [],
                     ['pending_name_change' => $intercept['summary']]
                 );
+            }
+            if ($intercept['type'] === 'reason_required') {
+                $this->error(\App\Libraries\ApprovalReason::ERROR_MESSAGE, 422);
             }
             $pendingMeta = $intercept['summary'];
         }
@@ -472,6 +479,7 @@ class ContactController extends BaseController
             'is_active'      => $isActive,
             'contact_status' => $isActive ? 'active' : 'inactive',
         ];
+        $requestReason = trim((string)($body['request_reason'] ?? ''));
         $editIntercept = ClientMasterEditApprovalService::interceptEdit(
             'contact',
             $id,
@@ -479,7 +487,8 @@ class ContactController extends BaseController
             $statusData,
             null,
             $actingUser,
-            $isSuperAdmin
+            $isSuperAdmin,
+            $requestReason !== '' ? $requestReason : null
         );
         if ($editIntercept !== null) {
             if ($editIntercept['type'] === 'blocked') {
@@ -490,6 +499,9 @@ class ContactController extends BaseController
                     [],
                     ['pending_client_master_edit' => $editIntercept['summary']]
                 );
+            }
+            if ($editIntercept['type'] === 'reason_required') {
+                $this->error(\App\Libraries\ApprovalReason::ERROR_MESSAGE, 422);
             }
             $approvalId = (int)$editIntercept['summary']['approval_id'];
             $this->success(

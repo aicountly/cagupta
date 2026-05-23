@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
 import { Plus, RefreshCw, Pin } from 'lucide-react';
 import { getServiceLogs } from '../services/serviceLogService';
 import ServiceLogEntry from './ServiceLogEntry';
@@ -167,7 +167,7 @@ function sortEntries(arr) {
 // ── Styles ────────────────────────────────────────────────────────────────────
 const panelWrap = {
   display: 'flex', flexDirection: 'column', gap: 0,
-  background: '#F6F7FB', borderRadius: 12,
+  background: 'var(--portal-bg)', borderRadius: 12,
   border: '1px solid #E6E8F0', overflow: 'hidden',
 };
 const panelHeader = {
@@ -188,14 +188,14 @@ const iconBtn = {
 };
 const btnAdd = {
   display: 'inline-flex', alignItems: 'center', gap: 5,
-  padding: '7px 14px', background: '#F37920', color: '#fff',
+  padding: '7px 14px', background: 'var(--portal-primary)', color: '#fff',
   border: 'none', borderRadius: 8, cursor: 'pointer',
   fontSize: 13, fontWeight: 600,
-  boxShadow: '0 2px 6px rgba(243,121,32,0.25)',
+  boxShadow: '0 2px 6px rgba(var(--portal-primary-rgb),0.25)',
 };
 const panelBody = { padding: '16px', display: 'flex', flexDirection: 'column', gap: 0, minHeight: 80 };
 const sectionLabel = {
-  fontSize: 11, fontWeight: 700, color: '#F37920',
+  fontSize: 11, fontWeight: 700, color: 'var(--portal-primary)',
   textTransform: 'uppercase', letterSpacing: '0.05em',
   display: 'flex', alignItems: 'center',
   marginBottom: 8,
@@ -208,7 +208,7 @@ const emptyState = {
 };
 const emptyAddBtn = {
   display: 'inline-flex', alignItems: 'center', gap: 5,
-  padding: '8px 16px', background: '#F37920', color: '#fff',
+  padding: '8px 16px', background: 'var(--portal-primary)', color: '#fff',
   border: 'none', borderRadius: 8, cursor: 'pointer',
   fontSize: 13, fontWeight: 600,
 };

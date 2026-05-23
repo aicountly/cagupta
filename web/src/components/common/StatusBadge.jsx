@@ -1,9 +1,9 @@
-const statusColors = {
+﻿const statusColors = {
   // services / tasks
   not_started:     { bg: '#f1f5f9', color: '#64748b' },
-  in_progress:     { bg: '#FEF0E6', color: '#C25A0A' },
-  pending_info:    { bg: '#FEF0E6', color: '#F37920' },
-  pending:         { bg: '#FEF0E6', color: '#F37920' },
+  in_progress:     { bg: 'var(--portal-primary-tint)', color: '#C25A0A' },
+  pending_info:    { bg: 'var(--portal-primary-tint)', color: 'var(--portal-primary)' },
+  pending:         { bg: 'var(--portal-primary-tint)', color: 'var(--portal-primary)' },
   review:          { bg: '#ede9fe', color: '#5b21b6' },
   completed:       { bg: '#E8F7E6', color: '#2E8A25' },
   done:            { bg: '#E8F7E6', color: '#2E8A25' },
@@ -12,7 +12,7 @@ const statusColors = {
   // invoices
   draft:           { bg: '#f1f5f9', color: '#64748b' },
   sent:            { bg: '#dbeafe', color: '#1d4ed8' },
-  partially_paid:  { bg: '#FEF0E6', color: '#F37920' },
+  partially_paid:  { bg: 'var(--portal-primary-tint)', color: 'var(--portal-primary)' },
   paid:            { bg: '#E8F7E6', color: '#2E8A25' },
   overdue:         { bg: '#fee2e2', color: '#991b1b' },
   // clients
@@ -26,7 +26,7 @@ const statusColors = {
   new:             { bg: '#f1f5f9', color: '#64748b' },
   contacted:       { bg: '#dbeafe', color: '#1d4ed8' },
   qualified:       { bg: '#ede9fe', color: '#5b21b6' },
-  proposal_sent:   { bg: '#FEF0E6', color: '#F37920' },
+  proposal_sent:   { bg: 'var(--portal-primary-tint)', color: 'var(--portal-primary)' },
   won:             { bg: '#E8F7E6', color: '#2E8A25' },
   lost:            { bg: '#fee2e2', color: '#991b1b' },
 };

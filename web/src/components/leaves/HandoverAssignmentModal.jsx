@@ -1,4 +1,4 @@
-/**
+﻿/**
  * HandoverAssignmentModal
  *
  * Shown when an admin clicks "Manage Handover" on a leave record.
@@ -343,7 +343,7 @@ const styles = {
   },
   saveBtn: {
     padding: '8px 20px', border: 'none', borderRadius: 8,
-    background: '#F37920', color: '#fff', fontSize: 13, fontWeight: 600,
-    cursor: 'pointer', boxShadow: '0 2px 8px rgba(243,121,32,0.30)',
+    background: 'var(--portal-primary)', color: '#fff', fontSize: 13, fontWeight: 600,
+    cursor: 'pointer', boxShadow: '0 2px 8px rgba(var(--portal-primary-rgb),0.30)',
   },
 };

@@ -55,6 +55,10 @@ final class ClientMasterEditApprovalService
             return null;
         }
 
+        if (ApprovalReason::normalize($requestReason) === null) {
+            return ['type' => 'reason_required'];
+        }
+
         $editModel = new ClientMasterEditRequestModel();
         $existing  = $editModel->findPendingForEntity($entityType, $entityId);
         if ($existing !== null) {
@@ -88,7 +92,7 @@ final class ClientMasterEditApprovalService
             $currentSnap,
             $proposed,
             $actorId,
-            $requestReason
+            ApprovalReason::normalize($requestReason)
         );
 
         self::notifySuperAdmins($entityType, $entityId, $currentSnap, $proposed, $approvalId, $actor);
