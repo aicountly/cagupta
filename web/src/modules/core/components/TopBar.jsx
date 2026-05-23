@@ -351,7 +351,13 @@ export default function TopBar({ title }) {
                         if (row.kind === 'chat_message' && row.entity_id) {
                           markStaffNotificationsRead({ ids: [row.id] }).then(() => {
                             loadStaffNotifications();
-                            navigate(`/desk/chat?conversation=${row.entity_id}`);
+                            if (loc.pathname === '/desk/chat') {
+                              navigate(`/desk/chat?conversation=${row.entity_id}`);
+                            } else {
+                              window.dispatchEvent(new CustomEvent('cagupta:team-chat:open', {
+                                detail: { conversationId: row.entity_id },
+                              }));
+                            }
                             setNotifOpen(false);
                           }).catch(() => {});
                         } else if (row.kind === 'client_chat_escalation' && row.entity_id) {

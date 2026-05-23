@@ -36,7 +36,9 @@ import {
   rejectLedgerTxnChange,
   actionLabel as ledgerActionLabel,
   txnTypeLabelForApproval,
+  ledgerApprovalTxnRows,
 } from '../services/ledgerTxnChangeApprovalService';
+import { LedgerTxnApprovalPreviewSection } from '../components/LedgerTxnApprovalPreview';
 
 const FILTER_OPTIONS = [
   { key: 'all', label: 'All' },
@@ -272,6 +274,8 @@ function LedgerTxnChangeCard({ row, busy, onApprove, onReject }) {
   const ids = row.payload?.ids;
   const isBulkCancel = action === 'cancel' && Array.isArray(ids) && ids.length > 1;
   const changeRows = row.change_rows || row.changeRows || [];
+  const txnRows = ledgerApprovalTxnRows(row);
+  const showSingleTxnDetailsLink = (action === 'cancel' || action === 'cancel_reversal') && !isBulkCancel && txnRows.length === 1;
 
   return (
     <div style={card}>
@@ -300,16 +304,29 @@ function LedgerTxnChangeCard({ row, busy, onApprove, onReject }) {
             <div><strong>Date:</strong> {snap.txn_date || '—'} · <strong>Amount:</strong> ₹{Number(snap.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           </>
         )}
-        {isBulkCancel && (
-          <div><strong>Txn ids:</strong> {ids.join(', ')}</div>
-        )}
+        {isBulkCancel ? (
+          <LedgerTxnApprovalPreviewSection
+            row={row}
+            txnRows={txnRows}
+            modalTitle={`Transactions — Approval #${approvalId}`}
+            modalSubtitle={`Cancel ${ids.length} ledger records`}
+          />
+        ) : null}
+        {showSingleTxnDetailsLink ? (
+          <LedgerTxnApprovalPreviewSection
+            row={row}
+            txnRows={txnRows}
+            modalTitle={`Transaction — Approval #${approvalId}`}
+            linkOnly
+          />
+        ) : null}
         <div><strong>Requested by:</strong> {row.requested_by_name || row.requested_by_user_id || '—'}</div>
         {row.request_reason ? (
           <div><strong>Reason for change:</strong> {row.request_reason}</div>
         ) : action === 'update' ? (
           <div style={{ color: '#B45309', fontSize: 12 }}><strong>Note:</strong> No reason was provided by the requester.</div>
         ) : null}
-        {changeRows.length > 0 ? (
+        {changeRows.length > 0 && (!isBulkCancel || txnRows.length === 0) ? (
           <LedgerChangeDiffTable rows={changeRows} />
         ) : action === 'update' ? (
           <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>

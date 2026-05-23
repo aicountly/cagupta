@@ -23,14 +23,24 @@ function formatTime(ts) {
     : d.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-export default function ChatWorkspace({ auditLink = null }) {
+export default function ChatWorkspace({
+  auditLink = null,
+  variant = 'page',
+  syncUrl = true,
+  pollingEnabled = true,
+  initialConversationId = 0,
+  onConversationChange,
+}) {
+  const isFloating = variant === 'floating';
   const { session } = useAuth();
   const userId = session?.user?.id;
   const role = session?.user?.role || '';
   const isAdmin = role === ROLES.SUPER_ADMIN || role === ROLES.ADMIN;
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialConvId = Number(searchParams.get('conversation') || 0);
+  const initialConvId = syncUrl
+    ? Number(searchParams.get('conversation') || 0)
+    : Number(initialConversationId || 0);
 
   const [filterTab, setFilterTab] = useState('all');
   const [search, setSearch] = useState('');
@@ -87,14 +97,17 @@ export default function ChatWorkspace({ auditLink = null }) {
 
   const openConversation = useCallback((convId) => {
     setSelectedId(convId);
-    setSearchParams(convId ? { conversation: String(convId) } : {}, { replace: true });
+    if (syncUrl) {
+      setSearchParams(convId ? { conversation: String(convId) } : {}, { replace: true });
+    }
+    onConversationChange?.(convId);
     setMessages([]);
     lastMsgIdRef.current = 0;
     fetchConversation(convId)
       .then(setSelectedConv)
       .catch((e) => setErr(e.message));
     loadMessages(convId, { initial: true });
-  }, [loadMessages, setSearchParams]);
+  }, [loadMessages, onConversationChange, setSearchParams, syncUrl]);
 
   useEffect(() => { loadConversations(); }, [loadConversations]);
 
@@ -105,13 +118,20 @@ export default function ChatWorkspace({ auditLink = null }) {
   }, [initialConvId, openConversation]);
 
   useEffect(() => {
-    if (!selectedId) return undefined;
+    const id = Number(initialConversationId || 0);
+    if (!syncUrl && id > 0 && id !== selectedId) {
+      openConversation(id);
+    }
+  }, [initialConversationId, openConversation, selectedId, syncUrl]);
+
+  useEffect(() => {
+    if (!pollingEnabled || !selectedId) return undefined;
     const poll = setInterval(() => {
       loadMessages(selectedId);
       loadConversations();
     }, 15000);
     return () => clearInterval(poll);
-  }, [selectedId, loadMessages, loadConversations]);
+  }, [selectedId, loadMessages, loadConversations, pollingEnabled]);
 
   useEffect(() => {
     if (threadRef.current) {
@@ -171,7 +191,8 @@ export default function ChatWorkspace({ auditLink = null }) {
       setSelectedId(null);
       setSelectedConv(null);
       setMessages([]);
-      setSearchParams({}, { replace: true });
+      onConversationChange?.(null);
+      if (syncUrl) setSearchParams({}, { replace: true });
       await loadConversations();
     } catch (e) {
       setErr(e.message);
@@ -195,38 +216,72 @@ export default function ChatWorkspace({ auditLink = null }) {
 
   const displayTitle = selectedConv?.display_title || selectedConv?.title || 'Conversation';
 
+  const gridStyle = isFloating
+    ? { display: 'grid', gridTemplateColumns: '230px 1fr', height: 390, overflow: 'hidden' }
+    : { display: 'grid', gridTemplateColumns: '360px 1fr', gap: 20, minHeight: 520 };
+
+  const floatingPanelCard = isFloating
+    ? { ...panelCard, borderRadius: 0, boxShadow: 'none' }
+    : panelCard;
+
+  const listScrollStyle = isFloating
+    ? { flex: 1, overflowY: 'auto', minHeight: 0 }
+    : { maxHeight: 480, overflowY: 'auto' };
+
+  const threadScrollStyle = isFloating
+    ? { flex: 1, overflowY: 'auto', padding: 12, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 8 }
+    : { flex: 1, overflowY: 'auto', padding: 18, minHeight: 360, maxHeight: 420, display: 'flex', flexDirection: 'column', gap: 10 };
+
   return (
-    <div>
-      <div style={headerCard}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={iconWrap}><MessageSquare size={20} color="#F37920" /></div>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Team Chat</h1>
-            <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
-              Message your team — all conversations are recorded for audit
-            </p>
+    <div style={isFloating ? { height: '100%', display: 'flex', flexDirection: 'column' } : undefined}>
+      {!isFloating && (
+        <div style={headerCard}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={iconWrap}><MessageSquare size={20} color="#F37920" /></div>
+            <div>
+              <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Team Chat</h1>
+              <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
+                Message your team — all conversations are recorded for audit
+              </p>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {auditLink}
+            <button type="button" onClick={() => { openModals(); setShowDmModal(true); }} style={btnOutline}>
+              <User size={14} /> New DM
+            </button>
+            {isAdmin && (
+              <button type="button" onClick={() => { openModals(); setShowChannelModal(true); }} style={btnOutline}>
+                <Plus size={14} /> New channel
+              </button>
+            )}
+            <button type="button" onClick={loadConversations} style={btnOutline}>
+              <RefreshCw size={14} /> Refresh
+            </button>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {auditLink}
-          <button type="button" onClick={() => { openModals(); setShowDmModal(true); }} style={btnOutline}>
-            <User size={14} /> New DM
+      )}
+
+      {isFloating && (
+        <div style={{ display: 'flex', gap: 6, padding: '8px 10px', borderBottom: '1px solid #F1F5F9', flexWrap: 'wrap' }}>
+          <button type="button" onClick={() => { openModals(); setShowDmModal(true); }} style={btnOutlineCompact}>
+            <User size={12} /> New DM
           </button>
           {isAdmin && (
-            <button type="button" onClick={() => { openModals(); setShowChannelModal(true); }} style={btnOutline}>
-              <Plus size={14} /> New channel
+            <button type="button" onClick={() => { openModals(); setShowChannelModal(true); }} style={btnOutlineCompact}>
+              <Plus size={12} /> Channel
             </button>
           )}
-          <button type="button" onClick={loadConversations} style={btnOutline}>
-            <RefreshCw size={14} /> Refresh
+          <button type="button" onClick={loadConversations} style={btnOutlineCompact}>
+            <RefreshCw size={12} />
           </button>
         </div>
-      </div>
+      )}
 
-      {err && <div style={errorBanner}><AlertCircle size={14} /> {err}</div>}
+      {err && <div style={{ ...errorBanner, marginBottom: isFloating ? 0 : 12 }}><AlertCircle size={14} /> {err}</div>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 20, minHeight: 520 }}>
-        <div style={panelCard}>
+      <div style={gridStyle}>
+        <div style={{ ...floatingPanelCard, borderRight: isFloating ? '1px solid #F1F5F9' : undefined }}>
           <div style={{ display: 'flex', borderBottom: '1px solid #F1F5F9' }}>
             {['all', 'channels', 'dms'].map((tab) => (
               <button key={tab} type="button" onClick={() => setFilterTab(tab)} style={tabBtn(filterTab === tab)}>
@@ -244,7 +299,7 @@ export default function ChatWorkspace({ auditLink = null }) {
               style={{ ...inputStyle, paddingLeft: 34 }}
             />
           </div>
-          <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+          <div style={listScrollStyle}>
             {loading && filtered.length === 0 ? (
               <div style={{ padding: 24, textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>Loading…</div>
             ) : filtered.length === 0 ? (
@@ -284,9 +339,9 @@ export default function ChatWorkspace({ auditLink = null }) {
           </div>
         </div>
 
-        <div style={panelCard}>
+        <div style={floatingPanelCard}>
           {!selectedId ? (
-            <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8' }}>
+            <div style={{ padding: isFloating ? 32 : 48, textAlign: 'center', color: '#94a3b8' }}>
               <MessageSquare size={40} style={{ opacity: 0.3, marginBottom: 12 }} />
               <div style={{ fontSize: 14 }}>Select a conversation or start a new message</div>
             </div>
@@ -307,7 +362,7 @@ export default function ChatWorkspace({ auditLink = null }) {
                   </button>
                 )}
               </div>
-              <div ref={threadRef} style={{ flex: 1, overflowY: 'auto', padding: 18, minHeight: 360, maxHeight: 420, display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div ref={threadRef} style={threadScrollStyle}>
                 {msgLoading && messages.length === 0 && (
                   <div style={{ textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>Loading messages…</div>
                 )}
@@ -414,6 +469,9 @@ const btnOutline = {
   display: 'inline-flex', alignItems: 'center', gap: 6, padding: '8px 14px',
   borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer',
   fontSize: 13, fontWeight: 600, color: '#334155',
+};
+const btnOutlineCompact = {
+  ...btnOutline, padding: '5px 10px', fontSize: 11,
 };
 const btnSend = {
   alignSelf: 'flex-end', padding: '10px 14px', borderRadius: 10, border: 'none',

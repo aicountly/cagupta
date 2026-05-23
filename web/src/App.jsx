@@ -18,6 +18,7 @@ import InboxAndTickets from './modules/core/pages/InboxAndTickets';
 import Approvals from './modules/core/pages/Approvals';
 import ChatPage from './modules/chat/pages/ChatPage';
 import ChatAuditPage from './modules/chat/pages/ChatAuditPage';
+import FloatingChatWidget from './modules/chat/components/FloatingChatWidget';
 
 // ── CRM module ───────────────────────────────────────────────────────────────
 import Contacts from './modules/crm/pages/Contacts';
@@ -205,6 +206,7 @@ function Layout({ routePath, children }) {
         <main style={{ flex: 1, overflowY: 'auto' }}>
           {children}
         </main>
+        <FloatingChatWidget />
       </div>
     </div>
   );

@@ -327,6 +327,11 @@ final class LedgerTxnChangeService
         }
 
         if ($action === LedgerTxnChangeRequestModel::ACTION_CANCEL
+            && isset($snap['bulk']) && is_array($snap['bulk'])) {
+            return self::buildBulkCancelSummaryRows($snap['bulk']);
+        }
+
+        if ($action === LedgerTxnChangeRequestModel::ACTION_CANCEL
             || $action === LedgerTxnChangeRequestModel::ACTION_CANCEL_REVERSAL) {
             return self::buildSnapshotSummaryRows($snap, $txnType);
         }
@@ -336,6 +341,39 @@ final class LedgerTxnChangeService
         }
 
         return self::buildUpdateDiffRows($snap, $payload, $txnType);
+    }
+
+    /**
+     * One summary row per txn for bulk cancel approvals.
+     *
+     * @param list<array<string, mixed>> $bulk
+     *
+     * @return list<array{field: string, before: string, after: string}>
+     */
+    private static function buildBulkCancelSummaryRows(array $bulk): array
+    {
+        $banks = new FirmBankAccountModel();
+        $firms = new BillingFirmModel();
+        $rows  = [];
+
+        foreach ($bulk as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $id   = (int)($item['id'] ?? 0);
+            $type = self::txnTypeLabel((string)($item['txn_type'] ?? ''));
+            $date = trim((string)($item['txn_date'] ?? ''));
+            $ref  = trim((string)($item['public_ref'] ?? $item['invoice_number'] ?? ''));
+            $amt  = self::formatFieldValue('amount', $item['amount'] ?? 0, $item, $banks, $firms);
+            $parts = array_filter([$date !== '' ? $date : null, $ref !== '' ? $ref : null, $amt !== '—' ? $amt : null]);
+            $rows[] = [
+                'field'  => 'Txn #' . ($id > 0 ? $id : '?') . ' — ' . $type,
+                'before' => $parts !== [] ? implode(' · ', $parts) : '—',
+                'after'  => '—',
+            ];
+        }
+
+        return $rows;
     }
 
     /**

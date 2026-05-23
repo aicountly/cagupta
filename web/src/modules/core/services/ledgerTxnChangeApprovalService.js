@@ -72,3 +72,15 @@ export function txnTypeLabelForApproval(txnType) {
   };
   return m[t] || t.replace(/_/g, ' ') || '—';
 }
+
+export const LEDGER_TXN_INLINE_PREVIEW_LIMIT = 5;
+
+/** Normalize single-txn vs bulk cancel snapshots from an approval row. */
+export function ledgerApprovalTxnRows(row) {
+  const snap = row?.txn_snapshot || {};
+  if (Array.isArray(snap.bulk) && snap.bulk.length) return snap.bulk;
+  if (snap.id || row?.txn_id) {
+    return [snap.id ? snap : { ...snap, id: row.txn_id }];
+  }
+  return [];
+}
