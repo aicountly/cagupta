@@ -11,6 +11,9 @@ export const EXPENSE_CATS = [
   { value: 'drawings', label: 'Drawings' },
   { value: 'rent', label: 'Rent' },
   { value: 'electricity', label: 'Electricity' },
+  { value: 'bank_charges', label: 'Bank charges' },
+  { value: 'subscription_expenses', label: 'Subscription Expenses' },
+  { value: 'repair_maintenance', label: 'Repair & Maintenance' },
   { value: 'other', label: 'Other' },
 ];
 

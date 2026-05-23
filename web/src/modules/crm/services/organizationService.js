@@ -100,6 +100,7 @@ function normalizeOrg(o) {
     clientFacingRestricted: Boolean(o.client_facing_restricted),
     defaultBillingProfileCode: o.default_billing_profile_code || '',
     pendingNameChange: o.pending_name_change || null,
+    pendingClientMasterEdit: o.pending_client_master_edit || null,
   };
 }
 
@@ -281,6 +282,7 @@ export async function updateOrganization(id, payload) {
     message: data.message || 'Organization updated',
     meta: {
       pending_name_change: data.pending_name_change || data.meta?.pending_name_change || null,
+      pending_client_master_edit: data.pending_client_master_edit || data.meta?.pending_client_master_edit || null,
     },
   };
 }

@@ -146,6 +146,12 @@ function txnFieldsIncludeQuery(query, fields) {
 /** Tabs under Invoices & Ledger that share the client-side list search bar. */
 const TXN_LIST_SEARCH_TABS = new Set(['invoices', 'receipts', 'payments', 'payment_costs', 'tds', 'rebate', 'credit_note']);
 
+/** Shared column headers for Payments (on behalf) and Payments (costs) tables — Actions is rendered separately (sticky). */
+const PAYMENT_LIST_COLUMNS = [
+  'Date', 'Ref', 'Client', 'Booked on', 'Ledger type', 'Status', 'Movement',
+  'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Last updated by',
+];
+
 /** Filter recovery list groups — group mode shows all ledgers in matching groups; ledger mode matches entities. */
 function filterRecoveryGroups(groups, query, mode) {
   if (!Array.isArray(groups) || groups.length === 0) return [];
@@ -232,6 +238,23 @@ function coercePaymentMethodForFirmBankAccount(method, banks, firmBankAccountId)
   if (opts.length === 1) return opts[0];
   if (method && opts.includes(method)) return method;
   return opts[0];
+}
+
+const PAYMENT_ON_BEHALF_DEFAULTS = {
+  billingProfileCode: 'RBGC-JAL',
+  expensePurpose: 'challan',
+  method: 'Payment Gateway',
+  firmBankAccountName: 'SBI',
+};
+
+function defaultFirmBankAccountId(banks, preferredName) {
+  const list = (banks || []).filter((b) => b.isActive !== false);
+  if (preferredName) {
+    const needle = String(preferredName).trim().toLowerCase();
+    const match = list.find((b) => String(b.name || '').trim().toLowerCase() === needle);
+    if (match) return String(match.id);
+  }
+  return list[0] ? String(list[0].id) : '';
 }
 
 function buildEngagementLineOptions(categories) {
@@ -542,6 +565,18 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
     return { subtotal, rate, tax, total: Math.round((subtotal + tax) * 100) / 100, supplier, recipient, split };
   }, [selectedProfile, lineTotal, recipientGstin]);
 
+  const recipientStateCode = stateCodeFromGstin(recipientGstin);
+  const supplierStateCode = selectedProfile?.gstRegistered
+    ? (selectedProfile.stateCode || stateCodeFromGstin(selectedProfile.gstin))
+    : '';
+  const supplierGstOk = Boolean(supplierStateCode && supplierStateCode.length === 2);
+  const gstBlocked = Boolean(selectedProfile?.gstRegistered && !recipientStateCode);
+  const clientEditPath = form.entityId
+    ? (form.entityType === 'organization'
+      ? `/clients/organizations/${form.entityId}/edit`
+      : `/clients/contacts/${form.entityId}/edit`)
+    : null;
+
   const handleSave = () => {
     if (!form.entityId || !form.invoiceDate) return;
     const viol = costPreview?.violations || [];
@@ -562,7 +597,7 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
       }
       const rCode = stateCodeFromGstin(recipientGstin);
       if (!rCode) {
-        window.alert('Cannot raise a GST invoice: the contact or organization must have a GSTIN so the place of supply (state) can be determined.');
+        window.alert(`Cannot save this GST invoice: the bill-to client has no GSTIN (needed for place of supply). Your billing profile ${profile.code} is configured — add the client's GSTIN in CRM and try again.`);
         return;
       }
     }
@@ -601,11 +636,50 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
               style={inputStyle}
             />
           </label>
-          {recipientGstin ? (
-            <div style={{ fontSize:12, color:'#475569' }}>Recipient GSTIN (place of supply): <span style={{ fontFamily:'monospace', fontWeight:600 }}>{recipientGstin}</span></div>
-          ) : form.entityId ? (
-            <div style={{ fontSize:12, color:'#b45309' }}>No GSTIN on this entity — required when using a GST-registered billing profile.</div>
-          ) : null}
+          {selectedProfile?.gstRegistered && (
+            <div style={{ padding: 12, background: '#f8fafc', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 12, lineHeight: 1.55 }}>
+              <div style={{ fontWeight: 700, marginBottom: 8, color: '#0f172a' }}>GST requirements</div>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>
+                Billing firm GSTIN (Settings) is not the same as the client&apos;s GSTIN.
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ padding: 8, background: supplierGstOk ? '#f0fdf4' : '#fef2f2', border: `1px solid ${supplierGstOk ? '#bbf7d0' : '#fecaca'}`, borderRadius: 6 }}>
+                  <div style={{ fontWeight: 600, color: supplierGstOk ? '#166534' : '#991b1b' }}>Your firm (supplier)</div>
+                  <div style={{ marginTop: 4, color: '#334155' }}>
+                    {selectedProfile.code} · GSTIN {selectedProfile.gstin || '—'} · State {supplierStateCode || '—'}
+                  </div>
+                  {!supplierGstOk && (
+                    <div style={{ marginTop: 4, color: '#991b1b' }}>Complete Billing Firms in Settings.</div>
+                  )}
+                </div>
+                <div style={{ padding: 8, background: recipientStateCode ? '#f0fdf4' : '#fffbeb', border: `1px solid ${recipientStateCode ? '#bbf7d0' : '#fde68a'}`, borderRadius: 6 }}>
+                  <div style={{ fontWeight: 600, color: recipientStateCode ? '#166534' : '#92400e' }}>Client (place of supply)</div>
+                  {recipientGstin ? (
+                    <div style={{ marginTop: 4, color: '#334155' }}>
+                      GSTIN <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{recipientGstin}</span> · State {recipientStateCode}
+                    </div>
+                  ) : form.entityId ? (
+                    <>
+                      <div style={{ marginTop: 4, color: '#92400e' }}>
+                        No GSTIN on this {form.entityType === 'organization' ? 'organization' : 'contact'} — required for place of supply.
+                      </div>
+                      {clientEditPath && (
+                        <button
+                          type="button"
+                          onClick={() => window.open(clientEditPath, '_blank')}
+                          style={{ marginTop: 6, padding: 0, border: 'none', background: 'none', color: '#2563eb', cursor: 'pointer', fontSize: 12, fontWeight: 600, textDecoration: 'underline' }}
+                        >
+                          Edit {form.entityType === 'organization' ? 'organization' : 'contact'} to add GSTIN
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <div style={{ marginTop: 4, color: '#64748b' }}>Select a bill-to client above.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           {form.entityId ? (
             <label style={labelStyle}>
               Link to service engagement (optional — for affiliate commissions)
@@ -738,10 +812,18 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
             )}
             {gstPreview && (
               <div style={{ marginTop:8, padding:10, background:'#f8fafc', borderRadius:8, fontSize:12, color:'#334155', lineHeight:1.5 }}>
-                <div style={{ fontWeight:700, marginBottom:4 }}>GST @ {gstPreview.rate}% (preview)</div>
+                <div style={{ fontWeight:700, marginBottom:4 }}>
+                  GST @ {gstPreview.rate}% (preview{!gstPreview.recipient ? ', estimated' : ''})
+                </div>
                 <div>GST amount: ₹{gstPreview.tax.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
                 <div>Invoice total: ₹{gstPreview.total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-                <div style={{ marginTop:4, color:'#64748b' }}>{gstPreview.split}</div>
+                {!gstPreview.recipient ? (
+                  <div style={{ marginTop: 6, color: '#b45309', fontWeight: 600 }}>
+                    Place of supply unknown — add client GSTIN before saving.
+                  </div>
+                ) : (
+                  <div style={{ marginTop:4, color:'#64748b' }}>{gstPreview.split}</div>
+                )}
               </div>
             )}
           </div>
@@ -757,15 +839,35 @@ function RaiseInvoiceModal({ onClose, onSave, open, prefill = null }) {
               defaultCode={clientMasterDefaultCode}
               selectedCode={form.billingProfileCode}
             />
+            {selectedProfile?.gstRegistered && (
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+                Uses this firm&apos;s GSTIN as supplier. Client GSTIN is taken from <strong>Bill to</strong> above.
+              </div>
+            )}
           </label>
           <label style={labelStyle}>
             Notes
             <input type="text" style={inputStyle} placeholder="Optional notes" value={form.notes} onChange={e=>set('notes',e.target.value)} />
           </label>
         </div>
-        <div style={{ padding:'12px 24px 20px', display:'flex', justifyContent:'flex-end', gap:10 }}>
-          <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button type="button" onClick={handleSave} style={btnPrimary}>Save Invoice</button>
+        <div style={{ padding:'12px 24px 20px', display:'flex', flexDirection:'column', alignItems:'flex-end', gap:8 }}>
+          {gstBlocked && (
+            <div style={{ fontSize: 11, color: '#92400e', alignSelf: 'stretch', textAlign: 'right' }}>
+              Add GSTIN on the bill-to client to save a GST invoice.
+            </div>
+          )}
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:10 }}>
+            <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={gstBlocked}
+              title={gstBlocked ? 'Add GSTIN on the bill-to client to save a GST invoice.' : undefined}
+              style={{ ...btnPrimary, ...(gstBlocked ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}
+            >
+              Save Invoice
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1182,6 +1284,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
   const isPrimarySuperAdmin = Boolean(
     userEmail && String(userEmail).toLowerCase() === String(SUPER_ADMIN_EMAIL).toLowerCase(),
   );
+  const isSuperAdmin = Boolean(session?.user?.permissions?.includes('*')) || isPrimarySuperAdmin;
   const ledgerUserRevFromServer = session?.user?.ledger_user_reversal_enabled ?? LEDGER_USER_REVERSAL_ENABLED;
 
   const [loading, setLoading] = useState(true);
@@ -2087,7 +2190,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button type="button" style={btnPrimary} disabled={loading || saving || !row || pendingChange} onClick={handleSave}>{saving ? 'Saving…' : 'Submit for approval'}</button>
+          <button type="button" style={btnPrimary} disabled={loading || saving || !row || pendingChange} onClick={handleSave}>{saving ? 'Saving…' : (isSuperAdmin ? 'Save changes' : 'Submit for approval')}</button>
         </div>
       </div>
     </div>
@@ -2382,10 +2485,10 @@ function PaymentExpenseModal({ onClose, onSave }) {
     entityType: 'contact',
     amount: '',
     txnDate: new Date().toISOString().slice(0, 10),
-    expensePurpose: 'challan',
-    method: 'NEFT',
+    expensePurpose: PAYMENT_ON_BEHALF_DEFAULTS.expensePurpose,
+    method: PAYMENT_ON_BEHALF_DEFAULTS.method,
     referenceNumber: '',
-    billingProfileCode: '',
+    billingProfileCode: PAYMENT_ON_BEHALF_DEFAULTS.billingProfileCode,
     firmBankAccountId: '',
     description: '',
     notes: '',
@@ -2401,7 +2504,12 @@ function PaymentExpenseModal({ onClose, onSave }) {
   const [receiptOptsLoading, setReceiptOptsLoading] = useState(false);
   const [banks, setBanks] = useState([]);
   const [banksLoading, setBanksLoading] = useState(false);
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const [err, setErr] = useState('');
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => {
+    setErr('');
+    setForm((f) => ({ ...f, [k]: v }));
+  };
 
   useEffect(() => {
     const code = form.billingProfileCode;
@@ -2423,7 +2531,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
               method: coercePaymentMethodForFirmBankAccount(f.method, list, f.firmBankAccountId),
             };
           }
-          const newBankId = list[0] ? String(list[0].id) : '';
+          const newBankId = defaultFirmBankAccountId(list, PAYMENT_ON_BEHALF_DEFAULTS.firmBankAccountName);
           return {
             ...f,
             firmBankAccountId: newBankId,
@@ -2487,10 +2595,37 @@ function PaymentExpenseModal({ onClose, onSave }) {
   };
   const isParkedPayment = form.ledgerClass === 'parked';
 
-  const handleSave = () => {
-    if (!form.entityId || !form.amount || !form.txnDate || !form.description.trim() || !form.billingProfileCode || !form.firmBankAccountId) return;
+  const handleSave = async () => {
+    setErr('');
+    if (!form.entityId) {
+      setErr('Select a client (contact or organization).');
+      return;
+    }
+    if (!form.amount?.trim()) {
+      setErr('Enter a valid payment amount greater than zero.');
+      return;
+    }
     const total = parseFloat(form.amount);
-    if (Number.isNaN(total) || total <= 0) return;
+    if (Number.isNaN(total) || total <= 0) {
+      setErr('Enter a valid payment amount greater than zero.');
+      return;
+    }
+    if (!form.txnDate) {
+      setErr('Payment date is required.');
+      return;
+    }
+    if (!form.description.trim()) {
+      setErr('Description (shown on ledger) is required.');
+      return;
+    }
+    if (!form.billingProfileCode) {
+      setErr('Select a billing profile.');
+      return;
+    }
+    if (!form.firmBankAccountId) {
+      setErr('Select a bank / cash account.');
+      return;
+    }
     const lines = isParkedPayment
       ? [{ target_type: 'unallocated_advance', amount: total }]
       : settlementLines.map((l) => ({
@@ -2499,22 +2634,29 @@ function PaymentExpenseModal({ onClose, onSave }) {
         amount: parseFloat(l.amount) || 0,
       })).filter((l) => l.amount > 0);
     if (lines.length === 0) {
-      window.alert('Add at least one settlement line with a positive amount.');
+      setErr('Add at least one settlement line with a positive amount.');
       return;
     }
     const sum = lines.reduce((s, l) => s + l.amount, 0);
     if (Math.abs(sum - total) > 0.02) {
-      window.alert(`Allocation lines must sum to the payment amount (₹${total.toFixed(2)}); currently ₹${sum.toFixed(2)}.`);
+      setErr(`Allocation lines must sum to the payment amount (₹${total.toFixed(2)}); currently ₹${sum.toFixed(2)}.`);
       return;
     }
     for (const l of lines) {
       if (l.target_type === 'receipt' && (!l.target_txn_id || l.target_txn_id <= 0)) {
-        window.alert('Select a client receipt for each receipt line, or switch the line to Unallocated advance.');
+        setErr('Select a client receipt for each receipt line, or switch the line to Unallocated advance.');
         return;
       }
     }
-    onSave({ ...form, settlementLines: lines });
-    onClose();
+    setSaving(true);
+    try {
+      await onSave({ ...form, settlementLines: lines });
+      onClose();
+    } catch (e) {
+      setErr(e?.message || 'Could not save payment on behalf.');
+    } finally {
+      setSaving(false);
+    }
   };
   return (
     <div style={overlayStyle}>
@@ -2524,6 +2666,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
           <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
         </div>
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
           <label style={labelStyle}>
             Client (contact or organization)
             <EntitySearchDropdown
@@ -2531,6 +2674,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
               displayValue={form.entityName}
               entityType={form.entityType}
               onChange={(c) => {
+                setErr('');
                 setForm((f) => ({
                   ...f,
                   entityId: String(c.id),
@@ -2642,6 +2786,7 @@ function PaymentExpenseModal({ onClose, onSave }) {
                 value={form.firmBankAccountId}
                 onChange={(e) => {
                   const bankId = e.target.value;
+                  setErr('');
                   setForm((f) => ({
                     ...f,
                     firmBankAccountId: bankId,
@@ -2743,8 +2888,8 @@ function PaymentExpenseModal({ onClose, onSave }) {
           </div>
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button type="button" onClick={handleSave} style={btnPrimary}>Save payment</button>
+          <button type="button" onClick={onClose} style={btnSecondary} disabled={saving}>Cancel</button>
+          <button type="button" onClick={handleSave} style={btnPrimary} disabled={saving}>{saving ? 'Saving…' : 'Save payment'}</button>
         </div>
       </div>
     </div>
@@ -2771,7 +2916,12 @@ function PaymentClientCostModal({ onClose, onSave }) {
   });
   const [banks, setBanks] = useState([]);
   const [banksLoading, setBanksLoading] = useState(false);
-  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const [err, setErr] = useState('');
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => {
+    setErr('');
+    setForm((f) => ({ ...f, [k]: v }));
+  };
 
   useEffect(() => {
     const code = form.billingProfileCode;
@@ -2806,12 +2956,46 @@ function PaymentClientCostModal({ onClose, onSave }) {
     return () => { cancel = true; };
   }, [form.billingProfileCode]);
 
-  const handleSave = () => {
-    if (!form.entityId || !form.amount || !form.txnDate || !form.description.trim() || !form.billingProfileCode || !form.firmBankAccountId) return;
+  const handleSave = async () => {
+    setErr('');
+    if (!form.entityId) {
+      setErr('Select a client (contact or organization).');
+      return;
+    }
+    if (!form.amount?.trim()) {
+      setErr('Enter a valid payment amount greater than zero.');
+      return;
+    }
     const total = parseFloat(form.amount);
-    if (Number.isNaN(total) || total <= 0) return;
-    onSave({ ...form });
-    onClose();
+    if (Number.isNaN(total) || total <= 0) {
+      setErr('Enter a valid payment amount greater than zero.');
+      return;
+    }
+    if (!form.txnDate) {
+      setErr('Payment date is required.');
+      return;
+    }
+    if (!form.description.trim()) {
+      setErr('Description (shown in list) is required.');
+      return;
+    }
+    if (!form.billingProfileCode) {
+      setErr('Select a billing profile.');
+      return;
+    }
+    if (!form.firmBankAccountId) {
+      setErr('Select a bank / cash account.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave({ ...form });
+      onClose();
+    } catch (e) {
+      setErr(e?.message || 'Could not save client cost payment.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -2822,6 +3006,7 @@ function PaymentClientCostModal({ onClose, onSave }) {
           <button type="button" onClick={onClose} style={closeBtnStyle}>✕</button>
         </div>
         <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
           <p style={{ margin: 0, fontSize: 12, color: '#64748b', lineHeight: 1.45 }}>
             Expenses included in your fees — not charged separately and not posted to the client receivable ledger or recovery list. Firm cash-out is recorded only.
           </p>
@@ -2832,6 +3017,7 @@ function PaymentClientCostModal({ onClose, onSave }) {
               displayValue={form.entityName}
               entityType={form.entityType}
               onChange={(c) => {
+                setErr('');
                 setForm((f) => ({
                   ...f,
                   entityId: String(c.id),
@@ -2921,6 +3107,7 @@ function PaymentClientCostModal({ onClose, onSave }) {
                 value={form.firmBankAccountId}
                 onChange={(e) => {
                   const bankId = e.target.value;
+                  setErr('');
                   setForm((f) => ({
                     ...f,
                     firmBankAccountId: bankId,
@@ -2942,8 +3129,8 @@ function PaymentClientCostModal({ onClose, onSave }) {
           </label>
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-          <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button type="button" onClick={handleSave} style={btnPrimary}>Save client cost</button>
+          <button type="button" onClick={onClose} style={btnSecondary} disabled={saving}>Cancel</button>
+          <button type="button" onClick={handleSave} style={btnPrimary} disabled={saving}>{saving ? 'Saving…' : 'Save client cost'}</button>
         </div>
       </div>
     </div>
@@ -5061,7 +5248,9 @@ export default function Invoices({ ledgerOnly = false }) {
 
   function handleSavePaymentExpense(data) {
     const idNum = parseInt(data.entityId, 10);
-    if (Number.isNaN(idNum) || idNum <= 0) return;
+    if (Number.isNaN(idNum) || idNum <= 0) {
+      return Promise.reject(new Error('Select a client (contact or organization).'));
+    }
     const purposeLabel = expensePurposeLabel(data.expensePurpose);
     const narration = data.description.trim()
       ? `${purposeLabel} — ${data.description.trim()}`
@@ -5074,29 +5263,13 @@ export default function Invoices({ ledgerOnly = false }) {
         amount: parseFloat(l.amount) || 0,
       };
     }).filter((l) => l.amount > 0);
-    if (lines.length === 0) {
-      window.alert('Add settlement lines that sum to the payment amount.');
-      return;
-    }
-    const payAmt = parseFloat(data.amount);
-    const sum = lines.reduce((s, l) => s + l.amount, 0);
-    if (Math.abs(sum - payAmt) > 0.02) {
-      window.alert(`Settlement lines must sum to the payment amount (₹${payAmt.toFixed(2)}).`);
-      return;
-    }
-    for (const l of lines) {
-      if (l.target_type === 'receipt' && (!l.target_txn_id || l.target_txn_id <= 0)) {
-        window.alert('Select a client receipt for each receipt line, or use Unallocated advance.');
-        return;
-      }
-    }
     const settlement_lines = lines.map((l) => (
       l.target_type === 'receipt'
         ? { target_type: 'receipt', target_txn_id: l.target_txn_id, amount: l.amount }
         : { target_type: 'unallocated_advance', amount: l.amount }
     ));
     const payload = {
-      amount: payAmt,
+      amount: parseFloat(data.amount),
       txn_date: data.txnDate,
       payment_method: data.method,
       reference_number: data.referenceNumber || null,
@@ -5114,16 +5287,15 @@ export default function Invoices({ ledgerOnly = false }) {
     } else {
       payload.client_id = idNum;
     }
-    createPaymentExpense(payload)
-      .then(() => getTxns(paymentExpenseFetchParams).then(({ txns }) => setPaymentExpenses(txns)))
-      .catch((err) => {
-        window.alert(err?.message || 'Could not save payment on behalf.');
-      });
+    return createPaymentExpense(payload)
+      .then(() => getTxns(paymentExpenseFetchParams).then(({ txns }) => setPaymentExpenses(txns)));
   }
 
   function handleSavePaymentClientCost(data) {
     const idNum = parseInt(data.entityId, 10);
-    if (Number.isNaN(idNum) || idNum <= 0) return;
+    if (Number.isNaN(idNum) || idNum <= 0) {
+      return Promise.reject(new Error('Select a client (contact or organization).'));
+    }
     const purposeLabel = expensePurposeLabel(data.expensePurpose);
     const narration = data.description.trim()
       ? `${purposeLabel} — ${data.description.trim()}`
@@ -5145,11 +5317,8 @@ export default function Invoices({ ledgerOnly = false }) {
     } else {
       payload.client_id = idNum;
     }
-    createPaymentClientCost(payload)
-      .then(() => getTxns(paymentClientCostFetchParams).then(({ txns }) => setPaymentClientCosts(txns)))
-      .catch((err) => {
-        window.alert(err?.message || 'Could not save client cost payment.');
-      });
+    return createPaymentClientCost(payload)
+      .then(() => getTxns(paymentClientCostFetchParams).then(({ txns }) => setPaymentClientCosts(txns)));
   }
 
   function handleSaveReceipt(data) {
@@ -5844,13 +6013,13 @@ export default function Invoices({ ledgerOnly = false }) {
       {showPaymentModal && (
         <PaymentExpenseModal
           onClose={() => setShowPaymentModal(false)}
-          onSave={(data) => { handleSavePaymentExpense(data); setShowPaymentModal(false); }}
+          onSave={handleSavePaymentExpense}
         />
       )}
       {showPaymentCostModal && (
         <PaymentClientCostModal
           onClose={() => setShowPaymentCostModal(false)}
-          onSave={(data) => { handleSavePaymentClientCost(data); setShowPaymentCostModal(false); }}
+          onSave={handleSavePaymentClientCost}
         />
       )}
       {showTdsModal && (
@@ -6284,7 +6453,11 @@ export default function Invoices({ ledgerOnly = false }) {
               <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedPaymentIds([])}>Clear selection</button>
             </div>
           )}
-          <table style={tableStyle}>
+          <div style={{ overflowX: 'auto' }}>
+            <div style={{ padding: '8px 14px', fontSize: 11, color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>
+              Scroll right for narration, notes, and actions.
+            </div>
+            <table style={{ ...tableStyle, minWidth: 1600 }}>
             <thead>
               <tr>
                 {canDeleteInvoice && (
@@ -6303,9 +6476,10 @@ export default function Invoices({ ledgerOnly = false }) {
                     />
                   </th>
                 )}
-                {['Date', 'Ref', 'Client', 'Booked on', 'Ledger type', 'Status', 'Movement', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Last updated by', 'Actions'].map((h) => (
+                {PAYMENT_LIST_COLUMNS.map((h) => (
                   <th key={h} style={thStyle}>{h}</th>
                 ))}
+                <th style={stickyActionsThStyle}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -6320,14 +6494,19 @@ export default function Invoices({ ledgerOnly = false }) {
                   !paymentExpenseMatchesLedgerSelection(p, ledgerClientId, ledgerEntityType)
                   || normalizeLedgerClassForApi(p.ledgerClass) !== normalizeLedgerClassForApi(ledgerLedgerClass)
                 );
+                const rowBg = ledgerMismatch ? '#fffbeb' : '#fff';
                 return (
-                <tr key={p.id} style={{
-                  ...trStyle,
-                  ...(ledgerMismatch ? { background: '#fffbeb' } : {}),
-                }}
+                <tr
+                  key={p.id}
+                  style={{
+                    ...trStyle,
+                    ...(ledgerMismatch ? { background: '#fffbeb' } : {}),
+                    ...(canEditInvoice ? { cursor: 'pointer' } : {}),
+                  }}
+                  onClick={canEditInvoice ? () => setEditLedgerTxnId(p.id) : undefined}
                 >
                   {canDeleteInvoice && (
-                    <td style={{ ...tdStyle, width: 36 }}>
+                    <td style={{ ...tdStyle, width: 36 }} onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedPaymentIds.some((x) => Number(x) === Number(p.id))}
@@ -6368,29 +6547,32 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={tdStyle}><BillingProfileBadge code={p.billingProfileCode} /></td>
                   <td style={{ ...tdStyle, maxWidth: 160, whiteSpace: 'normal' }}>{p.notes || '—'}</td>
                   <LastUpdatedByCell txn={p} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
-                  <td style={tdStyle}>
+                  <td style={stickyActionsTdStyle(rowBg)} onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
                       style={iconBtn}
                       title="Open Ledger tab with this entity and ledger filters"
-                      onClick={() => openLedgerFromPaymentExpense(p)}
+                      onClick={(e) => { e.stopPropagation(); openLedgerFromPaymentExpense(p); }}
                     >
                       Ledger
                     </button>
                     {canEditInvoice && (
-                      <button type="button" style={iconBtn} onClick={() => setEditLedgerTxnId(p.id)}>✏️ Edit</button>
+                      <button type="button" style={iconBtn} onClick={(e) => { e.stopPropagation(); setEditLedgerTxnId(p.id); }}>✏️ Edit</button>
                     )}
                     {canDeleteInvoice && (
                       <button
                         type="button"
                         style={iconBtn}
-                        onClick={() => setLedgerDeletePrompt({
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLedgerDeletePrompt({
                           title: 'Cancel payment (on behalf)',
                           items: [{
                             id: p.id,
                             label: `${p.txnDate || '—'} — ${p.clientName} — ${formatSignedInrAmount(p.txnType, p.amount || 0)}`,
                           }],
-                        })}
+                        });
+                        }}
                       >
                         🗑 Delete
                       </button>
@@ -6401,6 +6583,7 @@ export default function Invoices({ ledgerOnly = false }) {
               })}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -6441,7 +6624,11 @@ export default function Invoices({ ledgerOnly = false }) {
               <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedPaymentCostIds([])}>Clear selection</button>
             </div>
           )}
-          <table style={tableStyle}>
+          <div style={{ overflowX: 'auto' }}>
+            <div style={{ padding: '8px 14px', fontSize: 11, color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>
+              Scroll right for narration, notes, and actions.
+            </div>
+            <table style={{ ...tableStyle, minWidth: 1600 }}>
             <thead>
               <tr>
                 {canDeleteInvoice && (
@@ -6460,9 +6647,10 @@ export default function Invoices({ ledgerOnly = false }) {
                     />
                   </th>
                 )}
-                {['Date', 'Ref', 'Client', 'Booked on', 'Ledger type', 'Status', 'Movement', 'Amount', 'Purpose', 'Paid via', 'Paid from', 'Reference', 'Narration', 'Billing profile', 'Notes', 'Last updated by', 'Actions'].map((h) => (
+                {PAYMENT_LIST_COLUMNS.map((h) => (
                   <th key={h} style={thStyle}>{h}</th>
                 ))}
+                <th style={stickyActionsThStyle}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -6473,9 +6661,13 @@ export default function Invoices({ ledgerOnly = false }) {
               ) : visiblePaymentClientCosts.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
               ) : visiblePaymentClientCosts.map((p) => (
-                <tr key={p.id} style={trStyle}>
+                <tr
+                  key={p.id}
+                  style={{ ...trStyle, ...(canEditInvoice ? { cursor: 'pointer' } : {}) }}
+                  onClick={canEditInvoice ? () => setEditLedgerTxnId(p.id) : undefined}
+                >
                   {canDeleteInvoice && (
-                    <td style={{ ...tdStyle, width: 36 }}>
+                    <td style={{ ...tdStyle, width: 36 }} onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={selectedPaymentCostIds.some((x) => Number(x) === Number(p.id))}
@@ -6516,21 +6708,24 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={tdStyle}><BillingProfileBadge code={p.billingProfileCode} /></td>
                   <td style={{ ...tdStyle, maxWidth: 160, whiteSpace: 'normal' }}>{p.notes || '—'}</td>
                   <LastUpdatedByCell txn={p} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
-                  <td style={tdStyle}>
+                  <td style={stickyActionsTdStyle('#fff')} onClick={(e) => e.stopPropagation()}>
                     {canEditInvoice && (
-                      <button type="button" style={iconBtn} onClick={() => setEditLedgerTxnId(p.id)}>✏️ Edit</button>
+                      <button type="button" style={iconBtn} onClick={(e) => { e.stopPropagation(); setEditLedgerTxnId(p.id); }}>✏️ Edit</button>
                     )}
                     {canDeleteInvoice && (
                       <button
                         type="button"
                         style={iconBtn}
-                        onClick={() => setLedgerDeletePrompt({
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLedgerDeletePrompt({
                           title: 'Cancel client cost payment',
                           items: [{
                             id: p.id,
                             label: `${p.txnDate || '—'} — ${p.clientName} — ${formatSignedInrAmount(p.txnType, p.amount || 0)}`,
                           }],
-                        })}
+                        });
+                        }}
                       >
                         🗑 Delete
                       </button>
@@ -6540,6 +6735,7 @@ export default function Invoices({ ledgerOnly = false }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -8004,6 +8200,22 @@ const cardStyle = { background:'#fff', borderRadius:10, boxShadow:'0 1px 3px rgb
 const tableStyle = { width:'100%', borderCollapse:'collapse', fontSize:13 };
 const thStyle = { textAlign:'left', padding:'10px 12px', color:'#64748b', fontWeight:600, fontSize:12, borderBottom:'2px solid #f1f5f9', background:'#f8fafc', whiteSpace:'nowrap' };
 const tdStyle = { padding:'10px 12px', color:'#334155', verticalAlign:'middle', whiteSpace:'nowrap' };
+const stickyActionsThStyle = {
+  ...thStyle,
+  position: 'sticky',
+  right: 0,
+  zIndex: 2,
+  background: '#f8fafc',
+  boxShadow: '-4px 0 8px rgba(15,23,42,0.06)',
+};
+const stickyActionsTdStyle = (rowBg = '#fff') => ({
+  ...tdStyle,
+  position: 'sticky',
+  right: 0,
+  zIndex: 1,
+  background: rowBg,
+  boxShadow: '-4px 0 8px rgba(15,23,42,0.06)',
+});
 const trStyle = { borderBottom:'1px solid #f8fafc' };
 const btnPrimary = { padding:'8px 16px', background:'#2563eb', color:'#fff', border:'none', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };
 const btnSecondary = { padding:'8px 16px', background:'#f8fafc', color:'#475569', border:'1px solid #e2e8f0', borderRadius:8, cursor:'pointer', fontSize:13, fontWeight:600 };

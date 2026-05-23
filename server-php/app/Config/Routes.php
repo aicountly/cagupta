@@ -572,6 +572,24 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/approvals/client-master-edits',
+                'handler'    => 'Admin\ClientMasterEditApprovalController@index',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/client-master-edits/:id/approve',
+                'handler'    => 'Admin\ClientMasterEditApprovalController@approve',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/approvals/client-master-edits/:id/reject',
+                'handler'    => 'Admin\ClientMasterEditApprovalController@reject',
+                'middleware' => ['auth', 'role:super_admin'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/approvals/ledger-txn-changes',
                 'handler'    => 'Admin\LedgerTxnChangeApprovalController@index',
                 'middleware' => ['auth', 'role:super_admin'],

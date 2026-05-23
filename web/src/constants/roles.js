@@ -129,6 +129,7 @@ export const PERMISSIONS = {
   accounts: [
     'dashboard.view',
     'clients.view',
+    'clients.edit',
     'services.view',
     'documents.view',
     'calendar.view',

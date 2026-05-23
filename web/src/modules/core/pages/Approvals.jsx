@@ -26,6 +26,11 @@ import {
   entityEditPath,
 } from '../services/clientMasterNameChangeApprovalService';
 import {
+  listPendingClientMasterEdits,
+  approveClientMasterEdit,
+  rejectClientMasterEdit,
+} from '../services/clientMasterEditApprovalService';
+import {
   listPendingLedgerTxnChanges,
   approveLedgerTxnChange,
   rejectLedgerTxnChange,
@@ -39,6 +44,7 @@ const FILTER_OPTIONS = [
   { key: 'affiliate', label: 'Affiliate amendments', icon: Wallet },
   { key: 'partner', label: 'Partner amendments', icon: Wallet },
   { key: 'client_names', label: 'Client master names', icon: Users },
+  { key: 'client_edits', label: 'Client master edits', icon: Users },
   { key: 'ledger', label: 'Ledger changes', icon: FileText },
 ];
 
@@ -47,6 +53,7 @@ const TYPE_META = {
   affiliate: { label: 'Affiliate payout', color: '#7C3AED', bg: '#EDE9FE' },
   partner: { label: 'Partner payout', color: '#0D9488', bg: '#CCFBF1' },
   client_names: { label: 'Client master name', color: '#B45309', bg: '#FEF3C7' },
+  client_edits: { label: 'Client master edit', color: '#1D4ED8', bg: '#DBEAFE' },
   ledger: { label: 'Ledger change', color: '#0369a1', bg: '#E0F2FE' },
 };
 
@@ -428,6 +435,83 @@ function ClientMasterNameCard({ row, busy, onApprove, onReject }) {
   );
 }
 
+function ClientMasterEditCard({ row, busy, onApprove, onReject }) {
+  const [decisionNotes, setDecisionNotes] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+  const [showReject, setShowReject] = useState(false);
+  const approvalId = row.approval_id || row.id;
+  const entityId = row.entity_id;
+  const changeRows = row.change_rows || row.changeRows || [];
+
+  return (
+    <div style={card}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 14, color: '#0B1F3B' }}>
+            Approval #{approvalId}
+          </div>
+          <div style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+            {entityTypeLabel(row.entity_type)} #{entityId}
+            {row.entity_display_name ? ` — ${row.entity_display_name}` : ''}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <TypeBadge type="client_edits" />
+          <StatusBadge label="Pending" color="pending" />
+        </div>
+      </div>
+      <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
+        <div><strong>Requested by:</strong> {row.requested_by_name || row.requested_by_user_id || '—'}</div>
+        {row.request_reason && <div><strong>Note:</strong> {row.request_reason}</div>}
+      </div>
+      <LedgerChangeDiffTable rows={changeRows} />
+      <div style={{ marginTop: 10 }}>
+        <Link to={entityEditPath(row.entity_type, entityId)} style={{ fontSize: 12, color: '#0369a1' }}>
+          Open {entityTypeLabel(row.entity_type).toLowerCase()} record
+        </Link>
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 14, alignItems: 'center' }}>
+        <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, color: '#64748b', flex: '1 1 200px' }}>
+          Decision notes (optional)
+          <input
+            type="text"
+            value={decisionNotes}
+            onChange={(e) => setDecisionNotes(e.target.value)}
+            style={{ ...inputSm, flex: 1, minWidth: 160 }}
+            disabled={busy}
+          />
+        </label>
+        <button type="button" disabled={busy} onClick={() => onApprove(approvalId, decisionNotes)} style={btnApprove}>
+          {busy ? 'Processing...' : 'Approve'}
+        </button>
+        <button type="button" disabled={busy} onClick={() => setShowReject((s) => !s)} style={btnReject}>
+          Reject
+        </button>
+      </div>
+      {showReject && (
+        <div style={{ marginTop: 12, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <textarea
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            placeholder="Reason for rejection (required)"
+            rows={2}
+            style={{ ...inputSm, width: '100%', maxWidth: 400, minHeight: 56 }}
+            disabled={busy}
+          />
+          <button
+            type="button"
+            disabled={busy || !rejectReason.trim()}
+            onClick={() => onReject(approvalId, rejectReason)}
+            style={{ ...btnReject, background: '#DC2626', color: '#fff', border: 'none' }}
+          >
+            Confirm
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Approvals() {
   const { user } = useAuth();
   const allowed =
@@ -439,36 +523,40 @@ export default function Approvals() {
   const [affiliate, setAffiliate] = useState([]);
   const [partner, setPartner] = useState([]);
   const [clientNames, setClientNames] = useState([]);
+  const [clientEdits, setClientEdits] = useState([]);
   const [ledger, setLedger] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
   const [busyKey, setBusyKey] = useState(null);
 
   const counts = useMemo(() => ({
-    all: timesheet.length + affiliate.length + partner.length + clientNames.length + ledger.length,
+    all: timesheet.length + affiliate.length + partner.length + clientNames.length + clientEdits.length + ledger.length,
     timesheet: timesheet.length,
     affiliate: affiliate.length,
     partner: partner.length,
     client_names: clientNames.length,
+    client_edits: clientEdits.length,
     ledger: ledger.length,
-  }), [timesheet, affiliate, partner, clientNames, ledger]);
+  }), [timesheet, affiliate, partner, clientNames, clientEdits, ledger]);
 
   const load = useCallback(async () => {
     if (!allowed) return;
     setLoading(true);
     setErr('');
     try {
-      const [ts, aff, part, names, led] = await Promise.all([
+      const [ts, aff, part, names, edits, led] = await Promise.all([
         listPendingTimesheetOverflowRequests(),
         listPendingAffiliatePayoutCycleAmendments(),
         listPendingPartnerPayoutCycleAmendments(),
         listPendingClientMasterNameChanges(),
+        listPendingClientMasterEdits(),
         listPendingLedgerTxnChanges(),
       ]);
       setTimesheet(Array.isArray(ts) ? ts : []);
       setAffiliate(Array.isArray(aff) ? aff : []);
       setPartner(Array.isArray(part) ? part : []);
       setClientNames(Array.isArray(names) ? names : []);
+      setClientEdits(Array.isArray(edits) ? edits : []);
       setLedger(Array.isArray(led) ? led : []);
     } catch (e) {
       setErr(e.message || 'Failed to load approvals');
@@ -476,6 +564,7 @@ export default function Approvals() {
       setAffiliate([]);
       setPartner([]);
       setClientNames([]);
+      setClientEdits([]);
       setLedger([]);
     } finally {
       setLoading(false);
@@ -503,6 +592,12 @@ export default function Approvals() {
         list.push({ type: 'client_names', id, row, _sort: sortKey(row) });
       });
     }
+    if (include('client_edits')) {
+      clientEdits.forEach((row) => {
+        const id = row.approval_id || row.id;
+        list.push({ type: 'client_edits', id, row, _sort: sortKey(row) });
+      });
+    }
     if (include('ledger')) {
       ledger.forEach((row) => {
         const id = row.approval_id || row.id;
@@ -511,7 +606,7 @@ export default function Approvals() {
     }
 
     return list.sort((a, b) => b._sort - a._sort);
-  }, [filter, timesheet, affiliate, partner, clientNames, ledger]);
+  }, [filter, timesheet, affiliate, partner, clientNames, clientEdits, ledger]);
 
   async function runAction(key, fn) {
     setBusyKey(key);
@@ -666,6 +761,22 @@ export default function Approvals() {
                       await approveLedgerTxnChange(id, body);
                     })}
                     onReject={(id, reason) => runAction(key, () => rejectLedgerTxnChange(id, reason))}
+                  />
+                );
+              }
+
+              if (item.type === 'client_edits') {
+                return (
+                  <ClientMasterEditCard
+                    key={key}
+                    row={item.row}
+                    busy={busy}
+                    onApprove={(id, decisionNotes) => runAction(key, async () => {
+                      const body = {};
+                      if (decisionNotes?.trim()) body.decision_notes = decisionNotes.trim();
+                      await approveClientMasterEdit(id, body);
+                    })}
+                    onReject={(id, reason) => runAction(key, () => rejectClientMasterEdit(id, reason))}
                   />
                 );
               }

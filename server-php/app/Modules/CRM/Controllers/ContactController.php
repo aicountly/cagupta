@@ -7,6 +7,7 @@ use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
 use App\Libraries\ClientMasterAudit;
+use App\Libraries\ClientMasterEditApprovalService;
 use App\Libraries\ClientMasterNameChangeService;
 use App\Libraries\DigestQueue;
 use App\Libraries\OtpService;
@@ -237,6 +238,7 @@ class ContactController extends BaseController
             $this->error('Contact not found.', 404);
         }
         ClientMasterNameChangeService::attachPendingToRow('contact', $id, $contact);
+        ClientMasterEditApprovalService::attachPendingToRow('contact', $id, $contact);
         $this->success($contact);
     }
 
@@ -338,6 +340,39 @@ class ContactController extends BaseController
         $beforeSnap   = ClientMasterAudit::contactSnapshot($contact);
         $pendingMeta  = null;
 
+        $linkedOrgIds = array_key_exists('linked_org_ids', $body) && is_array($body['linked_org_ids'])
+            ? $body['linked_org_ids']
+            : null;
+        $requestReason = trim((string)($body['request_reason'] ?? ''));
+        $editIntercept = ClientMasterEditApprovalService::interceptEdit(
+            'contact',
+            $id,
+            $contact,
+            $data,
+            $linkedOrgIds,
+            $actingUser,
+            $isSuperAdmin,
+            $requestReason !== '' ? $requestReason : null
+        );
+        if ($editIntercept !== null) {
+            if ($editIntercept['type'] === 'blocked') {
+                $this->error(
+                    'A client master edit is already pending Super Admin approval (Approval #'
+                    . (int)$editIntercept['summary']['approval_id'] . ').',
+                    422,
+                    [],
+                    ['pending_client_master_edit' => $editIntercept['summary']]
+                );
+            }
+            $approvalId = (int)$editIntercept['summary']['approval_id'];
+            $this->success(
+                $contact,
+                'Edit submitted for Super Admin approval (Approval #' . $approvalId . ').',
+                200,
+                ['pending_client_master_edit' => $editIntercept['summary']]
+            );
+        }
+
         $intercept = ClientMasterNameChangeService::interceptNameChange(
             'contact',
             $id,
@@ -431,15 +466,48 @@ class ContactController extends BaseController
         $body     = $this->getJsonBody();
         $isActive = isset($body['is_active']) ? (bool)$body['is_active'] : !(bool)$contact['is_active'];
 
+        $actingUser   = $this->authUser();
+        $isSuperAdmin = $this->isSuperAdminActor($actingUser);
+        $statusData   = [
+            'is_active'      => $isActive,
+            'contact_status' => $isActive ? 'active' : 'inactive',
+        ];
+        $editIntercept = ClientMasterEditApprovalService::interceptEdit(
+            'contact',
+            $id,
+            $contact,
+            $statusData,
+            null,
+            $actingUser,
+            $isSuperAdmin
+        );
+        if ($editIntercept !== null) {
+            if ($editIntercept['type'] === 'blocked') {
+                $this->error(
+                    'A client master edit is already pending Super Admin approval (Approval #'
+                    . (int)$editIntercept['summary']['approval_id'] . ').',
+                    422,
+                    [],
+                    ['pending_client_master_edit' => $editIntercept['summary']]
+                );
+            }
+            $approvalId = (int)$editIntercept['summary']['approval_id'];
+            $this->success(
+                $contact,
+                'Status change submitted for Super Admin approval (Approval #' . $approvalId . ').',
+                200,
+                ['pending_client_master_edit' => $editIntercept['summary']]
+            );
+        }
+
         try {
             $this->clients->updateStatus($id, $isActive);
         } catch (\Throwable $e) {
             error_log('[ContactController] updateStatus failed for contact ' . $id . ': ' . $e->getMessage());
             $this->error('Failed to update contact status. Please try again.', 500);
         }
-        $updated    = $this->clients->find($id);
-        $actingUser = $this->authUser();
-        $actorId    = $actingUser ? (int)$actingUser['id'] : null;
+        $updated = $this->clients->find($id);
+        $actorId = $actingUser ? (int)$actingUser['id'] : null;
 
         // ── Superadmin alert (best-effort) ────────────────────────────────────
         $statusLabel = $isActive ? 'Activated' : 'Deactivated';

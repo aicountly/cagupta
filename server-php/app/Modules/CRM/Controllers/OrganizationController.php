@@ -7,6 +7,7 @@ use App\Config\Auth as AuthConfig;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
 use App\Libraries\ClientMasterAudit;
+use App\Libraries\ClientMasterEditApprovalService;
 use App\Libraries\ClientMasterNameChangeService;
 use App\Libraries\DigestQueue;
 use App\Libraries\OtpService;
@@ -192,6 +193,7 @@ class OrganizationController extends BaseController
             $this->error('Organization not found.', 404);
         }
         ClientMasterNameChangeService::attachPendingToRow('organization', $id, $org);
+        ClientMasterEditApprovalService::attachPendingToRow('organization', $id, $org);
         $this->success($org);
     }
 
@@ -310,6 +312,36 @@ class OrganizationController extends BaseController
         $beforeSnap   = ClientMasterAudit::organizationSnapshot($org);
         $pendingMeta  = null;
 
+        $requestReason = trim((string)($body['request_reason'] ?? ''));
+        $editIntercept = ClientMasterEditApprovalService::interceptEdit(
+            'organization',
+            $id,
+            $org,
+            $data,
+            null,
+            $actingUser,
+            $isSuperAdmin,
+            $requestReason !== '' ? $requestReason : null
+        );
+        if ($editIntercept !== null) {
+            if ($editIntercept['type'] === 'blocked') {
+                $this->error(
+                    'A client master edit is already pending Super Admin approval (Approval #'
+                    . (int)$editIntercept['summary']['approval_id'] . ').',
+                    422,
+                    [],
+                    ['pending_client_master_edit' => $editIntercept['summary']]
+                );
+            }
+            $approvalId = (int)$editIntercept['summary']['approval_id'];
+            $this->success(
+                $org,
+                'Edit submitted for Super Admin approval (Approval #' . $approvalId . ').',
+                200,
+                ['pending_client_master_edit' => $editIntercept['summary']]
+            );
+        }
+
         $intercept = ClientMasterNameChangeService::interceptNameChange(
             'organization',
             $id,
@@ -399,10 +431,43 @@ class OrganizationController extends BaseController
         $body     = $this->getJsonBody();
         $isActive = isset($body['is_active']) ? (bool)$body['is_active'] : !(bool)$org['is_active'];
 
+        $actingUser   = $this->authUser();
+        $isSuperAdmin = $this->isSuperAdminActor($actingUser);
+        $statusData   = [
+            'is_active'            => $isActive,
+            'organization_status' => $isActive ? 'active' : 'inactive',
+        ];
+        $editIntercept = ClientMasterEditApprovalService::interceptEdit(
+            'organization',
+            $id,
+            $org,
+            $statusData,
+            null,
+            $actingUser,
+            $isSuperAdmin
+        );
+        if ($editIntercept !== null) {
+            if ($editIntercept['type'] === 'blocked') {
+                $this->error(
+                    'A client master edit is already pending Super Admin approval (Approval #'
+                    . (int)$editIntercept['summary']['approval_id'] . ').',
+                    422,
+                    [],
+                    ['pending_client_master_edit' => $editIntercept['summary']]
+                );
+            }
+            $approvalId = (int)$editIntercept['summary']['approval_id'];
+            $this->success(
+                $org,
+                'Status change submitted for Super Admin approval (Approval #' . $approvalId . ').',
+                200,
+                ['pending_client_master_edit' => $editIntercept['summary']]
+            );
+        }
+
         $this->orgs->updateStatus($id, $isActive);
-        $updated    = $this->orgs->find($id);
-        $actingUser = $this->authUser();
-        $actorId    = $actingUser ? (int)$actingUser['id'] : null;
+        $updated = $this->orgs->find($id);
+        $actorId = $actingUser ? (int)$actingUser['id'] : null;
 
         // ── Superadmin alert (best-effort) ────────────────────────────────────
         $statusLabel = $isActive ? 'Activated' : 'Deactivated';

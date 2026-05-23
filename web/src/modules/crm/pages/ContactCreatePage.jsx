@@ -22,6 +22,7 @@ import { getBillingProfileByCode } from '../../../constants/billingProfiles';
 import WorkHoldSection from '../components/WorkHoldSection';
 import MasterChangeLogSection from '../components/MasterChangeLogSection';
 import PendingNameChangeBanner from '../components/PendingNameChangeBanner';
+import PendingClientMasterEditBanner from '../components/PendingClientMasterEditBanner';
 
 // ── Country / State data ──────────────────────────────────────────────────────
 const COUNTRIES = [
@@ -191,6 +192,7 @@ export default function ContactCreatePage() {
   const [collisionModal, setCollisionModal] = useState(null);
   const [activeTab, setActiveTab] = useState('details');
   const [pendingNameChange, setPendingNameChange] = useState(null);
+  const [pendingClientMasterEdit, setPendingClientMasterEdit] = useState(null);
   const [panDuplicateInfo, setPanDuplicateInfo] = useState(null);
   /** Pending save payload through name warning and preview confirmation. */
   const pendingSaveRef = useRef(/** @type {null | { contact: object, mode: 'quit' | 'addNew', displayLabels: object }} */ (null));
@@ -267,6 +269,7 @@ export default function ContactCreatePage() {
           defaultBillingProfileCode: existing.defaultBillingProfileCode || '',
         });
         setPendingNameChange(existing.pendingNameChange || null);
+        setPendingClientMasterEdit(existing.pendingClientMasterEdit || null);
       })
       .catch(err => {
         if (cancelled) return;
@@ -438,6 +441,12 @@ export default function ContactCreatePage() {
   }, [form, isEdit]);
 
   const applyUpdateResult = useCallback((result) => {
+    const pendingEdit = result?.meta?.pending_client_master_edit || null;
+    if (pendingEdit) {
+      setPendingClientMasterEdit(pendingEdit);
+      setToast(result.message || `Edit submitted for Super Admin approval (Approval #${pendingEdit.approval_id}).`);
+      return false;
+    }
     const pending = result?.meta?.pending_name_change || null;
     if (pending) {
       setPendingNameChange(pending);
@@ -448,6 +457,7 @@ export default function ContactCreatePage() {
       return false;
     }
     setPendingNameChange(null);
+    setPendingClientMasterEdit(null);
     setToast(result?.message || 'Contact updated successfully!');
     return true;
   }, []);
@@ -504,9 +514,16 @@ export default function ContactCreatePage() {
   const handleSaveApiError = useCallback((err) => {
     const data = err && typeof err === 'object' ? err.data : null;
     const meta = err && typeof err === 'object' ? err.meta : null;
+    const pendingEdit = meta?.pending_client_master_edit || data?.pending_client_master_edit;
+    if (pendingEdit) {
+      setPendingClientMasterEdit(pendingEdit);
+      setToast(`A client master edit is already pending (Approval #${pendingEdit.approval_id}).`);
+      return;
+    }
     const pending = meta?.pending_name_change || data?.pending_name_change;
     if (pending) {
       setPendingNameChange(pending);
+      return;
     }
     const c = data && data.conflict;
     if (c) {
@@ -775,6 +792,7 @@ export default function ContactCreatePage() {
       {/* Form card — hidden (not unmounted) when on non-details tabs so form state is preserved */}
       <div style={(activeTab !== 'details') && isEdit ? { display: 'none' } : cardStyle}>
         <PendingNameChangeBanner pending={pendingNameChange} />
+        <PendingClientMasterEditBanner pending={pendingClientMasterEdit} />
         {/* ── Section: Basic Info ── */}
         <SectionHeader title="Basic Information" />
         <div style={gridStyle}>
@@ -832,12 +850,12 @@ export default function ContactCreatePage() {
             <input
               value={form.displayName}
               onChange={e => update('displayName', e.target.value)}
-              disabled={Boolean(pendingNameChange)}
+              disabled={Boolean(pendingNameChange || pendingClientMasterEdit)}
               placeholder="e.g. Ramesh Agarwal"
               style={{
                 ...inputStyle,
                 borderColor: errors.displayName ? '#dc2626' : '#E6E8F0',
-                ...(pendingNameChange ? { background: '#F8FAFC', cursor: 'not-allowed' } : {}),
+                ...(pendingNameChange || pendingClientMasterEdit ? { background: '#F8FAFC', cursor: 'not-allowed' } : {}),
               }}
             />
             <FieldError msg={errors.displayName} />

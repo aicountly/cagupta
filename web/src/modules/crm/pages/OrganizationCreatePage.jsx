@@ -24,6 +24,7 @@ import { getBillingProfileByCode } from '../../../constants/billingProfiles';
 import WorkHoldSection from '../components/WorkHoldSection';
 import MasterChangeLogSection from '../components/MasterChangeLogSection';
 import PendingNameChangeBanner from '../components/PendingNameChangeBanner';
+import PendingClientMasterEditBanner from '../components/PendingClientMasterEditBanner';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 const ORG_TYPES = ['Company', 'LLP', 'Partnership', 'Proprietorship', 'Trust', 'Society', 'Other'];
@@ -241,6 +242,7 @@ export default function OrganizationCreatePage() {
   const [nameDuplicateInfo, setNameDuplicateInfo] = useState(null);
   const [activeTab, setActiveTab] = useState('details');
   const [pendingNameChange, setPendingNameChange] = useState(null);
+  const [pendingClientMasterEdit, setPendingClientMasterEdit] = useState(null);
   const [nameCollisionModalOpen, setNameCollisionModalOpen] = useState(false);
   /** Set to `'save'` when identical duplicate blocked a save attempt (modal copy). */
   const [nameCollisionBlockingReason, setNameCollisionBlockingReason] = useState(null);
@@ -311,6 +313,7 @@ export default function OrganizationCreatePage() {
           defaultBillingProfileCode: existing.defaultBillingProfileCode || '',
         });
         setPendingNameChange(existing.pendingNameChange || null);
+        setPendingClientMasterEdit(existing.pendingClientMasterEdit || null);
       })
       .catch(() => {});
   }, [isEdit, id]);
@@ -430,6 +433,15 @@ export default function OrganizationCreatePage() {
 
   // ── Save ────────────────────────────────────────────────────────────────────
   function applyOrgUpdateResult(result) {
+    const pendingEdit = result?.meta?.pending_client_master_edit || null;
+    if (pendingEdit) {
+      setPendingClientMasterEdit(pendingEdit);
+      setToast({
+        message: result.message || `Edit submitted for Super Admin approval (Approval #${pendingEdit.approval_id}).`,
+        type: 'success',
+      });
+      return false;
+    }
     const pending = result?.meta?.pending_name_change || null;
     if (pending) {
       setPendingNameChange(pending);
@@ -443,6 +455,7 @@ export default function OrganizationCreatePage() {
       return false;
     }
     setPendingNameChange(null);
+    setPendingClientMasterEdit(null);
     setToast({ message: result?.message || '✅ Organization updated successfully!', type: 'success' });
     return true;
   }
@@ -558,6 +571,12 @@ export default function OrganizationCreatePage() {
           existing: err.body.data.existing,
         });
       } else {
+        if (err instanceof ApiError && (err.meta?.pending_client_master_edit || err.body?.data?.pending_client_master_edit)) {
+          const pe = err.meta?.pending_client_master_edit || err.body?.data?.pending_client_master_edit;
+          setPendingClientMasterEdit(pe);
+          setToast({ message: `A client master edit is already pending (Approval #${pe.approval_id}).`, type: 'error' });
+          return;
+        }
         if (err instanceof ApiError && (err.meta?.pending_name_change || err.body?.data?.pending_name_change)) {
           setPendingNameChange(err.meta?.pending_name_change || err.body?.data?.pending_name_change);
         }
@@ -784,6 +803,7 @@ export default function OrganizationCreatePage() {
       {/* Form grid – hidden when on non-details tabs so form state is preserved */}
       <div style={activeTab !== 'details' && isEdit ? { display: 'none' } : formGrid}>
         <PendingNameChangeBanner pending={pendingNameChange} />
+        <PendingClientMasterEditBanner pending={pendingClientMasterEdit} />
         {/* ── Section: Basic Information ──────────────────────────────── */}
         <FormSection title="Basic Information">
           {/* Read-only Org Code */}
@@ -807,12 +827,12 @@ export default function OrganizationCreatePage() {
             <input
               value={form.displayName}
               onChange={e => setField('displayName', e.target.value)}
-              disabled={Boolean(pendingNameChange)}
+              disabled={Boolean(pendingNameChange || pendingClientMasterEdit)}
               placeholder="Enter organization name"
               style={{
                 ...inputStyle,
                 borderColor: errors.displayName ? '#ef4444' : '#E6E8F0',
-                ...(pendingNameChange ? { background: '#F8FAFC', cursor: 'not-allowed' } : {}),
+                ...(pendingNameChange || pendingClientMasterEdit ? { background: '#F8FAFC', cursor: 'not-allowed' } : {}),
               }}
             />
             {errors.displayName && <ErrorMsg msg={errors.displayName} />}

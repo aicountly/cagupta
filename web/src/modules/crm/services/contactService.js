@@ -151,6 +151,7 @@ function normalizeContact(c) {
     clientFacingRestricted: Boolean(c.client_facing_restricted),
     defaultBillingProfileCode: c.default_billing_profile_code || '',
     pendingNameChange: c.pending_name_change || null,
+    pendingClientMasterEdit: c.pending_client_master_edit || null,
   };
 }
 
@@ -439,6 +440,7 @@ export async function updateContact(id, payload) {
     message: data.message || 'Contact updated',
     meta: {
       pending_name_change: data.pending_name_change || data.meta?.pending_name_change || null,
+      pending_client_master_edit: data.pending_client_master_edit || data.meta?.pending_client_master_edit || null,
     },
   };
 }
