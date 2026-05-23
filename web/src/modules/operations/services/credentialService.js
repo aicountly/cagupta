@@ -49,15 +49,39 @@ function normalizeCredential(c) {
  * Fetch the list of credentials.
  * @returns {Promise<object[]>}
  */
-export async function getCredentials({ page = 1, perPage = 100, clientId = '' } = {}) {
+export async function getCredentials(opts = {}) {
+  const { credentials } = await getCredentialsWithMeta(opts);
+  return credentials;
+}
+
+/**
+ * Like getCredentials but also returns server pagination metadata.
+ * @returns {Promise<{ credentials: object[], total: number, lastPage: number }>}
+ */
+export async function getCredentialsWithMeta({
+  page = 1,
+  perPage = 100,
+  clientId = '',
+  organizationId = '',
+  portalName = '',
+  status = '',
+} = {}) {
   const params = new URLSearchParams({ page, per_page: perPage });
   if (clientId) params.set('client_id', clientId);
+  if (organizationId) params.set('organization_id', organizationId);
+  if (portalName) params.set('portal_name', portalName);
+  if (status && status !== 'all') params.set('status', status);
 
   const res = await fetch(`${API_BASE}/admin/credentials?${params}`, {
     headers: authHeaders(),
   });
   const data = await parseResponse(res);
-  return (data.data || []).map(normalizeCredential);
+  const pagination = data.meta?.pagination || data.pagination || {};
+  return {
+    credentials: (data.data || []).map(normalizeCredential),
+    total: pagination.total ?? (data.data || []).length,
+    lastPage: pagination.last_page ?? 1,
+  };
 }
 
 /**

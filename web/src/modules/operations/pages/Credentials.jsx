@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getCredentials, createCredential, updateCredential, deleteCredential } from '../services/credentialService';
+import { getCredentialsWithMeta, createCredential, updateCredential, deleteCredential } from '../services/credentialService';
 import { fetchPortalTypes } from '../services/portalTypeService';
 import EntitySearchDropdown from '../../../components/common/EntitySearchDropdown';
 import DestructiveConfirmModal from '../../../components/common/DestructiveConfirmModal';
+import ListPaginationBar from '../../../components/common/ListPaginationBar';
+
+const PER_PAGE = 100;
 
 const STATUS_FILTER_OPTIONS = [
   { value: 'all', label: 'All Statuses' },
@@ -10,16 +13,6 @@ const STATUS_FILTER_OPTIONS = [
   { value: 'missing_password', label: 'Missing password' },
   { value: 'missing_username', label: 'Missing username' },
 ];
-
-/** Derived vault status from stored username/password fields. */
-function credentialStatus(c) {
-  const hasUser = Boolean(String(c.username || '').trim());
-  const hasPass = Boolean(String(c.password || '').trim());
-  if (hasUser && hasPass) return 'complete';
-  if (!hasPass) return 'missing_password';
-  if (!hasUser) return 'missing_username';
-  return 'incomplete';
-}
 
 function CredentialModal({ onClose, onSave, initial }) {
   const isEdit = !!initial;
@@ -125,10 +118,14 @@ export default function Credentials() {
   const [clientFilterType, setClientFilterType]   = useState('contact');
   const [portalFilter, setPortalFilter]           = useState('');
   const [statusFilter, setStatusFilter]           = useState('all');
+  const [page, setPage]                           = useState(1);
+  const [totalPages, setTotalPages]               = useState(1);
+  const [serverTotal, setServerTotal]             = useState(0);
   const [portalTypes, setPortalTypes]             = useState([]);
   const [revealed, setRevealed]                 = useState({});
   const [credentials, setCredentials]           = useState([]);
   const [loading, setLoading]                   = useState(true);
+  const [error, setError]                       = useState('');
   const [showAddModal, setShowAddModal]         = useState(false);
   const [editCredential, setEditCredential]     = useState(null);
   const [deleteCredentialMeta, setDeleteCredentialMeta] = useState(null);
@@ -139,18 +136,44 @@ export default function Credentials() {
     fetchPortalTypes().then(setPortalTypes).catch(() => {});
   }, []);
 
+  const fetchParams = useMemo(() => ({
+    page,
+    perPage: PER_PAGE,
+    clientId: clientFilterType === 'contact' && clientFilterId ? clientFilterId : '',
+    organizationId: clientFilterType === 'organization' && clientFilterId ? clientFilterId : '',
+    portalName: portalFilter,
+    status: statusFilter,
+  }), [page, clientFilterId, clientFilterType, portalFilter, statusFilter]);
+
+  function reloadCredentials(params = fetchParams) {
+    setLoading(true);
+    return getCredentialsWithMeta(params)
+      .then(({ credentials: data, total, lastPage }) => {
+        setCredentials(data);
+        setServerTotal(total);
+        setTotalPages(Math.max(1, lastPage));
+        setError('');
+      })
+      .catch(err => setError(err.message || 'Failed to load credentials.'))
+      .finally(() => setLoading(false));
+  }
+
   useEffect(() => {
     setLoading(true);
-    getCredentials().catch(() => [])
-      .then(creds => setCredentials(creds))
+    getCredentialsWithMeta(fetchParams)
+      .then(({ credentials: data, total, lastPage }) => {
+        setCredentials(data);
+        setServerTotal(total);
+        setTotalPages(Math.max(1, lastPage));
+        setError('');
+      })
+      .catch(err => setError(err.message || 'Failed to load credentials.'))
       .finally(() => setLoading(false));
-  }, []);
+  }, [fetchParams]);
 
-  const portalOptions = useMemo(() => {
-    const fromSettings = portalTypes.map(p => p.name).filter(Boolean);
-    const fromRecords = credentials.map(c => c.portalName).filter(Boolean);
-    return [...new Set([...fromSettings, ...fromRecords])].sort((a, b) => a.localeCompare(b));
-  }, [portalTypes, credentials]);
+  const portalOptions = useMemo(() => (
+    portalTypes.map(p => p.name).filter(Boolean).sort((a, b) => a.localeCompare(b))
+  ), [portalTypes]);
 
   const hasActiveFilters = Boolean(clientFilterId) || Boolean(portalFilter) || statusFilter !== 'all';
 
@@ -160,31 +183,25 @@ export default function Credentials() {
     setClientFilterType('contact');
     setPortalFilter('');
     setStatusFilter('all');
+    setPage(1);
   }
-
-  const filtered = credentials.filter(c => {
-    if (clientFilterId) {
-      if (clientFilterType === 'organization') {
-        if (String(c.organizationId) !== String(clientFilterId)) return false;
-      } else if (String(c.clientId) !== String(clientFilterId)) {
-        return false;
-      }
-    }
-    if (portalFilter && c.portalName !== portalFilter) return false;
-    if (statusFilter !== 'all' && credentialStatus(c) !== statusFilter) return false;
-    return true;
-  });
 
   function handleAdd(payload) {
     createCredential(payload)
-      .then(newCred => setCredentials(prev => [newCred, ...prev]))
+      .then(() => {
+        if (page === 1) {
+          reloadCredentials({ ...fetchParams, page: 1 });
+        } else {
+          setPage(1);
+        }
+      })
       .catch(() => {});
   }
 
   function handleEdit(payload) {
     if (!editCredential) return;
     updateCredential(editCredential.id, payload)
-      .then(updated => setCredentials(prev => prev.map(c => c.id === updated.id ? updated : c)))
+      .then(() => reloadCredentials())
       .catch(() => {});
   }
 
@@ -195,7 +212,12 @@ export default function Credentials() {
     setDeleteCredentialErr('');
     try {
       await deleteCredential(id);
-      setCredentials((prev) => prev.filter((c) => c.id !== id));
+      const remainingOnPage = credentials.length - 1;
+      if (remainingOnPage === 0 && page > 1) {
+        setPage(p => p - 1);
+      } else {
+        await reloadCredentials();
+      }
       setDeleteCredentialMeta(null);
     } catch (e) {
       setDeleteCredentialErr(e.message || 'Failed to delete.');
@@ -247,14 +269,30 @@ export default function Credentials() {
         🔒 <strong>Credentials Vault</strong> — All passwords are stored AES-256 encrypted. Access is logged. Handle with care.
       </div>
 
+      {error && (
+        <div style={{ color: '#dc2626', marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 8, fontSize: 13 }}>
+          {error}
+        </div>
+      )}
+
       <div style={{ display:'flex', gap:12, marginBottom:20, alignItems:'center', flexWrap:'wrap' }}>
         <div style={{ flex:'0 0 280px', minWidth:220 }}>
           <EntitySearchDropdown
             value={clientFilterId}
             displayValue={clientFilterName}
             entityType={clientFilterType}
-            onChange={c => { setClientFilterId(String(c.id)); setClientFilterName(c.displayName); setClientFilterType(c.entityType); }}
-            onAllClients={() => { setClientFilterId(''); setClientFilterName(''); setClientFilterType('contact'); }}
+            onChange={c => {
+              setClientFilterId(String(c.id));
+              setClientFilterName(c.displayName);
+              setClientFilterType(c.entityType);
+              setPage(1);
+            }}
+            onAllClients={() => {
+              setClientFilterId('');
+              setClientFilterName('');
+              setClientFilterType('contact');
+              setPage(1);
+            }}
             allowAll
             placeholder="Filter by contact or organization…"
             style={{ ...selectStyle, width:'100%' }}
@@ -262,7 +300,7 @@ export default function Credentials() {
         </div>
         <select
           value={portalFilter}
-          onChange={e => setPortalFilter(e.target.value)}
+          onChange={e => { setPortalFilter(e.target.value); setPage(1); }}
           style={{ ...selectStyle, minWidth:180 }}
           aria-label="Filter by portal"
         >
@@ -273,7 +311,7 @@ export default function Credentials() {
         </select>
         <select
           value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value)}
+          onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
           style={{ ...selectStyle, minWidth:160 }}
           aria-label="Filter by status"
         >
@@ -294,14 +332,18 @@ export default function Credentials() {
           ➕ Add Credential
         </button>
       </div>
-      {!loading && credentials.length > 0 && (
-        <p style={{ margin:'-12px 0 16px', fontSize:12, color:'#64748b' }}>
-          Showing {filtered.length} of {credentials.length} credential{credentials.length !== 1 ? 's' : ''}
-          {hasActiveFilters ? ' (filtered)' : ''}
-        </p>
-      )}
 
       <div style={cardStyle}>
+        <ListPaginationBar
+          placement="top"
+          total={serverTotal}
+          page={page}
+          totalPages={totalPages}
+          perPage={PER_PAGE}
+          loading={loading}
+          setPage={setPage}
+          entityPlural="credentials"
+        />
         <table style={tableStyle}>
           <thead>
             <tr>{['Client','Portal Name','Portal URL','Username','Password','Last Changed','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}</tr>
@@ -309,9 +351,9 @@ export default function Credentials() {
           <tbody>
             {loading ? (
               <tr><td colSpan={7} style={{ padding:'24px', textAlign:'center', color:'#64748b' }}>Loading credentials…</td></tr>
-            ) : filtered.length === 0 ? (
+            ) : credentials.length === 0 ? (
               <tr><td colSpan={7} style={{ padding:'24px', textAlign:'center', color:'#94a3b8' }}>No credentials found.</td></tr>
-            ) : filtered.map(cr=>(
+            ) : credentials.map(cr=>(
               <tr key={cr.id} style={trStyle}>
                 <td style={{ ...tdStyle, fontWeight:600 }}>{cr.clientName}</td>
                 <td style={tdStyle}>{cr.portalName}</td>
@@ -341,6 +383,16 @@ export default function Credentials() {
             ))}
           </tbody>
         </table>
+        <ListPaginationBar
+          placement="bottom"
+          total={serverTotal}
+          page={page}
+          totalPages={totalPages}
+          perPage={PER_PAGE}
+          loading={loading}
+          setPage={setPage}
+          entityPlural="credentials"
+        />
       </div>
     </div>
   );

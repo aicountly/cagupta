@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE_URL } from '../../../constants/config';
+import { formatEntityLabel, EntityNameWithReference } from '../../../utils/entityDisplay';
 
 const API_BASE = API_BASE_URL;
 
@@ -85,6 +86,7 @@ export default function ClientSearchDropdown({
           return {
             id:          c.id,
             displayName: c.organization_name || parts.join(' ') || 'Unknown',
+            reference:   c.reference || '',
           };
         });
         setSuggestions(rows);
@@ -121,10 +123,11 @@ export default function ClientSearchDropdown({
   }
 
   function handleSelect(client) {
-    setQuery(client.displayName);
+    const label = formatEntityLabel(client.displayName, client.reference);
+    setQuery(label);
     setSuggestions([]);
     setOpen(false);
-    if (onChange) onChange(client);
+    if (onChange) onChange({ ...client, displayName: label });
   }
 
   function handleAllClients() {
@@ -205,7 +208,7 @@ export default function ClientSearchDropdown({
               onMouseLeave={e => { e.currentTarget.style.background = '#fff'; }}
               onMouseDown={() => handleSelect(c)}
             >
-              {c.displayName}
+              <EntityNameWithReference displayName={c.displayName} reference={c.reference} />
             </div>
           ))}
         </div>

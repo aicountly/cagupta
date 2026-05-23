@@ -40,6 +40,7 @@ class ClientModel
                     email,
                     phone,
                     pan,
+                    reference,
                     is_active
              FROM clients
              WHERE is_active = true
@@ -49,6 +50,7 @@ class ClientModel
                     OR organization_name ILIKE :like3
                     OR email             ILIKE :like4
                     OR pan               ILIKE :like5
+                    OR reference         ILIKE :like6
                )
              ORDER BY COALESCE(organization_name,
                                TRIM(CONCAT(COALESCE(first_name,''), ' ', COALESCE(last_name,'')))) ASC
@@ -59,6 +61,7 @@ class ClientModel
         $stmt->bindValue(':like3', $like);
         $stmt->bindValue(':like4', $like);
         $stmt->bindValue(':like5', $like);
+        $stmt->bindValue(':like6', $like);
         $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
         $stmt->execute();
 

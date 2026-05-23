@@ -33,11 +33,26 @@ class CredentialController extends BaseController
      */
     public function index(): never
     {
-        $page     = max(1, (int)$this->query('page', 1));
-        $perPage  = min(100, max(1, (int)$this->query('per_page', 20)));
-        $clientId = (int)$this->query('client_id', 0);
+        $page           = max(1, (int)$this->query('page', 1));
+        $perPage        = min(100, max(1, (int)$this->query('per_page', 20)));
+        $clientId       = (int)$this->query('client_id', 0);
+        $organizationId = (int)$this->query('organization_id', 0);
+        $portalName     = trim((string)$this->query('portal_name', ''));
+        $status         = trim((string)$this->query('status', ''));
 
-        $result = $this->credentials->paginate($page, $perPage, $clientId);
+        $allowedStatuses = ['complete', 'missing_password', 'missing_username'];
+        if ($status !== '' && !in_array($status, $allowedStatuses, true)) {
+            $status = '';
+        }
+
+        $result = $this->credentials->paginate(
+            $page,
+            $perPage,
+            $clientId,
+            $organizationId,
+            $portalName,
+            $status
+        );
 
         $this->success($result['credentials'], 'Credentials retrieved', 200, [
             'pagination' => [

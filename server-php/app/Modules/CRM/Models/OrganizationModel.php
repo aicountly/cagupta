@@ -312,11 +312,11 @@ class OrganizationModel
     public function search(string $q, int $limit = 20): array
     {
         $stmt = $this->db->prepare(
-            "SELECT id, name, pan, gstin, cin, email, phone
+            "SELECT id, name, pan, gstin, cin, email, phone, reference
              FROM organizations
              WHERE (organization_status IN ('active', 'prospect')
                     OR (organization_status IS NULL AND is_active = TRUE))
-               AND (name ILIKE :q OR pan ILIKE :q OR gstin ILIKE :q OR cin ILIKE :q OR email ILIKE :q)
+               AND (name ILIKE :q OR pan ILIKE :q OR gstin ILIKE :q OR cin ILIKE :q OR email ILIKE :q OR reference ILIKE :q)
              ORDER BY name ASC
              LIMIT :limit"
         );

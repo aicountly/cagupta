@@ -50,9 +50,12 @@ class CredentialModel
      * @return array{total: int, credentials: array<int, array<string, mixed>>}
      */
     public function paginate(
-        int    $page     = 1,
-        int    $perPage  = 20,
-        int    $clientId = 0
+        int    $page           = 1,
+        int    $perPage        = 20,
+        int    $clientId       = 0,
+        int    $organizationId = 0,
+        string $portalName     = '',
+        string $status         = ''
     ): array {
         $where  = ['1=1'];
         $params = [];
@@ -60,6 +63,26 @@ class CredentialModel
         if ($clientId > 0) {
             $where[]              = 'cv.client_id = :client_id';
             $params[':client_id'] = $clientId;
+        }
+
+        if ($organizationId > 0) {
+            $where[]                    = 'cv.organization_id = :organization_id';
+            $params[':organization_id'] = $organizationId;
+        }
+
+        if ($portalName !== '') {
+            $where[]                = 'cv.portal_name = :portal_name';
+            $params[':portal_name'] = $portalName;
+        }
+
+        if ($status === 'complete') {
+            $where[] = "NULLIF(TRIM(COALESCE(cv.username, '')), '') IS NOT NULL"
+                . " AND NULLIF(TRIM(COALESCE(cv.password_encrypted, '')), '') IS NOT NULL";
+        } elseif ($status === 'missing_password') {
+            $where[] = "NULLIF(TRIM(COALESCE(cv.password_encrypted, '')), '') IS NULL";
+        } elseif ($status === 'missing_username') {
+            $where[] = "NULLIF(TRIM(COALESCE(cv.username, '')), '') IS NULL"
+                . " AND NULLIF(TRIM(COALESCE(cv.password_encrypted, '')), '') IS NOT NULL";
         }
 
         $whereClause = implode(' AND ', $where);
