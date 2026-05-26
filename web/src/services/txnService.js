@@ -26,6 +26,11 @@ async function parseResponse(res) {
   return json;
 }
 
+/** PHP api_success merges pagination at the top level, not under meta. */
+function extractPagination(json) {
+  return json.meta?.pagination || json.pagination || {};
+}
+
 /** Must match LedgerDimensions ledger_class strings. */
 const LEDGER_CLASSES = ['regular', 'memorandum', 'optional'];
 
@@ -174,7 +179,7 @@ export async function getTxns(params = {}) {
   const data = await parseResponse(res);
   return {
     txns:       (data.data || []).map(normalizeTxn),
-    pagination: data.meta?.pagination || {},
+    pagination: extractPagination(data),
   };
 }
 

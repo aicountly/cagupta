@@ -4466,7 +4466,10 @@ export default function Invoices({ ledgerOnly = false }) {
   const [txnListPage, setTxnListPage] = useState(() => ({ ...DEFAULT_TXN_LIST_PAGE }));
   const [txnListPagination, setTxnListPagination] = useState({});
   const [txnListReloadSeq, setTxnListReloadSeq] = useState(0);
+  const [txnListFetchError, setTxnListFetchError] = useState('');
   const prevTxnListSearchDebouncedRef = useRef('');
+  const txnListFetchIdRef = useRef(0);
+  const activeTxnListPage = txnListPage[tab] ?? 1;
 
   // ── Ledger tab state ────────────────────────────────────────────────────────
   const [ledgerClientId, setLedgerClientId]       = useState('');
@@ -4840,6 +4843,9 @@ export default function Invoices({ ledgerOnly = false }) {
 
   useEffect(() => {
     setTxnListSearchQuery('');
+    setTxnListSearchDebounced('');
+    prevTxnListSearchDebouncedRef.current = '';
+    setTxnListFetchError('');
     setRecoverySearch('');
   }, [tab]);
 
@@ -4854,20 +4860,24 @@ export default function Invoices({ ledgerOnly = false }) {
     if (!TXN_LIST_SEARCH_TABS.has(tab)) return undefined;
     if (prevTxnListSearchDebouncedRef.current === txnListSearchDebounced) return undefined;
     prevTxnListSearchDebouncedRef.current = txnListSearchDebounced;
-    setTxnListPage((p) => ({ ...p, [tab]: 1 }));
+    setTxnListPage((p) => {
+      const cur = p[tab] ?? 1;
+      if (cur === 1) return p;
+      return { ...p, [tab]: 1 };
+    });
     return undefined;
   }, [txnListSearchDebounced, tab]);
 
   useEffect(() => {
-    setTxnListPage((p) => ({ ...p, invoices: 1 }));
+    setTxnListPage((p) => (p.invoices === 1 ? p : { ...p, invoices: 1 }));
   }, [statusFilter]);
 
   useEffect(() => {
-    setTxnListPage((p) => ({ ...p, tds: 1 }));
+    setTxnListPage((p) => (p.tds === 1 ? p : { ...p, tds: 1 }));
   }, [tdsFilter]);
 
   useEffect(() => {
-    setTxnListPage((p) => ({ ...p, payments: 1 }));
+    setTxnListPage((p) => (p.payments === 1 ? p : { ...p, payments: 1 }));
   }, [paymentsFilterByLedger, ledgerClientId, ledgerEntityType, ledgerLedgerClass]);
 
   useEffect(() => {
@@ -4896,8 +4906,8 @@ export default function Invoices({ ledgerOnly = false }) {
   useEffect(() => {
     if (!TXN_LIST_SEARCH_TABS.has(tab)) return undefined;
 
-    let cancelled = false;
-    const page = txnListPage[tab] ?? 1;
+    const fetchId = ++txnListFetchIdRef.current;
+    const page = activeTxnListPage;
     const params = buildTxnListParams(tab, page);
     if (!params) return undefined;
 
@@ -4912,9 +4922,10 @@ export default function Invoices({ ledgerOnly = false }) {
     };
 
     setLoading(true);
+    setTxnListFetchError('');
     getTxns(params)
       .then(({ txns, pagination }) => {
-        if (cancelled) return;
+        if (fetchId !== txnListFetchIdRef.current) return;
         const meta = normalizeTxnListPagination(pagination);
         setTxnListPagination((prev) => ({ ...prev, [tab]: meta }));
         if (tab === 'invoices') setInvoices(txns);
@@ -4925,15 +4936,18 @@ export default function Invoices({ ledgerOnly = false }) {
         else if (tab === 'rebate') setRebates(txns);
         else if (tab === 'credit_note') setCreditNotes(txns);
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (fetchId !== txnListFetchIdRef.current) return;
+        setTxnListFetchError(err?.message || 'Failed to load records.');
+      })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        if (fetchId === txnListFetchIdRef.current) setLoading(false);
       });
 
-    return () => { cancelled = true; };
+    return undefined;
   }, [
     tab,
-    txnListPage,
+    activeTxnListPage,
     txnListSearchDebounced,
     statusFilter,
     tdsFilter,
@@ -6194,6 +6208,12 @@ export default function Invoices({ ledgerOnly = false }) {
         </div>
       )}
 
+      {TXN_LIST_SEARCH_TABS.has(tab) && txnListFetchError && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', background: '#fef2f2', borderRadius: 10, border: '1px solid #fecaca', fontSize: 13, color: '#991b1b' }}>
+          {txnListFetchError}
+        </div>
+      )}
+
       {/* ── Tab: Invoices ─────────────────────────────────────────────────── */}
       {tab==='invoices' && (
         <div style={cardStyle}>
@@ -6252,7 +6272,7 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {invLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading invoices…</td></tr>
-              ) : (txnListPagination.invoices?.total ?? 0) === 0 && !txnListSearchDebounced ? (
+              ) : invoices.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices yet. Raise one to begin.</td></tr>
               ) : invoices.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices match your filters.</td></tr>
@@ -6369,7 +6389,9 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {recLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
-              ) : (txnListPagination.receipts?.total ?? 0) === 0 && !txnListSearchDebounced ? (
+              ) : txnListFetchError ? (
+                <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Could not load receipts.</td></tr>
+              ) : receipts.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
               ) : receipts.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts match your search.</td></tr>
@@ -6497,7 +6519,7 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {payLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
-              ) : (txnListPagination.payments?.total ?? 0) === 0 && !txnListSearchDebounced ? (
+              ) : paymentExpenses.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
               ) : paymentExpenses.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
@@ -6670,7 +6692,7 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {payCostLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading client cost payments…</td></tr>
-              ) : (txnListPagination.payment_costs?.total ?? 0) === 0 && !txnListSearchDebounced ? (
+              ) : paymentClientCosts.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No client cost payments found. Click &quot;+ Payment&quot; to record one.</td></tr>
               ) : paymentClientCosts.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
@@ -6802,7 +6824,7 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {tdsLoading ? (
                 <tr><td colSpan={9 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading TDS entries…</td></tr>
-              ) : (txnListPagination.tds?.total ?? 0) === 0 && !txnListSearchDebounced ? (
+              ) : tdsEntries.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={9 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries found. Click "+ Book TDS" to add one.</td></tr>
               ) : tdsEntries.length === 0 ? (
                 <tr><td colSpan={9 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries match your search.</td></tr>
@@ -6913,7 +6935,7 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {rebLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading rebate entries…</td></tr>
-              ) : (txnListPagination.rebate?.total ?? 0) === 0 && !txnListSearchDebounced ? (
+              ) : rebates.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No rebate/discount entries found. Click "+ Rebate/Discount" to add one.</td></tr>
               ) : rebates.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No entries match your search.</td></tr>
@@ -7015,7 +7037,7 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {cnLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading credit notes…</td></tr>
-              ) : (txnListPagination.credit_note?.total ?? 0) === 0 && !txnListSearchDebounced ? (
+              ) : creditNotes.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes found. Click "+ Credit Note" to add one.</td></tr>
               ) : creditNotes.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes match your search.</td></tr>
