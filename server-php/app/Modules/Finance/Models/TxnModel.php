@@ -316,6 +316,7 @@ class TxnModel
                                    OR t.invoice_number ILIKE :search
                                    OR t.notes ILIKE :search
                                    OR t.reference_number ILIKE :search
+                                   OR t.public_ref ILIKE :search
                                    OR t.paid_from ILIKE :search
                                    OR c.first_name ILIKE :search
                                    OR c.last_name  ILIKE :search
@@ -330,6 +331,8 @@ class TxnModel
                 $where[] = "t.txn_type IN ('payment_expense','payment_expense_reversal')";
             } elseif ($txnType === 'payment_client_cost') {
                 $where[] = "t.txn_type IN ('payment_client_cost','payment_client_cost_reversal')";
+            } elseif ($txnType === 'tds') {
+                $where[] = "t.txn_type IN ('tds_provisional','tds_final','tds_reversal')";
             } else {
                 $where[]             = 't.txn_type = :txn_type';
                 $params[':txn_type'] = $txnType;
@@ -360,8 +363,14 @@ class TxnModel
             $params[':tds_status'] = $tdsStatus;
         }
         if ($status !== '') {
-            $where[]           = 't.status = :status';
-            $params[':status'] = $status;
+            $invoiceStatuses = ['draft', 'sent', 'partially_paid', 'paid', 'overdue', 'cancelled'];
+            if ($txnType === 'invoice' && in_array($status, $invoiceStatuses, true)) {
+                $where[]                            = 't.invoice_status = :invoice_status_filter';
+                $params[':invoice_status_filter'] = $status;
+            } else {
+                $where[]           = 't.status = :status';
+                $params[':status'] = $status;
+            }
         }
         if ($dateFrom !== '') {
             $where[]              = 't.txn_date >= :date_from';
