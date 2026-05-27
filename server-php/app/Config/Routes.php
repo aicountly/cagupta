@@ -1603,6 +1603,12 @@ class Routes
             ],
             [
                 'method'     => 'POST',
+                'pattern'    => '/api/admin/txn/:id/reinstate',
+                'handler'    => 'Admin\TxnController@reinstate',
+                'middleware' => ['auth', 'permission:invoices.delete'],
+            ],
+            [
+                'method'     => 'POST',
                 'pattern'    => '/api/admin/txn/:id/request-invoice-modify-otp',
                 'handler'    => 'Admin\TxnController@requestInvoiceModifyOtp',
                 'middleware' => ['auth', 'permission_any:invoices.edit,invoices.delete'],

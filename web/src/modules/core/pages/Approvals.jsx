@@ -37,8 +37,10 @@ import {
   actionLabel as ledgerActionLabel,
   txnTypeLabelForApproval,
   ledgerApprovalTxnRows,
+  clientLabelForApprovalSnap,
 } from '../services/ledgerTxnChangeApprovalService';
 import { LedgerTxnApprovalPreviewSection } from '../components/LedgerTxnApprovalPreview';
+import { dispatchStaffNotificationsRefresh } from '../../../constants/events';
 
 const FILTER_OPTIONS = [
   { key: 'all', label: 'All' },
@@ -288,7 +290,10 @@ function LedgerTxnChangeCard({ row, busy, onApprove, onReject }) {
   const isBulkCancel = action === 'cancel' && Array.isArray(ids) && ids.length > 1;
   const changeRows = row.change_rows || row.changeRows || [];
   const txnRows = ledgerApprovalTxnRows(row);
-  const showSingleTxnDetailsLink = (action === 'cancel' || action === 'cancel_reversal') && !isBulkCancel && txnRows.length === 1;
+  const showSingleTxnPreview = !isBulkCancel && txnRows.length === 1;
+  const previewLinkOnly = action === 'cancel' || action === 'cancel_reversal';
+  const clientLabel = clientLabelForApprovalSnap(snap);
+  const showOriginalEntryLabel = action === 'reverse' || action === 'reinstate';
 
   return (
     <div style={card}>
@@ -313,6 +318,7 @@ function LedgerTxnChangeCard({ row, busy, onApprove, onReject }) {
       <div style={{ fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
         {!isBulkCancel && (
           <>
+            {clientLabel ? <div><strong>Client:</strong> {clientLabel}</div> : null}
             <div><strong>Ref:</strong> {snap.public_ref || snap.invoice_number || '—'}</div>
             <div><strong>Date:</strong> {snap.txn_date || '—'} · <strong>Amount:</strong> ₹{Number(snap.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
           </>
@@ -325,18 +331,23 @@ function LedgerTxnChangeCard({ row, busy, onApprove, onReject }) {
             modalSubtitle={`Cancel ${ids.length} ledger records`}
           />
         ) : null}
-        {showSingleTxnDetailsLink ? (
+        {showSingleTxnPreview ? (
           <LedgerTxnApprovalPreviewSection
             row={row}
             txnRows={txnRows}
             modalTitle={`Transaction — Approval #${approvalId}`}
-            linkOnly
+            linkOnly={previewLinkOnly}
           />
         ) : null}
         <div><strong>Requested by:</strong> {row.requested_by_name || row.requested_by_user_id || '—'}</div>
         <RequestReasonDisplay reason={row.request_reason} />
         {changeRows.length > 0 && (!isBulkCancel || txnRows.length === 0) ? (
-          <LedgerChangeDiffTable rows={changeRows} />
+          <>
+            {showOriginalEntryLabel ? (
+              <div style={{ marginTop: 10, fontSize: 12, fontWeight: 600, color: '#64748b' }}>Original entry</div>
+            ) : null}
+            <LedgerChangeDiffTable rows={changeRows} />
+          </>
         ) : action === 'update' ? (
           <div style={{ marginTop: 8, fontSize: 12, color: '#64748b' }}>
             No field-level differences could be derived from this request.
@@ -640,6 +651,7 @@ export default function Approvals() {
     try {
       await fn();
       await load();
+      dispatchStaffNotificationsRefresh();
     } catch (e) {
       setErr(e.message || 'Action failed');
     } finally {

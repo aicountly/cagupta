@@ -78,6 +78,26 @@ final class LedgerTxnChangeService
     }
 
     /**
+     * @param array<string, mixed>|null $actor
+     *
+     * @return array{type: string, summary: array<string, mixed>}|null
+     */
+    public static function queueReinstate(int $txnId, ?string $requestReason, ?array $actor): ?array
+    {
+        if (ApprovalReason::normalize($requestReason) === null) {
+            return ['type' => 'reason_required'];
+        }
+
+        return self::queue(
+            $txnId,
+            LedgerTxnChangeRequestModel::ACTION_REINSTATE,
+            [],
+            ApprovalReason::normalize($requestReason),
+            $actor
+        );
+    }
+
+    /**
      * @param list<int> $ids
      * @param array<string, mixed>|null $actor
      *
@@ -291,7 +311,7 @@ final class LedgerTxnChangeService
             'payment_method', 'reference_number', 'expense_purpose', 'paid_from',
             'tds_status', 'tds_section', 'tds_rate',
             'linked_txn_id', 'notes', 'status', 'public_ref',
-            'ledger_class', 'ledger_movement_kind', 'client_id', 'organization_id',
+            'ledger_class', 'ledger_movement_kind', 'client_id', 'client_name', 'organization_id',
             'firm_bank_account_id', 'counterparty_firm_bank_account_id', 'firm_expense_category',
         ];
         $out = [];
@@ -304,6 +324,49 @@ final class LedgerTxnChangeService
         return $out;
     }
 
+    /**
+     * Merge missing display fields from live txn (backfills pending approvals queued before enrichment).
+     *
+     * @param array<string, mixed> $snap
+     *
+     * @return array<string, mixed>
+     */
+    public static function enrichTxnSnapshot(array $snap, ?int $txnId = null): array
+    {
+        if (isset($snap['bulk']) && is_array($snap['bulk'])) {
+            $bulk = [];
+            foreach ($snap['bulk'] as $item) {
+                $bulk[] = is_array($item) ? self::enrichTxnSnapshot($item, null) : $item;
+            }
+
+            return ['bulk' => $bulk];
+        }
+
+        $id = (int)($snap['id'] ?? $txnId ?? 0);
+        if ($id <= 0) {
+            return $snap;
+        }
+
+        $txnModel = new TxnModel();
+        $row      = $txnModel->find($id);
+        if ($row === null) {
+            return $snap;
+        }
+
+        $compact = self::compactTxnSnapshot($row);
+        foreach ($compact as $k => $v) {
+            if (!array_key_exists($k, $snap)) {
+                $snap[$k] = $v;
+                continue;
+            }
+            if ($k === 'client_name' && trim((string)($snap[$k] ?? '')) === '' && trim((string)$v) !== '') {
+                $snap[$k] = $v;
+            }
+        }
+
+        return $snap;
+    }
+
     public static function actionLabel(string $action): string
     {
         return match ($action) {
@@ -311,6 +374,7 @@ final class LedgerTxnChangeService
             LedgerTxnChangeRequestModel::ACTION_REVERSE         => 'Reverse',
             LedgerTxnChangeRequestModel::ACTION_CANCEL          => 'Cancel',
             LedgerTxnChangeRequestModel::ACTION_CANCEL_REVERSAL => 'Cancel reversal',
+            LedgerTxnChangeRequestModel::ACTION_REINSTATE       => 'Reinstate',
             default                                             => $action,
         };
     }
@@ -329,12 +393,13 @@ final class LedgerTxnChangeService
         $txnType = $txnType ?: (string)($snap['txn_type'] ?? '');
 
         if ($action === LedgerTxnChangeRequestModel::ACTION_REVERSE) {
+            $rows   = self::buildSnapshotSummaryRows($snap, $txnType);
             $reason = trim((string)($payload['reason'] ?? ''));
-            if ($reason === '') {
-                return [];
+            if ($reason !== '') {
+                $rows[] = ['field' => 'Reversal reason', 'before' => '—', 'after' => $reason];
             }
 
-            return [['field' => 'Reversal reason', 'before' => '—', 'after' => $reason]];
+            return $rows;
         }
 
         if ($action === LedgerTxnChangeRequestModel::ACTION_CANCEL
@@ -343,7 +408,8 @@ final class LedgerTxnChangeService
         }
 
         if ($action === LedgerTxnChangeRequestModel::ACTION_CANCEL
-            || $action === LedgerTxnChangeRequestModel::ACTION_CANCEL_REVERSAL) {
+            || $action === LedgerTxnChangeRequestModel::ACTION_CANCEL_REVERSAL
+            || $action === LedgerTxnChangeRequestModel::ACTION_REINSTATE) {
             return self::buildSnapshotSummaryRows($snap, $txnType);
         }
 
@@ -396,6 +462,13 @@ final class LedgerTxnChangeService
         $firms = new BillingFirmModel();
         $rows  = [];
 
+        if (array_key_exists('client_name', $snap)) {
+            $clientVal = self::formatFieldValue('client_name', $snap['client_name'], $snap, $banks, $firms);
+            if ($clientVal !== '—') {
+                $rows[] = ['field' => 'Client', 'before' => $clientVal, 'after' => '—'];
+            }
+        }
+
         if ($txnType !== '') {
             $rows[] = [
                 'field'  => 'Transaction type',
@@ -405,6 +478,9 @@ final class LedgerTxnChangeService
         }
 
         foreach (self::snapshotFieldDefs($txnType) as $key => $label) {
+            if ($key === 'client_name') {
+                continue;
+            }
             if (!array_key_exists($key, $snap)) {
                 continue;
             }
@@ -651,7 +727,7 @@ final class LedgerTxnChangeService
         $defs['public_ref']     = 'Reference';
         $defs['invoice_number'] = 'Invoice no.';
 
-        return $defs;
+        return ['client_name' => 'Client'] + $defs;
     }
 
     /**

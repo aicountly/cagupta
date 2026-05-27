@@ -17,6 +17,7 @@
   overdue:         { bg: '#fee2e2', color: '#991b1b' },
   // clients
   active:          { bg: '#E8F7E6', color: '#2E8A25' },
+  reversed:        { bg: '#fef3c7', color: '#92400e' },
   inactive:        { bg: '#fee2e2', color: '#991b1b' },
   prospect:        { bg: '#dbeafe', color: '#1d4ed8' },
   // appointments

@@ -13,6 +13,7 @@ import { getTxns } from '../../../services/txnService';
 import { getAppointments } from '../../../services/appointmentService';
 import { kpiLabelFromSlug } from '../../../utils/serviceKpiFilters';
 import { fetchStaffNotifications, markStaffNotificationsRead } from '../../../services/notificationService';
+import { STAFF_NOTIFICATIONS_REFRESH_EVENT } from '../../../constants/events';
 
 const breadcrumbMap = {
   '/':                       ['Home'],
@@ -244,6 +245,12 @@ export default function TopBar({ title }) {
     loadStaffNotifications();
     const t = setInterval(loadStaffNotifications, 120000);
     return () => clearInterval(t);
+  }, [loadStaffNotifications]);
+
+  useEffect(() => {
+    const onRefresh = () => loadStaffNotifications();
+    window.addEventListener(STAFF_NOTIFICATIONS_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(STAFF_NOTIFICATIONS_REFRESH_EVENT, onRefresh);
   }, [loadStaffNotifications]);
 
   useEffect(() => {

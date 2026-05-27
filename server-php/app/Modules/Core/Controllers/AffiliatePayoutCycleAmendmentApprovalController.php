@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Libraries\ApprovalDecisionNotifier;
+use App\Libraries\ApprovalPendingNotificationDismisser;
 use App\Models\AdminAuditLogModel;
 use App\Models\AffiliatePayoutCycleAmendmentModel;
 use App\Models\AffiliatePayoutCycleModel;
@@ -94,6 +95,13 @@ final class AffiliatePayoutCycleAmendmentApprovalController extends BaseControll
             $actor,
             null
         );
+
+        ApprovalPendingNotificationDismisser::dismiss(
+            'affiliate_payout_cycle_amendment',
+            'affiliate_payout_cycle_amendment',
+            $id
+        );
+
         $this->success([
             'amendment_id' => $id,
             'cycle'        => $cycles->find($cycleId),
@@ -135,6 +143,13 @@ final class AffiliatePayoutCycleAmendmentApprovalController extends BaseControll
             $actor,
             $reason
         );
+
+        ApprovalPendingNotificationDismisser::dismiss(
+            'affiliate_payout_cycle_amendment',
+            'affiliate_payout_cycle_amendment',
+            $id
+        );
+
         $this->success(['id' => $id, 'status' => 'rejected'], 'Amendment rejected');
     }
 

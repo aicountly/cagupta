@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Libraries\ApprovalDecisionNotifier;
+use App\Libraries\ApprovalPendingNotificationDismisser;
 use App\Libraries\ClientMasterEditApprovalService;
 use App\Libraries\DigestQueue;
 use App\Models\AdminAuditLogModel;
@@ -101,6 +102,8 @@ final class ClientMasterEditApprovalController extends BaseController
             $detail
         );
 
+        ApprovalPendingNotificationDismisser::dismiss('client_master_edit', 'client_master_edit', $id);
+
         $this->success(['id' => $id, 'status' => 'approved'], 'Client master edit approved');
     }
 
@@ -159,6 +162,8 @@ final class ClientMasterEditApprovalController extends BaseController
             $actor,
             $detail
         );
+
+        ApprovalPendingNotificationDismisser::dismiss('client_master_edit', 'client_master_edit', $id);
 
         $this->success(['id' => $id, 'status' => 'rejected'], 'Client master edit rejected');
     }

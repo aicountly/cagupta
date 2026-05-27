@@ -419,6 +419,21 @@ export async function cancelLedgerReversalTxn(txnId, { otp, request_reason: requ
   return attachMutationMeta(json.data || {}, json);
 }
 
+/** POST /api/admin/txn/:id/reinstate — staff queue for Team Approvals, super admin applies immediately. */
+export async function reinstateTxn(txnId, { request_reason: requestReason } = {}) {
+  const body = {};
+  if (requestReason != null && String(requestReason).trim()) {
+    body.request_reason = String(requestReason).trim();
+  }
+  const res = await fetch(`${API_BASE}/admin/txn/${txnId}/reinstate`, {
+    method:  'POST',
+    headers: authHeaders(),
+    body:    JSON.stringify(body),
+  });
+  const json = await parseResponse(res);
+  return attachMutationMeta(json.data || {}, json);
+}
+
 /** POST — superadmin receives OTP email; intent is update | delete */
 export async function requestInvoiceModifyOtp(id, { intent = 'update' } = {}) {
   const res = await fetch(

@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Libraries\ApprovalDecisionNotifier;
+use App\Libraries\ApprovalPendingNotificationDismisser;
 use App\Libraries\LedgerTxnChangeService;
 use App\Models\LedgerTxnChangeRequestModel;
 
@@ -79,6 +80,8 @@ final class LedgerTxnChangeApprovalController extends BaseController
             $detail
         );
 
+        ApprovalPendingNotificationDismisser::dismiss('ledger_txn_change', 'ledger_txn_change', $id);
+
         $this->success(
             array_merge(['id' => $id, 'status' => 'approved'], $result),
             $actionLabel . ' approved'
@@ -123,6 +126,8 @@ final class LedgerTxnChangeApprovalController extends BaseController
             $actor,
             $detail
         );
+
+        ApprovalPendingNotificationDismisser::dismiss('ledger_txn_change', 'ledger_txn_change', $id);
 
         $this->success(['id' => $id, 'status' => 'rejected'], 'Ledger change rejected');
     }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import {
   txnTypeLabelForApproval,
+  clientLabelForApprovalSnap,
   LEDGER_TXN_INLINE_PREVIEW_LIMIT,
 } from '../services/ledgerTxnChangeApprovalService';
 
@@ -42,6 +43,7 @@ export function LedgerTxnPreviewTable({ rows, compactNarration = false }) {
           <tr style={{ background: '#F8FAFC' }}>
             <th style={thStyle}>ID</th>
             <th style={thStyle}>Type</th>
+            <th style={thStyle}>Client</th>
             <th style={thStyle}>Date</th>
             <th style={thStyle}>Ref / Invoice</th>
             <th style={thStyle}>Amount</th>
@@ -55,6 +57,9 @@ export function LedgerTxnPreviewTable({ rows, compactNarration = false }) {
               <tr key={id} style={{ borderBottom: '1px solid #F1F5F9' }}>
                 <td style={{ ...tdStyle, fontWeight: 600, color: '#0B1F3B', whiteSpace: 'nowrap' }}>{id}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{txnTypeLabelForApproval(snap.txn_type)}</td>
+                <td style={{ ...tdStyle, maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {clientLabelForApprovalSnap(snap) || '—'}
+                </td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>{snap.txn_date || '—'}</td>
                 <td style={tdStyle}>{formatTxnRef(snap)}</td>
                 <td style={{ ...tdStyle, whiteSpace: 'nowrap', fontWeight: 600 }}>{formatInrAmount(snap.amount)}</td>

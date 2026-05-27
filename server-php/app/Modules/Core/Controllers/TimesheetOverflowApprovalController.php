@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Libraries\ApprovalDecisionNotifier;
+use App\Libraries\ApprovalPendingNotificationDismisser;
 use App\Models\ServiceModel;
 use App\Models\TimeEntryModel;
 use App\Models\TimesheetOverflowRequestModel;
@@ -152,6 +153,8 @@ final class TimesheetOverflowApprovalController extends BaseController
             $detailLines
         );
 
+        ApprovalPendingNotificationDismisser::dismiss('timesheet_overflow', 'timesheet_overflow_request', $id);
+
         $this->success($this->requests->find($id), 'Request approved');
     }
 
@@ -203,6 +206,8 @@ final class TimesheetOverflowApprovalController extends BaseController
             $actor,
             $detailLines
         );
+
+        ApprovalPendingNotificationDismisser::dismiss('timesheet_overflow', 'timesheet_overflow_request', $id);
 
         $this->success(['id' => $id, 'status' => 'rejected'], 'Request rejected');
     }

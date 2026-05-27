@@ -13,6 +13,7 @@ final class LedgerTxnChangeRequestModel
     public const ACTION_REVERSE         = 'reverse';
     public const ACTION_CANCEL          = 'cancel';
     public const ACTION_CANCEL_REVERSAL = 'cancel_reversal';
+    public const ACTION_REINSTATE       = 'reinstate';
 
     private PDO $db;
 
@@ -142,13 +143,17 @@ final class LedgerTxnChangeRequestModel
     public static function toPendingSummary(array $row): array
     {
         $payload = self::decodeJsonField($row['payload'] ?? []);
-        $snap    = self::decodeJsonField($row['txn_snapshot'] ?? []);
+        $txnId   = $row['txn_id'] !== null ? (int)$row['txn_id'] : null;
+        $snap    = LedgerTxnChangeService::enrichTxnSnapshot(
+            self::decodeJsonField($row['txn_snapshot'] ?? []),
+            $txnId
+        );
 
         $action = (string)($row['action'] ?? '');
 
         return [
             'approval_id'    => (int)$row['id'],
-            'txn_id'         => $row['txn_id'] !== null ? (int)$row['txn_id'] : null,
+            'txn_id'         => $txnId,
             'action'         => $action,
             'payload'        => $payload,
             'txn_snapshot'   => $snap,

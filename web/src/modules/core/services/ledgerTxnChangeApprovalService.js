@@ -52,6 +52,7 @@ export function actionLabel(action) {
     reverse: 'Reverse',
     cancel: 'Cancel',
     cancel_reversal: 'Cancel reversal',
+    reinstate: 'Reinstate',
   };
   return m[action] || action || 'Change';
 }
@@ -74,6 +75,15 @@ export function txnTypeLabelForApproval(txnType) {
 }
 
 export const LEDGER_TXN_INLINE_PREVIEW_LIMIT = 5;
+
+/** Client / org display label from an approval txn snapshot. */
+export function clientLabelForApprovalSnap(snap) {
+  const name = String(snap?.client_name || '').trim();
+  if (name && name !== 'Unknown') return name;
+  const clientId = Number(snap?.client_id || 0);
+  if (clientId > 0) return `Client #${clientId}`;
+  return '';
+}
 
 /** Normalize single-txn vs bulk cancel snapshots from an approval row. */
 export function ledgerApprovalTxnRows(row) {

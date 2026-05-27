@@ -2019,6 +2019,34 @@ class TxnModel
     }
 
     /**
+     * Restore firm cash-book mirror rows cancelled with a receipt or on-behalf payment.
+     */
+    public function restoreCashMirrorsForClientLeg(int $clientLegId, ?int $actorId): void
+    {
+        if ($clientLegId <= 0) {
+            return;
+        }
+        if ($actorId !== null) {
+            $stmt = $this->db->prepare(
+                "UPDATE txn SET status = 'active', updated_at = NOW(), updated_by = :ub
+                 WHERE linked_txn_id = :lid
+                   AND txn_type IN ('receipt_bank_leg', 'payment_expense_bank_leg', 'payment_client_cost_bank_leg')
+                   AND status = 'cancelled'"
+            );
+            $stmt->execute([':lid' => $clientLegId, ':ub' => $actorId]);
+
+            return;
+        }
+        $stmt = $this->db->prepare(
+            "UPDATE txn SET status = 'active', updated_at = NOW()
+             WHERE linked_txn_id = :lid
+               AND txn_type IN ('receipt_bank_leg', 'payment_expense_bank_leg', 'payment_client_cost_bank_leg')
+               AND status = 'cancelled'"
+        );
+        $stmt->execute([':lid' => $clientLegId]);
+    }
+
+    /**
      * Hard delete (internal / legacy). Admin ledger deletes use {@see softCancelForAudit()} instead.
      */
     public function delete(int $id): bool

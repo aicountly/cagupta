@@ -603,6 +603,10 @@ class TxnController extends BaseController
             $this->error('Transaction not found.', 404);
         }
 
+        if (in_array((string)($row['status'] ?? ''), ['cancelled', 'deleted', 'reversed'], true)) {
+            $this->error('Cannot edit a cancelled or reversed transaction.', 422);
+        }
+
         $body = $this->getJsonBody();
         $actingUser = $this->authUser();
         $actorId    = $actingUser ? (int)$actingUser['id'] : null;
@@ -864,11 +868,74 @@ class TxnController extends BaseController
     /**
      * @param array<string, mixed> $row
      * @param array<string, mixed> $body
+     *
+     * @return array{ledger_class: string, ledger_movement_kind: string}
+     */
+    private function resolveTxnLedgerDimensions(array $row, array $body, bool $clientCostsFixed = false): array
+    {
+        if ($clientCostsFixed) {
+            $lc = LedgerDimensions::assertClientCostsLedgerClass(
+                $row['ledger_class'] ?? LedgerDimensions::CLASS_CLIENT_COSTS
+            );
+        } else {
+            $lc = array_key_exists('ledger_class', $body)
+                ? LedgerDimensions::assertLedgerClass($body['ledger_class'])
+                : LedgerDimensions::assertLedgerClass($row['ledger_class'] ?? '');
+        }
+        $mk = array_key_exists('ledger_movement_kind', $body)
+            ? LedgerDimensions::assertLedgerMovementKindRequired($body['ledger_movement_kind'])
+            : LedgerDimensions::assertLedgerMovementKindRequired($row['ledger_movement_kind'] ?? '');
+
+        return ['ledger_class' => $lc, 'ledger_movement_kind' => $mk];
+    }
+
+    private function syncStandardNarrationForMethodChange(
+        ?string $narration,
+        ?string $previousMethod,
+        ?string $newMethod,
+        string $prefix
+    ): ?string {
+        if ($previousMethod === null || $newMethod === null || $previousMethod === $newMethod) {
+            return $narration;
+        }
+        $trimmed = trim((string)($narration ?? ''));
+        if ($trimmed === $prefix . $previousMethod) {
+            return $prefix . $newMethod;
+        }
+
+        return $narration;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $patch
+     */
+    private function applyMethodNarrationSync(array $row, array &$patch, string $prefix): void
+    {
+        if (!array_key_exists('payment_method', $patch)) {
+            return;
+        }
+        $oldMethod = trim((string)($row['payment_method'] ?? ''));
+        $newMethod = trim((string)$patch['payment_method']);
+        if ($oldMethod === '' || $newMethod === '' || $oldMethod === $newMethod) {
+            return;
+        }
+        $currentNarr = array_key_exists('narration', $patch)
+            ? $patch['narration']
+            : ($row['narration'] ?? null);
+        $synced = $this->syncStandardNarrationForMethodChange($currentNarr, $oldMethod, $newMethod, $prefix);
+        if ($synced !== $currentNarr) {
+            $patch['narration'] = $synced;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $body
      */
     private function applyReceiptTxnUpdate(int $id, array $row, array $body, ?int $actorId): void
     {
-        $immutable = ['client_id', 'organization_id', 'ledger_class', 'ledger_movement_kind'];
-        foreach ($immutable as $field) {
+        foreach (['client_id', 'organization_id'] as $field) {
             if (!array_key_exists($field, $body)) {
                 continue;
             }
@@ -880,7 +947,12 @@ class TxnController extends BaseController
         }
 
         $metaKeys = ['txn_date', 'narration', 'notes', 'payment_method', 'reference_number', 'firm_bank_account_id'];
-        $structural = array_key_exists('amount', $body) || array_key_exists('allocations', $body);
+        $structural = array_key_exists('amount', $body)
+            || array_key_exists('allocations', $body)
+            || array_key_exists('ledger_class', $body)
+            || array_key_exists('ledger_movement_kind', $body);
+
+        $ledgerDims = $this->resolveTxnLedgerDimensions($row, $body);
 
         $resolveBankId = function (array $metaPatch) use ($row, $id): int {
             if (!empty($metaPatch['firm_bank_account_id'])) {
@@ -913,8 +985,8 @@ class TxnController extends BaseController
                 'client_id'             => (int)($row['client_id'] ?? 0),
                 'organization_id'       => (int)($row['organization_id'] ?? 0),
                 'amount'                => $amount,
-                'ledger_class'          => (string)($row['ledger_class'] ?? ''),
-                'ledger_movement_kind'  => (string)($row['ledger_movement_kind'] ?? ''),
+                'ledger_class'          => $ledgerDims['ledger_class'],
+                'ledger_movement_kind'  => $ledgerDims['ledger_movement_kind'],
             ];
             try {
                 $allocRows = TxnReceiptAllocationService::normalizeAndValidateAllocations($receiptBody, $allocRaw);
@@ -923,6 +995,7 @@ class TxnController extends BaseController
             }
 
             $metaPatch = array_intersect_key($body, array_flip($metaKeys));
+            $this->applyMethodNarrationSync($row, $metaPatch, 'Receipt — ');
             $bankId    = $resolveBankId($metaPatch);
             unset($metaPatch['firm_bank_account_id']);
 
@@ -931,7 +1004,7 @@ class TxnController extends BaseController
                 'amount' => $amount,
                 'debit'  => 0,
             ];
-            $this->txn->update($id, array_merge($creditPatch, $metaPatch), $actorId);
+            $this->txn->update($id, array_merge($creditPatch, $metaPatch, $ledgerDims), $actorId);
             TxnReceiptAllocationService::replaceReceiptAllocationsWithInvoiceRefresh($id, $allocRows);
             if ($bankId > 0) {
                 $fresh = $this->txn->find($id);
@@ -942,6 +1015,8 @@ class TxnController extends BaseController
         }
 
         $patch = array_intersect_key($body, array_flip($metaKeys));
+        $patch = array_merge($patch, $ledgerDims);
+        $this->applyMethodNarrationSync($row, $patch, 'Receipt — ');
         if ($patch === []) {
             return;
         }
@@ -963,7 +1038,7 @@ class TxnController extends BaseController
      */
     private function applyPaymentExpenseTxnUpdate(int $id, array $row, array $body, ?int $actorId): void
     {
-        foreach (['client_id', 'organization_id', 'ledger_class', 'ledger_movement_kind'] as $field) {
+        foreach (['client_id', 'organization_id'] as $field) {
             if (!array_key_exists($field, $body)) {
                 continue;
             }
@@ -976,7 +1051,12 @@ class TxnController extends BaseController
             'txn_date', 'narration', 'notes', 'payment_method', 'reference_number',
             'expense_purpose', 'firm_bank_account_id',
         ];
-        $structural = array_key_exists('amount', $body) || array_key_exists('settlement_lines', $body);
+        $structural = array_key_exists('amount', $body)
+            || array_key_exists('settlement_lines', $body)
+            || array_key_exists('ledger_class', $body)
+            || array_key_exists('ledger_movement_kind', $body);
+
+        $ledgerDims = $this->resolveTxnLedgerDimensions($row, $body);
 
         $resolveBankId = function (array $metaSlice) use ($row, $id): int {
             if (!empty($metaSlice['firm_bank_account_id'])) {
@@ -994,6 +1074,8 @@ class TxnController extends BaseController
 
         if (!$structural) {
             $patch = array_intersect_key($body, array_flip($metaKeys));
+            $patch = array_merge($patch, $ledgerDims);
+            $this->applyMethodNarrationSync($row, $patch, 'Payment — ');
             if ($patch === []) {
                 return;
             }
@@ -1030,6 +1112,8 @@ class TxnController extends BaseController
         $poid = (int)($row['organization_id'] ?? 0);
 
         $patch = array_intersect_key($body, array_flip($metaKeys));
+        $patch = array_merge($patch, $ledgerDims);
+        $this->applyMethodNarrationSync($row, $patch, 'Payment — ');
         $patch['amount'] = $newAmount;
         $patch['debit']  = $newAmount;
         $patch['credit'] = 0;
@@ -1753,6 +1837,149 @@ class TxnController extends BaseController
             ],
             $orphanRepair ? 'Reversed posting restored to active.' : 'Ledger reversal cancelled.'
         );
+    }
+
+    /**
+     * POST /api/admin/txn/:id/reinstate
+     * Restores a cancelled ledger posting to active (staff queue for Super Admin approval).
+     */
+    public function reinstate(int $id): never
+    {
+        $acting = $this->authUser();
+        if (!$this->userHasPermission($acting, 'invoices.delete')) {
+            $this->error('Access denied. Required permission: invoices.delete.', 403);
+        }
+
+        $row = $this->txn->find($id);
+        if ($row === null) {
+            $this->error('Transaction not found.', 404);
+        }
+
+        $this->assertTxnReinstateAllowed($row);
+
+        $body = $this->getJsonBody();
+        if (!$this->isSuperAdminActor($acting)) {
+            $requestReason = trim((string)($body['request_reason'] ?? ''));
+            $intercept = LedgerTxnChangeService::queueReinstate(
+                $id,
+                $requestReason !== '' ? $requestReason : null,
+                $acting
+            );
+            if ($intercept !== null) {
+                $this->respondLedgerChangeQueued($intercept, $row, $acting);
+            }
+            $this->error('Could not submit reinstate for approval.', 500);
+        }
+
+        $beforeSnap = $this->txnAuditCompactSnapshot($row);
+        $actorRowId = $acting ? (int)$acting['id'] : null;
+        $this->performTxnReinstate($row, $actorRowId);
+        $after = $this->txn->find($id);
+        $this->auditTxnLog(
+            $actorRowId,
+            'txn.reinstated',
+            $id,
+            ['txn_type' => (string)($row['txn_type'] ?? '')],
+            $beforeSnap,
+            $after !== null ? $this->txnAuditCompactSnapshot($after) : null
+        );
+        $this->success($after, 'Transaction reinstated.');
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function assertTxnReinstateAllowed(array $row): void
+    {
+        if ((string)($row['status'] ?? '') !== 'cancelled') {
+            $this->error('Only cancelled transactions can be reinstated.', 422);
+        }
+        $type = (string)($row['txn_type'] ?? '');
+        if (!$this->txnRequiresSuperadminDelete($type) && !$this->txnRequiresFirmTeamApproval($type)) {
+            $this->error('This transaction type cannot be reinstated.', 422);
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     */
+    private function performTxnReinstate(array $row, ?int $actorId): void
+    {
+        $id   = (int)($row['id'] ?? 0);
+        $type = (string)($row['txn_type'] ?? '');
+        if ((string)($row['status'] ?? '') !== 'cancelled') {
+            throw new \InvalidArgumentException('Only cancelled transactions can be reinstated.');
+        }
+
+        if ($type === 'receipt') {
+            $amount = round((float)($row['amount'] ?? 0), 2);
+            $patch  = ['status' => 'active'];
+            $pref   = trim((string)($row['public_ref'] ?? ''));
+            if ($pref === '') {
+                $patch['public_ref'] = \App\Libraries\TxnPublicRefGenerator::next(
+                    Database::getConnection(),
+                    'RCP',
+                    isset($row['txn_date']) ? (string)$row['txn_date'] : null
+                );
+            }
+            $this->txn->update($id, $patch, $actorId);
+            $this->txn->restoreCashMirrorsForClientLeg($id, $actorId);
+            if ($amount > 0) {
+                TxnReceiptAllocationService::replaceReceiptAllocationsWithInvoiceRefresh($id, [[
+                    'target_type'    => 'unallocated_advance',
+                    'target_txn_id'  => null,
+                    'amount'         => $amount,
+                ]]);
+            }
+            $bankId = $this->txn->findReceiptBankLegAccountId($id);
+            if ($bankId > 0) {
+                $fresh = $this->txn->find($id);
+                if ($fresh !== null) {
+                    $this->txn->syncReceiptBankLeg($id, $fresh, $amount, $bankId);
+                }
+            }
+
+            return;
+        }
+
+        if ($type === 'payment_expense' || $type === 'payment_client_cost') {
+            $patch = ['status' => 'active'];
+            $pref  = trim((string)($row['public_ref'] ?? ''));
+            if ($pref === '') {
+                $patch['public_ref'] = \App\Libraries\TxnPublicRefGenerator::next(
+                    Database::getConnection(),
+                    'PAY',
+                    isset($row['txn_date']) ? (string)$row['txn_date'] : null
+                );
+            }
+            $this->txn->update($id, $patch, $actorId);
+            $this->txn->restoreCashMirrorsForClientLeg($id, $actorId);
+
+            return;
+        }
+
+        if ($type === 'invoice') {
+            $this->txn->update($id, [
+                'status'         => 'active',
+                'invoice_status' => 'sent',
+            ], $actorId);
+            (new CommissionSyncService())->syncInvoiceSafe($id);
+            $this->notifyAdminsInvoiceChange('updated', $row, $this->txn->find($id), $this->authUser());
+
+            return;
+        }
+
+        if ($type === 'credit_note') {
+            $linked = (int)($row['linked_txn_id'] ?? 0);
+            $this->txn->update($id, ['status' => 'active'], $actorId);
+            if ($linked > 0) {
+                (new CommissionSyncService())->afterCreditNote($linked);
+            }
+
+            return;
+        }
+
+        $this->txn->update($id, ['status' => 'active'], $actorId);
     }
 
     /**
@@ -2663,7 +2890,7 @@ class TxnController extends BaseController
      */
     private function applyPaymentClientCostTxnUpdate(int $id, array $row, array $body, ?int $actorId): void
     {
-        foreach (['client_id', 'organization_id', 'ledger_class', 'ledger_movement_kind'] as $field) {
+        foreach (['client_id', 'organization_id', 'ledger_class'] as $field) {
             if (!array_key_exists($field, $body)) {
                 continue;
             }
@@ -2686,6 +2913,8 @@ class TxnController extends BaseController
             $this->error('amount must be greater than zero.', 422);
         }
 
+        $ledgerDims = $this->resolveTxnLedgerDimensions($row, $body, true);
+
         $resolveBankId = function (array $metaSlice) use ($row, $id): int {
             if (!empty($metaSlice['firm_bank_account_id'])) {
                 $tmpBody = array_merge(
@@ -2701,6 +2930,8 @@ class TxnController extends BaseController
         };
 
         $patch = array_intersect_key($body, array_flip($metaKeys));
+        $patch = array_merge($patch, ['ledger_movement_kind' => $ledgerDims['ledger_movement_kind']]);
+        $this->applyMethodNarrationSync($row, $patch, 'Client cost — ');
         $patch['amount'] = $newAmount;
         $patch['debit']  = 0;
         $patch['credit'] = 0;
@@ -2759,6 +2990,11 @@ class TxnController extends BaseController
             LedgerTxnChangeRequestModel::ACTION_CANCEL => $this->executeApprovedLedgerCancel(
                 $requestId,
                 $payload,
+                $decidedByActorId
+            ),
+            LedgerTxnChangeRequestModel::ACTION_REINSTATE => $this->executeApprovedLedgerReinstate(
+                $requestId,
+                $txnId,
                 $decidedByActorId
             ),
             default => $this->error('Unknown approval action.', 422),
@@ -3019,6 +3255,43 @@ class TxnController extends BaseController
             'approval_id' => $requestId,
             'cancelled' => count($rows),
             'txn_ids'   => array_map(static fn (array $r): int => (int)($r['id'] ?? 0), $rows),
+        ];
+    }
+
+    private function executeApprovedLedgerReinstate(
+        int $requestId,
+        int $txnId,
+        int $decidedByActorId
+    ): array {
+        if ($txnId <= 0) {
+            $this->error('Invalid transaction id on approval request.', 422);
+        }
+        $row = $this->txn->find($txnId);
+        if ($row === null) {
+            $this->error('Transaction not found.', 404);
+        }
+        $this->assertTxnReinstateAllowed($row);
+
+        $beforeSnap = $this->txnAuditCompactSnapshot($row);
+        $this->performTxnReinstate($row, $decidedByActorId);
+        $after = $this->txn->find($txnId);
+        $this->auditTxnLog(
+            $decidedByActorId,
+            'txn.reinstated',
+            $txnId,
+            [
+                'approval_id' => $requestId,
+                'txn_type'    => (string)($row['txn_type'] ?? ''),
+                'via'         => 'team_approval',
+            ],
+            $beforeSnap,
+            $after !== null ? $this->txnAuditCompactSnapshot($after) : null
+        );
+
+        return [
+            'action'      => 'reinstate',
+            'approval_id' => $requestId,
+            'txn_id'      => $txnId,
         ];
     }
 

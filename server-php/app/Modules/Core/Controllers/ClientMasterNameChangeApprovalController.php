@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Libraries\ApprovalDecisionNotifier;
+use App\Libraries\ApprovalPendingNotificationDismisser;
 use App\Libraries\ClientMasterAudit;
 use App\Libraries\ClientMasterNameChangeService;
 use App\Models\AdminAuditLogModel;
@@ -115,6 +116,8 @@ final class ClientMasterNameChangeApprovalController extends BaseController
             $detail
         );
 
+        ApprovalPendingNotificationDismisser::dismiss('client_master_name_change', 'client_master_name_change', $id);
+
         $this->success(['id' => $id, 'status' => 'approved'], 'Name change approved');
     }
 
@@ -170,6 +173,8 @@ final class ClientMasterNameChangeApprovalController extends BaseController
             $actor,
             $detail
         );
+
+        ApprovalPendingNotificationDismisser::dismiss('client_master_name_change', 'client_master_name_change', $id);
 
         $this->success(['id' => $id, 'status' => 'rejected'], 'Name change rejected');
     }

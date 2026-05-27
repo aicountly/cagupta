@@ -82,6 +82,22 @@ final class UserNotificationModel
         )->execute([':uid' => $userId]);
     }
 
+    /** Mark unread notifications for all users matching kind + entity (e.g. pending Team Approvals). */
+    public function markReadByEntity(string $kind, string $entityType, int $entityId): void
+    {
+        if ($entityId <= 0 || $kind === '' || $entityType === '') {
+            return;
+        }
+        $this->db->prepare(
+            'UPDATE user_notifications SET read_at = NOW()
+             WHERE kind = :kind AND entity_type = :etype AND entity_id = :eid AND read_at IS NULL'
+        )->execute([
+            ':kind'  => $kind,
+            ':etype' => $entityType,
+            ':eid'   => $entityId,
+        ]);
+    }
+
     public function countUnread(int $userId): int
     {
         $stmt = $this->db->prepare(

@@ -5,6 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Libraries\ApprovalDecisionNotifier;
+use App\Libraries\ApprovalPendingNotificationDismisser;
 use App\Models\AdminAuditLogModel;
 use App\Models\PartnerPayoutCycleAmendmentModel;
 use App\Models\PartnerPayoutCycleModel;
@@ -91,6 +92,13 @@ final class PartnerPayoutCycleAmendmentApprovalController extends BaseController
             $actor,
             null
         );
+
+        ApprovalPendingNotificationDismisser::dismiss(
+            'partner_payout_cycle_amendment',
+            'partner_payout_cycle_amendment',
+            $id
+        );
+
         $this->success([
             'amendment_id' => $id,
             'cycle'        => $cycles->find($cycleId),
@@ -132,6 +140,13 @@ final class PartnerPayoutCycleAmendmentApprovalController extends BaseController
             $actor,
             $reason
         );
+
+        ApprovalPendingNotificationDismisser::dismiss(
+            'partner_payout_cycle_amendment',
+            'partner_payout_cycle_amendment',
+            $id
+        );
+
         $this->success(['id' => $id, 'status' => 'rejected'], 'Amendment rejected');
     }
 

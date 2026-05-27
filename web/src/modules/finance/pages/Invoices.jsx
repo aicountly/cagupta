@@ -4,7 +4,7 @@ import {
   getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createPaymentClientCost, createTds, finalizeTds,
   getTdsEntries, createRebate, createCreditNote, getLedger, getBillSettlementReport, getRecoveryByGroup,
   getOpeningBalance, setOpeningBalance,
-  updateTxn, bulkDeleteTxns,
+  updateTxn, bulkDeleteTxns, reinstateTxn,
   requestLedgerReversalUserOtp, reverseLedgerTxn, cancelLedgerReversalTxn, assignParkedTxn,
   postInvoiceCostAnalysisPreview,
   getReceiptsWithUnallocated,
@@ -132,6 +132,82 @@ function signedLedgerTxnAmount(txnType, rawAmount) {
   return COMPENSATING_REVERSAL_TXN_TYPES.has(txnType) ? -abs : abs;
 }
 
+const LEDGER_INACTIVE_STATUSES = new Set(['cancelled', 'reversed', 'deleted']);
+
+function ledgerTxnStatus(txn) {
+  return String(txn?.status || txn?.invoiceStatus || 'active').toLowerCase();
+}
+
+function isLedgerInactive(txn) {
+  return LEDGER_INACTIVE_STATUSES.has(ledgerTxnStatus(txn));
+}
+
+function isLedgerCancelled(txn) {
+  return ledgerTxnStatus(txn) === 'cancelled';
+}
+
+function isLedgerEditable(txn) {
+  return !isLedgerInactive(txn);
+}
+
+function ledgerRowStyle(baseStyle, txn) {
+  if (!isLedgerInactive(txn)) return baseStyle;
+  return {
+    ...baseStyle,
+    textDecoration: 'line-through',
+    opacity: 0.65,
+    color: '#64748b',
+  };
+}
+
+function LedgerStatusBadge({ txn }) {
+  const st = ledgerTxnStatus(txn);
+  if (st === 'active') return <StatusBadge status="active" />;
+  if (st === 'cancelled' || st === 'reversed' || st === 'deleted') return <StatusBadge status={st} />;
+  return <StatusBadge status={st} />;
+}
+
+function LedgerRowActions({
+  txn,
+  canEdit,
+  canDelete,
+  onEdit,
+  onCancelPrompt,
+  onReinstatePrompt,
+  extraBefore,
+}) {
+  if (isLedgerCancelled(txn)) {
+    return (
+      <>
+        {extraBefore}
+        {canDelete && (
+          <button
+            type="button"
+            style={{ ...iconBtn, color: '#15803d' }}
+            onClick={(e) => { e?.stopPropagation?.(); onReinstatePrompt(txn); }}
+          >
+            ↩ Reinstate
+          </button>
+        )}
+      </>
+    );
+  }
+  if (isLedgerInactive(txn)) {
+    return extraBefore || null;
+  }
+  return (
+    <>
+      {extraBefore}
+      {canEdit && (
+        <button type="button" style={iconBtn} onClick={(e) => { e?.stopPropagation?.(); onEdit(txn); }}>✏️ Edit</button>
+      )}
+      {canDelete && (
+        <button type="button" style={iconBtn} onClick={(e) => { e?.stopPropagation?.(); onCancelPrompt(txn); }}>🗑 Delete</button>
+      )}
+    </>
+  );
+}
+
 /** Case-insensitive substring match against arbitrary row fields (client-side table search). */
 function txnFieldsIncludeQuery(query, fields) {
   const q = String(query || '').trim().toLowerCase();
@@ -238,6 +314,19 @@ function coercePaymentMethodForFirmBankAccount(method, banks, firmBankAccountId)
   if (opts.length === 1) return opts[0];
   if (method && opts.includes(method)) return method;
   return opts[0];
+}
+
+const RECEIPT_NARR_PREFIX = 'Receipt — ';
+const PAYMENT_NARR_PREFIX = 'Payment — ';
+const CLIENT_COST_NARR_PREFIX = 'Client cost — ';
+
+/** Update narration only when it matches the server auto-generated `{prefix}{method}` form. */
+function syncStandardNarrationForMethodChange(narration, previousMethod, newMethod, prefix) {
+  if (!previousMethod || previousMethod === newMethod) return narration;
+  const trimmed = (narration || '').trim();
+  const expected = `${prefix}${previousMethod}`;
+  if (trimmed === expected) return `${prefix}${newMethod}`;
+  return narration;
 }
 
 const PAYMENT_ON_BEHALF_DEFAULTS = {
@@ -1309,6 +1398,8 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
   const [recNotes, setRecNotes] = useState('');
   const [recNarr, setRecNarr] = useState('');
   const [recBankId, setRecBankId] = useState('');
+  const [recLedgerClass, setRecLedgerClass] = useState('regular');
+  const [recMovementKind, setRecMovementKind] = useState('fees');
   const [allocLines, setAllocLines] = useState([]);
 
   const [payTxnDate, setPayTxnDate] = useState('');
@@ -1319,6 +1410,8 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
   const [payNarr, setPayNarr] = useState('');
   const [payPurpose, setPayPurpose] = useState('misc');
   const [payBankId, setPayBankId] = useState('');
+  const [payLedgerClass, setPayLedgerClass] = useState('regular');
+  const [payMovementKind, setPayMovementKind] = useState('fees');
   const [settleLines, setSettleLines] = useState([]);
 
   const [tdsTxnDate, setTdsTxnDate] = useState('');
@@ -1378,6 +1471,8 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           setRecNotes(r.notes || '');
           setRecNarr(r.narration || '');
           setRecBankId(r.firmBankAccountId != null ? String(r.firmBankAccountId) : '');
+          setRecLedgerClass(r.ledgerClass || 'regular');
+          setRecMovementKind(r.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees');
           const al = (r.allocations && r.allocations.length > 0)
             ? r.allocations.map((x) => ({
               targetType: x.targetType || 'invoice',
@@ -1395,6 +1490,8 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           setPayNarr(r.narration || '');
           setPayPurpose(r.expensePurpose || 'misc');
           setPayBankId(r.firmBankAccountId != null ? String(r.firmBankAccountId) : '');
+          setPayLedgerClass(r.ledgerClass || 'regular');
+          setPayMovementKind(r.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees');
           const sl = (r.settlementLines && r.settlementLines.length > 0)
             ? r.settlementLines.map((x) => ({
               targetType: x.targetType || 'receipt',
@@ -1412,6 +1509,8 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           setPayNarr(r.narration || '');
           setPayPurpose(r.expensePurpose || 'misc');
           setPayBankId(r.firmBankAccountId != null ? String(r.firmBankAccountId) : '');
+          setPayLedgerClass(r.ledgerClass || 'client_costs');
+          setPayMovementKind(r.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees');
           setSettleLines([]);
         } else if (tt === 'tds_provisional' || tt === 'tds_final' || tt === 'tds_reversal') {
           setTdsTxnDate(r.txnDate || '');
@@ -1460,15 +1559,30 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
 
   useEffect(() => {
     if (!recBankId) return undefined;
-    setRecMethod((m) => coercePaymentMethodForFirmBankAccount(m, banks, recBankId));
+    setRecMethod((prevMethod) => {
+      const coerced = coercePaymentMethodForFirmBankAccount(prevMethod, banks, recBankId);
+      if (coerced !== prevMethod) {
+        setRecNarr((narr) => syncStandardNarrationForMethodChange(narr, prevMethod, coerced, RECEIPT_NARR_PREFIX));
+      }
+      return coerced;
+    });
     return undefined;
   }, [recBankId, banks]);
 
   useEffect(() => {
     if (!payBankId) return undefined;
-    setPayMethod((m) => coercePaymentMethodForFirmBankAccount(m, banks, payBankId));
+    setPayMethod((prevMethod) => {
+      const coerced = coercePaymentMethodForFirmBankAccount(prevMethod, banks, payBankId);
+      if (coerced !== prevMethod) {
+        const prefix = row?.txnType === 'payment_client_cost' || row?.txnType === 'payment_client_cost_reversal'
+          ? CLIENT_COST_NARR_PREFIX
+          : PAYMENT_NARR_PREFIX;
+        setPayNarr((narr) => syncStandardNarrationForMethodChange(narr, prevMethod, coerced, prefix));
+      }
+      return coerced;
+    });
     return undefined;
-  }, [payBankId, banks]);
+  }, [payBankId, banks, row?.txnType]);
 
   const withinUserRevWindow = row && row.createdAt
     && Number.isFinite(new Date(row.createdAt).getTime())
@@ -1477,6 +1591,8 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
   const needsReverseApproval = row?.status === 'active' && !isPrimarySuperAdmin && !userRevEligible;
   const userCancelRevEligible = ledgerUserRevFromServer && withinUserRevWindow && row?.status === 'reversed';
   const needsCancelRevApproval = row?.status === 'reversed' && !isPrimarySuperAdmin && !userCancelRevEligible;
+  const ledgerEditCancelled = row && isLedgerCancelled(row);
+  const ledgerEditReversed = row && row.status === 'reversed';
   const isCompensatingReversalRow = row
     && ['receipt_reversal', 'payment_expense_reversal', 'tds_reversal'].includes(row.txnType);
   const isParkedAssignable = row
@@ -1687,6 +1803,8 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           notes: recNotes || null,
           narration: recNarr || null,
           firm_bank_account_id: bankId,
+          ledger_class: normalizeLedgerClassForApi(recLedgerClass),
+          ledger_movement_kind: recMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
           allocations,
         };
       } else if (tt === 'payment_expense' || tt === 'payment_expense_reversal') {
@@ -1714,6 +1832,8 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           narration: payNarr || null,
           expense_purpose: payPurpose,
           firm_bank_account_id: bankId,
+          ledger_class: normalizeLedgerClassForApi(payLedgerClass),
+          ledger_movement_kind: payMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
           settlement_lines,
         };
       } else if (tt === 'payment_client_cost' || tt === 'payment_client_cost_reversal') {
@@ -1730,6 +1850,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           narration: payNarr || null,
           expense_purpose: payPurpose,
           firm_bank_account_id: bankId,
+          ledger_movement_kind: payMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
         };
       } else if (tt === 'tds_provisional' || tt === 'tds_final' || tt === 'tds_reversal') {
         const amount = parseFloat(tdsAmount);
@@ -1793,16 +1914,62 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
           {info && <div style={{ color: '#047857', fontSize: 13 }}>{info}</div>}
           <PendingLedgerChangeBanner pending={pendingChange} />
-          {!loading && row && (
+          {!loading && row && ledgerEditCancelled && (
+            <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, fontSize: 13, color: '#991b1b' }}>
+              This transaction is cancelled and cannot be edited. Use <strong>Reinstate</strong> from the list to restore it to active.
+            </div>
+          )}
+          {!loading && row && !ledgerEditCancelled && (
             <>
               <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
                 Edits and reversals outside the 30-day self-service window are submitted to Team Approvals for Super Admin.
               </p>
               <div style={{ fontSize: 12, color: '#64748b' }}>
-                {row.clientName || 'Unknown'} · Ref {row.publicRef || '—'} · Billing {row.billingProfileCode || '—'}
+                {row.clientName || 'Unknown'} · Ref {row.publicRef || '—'} · Billing {row.billingProfileCode || '—'} · Status {row.status || 'active'}
               </div>
+              {ledgerEditReversed && (
+                <div style={{ padding: 12, background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, fontSize: 13, color: '#92400e' }}>
+                  This posting is reversed and cannot be edited. Use <strong>Cancel reversal</strong> below to restore it to active.
+                </div>
+              )}
+              {!ledgerEditReversed && (
+              <>
               {(row.txnType === 'receipt' || row.txnType === 'receipt_reversal') && (
                 <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <label style={labelStyle}>
+                      Ledger type
+                      {row.ledgerClass === 'parked' ? (
+                        <input type="text" style={{ ...inputStyle, background: '#f8fafc' }} value="Parked" readOnly />
+                      ) : (
+                        <select
+                          style={inputStyle}
+                          value={recLedgerClass}
+                          onChange={(e) => {
+                            const lc = e.target.value;
+                            setRecLedgerClass(lc);
+                            if (lc === 'parked') {
+                              setAllocLines([{ targetType: 'unallocated_advance', targetTxnId: '', amount: recAmount }]);
+                            } else {
+                              setAllocLines([{ targetType: 'invoice', targetTxnId: '', amount: '' }]);
+                            }
+                          }}
+                        >
+                          {LEDGER_CLASS_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      )}
+                    </label>
+                    <label style={labelStyle}>
+                      Ledger view
+                      <select style={inputStyle} value={recMovementKind} onChange={(e) => setRecMovementKind(e.target.value)}>
+                        {LEDGER_MOVEMENT_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                     <label style={labelStyle}>
                       Receipt date *
@@ -1819,7 +1986,11 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                       <select
                         style={inputStyle}
                         value={recMethod}
-                        onChange={(e) => setRecMethod(e.target.value)}
+                        onChange={(e) => {
+                          const newMethod = e.target.value;
+                          setRecNarr((narr) => syncStandardNarrationForMethodChange(narr, recMethod, newMethod, RECEIPT_NARR_PREFIX));
+                          setRecMethod(newMethod);
+                        }}
                         disabled={paymentMethodOptionsForFirmBankAccount(banks, recBankId).length === 1}
                       >
                         {paymentMethodOptionsForFirmBankAccount(banks, recBankId).map((m) => (
@@ -1840,7 +2011,11 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                       onChange={(e) => {
                         const bankId = e.target.value;
                         setRecBankId(bankId);
-                        setRecMethod((m) => coercePaymentMethodForFirmBankAccount(m, banks, bankId));
+                        setRecMethod((m) => {
+                          const coerced = coercePaymentMethodForFirmBankAccount(m, banks, bankId);
+                          setRecNarr((narr) => syncStandardNarrationForMethodChange(narr, m, coerced, RECEIPT_NARR_PREFIX));
+                          return coerced;
+                        });
                       }}
                       disabled={!row.billingProfileCode || banksLoading}
                     >
@@ -1894,6 +2069,42 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                 <>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                     <label style={labelStyle}>
+                      Ledger type
+                      {(row.txnType === 'payment_client_cost' || row.txnType === 'payment_client_cost_reversal') ? (
+                        <input type="text" style={{ ...inputStyle, background: '#f8fafc' }} value="Client Costs" readOnly />
+                      ) : row.ledgerClass === 'parked' ? (
+                        <input type="text" style={{ ...inputStyle, background: '#f8fafc' }} value="Parked" readOnly />
+                      ) : (
+                        <select
+                          style={inputStyle}
+                          value={payLedgerClass}
+                          onChange={(e) => {
+                            const lc = e.target.value;
+                            setPayLedgerClass(lc);
+                            if (lc === 'parked') {
+                              setSettleLines([{ targetType: 'unallocated_advance', targetTxnId: '', amount: payAmount }]);
+                            } else {
+                              setSettleLines([{ targetType: 'receipt', targetTxnId: '', amount: '' }]);
+                            }
+                          }}
+                        >
+                          {LEDGER_CLASS_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      )}
+                    </label>
+                    <label style={labelStyle}>
+                      Ledger view
+                      <select style={inputStyle} value={payMovementKind} onChange={(e) => setPayMovementKind(e.target.value)}>
+                        {LEDGER_MOVEMENT_OPTIONS.map((o) => (
+                          <option key={o.value} value={o.value}>{o.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <label style={labelStyle}>
                       Date *
                       <DateInput style={inputStyle} value={payTxnDate} onChange={(e) => setPayTxnDate(e.target.value)} />
                     </label>
@@ -1916,7 +2127,14 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                       <select
                         style={inputStyle}
                         value={payMethod}
-                        onChange={(e) => setPayMethod(e.target.value)}
+                        onChange={(e) => {
+                          const newMethod = e.target.value;
+                          const prefix = (row.txnType === 'payment_client_cost' || row.txnType === 'payment_client_cost_reversal')
+                            ? CLIENT_COST_NARR_PREFIX
+                            : PAYMENT_NARR_PREFIX;
+                          setPayNarr((narr) => syncStandardNarrationForMethodChange(narr, payMethod, newMethod, prefix));
+                          setPayMethod(newMethod);
+                        }}
                         disabled={paymentMethodOptionsForFirmBankAccount(banks, payBankId).length === 1}
                       >
                         {paymentMethodOptionsForFirmBankAccount(banks, payBankId).map((m) => (
@@ -1937,7 +2155,14 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                       onChange={(e) => {
                         const bankId = e.target.value;
                         setPayBankId(bankId);
-                        setPayMethod((m) => coercePaymentMethodForFirmBankAccount(m, banks, bankId));
+                        setPayMethod((m) => {
+                          const coerced = coercePaymentMethodForFirmBankAccount(m, banks, bankId);
+                          const prefix = (row.txnType === 'payment_client_cost' || row.txnType === 'payment_client_cost_reversal')
+                            ? CLIENT_COST_NARR_PREFIX
+                            : PAYMENT_NARR_PREFIX;
+                          setPayNarr((narr) => syncStandardNarrationForMethodChange(narr, m, coerced, prefix));
+                          return coerced;
+                        });
                       }}
                       disabled={!row.billingProfileCode || banksLoading}
                     >
@@ -2073,6 +2298,8 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                 </button>
               </div>
               )}
+              </>
+              )}
               {row?.parkedTransferTarget && (
                 <div style={{ marginTop: 12, padding: 10, background: '#ecfdf5', borderRadius: 8, fontSize: 12, color: '#047857' }}>
                   Assigned to {row.parkedTransferTarget.publicRef || `#${row.parkedTransferTarget.id}`}
@@ -2196,7 +2423,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
               )}
             </>
           )}
-          {!loading && row && (
+          {!loading && row && !ledgerEditCancelled && (
             <label style={labelStyle}>
               Reason for change *
               <textarea
@@ -2204,14 +2431,16 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                 value={editReason}
                 onChange={(e) => setEditReason(e.target.value)}
                 placeholder="Explain why this ledger entry is being edited"
-                disabled={!!pendingChange}
+                disabled={!!pendingChange || ledgerEditReversed}
               />
             </label>
           )}
         </div>
         <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button type="button" onClick={onClose} style={btnSecondary}>Cancel</button>
-          <button type="button" style={btnPrimary} disabled={loading || saving || !row || pendingChange} onClick={handleSave}>{saving ? 'Saving…' : (isSuperAdmin ? 'Save changes' : 'Submit for approval')}</button>
+          {!ledgerEditCancelled && (
+            <button type="button" style={btnPrimary} disabled={loading || saving || !row || pendingChange || ledgerEditReversed} onClick={handleSave}>{saving ? 'Saving…' : (isSuperAdmin ? 'Save changes' : 'Submit for approval')}</button>
+          )}
         </div>
       </div>
     </div>
@@ -2336,6 +2565,84 @@ function LedgerDeleteModal({ title, items, onClose, onDeleted }) {
             style={{ ...btnPrimary, background: deleting || info ? '#cbd5e1' : '#b91c1c', cursor: deleting || info ? 'default' : 'pointer' }}
           >
             {deleting ? 'Submitting…' : (info ? 'Submitted' : (isPlural ? `Submit cancel for approval (${items.length})` : 'Submit cancel for approval'))}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Reinstate a cancelled ledger posting (staff queue for Team Approvals). */
+function LedgerReinstateModal({ title, items, onClose, onReinstated }) {
+  const [err, setErr] = useState('');
+  const [info, setInfo] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [requestReason, setRequestReason] = useState('');
+  const item = items[0];
+  const heading = title || 'Reinstate ledger record';
+
+  async function confirmReinstate() {
+    const reason = requestReason.trim();
+    if (!reason) {
+      setErr('Please enter a reason for this reinstate.');
+      return;
+    }
+    setSubmitting(true);
+    setErr('');
+    setInfo('');
+    try {
+      const raw = await reinstateTxn(item.id, { request_reason: reason });
+      if (raw?.pendingLedgerChange) {
+        setInfo(raw.queuedMessage || 'Reinstate submitted for Super Admin approval.');
+        return;
+      }
+      onReinstated(item.id, raw);
+      onClose();
+    } catch (e) {
+      setErr(e.message || 'Reinstate failed.');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div style={{ ...overlayStyle, zIndex: 10100 }}>
+      <div style={{ ...modalStyle, display: 'flex', flexDirection: 'column', maxHeight: '90vh', overflow: 'hidden', zIndex: 1 }}>
+        <div style={modalHeaderStyle}>
+          <span style={{ fontSize: 15, fontWeight: 700, color: '#15803d' }}>{heading}</span>
+          <button type="button" onClick={() => !submitting && onClose()} style={closeBtnStyle}>✕</button>
+        </div>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p style={{ fontSize: 13, color: '#334155', margin: 0 }}>
+            Restore <strong>{item?.label || `#${item?.id}`}</strong> to <strong>active</strong> on the ledger.
+            Receipts are restored as full unallocated advance; invoice/settlement links are not auto-restored.
+          </p>
+          <p style={{ fontSize: 12, color: '#64748b', margin: 0 }}>
+            Reinstate is submitted for Super Admin approval from Team Approvals (unless you are Super Admin).
+          </p>
+          <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569', marginTop: 8 }}>
+            Reason for reinstate (required) *
+            <textarea
+              value={requestReason}
+              onChange={(e) => setRequestReason(e.target.value)}
+              rows={3}
+              placeholder="Explain why this cancelled posting should be active again"
+              style={{ ...inputStyle, width: '100%', marginTop: 6, minHeight: 72, resize: 'vertical' }}
+              disabled={submitting || !!info}
+            />
+          </label>
+          {err && <div style={{ color: '#dc2626', fontSize: 13 }}>{err}</div>}
+          {info && <div style={{ color: '#047857', fontSize: 13 }}>{info}</div>}
+        </div>
+        <div style={{ flexShrink: 0, padding: '12px 24px 20px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'flex-end', gap: 10, background: '#fff' }}>
+          <button type="button" disabled={submitting} onClick={onClose} style={btnSecondary}>Cancel</button>
+          <button
+            type="button"
+            disabled={submitting || !!info || !requestReason.trim()}
+            onClick={confirmReinstate}
+            style={{ ...btnPrimary, background: submitting || info ? '#cbd5e1' : '#15803d', cursor: submitting || info ? 'default' : 'pointer' }}
+          >
+            {submitting ? 'Submitting…' : (info ? 'Submitted' : 'Submit reinstate for approval')}
           </button>
         </div>
       </div>
@@ -4384,6 +4691,7 @@ export default function Invoices({ ledgerOnly = false }) {
   const [editInvoiceId, setEditInvoiceId]       = useState(null);
   const [editLedgerTxnId, setEditLedgerTxnId]   = useState(null);
   const [ledgerDeletePrompt, setLedgerDeletePrompt] = useState(null);
+  const [ledgerReinstatePrompt, setLedgerReinstatePrompt] = useState(null);
   const [selectedInvoiceIds, setSelectedInvoiceIds] = useState([]);
   const [invoices, setInvoices]                 = useState([]);
   const [invLoading, setInvLoading]             = useState(true);
@@ -5519,15 +5827,23 @@ export default function Invoices({ ledgerOnly = false }) {
     );
   }
 
+  function patchLedgerRowsInState(setter, ids, patchFn) {
+    const idSet = new Set((ids || []).map((x) => String(x)));
+    setter((prev) => prev.map((row) => (idSet.has(String(row.id)) ? patchFn(row) : row)));
+  }
+
   function handleLedgerDeleted(deletedIds) {
-    const idSet = new Set((deletedIds || []).map((x) => String(x)));
-    setInvoices((prev) => prev.filter((x) => !idSet.has(String(x.id))));
-    setReceipts((prev) => prev.filter((x) => !idSet.has(String(x.id))));
-    setPaymentExpenses((prev) => prev.filter((x) => !idSet.has(String(x.id))));
-    setPaymentClientCosts((prev) => prev.filter((x) => !idSet.has(String(x.id))));
-    setTdsEntries((prev) => prev.filter((x) => !idSet.has(String(x.id))));
-    setRebates((prev) => prev.filter((x) => !idSet.has(String(x.id))));
-    setCreditNotes((prev) => prev.filter((x) => !idSet.has(String(x.id))));
+    patchLedgerRowsInState(setInvoices, deletedIds, (row) => ({
+      ...row,
+      status: 'cancelled',
+      invoiceStatus: row.invoiceStatus ? 'cancelled' : row.invoiceStatus,
+    }));
+    patchLedgerRowsInState(setReceipts, deletedIds, (row) => ({ ...row, status: 'cancelled' }));
+    patchLedgerRowsInState(setPaymentExpenses, deletedIds, (row) => ({ ...row, status: 'cancelled' }));
+    patchLedgerRowsInState(setPaymentClientCosts, deletedIds, (row) => ({ ...row, status: 'cancelled' }));
+    patchLedgerRowsInState(setTdsEntries, deletedIds, (row) => ({ ...row, status: 'cancelled' }));
+    patchLedgerRowsInState(setRebates, deletedIds, (row) => ({ ...row, status: 'cancelled' }));
+    patchLedgerRowsInState(setCreditNotes, deletedIds, (row) => ({ ...row, status: 'cancelled' }));
     setSelectedInvoiceIds([]);
     setSelectedReceiptIds([]);
     setSelectedPaymentIds([]);
@@ -5536,6 +5852,34 @@ export default function Invoices({ ledgerOnly = false }) {
     setSelectedTdsDeleteIds([]);
     setSelectedRebateIds([]);
     setSelectedCreditNoteIds([]);
+  }
+
+  function handleLedgerReinstated(reinstatedId, updatedRow) {
+    const ids = [reinstatedId];
+    const patchActive = (row) => {
+      if (updatedRow && String(updatedRow.id) === String(row.id)) {
+        return { ...row, ...updatedRow, status: 'active' };
+      }
+      return {
+        ...row,
+        status: 'active',
+        invoiceStatus: row.invoiceStatus === 'cancelled' ? 'sent' : row.invoiceStatus,
+      };
+    };
+    patchLedgerRowsInState(setInvoices, ids, patchActive);
+    patchLedgerRowsInState(setReceipts, ids, patchActive);
+    patchLedgerRowsInState(setPaymentExpenses, ids, patchActive);
+    patchLedgerRowsInState(setPaymentClientCosts, ids, patchActive);
+    patchLedgerRowsInState(setTdsEntries, ids, patchActive);
+    patchLedgerRowsInState(setRebates, ids, patchActive);
+    patchLedgerRowsInState(setCreditNotes, ids, patchActive);
+  }
+
+  function openLedgerReinstatePrompt(txn, label) {
+    setLedgerReinstatePrompt({
+      title: 'Reinstate ledger record',
+      items: [{ id: txn.id, label: label || `${txn.txnDate || '—'} — ${txn.clientName}` }],
+    });
   }
 
   function refreshBillingReport() {
@@ -5780,6 +6124,14 @@ export default function Invoices({ ledgerOnly = false }) {
           items={ledgerDeletePrompt.items}
           onClose={() => setLedgerDeletePrompt(null)}
           onDeleted={handleLedgerDeleted}
+        />
+      )}
+      {ledgerReinstatePrompt && (
+        <LedgerReinstateModal
+          title={ledgerReinstatePrompt.title}
+          items={ledgerReinstatePrompt.items}
+          onClose={() => setLedgerReinstatePrompt(null)}
+          onReinstated={handleLedgerReinstated}
         />
       )}
       {txnAuditModalTxn && (
@@ -6290,13 +6642,14 @@ export default function Invoices({ ledgerOnly = false }) {
                 <tr
                   key={i.id}
                   id={`txn-row-${i.id}`}
-                  style={{ ...trStyle, cursor: 'pointer' }}
+                  style={{ ...ledgerRowStyle({ ...trStyle, cursor: 'pointer' }, i) }}
                   onClick={() => setViewInvoiceTxn(i)}
                 >
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }} onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
+                        disabled={isLedgerInactive(i)}
                         checked={selectedInvoiceIds.some((x) => Number(x) === Number(i.id))}
                         onChange={() => setSelectedInvoiceIds((prev) => {
                           const has = prev.some((x) => Number(x) === Number(i.id));
@@ -6315,14 +6668,28 @@ export default function Invoices({ ledgerOnly = false }) {
                   <LastUpdatedByCell txn={i} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
                   <td style={tdStyle} onClick={e => e.stopPropagation()}>
                     <button type="button" style={iconBtn} onClick={() => setViewInvoiceTxn(i)}>👁 View</button>
-                    {canEditInvoice && (
+                    {isLedgerCancelled(i) && canDeleteInvoice && (
+                      <button
+                        type="button"
+                        style={{ ...iconBtn, color: '#15803d' }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openLedgerReinstatePrompt(i, `${i.invoiceNumber || `INV-${i.id}`} — ${i.clientName}`);
+                        }}
+                      >
+                        ↩ Reinstate
+                      </button>
+                    )}
+                    {!isLedgerInactive(i) && canEditInvoice && (
                       <button type="button" style={iconBtn} onClick={() => setEditInvoiceId(i.id)}>✏️ Edit</button>
                     )}
-                    <button type="button" style={iconBtn} onClick={() => { setSelectedInvoice(i); setShowRecordPayment(true); }}>💳 Pay</button>
-                    {canCreateInvoice && ['sent', 'partially_paid', 'overdue'].includes(String(i.invoiceStatus || i.status || '')) && (
+                    {!isLedgerInactive(i) && (
+                      <button type="button" style={iconBtn} onClick={() => { setSelectedInvoice(i); setShowRecordPayment(true); }}>💳 Pay</button>
+                    )}
+                    {!isLedgerInactive(i) && canCreateInvoice && ['sent', 'partially_paid', 'overdue'].includes(String(i.invoiceStatus || i.status || '')) && (
                       <button type="button" style={iconBtn} onClick={(e) => { e.stopPropagation(); handleRazorpayCollect(i); }} title="Collect with Razorpay">₹ Razorpay</button>
                     )}
-                    {canDeleteInvoice && (
+                    {!isLedgerInactive(i) && canDeleteInvoice && (
                       <button
                         type="button"
                         style={iconBtn}
@@ -6391,22 +6758,23 @@ export default function Invoices({ ledgerOnly = false }) {
                     />
                   </th>
                 )}
-                {['Date','Ref','Client','Amount','Method','Reference No.','Billing Profile','Linked Invoice','Notes','Last updated by','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+                {['Date','Ref','Status','Client','Amount','Method','Reference No.','Billing Profile','Linked Invoice','Notes','Last updated by','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {recLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
               ) : receipts.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
               ) : visibleReceipts.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 12 : 11} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts match your search.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts match your search.</td></tr>
               ) : visibleReceipts.map(r=>(
-                <tr key={r.id} style={trStyle}>
+                <tr key={r.id} style={ledgerRowStyle(trStyle, r)}>
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }}>
                       <input
                         type="checkbox"
+                        disabled={isLedgerInactive(r)}
                         checked={selectedReceiptIds.some((x) => Number(x) === Number(r.id))}
                         onChange={() => setSelectedReceiptIds((prev) => {
                           const has = prev.some((x) => Number(x) === Number(r.id));
@@ -6417,8 +6785,9 @@ export default function Invoices({ ledgerOnly = false }) {
                   )}
                   <td style={tdStyle}>{r.txnDate}</td>
                   <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>{r.publicRef || '—'}</td>
+                  <td style={tdStyle}><LedgerStatusBadge txn={r} /></td>
                   <td style={tdStyle}>{r.clientName}</td>
-                  <td style={{ ...tdStyle, fontWeight:600, color:'#16a34a' }}>{formatSignedInrAmount(r.txnType, r.amount || r.credit || 0)}</td>
+                  <td style={{ ...tdStyle, fontWeight:600, color: isLedgerInactive(r) ? '#64748b' : '#16a34a' }}>{formatSignedInrAmount(r.txnType, r.amount || r.credit || 0)}</td>
                   <td style={tdStyle}>{r.paymentMethod || '—'}</td>
                   <td style={{ ...tdStyle, fontFamily:'monospace', fontSize:12 }}>{r.referenceNumber || '—'}</td>
                   <td style={tdStyle}><BillingProfileBadge code={r.billingProfileCode} /></td>
@@ -6426,24 +6795,23 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={tdStyle}>{r.notes || '—'}</td>
                   <LastUpdatedByCell txn={r} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
                   <td style={tdStyle}>
-                    {canEditInvoice && (
-                      <button type="button" style={iconBtn} onClick={() => setEditLedgerTxnId(r.id)}>✏️ Edit</button>
-                    )}
-                    {canDeleteInvoice && (
-                      <button
-                        type="button"
-                        style={iconBtn}
-                        onClick={() => setLedgerDeletePrompt({
-                          title: 'Cancel receipt',
-                          items: [{
-                            id: r.id,
-                            label: `${r.txnDate || '—'} — ${r.clientName} — ${formatSignedInrAmount(r.txnType, r.amount || r.credit || 0)}`,
-                          }],
-                        })}
-                      >
-                        🗑 Delete
-                      </button>
-                    )}
+                    <LedgerRowActions
+                      txn={r}
+                      canEdit={canEditInvoice}
+                      canDelete={canDeleteInvoice}
+                      onEdit={(txn) => setEditLedgerTxnId(txn.id)}
+                      onCancelPrompt={(txn) => setLedgerDeletePrompt({
+                        title: 'Cancel receipt',
+                        items: [{
+                          id: txn.id,
+                          label: `${txn.txnDate || '—'} — ${txn.clientName} — ${formatSignedInrAmount(txn.txnType, txn.amount || txn.credit || 0)}`,
+                        }],
+                      })}
+                      onReinstatePrompt={(txn) => openLedgerReinstatePrompt(
+                        txn,
+                        `${txn.txnDate || '—'} — ${txn.clientName} — ${formatSignedInrAmount(txn.txnType, txn.amount || txn.credit || 0)}`,
+                      )}
+                    />
                   </td>
                 </tr>
               ))}
@@ -6537,16 +6905,17 @@ export default function Invoices({ ledgerOnly = false }) {
                 <tr
                   key={p.id}
                   style={{
-                    ...trStyle,
-                    ...(ledgerMismatch ? { background: '#fffbeb' } : {}),
-                    ...(canEditInvoice ? { cursor: 'pointer' } : {}),
+                    ...ledgerRowStyle(trStyle, p),
+                    ...(ledgerMismatch ? { background: '#fffbeb', textDecoration: isLedgerInactive(p) ? 'line-through' : undefined } : {}),
+                    ...(canEditInvoice && isLedgerEditable(p) ? { cursor: 'pointer' } : {}),
                   }}
-                  onClick={canEditInvoice ? () => setEditLedgerTxnId(p.id) : undefined}
+                  onClick={canEditInvoice && isLedgerEditable(p) ? () => setEditLedgerTxnId(p.id) : undefined}
                 >
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }} onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
+                        disabled={isLedgerInactive(p)}
                         checked={selectedPaymentIds.some((x) => Number(x) === Number(p.id))}
                         onChange={() => setSelectedPaymentIds((prev) => {
                           const has = prev.some((x) => Number(x) === Number(p.id));
@@ -6560,15 +6929,7 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={tdStyle}>{p.clientName}</td>
                   <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }} title="Which contact or organization ledger this payment debits">{paymentExpenseBookedOnLabel(p) || '—'}</td>
                   <td style={tdStyle}>{ledgerClassLabel(p.ledgerClass)}</td>
-                  <td style={{
-                    ...tdStyle,
-                    fontSize: 11,
-                    fontWeight: (p.status && p.status !== 'active') ? 600 : 400,
-                    color: (p.status === 'cancelled' || p.status === 'reversed') ? '#b91c1c' : '#334155',
-                  }}
-                  >
-                    {p.status || '—'}
-                  </td>
+                  <td style={tdStyle}><LedgerStatusBadge txn={p} /></td>
                   <td style={tdStyle}>
                     {p.ledgerMovementKind === 'reimbursement'
                       ? 'Reimbursement'
@@ -6594,27 +6955,23 @@ export default function Invoices({ ledgerOnly = false }) {
                     >
                       Ledger
                     </button>
-                    {canEditInvoice && (
-                      <button type="button" style={iconBtn} onClick={(e) => { e.stopPropagation(); setEditLedgerTxnId(p.id); }}>✏️ Edit</button>
-                    )}
-                    {canDeleteInvoice && (
-                      <button
-                        type="button"
-                        style={iconBtn}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setLedgerDeletePrompt({
-                          title: 'Cancel payment (on behalf)',
-                          items: [{
-                            id: p.id,
-                            label: `${p.txnDate || '—'} — ${p.clientName} — ${formatSignedInrAmount(p.txnType, p.amount || 0)}`,
-                          }],
-                        });
-                        }}
-                      >
-                        🗑 Delete
-                      </button>
-                    )}
+                    <LedgerRowActions
+                      txn={p}
+                      canEdit={canEditInvoice}
+                      canDelete={canDeleteInvoice}
+                      onEdit={(txn) => setEditLedgerTxnId(txn.id)}
+                      onCancelPrompt={(txn) => setLedgerDeletePrompt({
+                        title: 'Cancel payment (on behalf)',
+                        items: [{
+                          id: txn.id,
+                          label: `${txn.txnDate || '—'} — ${txn.clientName} — ${formatSignedInrAmount(txn.txnType, txn.amount || 0)}`,
+                        }],
+                      })}
+                      onReinstatePrompt={(txn) => openLedgerReinstatePrompt(
+                        txn,
+                        `${txn.txnDate || '—'} — ${txn.clientName} — ${formatSignedInrAmount(txn.txnType, txn.amount || 0)}`,
+                      )}
+                    />
                   </td>
                 </tr>
                 );
@@ -6701,13 +7058,14 @@ export default function Invoices({ ledgerOnly = false }) {
               ) : visiblePaymentClientCosts.map((p) => (
                 <tr
                   key={p.id}
-                  style={{ ...trStyle, ...(canEditInvoice ? { cursor: 'pointer' } : {}) }}
-                  onClick={canEditInvoice ? () => setEditLedgerTxnId(p.id) : undefined}
+                  style={{ ...ledgerRowStyle(trStyle, p), ...(canEditInvoice && isLedgerEditable(p) ? { cursor: 'pointer' } : {}) }}
+                  onClick={canEditInvoice && isLedgerEditable(p) ? () => setEditLedgerTxnId(p.id) : undefined}
                 >
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }} onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
+                        disabled={isLedgerInactive(p)}
                         checked={selectedPaymentCostIds.some((x) => Number(x) === Number(p.id))}
                         onChange={() => setSelectedPaymentCostIds((prev) => {
                           const has = prev.some((x) => Number(x) === Number(p.id));
@@ -6721,15 +7079,7 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={tdStyle}>{p.clientName}</td>
                   <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>{paymentExpenseBookedOnLabel(p) || '—'}</td>
                   <td style={tdStyle}>Client Costs</td>
-                  <td style={{
-                    ...tdStyle,
-                    fontSize: 11,
-                    fontWeight: (p.status && p.status !== 'active') ? 600 : 400,
-                    color: (p.status === 'cancelled' || p.status === 'reversed') ? '#b91c1c' : '#334155',
-                  }}
-                  >
-                    {p.status || '—'}
-                  </td>
+                  <td style={tdStyle}><LedgerStatusBadge txn={p} /></td>
                   <td style={tdStyle}>
                     {p.ledgerMovementKind === 'reimbursement'
                       ? 'Reimbursement'
@@ -6747,27 +7097,23 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={{ ...tdStyle, maxWidth: 160, whiteSpace: 'normal' }}>{p.notes || '—'}</td>
                   <LastUpdatedByCell txn={p} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
                   <td style={stickyActionsTdStyle('#fff')} onClick={(e) => e.stopPropagation()}>
-                    {canEditInvoice && (
-                      <button type="button" style={iconBtn} onClick={(e) => { e.stopPropagation(); setEditLedgerTxnId(p.id); }}>✏️ Edit</button>
-                    )}
-                    {canDeleteInvoice && (
-                      <button
-                        type="button"
-                        style={iconBtn}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setLedgerDeletePrompt({
-                          title: 'Cancel client cost payment',
-                          items: [{
-                            id: p.id,
-                            label: `${p.txnDate || '—'} — ${p.clientName} — ${formatSignedInrAmount(p.txnType, p.amount || 0)}`,
-                          }],
-                        });
-                        }}
-                      >
-                        🗑 Delete
-                      </button>
-                    )}
+                    <LedgerRowActions
+                      txn={p}
+                      canEdit={canEditInvoice}
+                      canDelete={canDeleteInvoice}
+                      onEdit={(txn) => setEditLedgerTxnId(txn.id)}
+                      onCancelPrompt={(txn) => setLedgerDeletePrompt({
+                        title: 'Cancel client cost payment',
+                        items: [{
+                          id: txn.id,
+                          label: `${txn.txnDate || '—'} — ${txn.clientName} — ${formatSignedInrAmount(txn.txnType, txn.amount || 0)}`,
+                        }],
+                      })}
+                      onReinstatePrompt={(txn) => openLedgerReinstatePrompt(
+                        txn,
+                        `${txn.txnDate || '—'} — ${txn.clientName} — ${formatSignedInrAmount(txn.txnType, txn.amount || 0)}`,
+                      )}
+                    />
                   </td>
                 </tr>
               ))}
@@ -6817,21 +7163,21 @@ export default function Invoices({ ledgerOnly = false }) {
               <tr>
                 <th style={{ ...thStyle, width: 44, fontSize: 11 }} title="Mark provisional as final">Final</th>
                 {canDeleteInvoice && <th style={{ ...thStyle, width: 36, fontSize: 11 }}>Del</th>}
-                {['Date','Client','Amount','Section','Rate','Status','Billing Profile','Last updated by'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+                {['Date','Client','Amount','Section','Rate','TDS type','Ledger status','Billing Profile','Last updated by'].map(h=><th key={h} style={thStyle}>{h}</th>)}
                 {(canEditInvoice || canDeleteInvoice) && <th style={thStyle}>Actions</th>}
               </tr>
             </thead>
             <tbody>
               {tdsLoading ? (
-                <tr><td colSpan={9 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading TDS entries…</td></tr>
+                <tr><td colSpan={10 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading TDS entries…</td></tr>
               ) : tdsEntries.length === 0 ? (
-                <tr><td colSpan={9 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries found. Click "+ Book TDS" to add one.</td></tr>
+                <tr><td colSpan={10 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries found. Click "+ Book TDS" to add one.</td></tr>
               ) : visibleTdsEntries.length === 0 ? (
-                <tr><td colSpan={9 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries match your search.</td></tr>
+                <tr><td colSpan={10 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries match your search.</td></tr>
               ) : visibleTdsEntries.map(t=>(
-                <tr key={t.id} style={trStyle}>
+                <tr key={t.id} style={ledgerRowStyle(trStyle, t)}>
                   <td style={{ ...tdStyle, width:44 }}>
-                    {t.tdsStatus === 'provisional' && (
+                    {t.tdsStatus === 'provisional' && !isLedgerInactive(t) && (
                       <input type="checkbox" checked={selectedTds.includes(t.id)} onChange={()=>toggleTdsSelect(t.id)} />
                     )}
                   </td>
@@ -6839,6 +7185,7 @@ export default function Invoices({ ledgerOnly = false }) {
                     <td style={{ ...tdStyle, width:36 }}>
                       <input
                         type="checkbox"
+                        disabled={isLedgerInactive(t)}
                         checked={selectedTdsDeleteIds.includes(t.id)}
                         onChange={() => toggleTdsDeleteSelect(t.id)}
                       />
@@ -6850,28 +7197,28 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={{ ...tdStyle, fontFamily:'monospace', fontSize:12 }}>{t.tdsSection || '—'}</td>
                   <td style={tdStyle}>{t.tdsRate ? `${t.tdsRate}%` : '—'}</td>
                   <td style={tdStyle}><TxnTypeBadge type={t.txnType} /></td>
+                  <td style={tdStyle}><LedgerStatusBadge txn={t} /></td>
                   <td style={tdStyle}><BillingProfileBadge code={t.billingProfileCode} /></td>
                   <LastUpdatedByCell txn={t} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
                   {(canEditInvoice || canDeleteInvoice) && (
                     <td style={tdStyle}>
-                      {canEditInvoice && (
-                        <button type="button" style={iconBtn} onClick={() => setEditLedgerTxnId(t.id)}>✏️ Edit</button>
-                      )}
-                      {canDeleteInvoice && (
-                        <button
-                          type="button"
-                          style={iconBtn}
-                          onClick={() => setLedgerDeletePrompt({
-                            title: 'Cancel TDS entry',
-                            items: [{
-                              id: t.id,
-                              label: `${t.txnDate || '—'} — ${t.clientName} — ${formatSignedInrAmount(t.txnType, t.amount || 0)} (${t.txnType || ''})`,
-                            }],
-                          })}
-                        >
-                          🗑 Delete
-                        </button>
-                      )}
+                      <LedgerRowActions
+                        txn={t}
+                        canEdit={canEditInvoice}
+                        canDelete={canDeleteInvoice}
+                        onEdit={(txn) => setEditLedgerTxnId(txn.id)}
+                        onCancelPrompt={(txn) => setLedgerDeletePrompt({
+                          title: 'Cancel TDS entry',
+                          items: [{
+                            id: txn.id,
+                            label: `${txn.txnDate || '—'} — ${txn.clientName} — ${formatSignedInrAmount(txn.txnType, txn.amount || 0)} (${txn.txnType || ''})`,
+                          }],
+                        })}
+                        onReinstatePrompt={(txn) => openLedgerReinstatePrompt(
+                          txn,
+                          `${txn.txnDate || '—'} — ${txn.clientName} — ${formatSignedInrAmount(txn.txnType, txn.amount || 0)} (${txn.txnType || ''})`,
+                        )}
+                      />
                     </td>
                   )}
                 </tr>
@@ -6927,22 +7274,23 @@ export default function Invoices({ ledgerOnly = false }) {
                     />
                   </th>
                 )}
-                {['Date','Client','Amount','Narration','Billing Profile','Notes','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+                {['Date','Client','Amount','Status','Narration','Billing Profile','Notes','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {rebLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading rebate entries…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading rebate entries…</td></tr>
               ) : rebates.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No rebate/discount entries found. Click "+ Rebate/Discount" to add one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No rebate/discount entries found. Click "+ Rebate/Discount" to add one.</td></tr>
               ) : visibleRebates.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No entries match your search.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No entries match your search.</td></tr>
               ) : visibleRebates.map(r=>(
-                <tr key={r.id} style={trStyle}>
+                <tr key={r.id} style={ledgerRowStyle(trStyle, r)}>
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }}>
                       <input
                         type="checkbox"
+                        disabled={isLedgerInactive(r)}
                         checked={selectedRebateIds.some((x) => Number(x) === Number(r.id))}
                         onChange={() => setSelectedRebateIds((prev) => {
                           const has = prev.some((x) => Number(x) === Number(r.id));
@@ -6953,26 +7301,29 @@ export default function Invoices({ ledgerOnly = false }) {
                   )}
                   <td style={tdStyle}>{r.txnDate}</td>
                   <td style={tdStyle}>{r.clientName}</td>
-                  <td style={{ ...tdStyle, fontWeight:600, color:'#be123c' }}>₹{r.amount.toLocaleString('en-IN')}</td>
+                  <td style={{ ...tdStyle, fontWeight:600, color: isLedgerInactive(r) ? '#64748b' : '#be123c' }}>₹{r.amount.toLocaleString('en-IN')}</td>
+                  <td style={tdStyle}><LedgerStatusBadge txn={r} /></td>
                   <td style={tdStyle}>{r.narration || '—'}</td>
                   <td style={tdStyle}><BillingProfileBadge code={r.billingProfileCode} /></td>
                   <td style={tdStyle}>{r.notes || '—'}</td>
                   <td style={tdStyle}>
-                    {canDeleteInvoice && (
-                      <button
-                        type="button"
-                        style={iconBtn}
-                        onClick={() => setLedgerDeletePrompt({
-                          title: 'Cancel rebate / discount',
-                          items: [{
-                            id: r.id,
-                            label: `${r.txnDate || '—'} — ${r.clientName} — ₹${(r.amount || 0).toLocaleString('en-IN')}`,
-                          }],
-                        })}
-                      >
-                        🗑 Delete
-                      </button>
-                    )}
+                    <LedgerRowActions
+                      txn={r}
+                      canEdit={false}
+                      canDelete={canDeleteInvoice}
+                      onEdit={() => {}}
+                      onCancelPrompt={(txn) => setLedgerDeletePrompt({
+                        title: 'Cancel rebate / discount',
+                        items: [{
+                          id: txn.id,
+                          label: `${txn.txnDate || '—'} — ${txn.clientName} — ₹${(txn.amount || 0).toLocaleString('en-IN')}`,
+                        }],
+                      })}
+                      onReinstatePrompt={(txn) => openLedgerReinstatePrompt(
+                        txn,
+                        `${txn.txnDate || '—'} — ${txn.clientName} — ₹${(txn.amount || 0).toLocaleString('en-IN')}`,
+                      )}
+                    />
                   </td>
                 </tr>
               ))}
@@ -7027,22 +7378,23 @@ export default function Invoices({ ledgerOnly = false }) {
                     />
                   </th>
                 )}
-                {['Date','Client','Amount','Linked Invoice','Narration','Billing Profile','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+                {['Date','Client','Amount','Status','Linked Invoice','Narration','Billing Profile','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {cnLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading credit notes…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading credit notes…</td></tr>
               ) : creditNotes.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes found. Click "+ Credit Note" to add one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes found. Click "+ Credit Note" to add one.</td></tr>
               ) : visibleCreditNotes.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 8 : 7} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes match your search.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes match your search.</td></tr>
               ) : visibleCreditNotes.map(c=>(
-                <tr key={c.id} style={trStyle}>
+                <tr key={c.id} style={ledgerRowStyle(trStyle, c)}>
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }}>
                       <input
                         type="checkbox"
+                        disabled={isLedgerInactive(c)}
                         checked={selectedCreditNoteIds.some((x) => Number(x) === Number(c.id))}
                         onChange={() => setSelectedCreditNoteIds((prev) => {
                           const has = prev.some((x) => Number(x) === Number(c.id));
@@ -7053,26 +7405,29 @@ export default function Invoices({ ledgerOnly = false }) {
                   )}
                   <td style={tdStyle}>{c.txnDate}</td>
                   <td style={tdStyle}>{c.clientName}</td>
-                  <td style={{ ...tdStyle, fontWeight:600, color:'#854d0e' }}>₹{c.amount.toLocaleString('en-IN')}</td>
+                  <td style={{ ...tdStyle, fontWeight:600, color: isLedgerInactive(c) ? '#64748b' : '#854d0e' }}>₹{c.amount.toLocaleString('en-IN')}</td>
+                  <td style={tdStyle}><LedgerStatusBadge txn={c} /></td>
                   <td style={tdStyle}>{c.linkedTxnId ? `#${c.linkedTxnId}` : '—'}</td>
                   <td style={tdStyle}>{c.narration || '—'}</td>
                   <td style={tdStyle}><BillingProfileBadge code={c.billingProfileCode} /></td>
                   <td style={tdStyle}>
-                    {canDeleteInvoice && (
-                      <button
-                        type="button"
-                        style={iconBtn}
-                        onClick={() => setLedgerDeletePrompt({
-                          title: 'Cancel credit note',
-                          items: [{
-                            id: c.id,
-                            label: `${c.txnDate || '—'} — ${c.clientName} — ₹${(c.amount || 0).toLocaleString('en-IN')}${c.linkedTxnId ? ` (inv #${c.linkedTxnId})` : ''}`,
-                          }],
-                        })}
-                      >
-                        🗑 Delete
-                      </button>
-                    )}
+                    <LedgerRowActions
+                      txn={c}
+                      canEdit={false}
+                      canDelete={canDeleteInvoice}
+                      onEdit={() => {}}
+                      onCancelPrompt={(txn) => setLedgerDeletePrompt({
+                        title: 'Cancel credit note',
+                        items: [{
+                          id: txn.id,
+                          label: `${txn.txnDate || '—'} — ${txn.clientName} — ₹${(txn.amount || 0).toLocaleString('en-IN')}${txn.linkedTxnId ? ` (inv #${txn.linkedTxnId})` : ''}`,
+                        }],
+                      })}
+                      onReinstatePrompt={(txn) => openLedgerReinstatePrompt(
+                        txn,
+                        `${txn.txnDate || '—'} — ${txn.clientName} — ₹${(txn.amount || 0).toLocaleString('en-IN')}${txn.linkedTxnId ? ` (inv #${txn.linkedTxnId})` : ''}`,
+                      )}
+                    />
                   </td>
                 </tr>
               ))}
