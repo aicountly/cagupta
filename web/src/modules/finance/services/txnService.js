@@ -29,6 +29,11 @@ async function parseResponse(res) {
   return json;
 }
 
+/** PHP api_success merges pagination at the top level, not under meta. */
+function extractPagination(json) {
+  return json.meta?.pagination || json.pagination || {};
+}
+
 export function normalizePendingLedgerChange(raw) {
   if (!raw || !raw.approval_id) return null;
   return {
@@ -246,7 +251,7 @@ export async function getTxns(params = {}) {
   const data = await parseResponse(res);
   return {
     txns:       (data.data || []).map(normalizeTxn),
-    pagination: data.meta?.pagination || {},
+    pagination: extractPagination(data),
   };
 }
 
@@ -673,7 +678,7 @@ export async function getFirmInternalTxns({ kind = 'all', page = 1, perPage = 50
   const data = await parseResponse(res);
   return {
     rows: (data.data || []).map(normalizeTxn),
-    pagination: data.meta?.pagination || {},
+    pagination: extractPagination(data),
   };
 }
 

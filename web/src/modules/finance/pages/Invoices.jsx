@@ -2,7 +2,7 @@
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createPaymentClientCost, createTds, finalizeTds,
-  getTdsEntries, createRebate, createCreditNote, getLedger, getBillSettlementReport, getRecoveryByGroup,
+  createRebate, createCreditNote, getLedger, getBillSettlementReport, getRecoveryByGroup,
   getOpeningBalance, setOpeningBalance,
   updateTxn, bulkDeleteTxns, reinstateTxn,
   requestLedgerReversalUserOtp, reverseLedgerTxn, cancelLedgerReversalTxn, assignParkedTxn,
@@ -34,6 +34,7 @@ import {
 import { EXPENSE_PURPOSE_OPTIONS, expensePurposeLabel } from '../../../constants/expensePurposes';
 import { buildLedgerDetailLine } from '../../../utils/ledgerTxnDetails';
 import StatusBadge from '../../../components/common/StatusBadge';
+import ListPaginationBar from '../../../components/common/ListPaginationBar';
 import ClientSearchDropdown from '../../../components/common/ClientSearchDropdown';
 import EntitySearchDropdown from '../../../components/common/EntitySearchDropdown';
 import LineItemPresetCombobox from '../../../components/common/LineItemPresetCombobox';
@@ -4641,6 +4642,34 @@ function OpeningBalanceModal({
 const INVOICE_TABS = new Set(['invoices', 'receipts', 'payments', 'payment_costs', 'tds', 'rebate', 'credit_note', 'service_billing']);
 const LEDGER_TABS  = new Set(['ledger', 'bill_settlement', 'recovery_list']);
 
+const TXN_LIST_PER_PAGE = 50;
+
+const DEFAULT_TXN_LIST_PAGE = {
+  invoices: 1,
+  receipts: 1,
+  payments: 1,
+  payment_costs: 1,
+  tds: 1,
+  rebate: 1,
+  credit_note: 1,
+};
+
+const TXN_LIST_ENTITY_LABELS = {
+  invoices: 'invoices',
+  receipts: 'receipts',
+  payments: 'payments',
+  payment_costs: 'client cost payments',
+  tds: 'TDS entries',
+  rebate: 'rebates',
+  credit_note: 'credit notes',
+};
+
+function normalizeTxnListPagination(pagination) {
+  const total = Number(pagination?.total) || 0;
+  const lastPage = Math.max(1, Number(pagination?.last_page) || 1);
+  return { total, last_page: lastPage };
+}
+
 export default function Invoices({ ledgerOnly = false }) {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
@@ -4699,7 +4728,6 @@ export default function Invoices({ ledgerOnly = false }) {
   // ── Receipts tab state ──────────────────────────────────────────────────────
   const [receipts, setReceipts]         = useState([]);
   const [recLoading, setRecLoading]     = useState(false);
-  const [recLoaded, setRecLoaded]       = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedReceiptIds, setSelectedReceiptIds] = useState([]);
 
@@ -4717,7 +4745,7 @@ export default function Invoices({ ledgerOnly = false }) {
   const [selectedPaymentCostIds, setSelectedPaymentCostIds] = useState([]);
 
   const paymentClientCostFetchParams = useMemo(
-    () => ({ txnType: 'payment_client_cost', perPage: 100 }),
+    () => ({ txnType: 'payment_client_cost' }),
     [],
   );
 
@@ -4733,17 +4761,23 @@ export default function Invoices({ ledgerOnly = false }) {
   // ── Rebate tab state ────────────────────────────────────────────────────────
   const [rebates, setRebates]               = useState([]);
   const [rebLoading, setRebLoading]         = useState(false);
-  const [rebLoaded, setRebLoaded]           = useState(false);
   const [showRebateModal, setShowRebateModal] = useState(false);
   const [selectedRebateIds, setSelectedRebateIds] = useState([]);
 
   // ── Credit Note tab state ───────────────────────────────────────────────────
   const [creditNotes, setCreditNotes]     = useState([]);
   const [cnLoading, setCnLoading]         = useState(false);
-  const [cnLoaded, setCnLoaded]           = useState(false);
   const [showCnModal, setShowCnModal]     = useState(false);
   const [selectedCreditNoteIds, setSelectedCreditNoteIds] = useState([]);
   const [txnListSearchQuery, setTxnListSearchQuery] = useState('');
+  const [txnListSearchDebounced, setTxnListSearchDebounced] = useState('');
+  const [txnListPage, setTxnListPage] = useState(() => ({ ...DEFAULT_TXN_LIST_PAGE }));
+  const [txnListPagination, setTxnListPagination] = useState({});
+  const [txnListReloadSeq, setTxnListReloadSeq] = useState(0);
+  const [txnListFetchError, setTxnListFetchError] = useState('');
+  const prevTxnListSearchDebouncedRef = useRef('');
+  const txnListFetchIdRef = useRef(0);
+  const activeTxnListPage = txnListPage[tab] ?? 1;
 
   // ── Ledger tab state ────────────────────────────────────────────────────────
   const [ledgerClientId, setLedgerClientId]       = useState('');
@@ -4797,7 +4831,7 @@ export default function Invoices({ ledgerOnly = false }) {
   const [ledgerAllClasses, setLedgerAllClasses] = useState(null);
 
   const paymentExpenseFetchParams = useMemo(() => {
-    const params = { txnType: 'payment_expense', perPage: 100 };
+    const params = { txnType: 'payment_expense' };
     if (paymentsFilterByLedger && ledgerClientId) {
       if (ledgerEntityType === 'organization') {
         params.organizationId = ledgerClientId;
@@ -5035,18 +5069,64 @@ export default function Invoices({ ledgerOnly = false }) {
   const [billingHistoryLoading, setBillingHistoryLoading] = useState(false);
   const [billingDetailRow, setBillingDetailRow]         = useState(null);
 
-  function reloadInvoices() {
-    setInvLoading(true);
-    getTxns({ txnType: 'invoice' })
-      .then(({ txns }) => setInvoices(txns))
-      .catch(() => {})
-      .finally(() => setInvLoading(false));
+  function buildTxnListParams(targetTab, page) {
+    const search = txnListSearchDebounced.trim() || undefined;
+    const base = { page, perPage: TXN_LIST_PER_PAGE, search };
+    if (targetTab === 'invoices') {
+      return {
+        ...base,
+        txnType: 'invoice',
+        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+      };
+    }
+    if (targetTab === 'receipts') {
+      return { ...base, txnType: 'receipt' };
+    }
+    if (targetTab === 'payments') {
+      return { ...base, ...paymentExpenseFetchParams };
+    }
+    if (targetTab === 'payment_costs') {
+      return { ...base, ...paymentClientCostFetchParams };
+    }
+    if (targetTab === 'tds') {
+      return {
+        ...base,
+        txnType: 'tds',
+        ...(tdsFilter !== 'all' ? { tdsStatus: tdsFilter } : {}),
+      };
+    }
+    if (targetTab === 'rebate') {
+      return { ...base, txnType: 'rebate' };
+    }
+    if (targetTab === 'credit_note') {
+      return { ...base, txnType: 'credit_note' };
+    }
+    return null;
   }
 
-  // ── Load invoices on mount ──────────────────────────────────────────────────
-  useEffect(() => {
-    reloadInvoices();
-  }, []);
+  function reloadActiveTxnList({ page: pageOverride } = {}) {
+    if (pageOverride != null) {
+      setTxnListPage((p) => ({ ...p, [tab]: pageOverride }));
+    } else {
+      setTxnListReloadSeq((s) => s + 1);
+    }
+  }
+
+  function reloadTxnListTab(targetTab, { page: pageOverride } = {}) {
+    const params = buildTxnListParams(targetTab, pageOverride ?? txnListPage[targetTab] ?? 1);
+    if (!params) return Promise.resolve();
+    return getTxns(params).then(({ txns, pagination }) => {
+      const meta = normalizeTxnListPagination(pagination);
+      setTxnListPagination((prev) => ({ ...prev, [targetTab]: meta }));
+      if (targetTab === 'invoices') setInvoices(txns);
+      else if (targetTab === 'receipts') setReceipts(txns);
+      else if (targetTab === 'payments') setPaymentExpenses(txns);
+      else if (targetTab === 'payment_costs') setPaymentClientCosts(txns);
+      else if (targetTab === 'tds') setTdsEntries(txns);
+      else if (targetTab === 'rebate') setRebates(txns);
+      else if (targetTab === 'credit_note') setCreditNotes(txns);
+    });
+  }
 
   async function handleRazorpayCollect(inv) {
     try {
@@ -5060,7 +5140,7 @@ export default function Invoices({ ledgerOnly = false }) {
         description: inv.invoiceNumber || `Invoice #${inv.id}`,
         onSuccess: () => {
           window.alert('Payment submitted. Refreshing list.');
-          reloadInvoices();
+          reloadActiveTxnList();
         },
         onFailure: (err) => window.alert(err.message || 'Payment failed'),
       });
@@ -5071,8 +5151,42 @@ export default function Invoices({ ledgerOnly = false }) {
 
   useEffect(() => {
     setTxnListSearchQuery('');
+    setTxnListSearchDebounced('');
+    prevTxnListSearchDebouncedRef.current = '';
+    setTxnListFetchError('');
     setRecoverySearch('');
   }, [tab]);
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setTxnListSearchDebounced(txnListSearchQuery.trim());
+    }, 400);
+    return () => clearTimeout(t);
+  }, [txnListSearchQuery]);
+
+  useEffect(() => {
+    if (!TXN_LIST_SEARCH_TABS.has(tab)) return undefined;
+    if (prevTxnListSearchDebouncedRef.current === txnListSearchDebounced) return undefined;
+    prevTxnListSearchDebouncedRef.current = txnListSearchDebounced;
+    setTxnListPage((p) => {
+      const cur = p[tab] ?? 1;
+      if (cur === 1) return p;
+      return { ...p, [tab]: 1 };
+    });
+    return undefined;
+  }, [txnListSearchDebounced, tab]);
+
+  useEffect(() => {
+    setTxnListPage((p) => (p.invoices === 1 ? p : { ...p, invoices: 1 }));
+  }, [statusFilter]);
+
+  useEffect(() => {
+    setTxnListPage((p) => (p.tds === 1 ? p : { ...p, tds: 1 }));
+  }, [tdsFilter]);
+
+  useEffect(() => {
+    setTxnListPage((p) => (p.payments === 1 ? p : { ...p, payments: 1 }));
+  }, [paymentsFilterByLedger, ledgerClientId, ledgerEntityType, ledgerLedgerClass]);
 
   useEffect(() => {
     setRecoverySearch('');
@@ -5096,65 +5210,59 @@ export default function Invoices({ ledgerOnly = false }) {
     setSearchParams(next, { replace: true });
   }, [searchParams, invLoading, invoices, setSearchParams]);
 
-  // ── Load receipts when receipts tab first opened ────────────────────────────
+  // ── Load paginated txn lists for Invoices & Ledger tabs ─────────────────────
   useEffect(() => {
-    if (tab !== 'receipts' || recLoaded) return;
-    setRecLoading(true);
-    getTxns({ txnType: 'receipt' })
-      .then(({ txns }) => { setReceipts(txns); setRecLoaded(true); })
-      .catch(() => {})
-      .finally(() => setRecLoading(false));
-  }, [tab, recLoaded]);
+    if (!TXN_LIST_SEARCH_TABS.has(tab)) return undefined;
 
-  // ── Load payment expenses when Payments tab is active (optionally scoped to Ledger entity) ──
-  useEffect(() => {
-    if (tab !== 'payments') return;
-    setPayLoading(true);
-    getTxns(paymentExpenseFetchParams)
-      .then(({ txns }) => setPaymentExpenses(txns))
-      .catch(() => {})
-      .finally(() => setPayLoading(false));
-  }, [tab, paymentExpenseFetchParams]);
+    const fetchId = ++txnListFetchIdRef.current;
+    const page = activeTxnListPage;
+    const params = buildTxnListParams(tab, page);
+    if (!params) return undefined;
 
-  useEffect(() => {
-    if (tab !== 'payment_costs') return;
-    setPayCostLoading(true);
-    getTxns(paymentClientCostFetchParams)
-      .then(({ txns }) => setPaymentClientCosts(txns))
-      .catch(() => {})
-      .finally(() => setPayCostLoading(false));
-  }, [tab, paymentClientCostFetchParams]);
+    const setLoading = (v) => {
+      if (tab === 'invoices') setInvLoading(v);
+      else if (tab === 'receipts') setRecLoading(v);
+      else if (tab === 'payments') setPayLoading(v);
+      else if (tab === 'payment_costs') setPayCostLoading(v);
+      else if (tab === 'tds') setTdsLoading(v);
+      else if (tab === 'rebate') setRebLoading(v);
+      else if (tab === 'credit_note') setCnLoading(v);
+    };
 
-  // ── Load TDS when tds tab opened or filter changes ──────────────────────────
-  useEffect(() => {
-    if (tab !== 'tds') return;
-    setTdsLoading(true);
-    const params = tdsFilter === 'all' ? {} : { tdsStatus: tdsFilter };
-    getTdsEntries(params)
-      .then(entries => setTdsEntries(entries))
-      .catch(() => {})
-      .finally(() => setTdsLoading(false));
-  }, [tab, tdsFilter]);
+    setLoading(true);
+    setTxnListFetchError('');
+    getTxns(params)
+      .then(({ txns, pagination }) => {
+        if (fetchId !== txnListFetchIdRef.current) return;
+        const meta = normalizeTxnListPagination(pagination);
+        setTxnListPagination((prev) => ({ ...prev, [tab]: meta }));
+        if (tab === 'invoices') setInvoices(txns);
+        else if (tab === 'receipts') setReceipts(txns);
+        else if (tab === 'payments') setPaymentExpenses(txns);
+        else if (tab === 'payment_costs') setPaymentClientCosts(txns);
+        else if (tab === 'tds') setTdsEntries(txns);
+        else if (tab === 'rebate') setRebates(txns);
+        else if (tab === 'credit_note') setCreditNotes(txns);
+      })
+      .catch((err) => {
+        if (fetchId !== txnListFetchIdRef.current) return;
+        setTxnListFetchError(err?.message || 'Failed to load records.');
+      })
+      .finally(() => {
+        if (fetchId === txnListFetchIdRef.current) setLoading(false);
+      });
 
-  // ── Load rebates when rebate tab first opened ───────────────────────────────
-  useEffect(() => {
-    if (tab !== 'rebate' || rebLoaded) return;
-    setRebLoading(true);
-    getTxns({ txnType: 'rebate' })
-      .then(({ txns }) => { setRebates(txns); setRebLoaded(true); })
-      .catch(() => {})
-      .finally(() => setRebLoading(false));
-  }, [tab, rebLoaded]);
-
-  // ── Load credit notes when credit_note tab first opened ────────────────────
-  useEffect(() => {
-    if (tab !== 'credit_note' || cnLoaded) return;
-    setCnLoading(true);
-    getTxns({ txnType: 'credit_note' })
-      .then(({ txns }) => { setCreditNotes(txns); setCnLoaded(true); })
-      .catch(() => {})
-      .finally(() => setCnLoading(false));
-  }, [tab, cnLoaded]);
+    return undefined;
+  }, [
+    tab,
+    activeTxnListPage,
+    txnListSearchDebounced,
+    statusFilter,
+    tdsFilter,
+    paymentExpenseFetchParams,
+    paymentClientCostFetchParams,
+    txnListReloadSeq,
+  ]);
 
   // ── Ledger reload ───────────────────────────────────────────────────────────
   useEffect(() => {
@@ -5345,124 +5453,6 @@ export default function Invoices({ ledgerOnly = false }) {
   const outstanding    = totalBilled - totalCollected;
   const tdsPending     = tdsEntries.filter(t => t.tdsStatus === 'provisional').reduce((a, t) => a + t.amount, 0);
 
-  const filteredInvoices = invoices.filter(i =>
-    statusFilter === 'all' || i.invoiceStatus === statusFilter || i.status === statusFilter
-  );
-
-  const visibleInvoices = useMemo(() => {
-    if (!txnListSearchQuery.trim()) return filteredInvoices;
-    const q = txnListSearchQuery;
-    return filteredInvoices.filter((i) => txnFieldsIncludeQuery(q, [
-      i.invoiceNumber,
-      i.id,
-      i.clientName,
-      i.txnDate,
-      i.invoiceDate,
-      i.dueDate,
-      i.invoiceStatus,
-      i.status,
-      i.billingProfileCode,
-      i.notes,
-      i.amount,
-      i.debit,
-    ]));
-  }, [filteredInvoices, txnListSearchQuery]);
-
-  const visibleReceipts = useMemo(() => {
-    if (!txnListSearchQuery.trim()) return receipts;
-    const q = txnListSearchQuery;
-    return receipts.filter((r) => txnFieldsIncludeQuery(q, [
-      r.publicRef,
-      r.id,
-      r.clientName,
-      r.txnDate,
-      r.paymentMethod,
-      r.referenceNumber,
-      r.billingProfileCode,
-      r.linkedTxnId,
-      r.notes,
-      formatSignedInrAmount(r.txnType, r.amount || r.credit || 0),
-    ]));
-  }, [receipts, txnListSearchQuery]);
-
-  const visiblePaymentExpenses = useMemo(() => {
-    if (!txnListSearchQuery.trim()) return paymentExpenses;
-    const q = txnListSearchQuery;
-    return paymentExpenses.filter((p) => txnFieldsIncludeQuery(q, [
-      p.publicRef,
-      p.id,
-      p.clientName,
-      paymentExpenseBookedOnLabel(p),
-      p.txnDate,
-      p.paymentMethod,
-      p.referenceNumber,
-      p.narration,
-      p.notes,
-      p.billingProfileCode,
-      p.paidFrom,
-      p.expensePurpose,
-      expensePurposeLabel(p.expensePurpose),
-      ledgerClassLabel(p.ledgerClass),
-      p.ledgerMovementKind,
-      p.status,
-      formatSignedInrAmount(p.txnType, p.amount || 0),
-    ]));
-  }, [paymentExpenses, txnListSearchQuery]);
-
-  const visiblePaymentClientCosts = useMemo(() => {
-    if (!txnListSearchQuery.trim()) return paymentClientCosts;
-    const q = txnListSearchQuery;
-    return paymentClientCosts.filter((p) => txnFieldsIncludeQuery(q, [
-      p.publicRef,
-      p.id,
-      p.clientName,
-      paymentExpenseBookedOnLabel(p),
-      p.txnDate,
-      p.paymentMethod,
-      p.referenceNumber,
-      p.narration,
-      p.notes,
-      p.billingProfileCode,
-      p.paidFrom,
-      p.expensePurpose,
-      expensePurposeLabel(p.expensePurpose),
-      'Client Costs',
-      p.ledgerMovementKind,
-      p.status,
-      formatSignedInrAmount(p.txnType, p.amount || 0),
-    ]));
-  }, [paymentClientCosts, txnListSearchQuery]);
-
-  const visibleTdsEntries = useMemo(() => {
-    if (!txnListSearchQuery.trim()) return tdsEntries;
-    const q = txnListSearchQuery;
-    return tdsEntries.filter((t) => txnFieldsIncludeQuery(q, [
-      t.id,
-      t.clientName,
-      t.txnDate,
-      t.tdsSection,
-      t.tdsRate,
-      t.tdsStatus,
-      t.txnType,
-      t.billingProfileCode,
-      formatSignedInrAmount(t.txnType, t.amount || 0),
-    ]));
-  }, [tdsEntries, txnListSearchQuery]);
-
-  const visibleRebates = useMemo(() => {
-    if (!txnListSearchQuery.trim()) return rebates;
-    const q = txnListSearchQuery;
-    return rebates.filter((r) => txnFieldsIncludeQuery(q, [
-      r.id,
-      r.clientName,
-      r.txnDate,
-      r.narration,
-      r.notes,
-      r.billingProfileCode,
-      r.amount,
-    ]));
-  }, [rebates, txnListSearchQuery]);
-
   const filteredRecoveryGroups = useMemo(
     () => filterRecoveryGroups(recoveryReport?.groups, recoverySearch, recoverySearchMode),
     [recoveryReport?.groups, recoverySearch, recoverySearchMode],
@@ -5472,20 +5462,6 @@ export default function Invoices({ ledgerOnly = false }) {
     if (!recoverySearch.trim()) return recoveryReport?.totals ?? null;
     return recoveryTotalsFromGroups(filteredRecoveryGroups);
   }, [recoveryReport?.totals, recoverySearch, filteredRecoveryGroups]);
-
-  const visibleCreditNotes = useMemo(() => {
-    if (!txnListSearchQuery.trim()) return creditNotes;
-    const q = txnListSearchQuery;
-    return creditNotes.filter((c) => txnFieldsIncludeQuery(q, [
-      c.id,
-      c.clientName,
-      c.txnDate,
-      c.linkedTxnId,
-      c.narration,
-      c.billingProfileCode,
-      c.amount,
-    ]));
-  }, [creditNotes, txnListSearchQuery]);
 
   // ── Invoice handlers ────────────────────────────────────────────────────────
   function handleRaiseInvoice(data) {
@@ -5529,7 +5505,8 @@ export default function Invoices({ ledgerOnly = false }) {
     payload.invoice_cost_analysis_confirm = Boolean(data.invoiceCostAnalysisConfirm);
     createTxn(payload)
       .then((newInv) => {
-        setInvoices((prev) => [newInv, ...prev]);
+        if (tab === 'invoices') reloadActiveTxnList({ page: 1 });
+        else setInvoices((prev) => [newInv, ...prev]);
         if (tab === 'service_billing') {
           getBillingReport({
             page: billingPage,
@@ -5581,8 +5558,8 @@ export default function Invoices({ ledgerOnly = false }) {
       receiptBody.client_id = selectedInvoice.clientId;
     }
     createReceipt(receiptBody)
-      .then(rec => {
-        setReceipts(prev => [rec, ...prev]);
+      .then(() => {
+        reloadActiveTxnList({ page: 1 });
         setSelectedInvoice(null);
         setShowRecordPayment(false);
       })
@@ -5634,7 +5611,7 @@ export default function Invoices({ ledgerOnly = false }) {
       payload.client_id = idNum;
     }
     return createPaymentExpense(payload)
-      .then(() => getTxns(paymentExpenseFetchParams).then(({ txns }) => setPaymentExpenses(txns)));
+      .then(() => reloadTxnListTab('payments', { page: 1 }));
   }
 
   function handleSavePaymentClientCost(data) {
@@ -5664,7 +5641,7 @@ export default function Invoices({ ledgerOnly = false }) {
       payload.client_id = idNum;
     }
     return createPaymentClientCost(payload)
-      .then(() => getTxns(paymentClientCostFetchParams).then(({ txns }) => setPaymentClientCosts(txns)));
+      .then(() => reloadTxnListTab('payment_costs', { page: 1 }));
   }
 
   function handleSaveReceipt(data) {
@@ -5688,7 +5665,7 @@ export default function Invoices({ ledgerOnly = false }) {
       payload.client_id = idNum;
     }
     createReceipt(payload)
-      .then(rec => setReceipts(prev => [rec, ...prev]))
+      .then(() => reloadActiveTxnList({ page: 1 }))
       .catch(() => {});
   }
 
@@ -5704,7 +5681,7 @@ export default function Invoices({ ledgerOnly = false }) {
       ledger_class:         normalizeLedgerClassForApi(data.ledgerClass),
       ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
     })
-      .then(entry => setTdsEntries(prev => [entry, ...prev]))
+      .then(() => reloadActiveTxnList({ page: 1 }))
       .catch(() => {});
   }
 
@@ -5713,12 +5690,7 @@ export default function Invoices({ ledgerOnly = false }) {
       await finalizeTds(id).catch(() => {});
     }
     setSelectedTds([]);
-    setTdsLoading(true);
-    const params = tdsFilter === 'all' ? {} : { tdsStatus: tdsFilter };
-    getTdsEntries(params)
-      .then(entries => setTdsEntries(entries))
-      .catch(() => {})
-      .finally(() => setTdsLoading(false));
+    reloadActiveTxnList();
   }
 
   function handleSaveRebate(data) {
@@ -5732,7 +5704,7 @@ export default function Invoices({ ledgerOnly = false }) {
       ledger_class:         normalizeLedgerClassForApi(data.ledgerClass),
       ledger_movement_kind: data.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
     })
-      .then(reb => setRebates(prev => [reb, ...prev]))
+      .then(() => reloadActiveTxnList({ page: 1 }))
       .catch(() => {});
   }
 
@@ -5765,7 +5737,7 @@ export default function Invoices({ ledgerOnly = false }) {
       payload.client_id = inv.clientId || data.clientId;
     }
     createCreditNote(payload)
-      .then(cn => setCreditNotes(prev => [cn, ...prev]))
+      .then(() => reloadActiveTxnList({ page: 1 }))
       .catch((err) => { window.alert(err?.message || 'Could not create credit note.'); });
   }
 
@@ -5990,6 +5962,23 @@ export default function Invoices({ ledgerOnly = false }) {
   const visibleTabSet = ledgerOnly ? LEDGER_TABS : INVOICE_TABS;
   const TABS = ALL_TABS.filter((t) => visibleTabSet.has(t.key));
 
+  function renderTxnListPagination(tabKey, loading, placement) {
+    const meta = txnListPagination[tabKey] || { total: 0, last_page: 1 };
+    const page = txnListPage[tabKey] ?? 1;
+    return (
+      <ListPaginationBar
+        placement={placement}
+        total={meta.total}
+        page={page}
+        totalPages={meta.last_page}
+        perPage={TXN_LIST_PER_PAGE}
+        loading={loading}
+        setPage={(fn) => setTxnListPage((pages) => ({ ...pages, [tabKey]: fn(pages[tabKey] ?? 1) }))}
+        entityPlural={TXN_LIST_ENTITY_LABELS[tabKey] || 'records'}
+      />
+    );
+  }
+
   return (
     <div style={{ padding:24 }}>
       {/* ── Modals ─────────────────────────────────────────────────────────── */}
@@ -6094,8 +6083,8 @@ export default function Invoices({ ledgerOnly = false }) {
         <EditInvoiceModal
           invoiceId={editInvoiceId}
           onClose={() => setEditInvoiceId(null)}
-          onSaved={(row) => {
-            setInvoices((prev) => prev.map((x) => (String(x.id) === String(row.id) ? row : x)));
+          onSaved={() => {
+            reloadTxnListTab('invoices');
           }}
         />
       )}
@@ -6106,14 +6095,17 @@ export default function Invoices({ ledgerOnly = false }) {
           onSaved={(row) => {
             const tt = row.txnType;
             if (tt === 'receipt' || tt === 'receipt_reversal') {
-              getTxns({ txnType: 'receipt' }).then(({ txns }) => setReceipts(txns));
+              reloadTxnListTab('receipts');
             } else if (tt === 'payment_expense' || tt === 'payment_expense_reversal') {
-              getTxns(paymentExpenseFetchParams).then(({ txns }) => setPaymentExpenses(txns));
+              reloadTxnListTab('payments');
             } else if (tt === 'payment_client_cost' || tt === 'payment_client_cost_reversal') {
-              getTxns(paymentClientCostFetchParams).then(({ txns }) => setPaymentClientCosts(txns));
+              reloadTxnListTab('payment_costs');
             } else if (tt === 'tds_provisional' || tt === 'tds_final' || tt === 'tds_reversal') {
-              const params = tdsFilter === 'all' ? {} : { tdsStatus: tdsFilter };
-              getTdsEntries(params).then(setTdsEntries);
+              reloadTxnListTab('tds');
+            } else if (tt === 'rebate' || tt === 'rebate_reversal') {
+              reloadTxnListTab('rebate');
+            } else if (tt === 'credit_note') {
+              reloadTxnListTab('credit_note');
             }
           }}
         />
@@ -6575,6 +6567,12 @@ export default function Invoices({ ledgerOnly = false }) {
         </div>
       )}
 
+      {TXN_LIST_SEARCH_TABS.has(tab) && txnListFetchError && (
+        <div style={{ marginBottom: 16, padding: '10px 14px', background: '#fef2f2', borderRadius: 10, border: '1px solid #fecaca', fontSize: 13, color: '#991b1b' }}>
+          {txnListFetchError}
+        </div>
+      )}
+
       {/* ── Tab: Invoices ─────────────────────────────────────────────────── */}
       {tab==='invoices' && (
         <div style={cardStyle}>
@@ -6607,6 +6605,7 @@ export default function Invoices({ ledgerOnly = false }) {
               <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedInvoiceIds([])}>Clear selection</button>
             </div>
           )}
+          {renderTxnListPagination('invoices', invLoading, 'top')}
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -6615,10 +6614,10 @@ export default function Invoices({ ledgerOnly = false }) {
                     <input
                       type="checkbox"
                       title="Select all"
-                      checked={visibleInvoices.length > 0 && visibleInvoices.every((i) => selectedInvoiceIds.some((x) => Number(x) === Number(i.id)))}
+                      checked={invoices.length > 0 && invoices.every((i) => selectedInvoiceIds.some((x) => Number(x) === Number(i.id)))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedInvoiceIds(visibleInvoices.map((x) => x.id));
+                          setSelectedInvoiceIds(invoices.map((x) => x.id));
                         } else {
                           setSelectedInvoiceIds([]);
                         }
@@ -6632,13 +6631,11 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {invLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading invoices…</td></tr>
-              ) : invoices.length === 0 ? (
+              ) : invoices.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices yet. Raise one to begin.</td></tr>
-              ) : filteredInvoices.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices match the status filters.</td></tr>
-              ) : visibleInvoices.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices match your search.</td></tr>
-              ) : visibleInvoices.map(i=>(
+              ) : invoices.length === 0 ? (
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No invoices match your filters.</td></tr>
+              ) : invoices.map(i=>(
                 <tr
                   key={i.id}
                   id={`txn-row-${i.id}`}
@@ -6709,6 +6706,7 @@ export default function Invoices({ ledgerOnly = false }) {
               ))}
             </tbody>
           </table>
+          {renderTxnListPagination('invoices', invLoading, 'bottom')}
         </div>
       )}
 
@@ -6739,6 +6737,7 @@ export default function Invoices({ ledgerOnly = false }) {
               <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedReceiptIds([])}>Clear selection</button>
             </div>
           )}
+          {renderTxnListPagination('receipts', recLoading, 'top')}
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -6747,10 +6746,10 @@ export default function Invoices({ ledgerOnly = false }) {
                     <input
                       type="checkbox"
                       title="Select all"
-                      checked={visibleReceipts.length > 0 && visibleReceipts.every((r) => selectedReceiptIds.some((x) => Number(x) === Number(r.id)))}
+                      checked={receipts.length > 0 && receipts.every((r) => selectedReceiptIds.some((x) => Number(x) === Number(r.id)))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedReceiptIds(visibleReceipts.map((x) => x.id));
+                          setSelectedReceiptIds(receipts.map((x) => x.id));
                         } else {
                           setSelectedReceiptIds([]);
                         }
@@ -6764,11 +6763,13 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {recLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
-              ) : receipts.length === 0 ? (
+              ) : txnListFetchError ? (
+                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Could not load receipts.</td></tr>
+              ) : receipts.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
-              ) : visibleReceipts.length === 0 ? (
+              ) : receipts.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts match your search.</td></tr>
-              ) : visibleReceipts.map(r=>(
+              ) : receipts.map(r=>(
                 <tr key={r.id} style={ledgerRowStyle(trStyle, r)}>
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }}>
@@ -6817,6 +6818,7 @@ export default function Invoices({ ledgerOnly = false }) {
               ))}
             </tbody>
           </table>
+          {renderTxnListPagination('receipts', recLoading, 'bottom')}
         </div>
       )}
 
@@ -6859,6 +6861,7 @@ export default function Invoices({ ledgerOnly = false }) {
               <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedPaymentIds([])}>Clear selection</button>
             </div>
           )}
+          {renderTxnListPagination('payments', payLoading, 'top')}
           <div style={{ overflowX: 'auto' }}>
             <div style={{ padding: '8px 14px', fontSize: 11, color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>
               Scroll right for narration, notes, and actions.
@@ -6871,10 +6874,10 @@ export default function Invoices({ ledgerOnly = false }) {
                     <input
                       type="checkbox"
                       title="Select all"
-                      checked={visiblePaymentExpenses.length > 0 && visiblePaymentExpenses.every((p) => selectedPaymentIds.some((x) => Number(x) === Number(p.id)))}
+                      checked={paymentExpenses.length > 0 && paymentExpenses.every((p) => selectedPaymentIds.some((x) => Number(x) === Number(p.id)))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedPaymentIds(visiblePaymentExpenses.map((x) => x.id));
+                          setSelectedPaymentIds(paymentExpenses.map((x) => x.id));
                         } else {
                           setSelectedPaymentIds([]);
                         }
@@ -6891,11 +6894,11 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {payLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading payments…</td></tr>
-              ) : paymentExpenses.length === 0 ? (
+              ) : paymentExpenses.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments on behalf found. Click &quot;+ Payment&quot; to record one.</td></tr>
-              ) : visiblePaymentExpenses.length === 0 ? (
+              ) : paymentExpenses.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
-              ) : visiblePaymentExpenses.map((p) => {
+              ) : paymentExpenses.map((p) => {
                 const ledgerMismatch = ledgerClientId && !paymentsFilterByLedger && (
                   !paymentExpenseMatchesLedgerSelection(p, ledgerClientId, ledgerEntityType)
                   || normalizeLedgerClassForApi(p.ledgerClass) !== normalizeLedgerClassForApi(ledgerLedgerClass)
@@ -6979,6 +6982,7 @@ export default function Invoices({ ledgerOnly = false }) {
             </tbody>
           </table>
           </div>
+          {renderTxnListPagination('payments', payLoading, 'bottom')}
         </div>
       )}
 
@@ -7019,6 +7023,7 @@ export default function Invoices({ ledgerOnly = false }) {
               <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedPaymentCostIds([])}>Clear selection</button>
             </div>
           )}
+          {renderTxnListPagination('payment_costs', payCostLoading, 'top')}
           <div style={{ overflowX: 'auto' }}>
             <div style={{ padding: '8px 14px', fontSize: 11, color: '#64748b', borderBottom: '1px solid #f1f5f9' }}>
               Scroll right for narration, notes, and actions.
@@ -7031,10 +7036,10 @@ export default function Invoices({ ledgerOnly = false }) {
                     <input
                       type="checkbox"
                       title="Select all"
-                      checked={visiblePaymentClientCosts.length > 0 && visiblePaymentClientCosts.every((p) => selectedPaymentCostIds.some((x) => Number(x) === Number(p.id)))}
+                      checked={paymentClientCosts.length > 0 && paymentClientCosts.every((p) => selectedPaymentCostIds.some((x) => Number(x) === Number(p.id)))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedPaymentCostIds(visiblePaymentClientCosts.map((x) => x.id));
+                          setSelectedPaymentCostIds(paymentClientCosts.map((x) => x.id));
                         } else {
                           setSelectedPaymentCostIds([]);
                         }
@@ -7051,11 +7056,11 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {payCostLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>Loading client cost payments…</td></tr>
-              ) : paymentClientCosts.length === 0 ? (
+              ) : paymentClientCosts.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No client cost payments found. Click &quot;+ Payment&quot; to record one.</td></tr>
-              ) : visiblePaymentClientCosts.length === 0 ? (
+              ) : paymentClientCosts.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 18 : 17} style={{ ...tdStyle, textAlign: 'center', padding: 24, color: '#94a3b8' }}>No payments match your search.</td></tr>
-              ) : visiblePaymentClientCosts.map((p) => (
+              ) : paymentClientCosts.map((p) => (
                 <tr
                   key={p.id}
                   style={{ ...ledgerRowStyle(trStyle, p), ...(canEditInvoice && isLedgerEditable(p) ? { cursor: 'pointer' } : {}) }}
@@ -7120,6 +7125,7 @@ export default function Invoices({ ledgerOnly = false }) {
             </tbody>
           </table>
           </div>
+          {renderTxnListPagination('payment_costs', payCostLoading, 'bottom')}
         </div>
       )}
 
@@ -7158,6 +7164,7 @@ export default function Invoices({ ledgerOnly = false }) {
               </button>
             )}
           </div>
+          {renderTxnListPagination('tds', tdsLoading, 'top')}
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -7170,11 +7177,13 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {tdsLoading ? (
                 <tr><td colSpan={10 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading TDS entries…</td></tr>
-              ) : tdsEntries.length === 0 ? (
+              ) : txnListFetchError ? (
+                <tr><td colSpan={10 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Could not load TDS entries.</td></tr>
+              ) : tdsEntries.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={10 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries found. Click "+ Book TDS" to add one.</td></tr>
-              ) : visibleTdsEntries.length === 0 ? (
+              ) : tdsEntries.length === 0 ? (
                 <tr><td colSpan={10 + (canDeleteInvoice ? 1 : 0) + ((canEditInvoice || canDeleteInvoice) ? 1 : 0)} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No TDS entries match your search.</td></tr>
-              ) : visibleTdsEntries.map(t=>(
+              ) : tdsEntries.map(t=>(
                 <tr key={t.id} style={ledgerRowStyle(trStyle, t)}>
                   <td style={{ ...tdStyle, width:44 }}>
                     {t.tdsStatus === 'provisional' && !isLedgerInactive(t) && (
@@ -7225,6 +7234,7 @@ export default function Invoices({ ledgerOnly = false }) {
               ))}
             </tbody>
           </table>
+          {renderTxnListPagination('tds', tdsLoading, 'bottom')}
         </div>
       )}
 
@@ -7255,6 +7265,7 @@ export default function Invoices({ ledgerOnly = false }) {
               <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedRebateIds([])}>Clear selection</button>
             </div>
           )}
+          {renderTxnListPagination('rebate', rebLoading, 'top')}
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -7263,10 +7274,10 @@ export default function Invoices({ ledgerOnly = false }) {
                     <input
                       type="checkbox"
                       title="Select all"
-                      checked={visibleRebates.length > 0 && visibleRebates.every((r) => selectedRebateIds.some((x) => Number(x) === Number(r.id)))}
+                      checked={rebates.length > 0 && rebates.every((r) => selectedRebateIds.some((x) => Number(x) === Number(r.id)))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedRebateIds(visibleRebates.map((x) => x.id));
+                          setSelectedRebateIds(rebates.map((x) => x.id));
                         } else {
                           setSelectedRebateIds([]);
                         }
@@ -7280,11 +7291,13 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {rebLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading rebate entries…</td></tr>
-              ) : rebates.length === 0 ? (
+              ) : txnListFetchError ? (
+                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Could not load rebate entries.</td></tr>
+              ) : rebates.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No rebate/discount entries found. Click "+ Rebate/Discount" to add one.</td></tr>
-              ) : visibleRebates.length === 0 ? (
+              ) : rebates.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No entries match your search.</td></tr>
-              ) : visibleRebates.map(r=>(
+              ) : rebates.map(r=>(
                 <tr key={r.id} style={ledgerRowStyle(trStyle, r)}>
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }}>
@@ -7329,6 +7342,7 @@ export default function Invoices({ ledgerOnly = false }) {
               ))}
             </tbody>
           </table>
+          {renderTxnListPagination('rebate', rebLoading, 'bottom')}
         </div>
       )}
 
@@ -7359,6 +7373,7 @@ export default function Invoices({ ledgerOnly = false }) {
               <button type="button" style={{ ...btnSecondary, fontSize: 12, padding: '6px 12px' }} onClick={() => setSelectedCreditNoteIds([])}>Clear selection</button>
             </div>
           )}
+          {renderTxnListPagination('credit_note', cnLoading, 'top')}
           <table style={tableStyle}>
             <thead>
               <tr>
@@ -7367,10 +7382,10 @@ export default function Invoices({ ledgerOnly = false }) {
                     <input
                       type="checkbox"
                       title="Select all"
-                      checked={visibleCreditNotes.length > 0 && visibleCreditNotes.every((c) => selectedCreditNoteIds.some((x) => Number(x) === Number(c.id)))}
+                      checked={creditNotes.length > 0 && creditNotes.every((c) => selectedCreditNoteIds.some((x) => Number(x) === Number(c.id)))}
                       onChange={(e) => {
                         if (e.target.checked) {
-                          setSelectedCreditNoteIds(visibleCreditNotes.map((x) => x.id));
+                          setSelectedCreditNoteIds(creditNotes.map((x) => x.id));
                         } else {
                           setSelectedCreditNoteIds([]);
                         }
@@ -7384,11 +7399,13 @@ export default function Invoices({ ledgerOnly = false }) {
             <tbody>
               {cnLoading ? (
                 <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading credit notes…</td></tr>
-              ) : creditNotes.length === 0 ? (
+              ) : txnListFetchError ? (
+                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Could not load credit notes.</td></tr>
+              ) : creditNotes.length === 0 && !txnListSearchDebounced ? (
                 <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes found. Click "+ Credit Note" to add one.</td></tr>
-              ) : visibleCreditNotes.length === 0 ? (
+              ) : creditNotes.length === 0 ? (
                 <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes match your search.</td></tr>
-              ) : visibleCreditNotes.map(c=>(
+              ) : creditNotes.map(c=>(
                 <tr key={c.id} style={ledgerRowStyle(trStyle, c)}>
                   {canDeleteInvoice && (
                     <td style={{ ...tdStyle, width: 36 }}>
@@ -7433,6 +7450,7 @@ export default function Invoices({ ledgerOnly = false }) {
               ))}
             </tbody>
           </table>
+          {renderTxnListPagination('credit_note', cnLoading, 'bottom')}
         </div>
       )}
 
