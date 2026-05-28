@@ -1,7 +1,7 @@
 /**
  * analytics.js — Google Analytics 4 integration for the staff portal.
  *
- * Set VITE_GA4_MEASUREMENT_ID in web/.env to enable.
+ * Set VITE_GA4_PORTAL_MEASUREMENT_ID in .env (or legacy VITE_GA4_MEASUREMENT_ID).
  * When the env var is absent (e.g. mock mode) all calls are no-ops.
  *
  * Usage:
@@ -10,7 +10,9 @@
  *   trackPageView('/path');    // call on every route change
  */
 
-const GA4_ID = import.meta.env.VITE_GA4_MEASUREMENT_ID;
+const GA4_ID =
+  import.meta.env.VITE_GA4_PORTAL_MEASUREMENT_ID ||
+  import.meta.env.VITE_GA4_MEASUREMENT_ID;
 let initialized = false;
 
 export function initAnalytics() {

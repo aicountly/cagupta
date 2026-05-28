@@ -54,10 +54,10 @@ Mobile uses `EXPO_PUBLIC_API_BASE_URL` in `mobile/app/.env` (see `.env.example`)
 
 ### Environment Files
 
-- `web/.env` — set `VITE_API_BASE_URL` for real backend or leave empty for mock mode; optional `VITE_GA4_MEASUREMENT_ID` (`G-…`, same value in `web-public/.env`)
-- `web-public/.env` — optional `VITE_GA4_MEASUREMENT_ID` (marketing site at `carahulgupta.in`)
+- `web/.env` — set `VITE_API_BASE_URL` for real backend or leave empty for mock mode; copy the same file to `web-public/.env` for shared frontend config
+- GA4 (optional): `VITE_GA4_MARKETING_MEASUREMENT_ID` (marketing), `VITE_GA4_PORTAL_MEASUREMENT_ID` (portal), or legacy `VITE_GA4_MEASUREMENT_ID` for one property on both sites
 - `mobile/app/.env` — set `EXPO_PUBLIC_API_BASE_URL` (default `http://localhost:8080/api`)
-- `server-php/.env` — DB credentials (`postgres`/`postgres`), JWT secret, CORS origin; optional `GA4_PROPERTY_ID` + `GOOGLE_SERVICE_ACCOUNT_JSON` for Traffic Analytics
+- `server-php/.env` — DB credentials (`postgres`/`postgres`), JWT secret, CORS origin; optional `GA4_PROPERTY_ID_MARKETING`, `GA4_PROPERTY_ID_PORTAL`, `GOOGLE_SERVICE_ACCOUNT_JSON` for Traffic Analytics
 - `backend/.env` — Brevo API key (optional)
 
 ### Database

@@ -20,7 +20,9 @@ use App\Controllers\BaseController;
  *   POST /ai-insights/refresh   — regenerate suggestions via OpenAI
  *
  * Required .env keys:
- *   GA4_PROPERTY_ID             — numeric GA4 property ID (no "properties/" prefix)
+ *   GA4_PROPERTY_ID_MARKETING   — numeric property ID for carahulgupta.in (preferred)
+ *   GA4_PROPERTY_ID_PORTAL      — numeric property ID for app.carahulgupta.in (optional)
+ *   GA4_PROPERTY_ID             — legacy fallback when the split IDs above are unset
  *   GOOGLE_SERVICE_ACCOUNT_JSON — path to the service account JSON key file
  *   OPENAI_API_KEY              — OpenAI secret key (sk-...)
  */
@@ -56,7 +58,7 @@ class TrafficAnalyticsController extends BaseController
             $this->success($cached, 'OK (cached)');
         }
 
-        $propertyId = $_ENV['GA4_PROPERTY_ID'] ?? '';
+        $propertyId = $this->resolveGa4PropertyId($stream);
         if ($propertyId === '') {
             $this->success($this->mockOverview($days), 'GA4 not configured — returning demo data');
         }
@@ -121,15 +123,16 @@ class TrafficAnalyticsController extends BaseController
     {
         $this->authUser();
         $days   = max(7, min(90, (int)$this->query('days', 30)));
+        $stream = $this->query('stream', 'all');
         $cacheKey   = 'traffic_sources';
-        $paramsHash = md5("days={$days}");
+        $paramsHash = md5("days={$days}&stream={$stream}");
 
         $cached = $this->getCache($cacheKey, $paramsHash);
         if ($cached !== null) {
             $this->success($cached, 'OK (cached)');
         }
 
-        $propertyId = $_ENV['GA4_PROPERTY_ID'] ?? '';
+        $propertyId = $this->resolveGa4PropertyId($stream);
         if ($propertyId === '') {
             $this->success($this->mockSources(), 'GA4 not configured — returning demo data');
         }
@@ -160,15 +163,16 @@ class TrafficAnalyticsController extends BaseController
     {
         $this->authUser();
         $days   = max(7, min(90, (int)$this->query('days', 30)));
+        $stream = $this->query('stream', 'all');
         $cacheKey   = 'traffic_leads';
-        $paramsHash = md5("days={$days}");
+        $paramsHash = md5("days={$days}&stream={$stream}");
 
         $cached = $this->getCache($cacheKey, $paramsHash);
         if ($cached !== null) {
             $this->success($cached, 'OK (cached)');
         }
 
-        $propertyId = $_ENV['GA4_PROPERTY_ID'] ?? '';
+        $propertyId = $this->resolveGa4PropertyId($stream);
         if ($propertyId === '') {
             $this->success($this->mockLeads(), 'GA4 not configured — returning demo data');
         }
@@ -267,6 +271,34 @@ class TrafficAnalyticsController extends BaseController
             'generated_at' => date('Y-m-d H:i:s'),
             'expires_at'   => $expiresAt,
         ], 'AI insights refreshed');
+    }
+
+    // ── GA4 property resolution ───────────────────────────────────────────────
+
+    /**
+     * Resolve numeric GA4 property ID for Data API reports.
+     *
+     * stream=marketing_site|marketing → GA4_PROPERTY_ID_MARKETING, else GA4_PROPERTY_ID
+     * stream=portal|app               → GA4_PROPERTY_ID_PORTAL, else GA4_PROPERTY_ID
+     * stream=all (default)            → marketing property when set, else legacy GA4_PROPERTY_ID
+     */
+    private function resolveGa4PropertyId(string $stream = 'all'): string
+    {
+        $marketing = trim((string)($_ENV['GA4_PROPERTY_ID_MARKETING'] ?? ''));
+        $portal    = trim((string)($_ENV['GA4_PROPERTY_ID_PORTAL'] ?? ''));
+        $legacy    = trim((string)($_ENV['GA4_PROPERTY_ID'] ?? ''));
+
+        $stream = strtolower(trim($stream));
+
+        if ($stream === 'portal' || $stream === 'app') {
+            return $portal !== '' ? $portal : $legacy;
+        }
+
+        if ($stream === 'marketing_site' || $stream === 'marketing') {
+            return $marketing !== '' ? $marketing : $legacy;
+        }
+
+        return $marketing !== '' ? $marketing : $legacy;
     }
 
     // ── GA4 authentication ────────────────────────────────────────────────────

@@ -16,14 +16,12 @@ BEGIN
                 replace(
                     replace(
                         replace(
-                            replace(
-                                replace(permissions::text, 'affiliates.manage', 'associates.manage'),
-                                'affiliate.sub_affiliates.create', 'associate.sub_associates.create'),
-                            'affiliate.payouts.request', 'associate.payouts.request'),
-                        'affiliate.bank.manage', 'associate.bank.manage'),
-                    'affiliate.profile', 'associate.profile'),
-                'affiliate.portal', 'associate.portal')
-        )::jsonb
+                            replace(permissions::text, 'affiliates.manage', 'associates.manage'),
+                            'affiliate.sub_affiliates.create', 'associate.sub_associates.create'),
+                        'affiliate.payouts.request', 'associate.payouts.request'),
+                    'affiliate.bank.manage', 'associate.bank.manage'),
+                'affiliate.profile', 'associate.profile'),
+            'affiliate.portal', 'associate.portal')::jsonb
     WHERE permissions::text LIKE '%affiliate%';
 
     UPDATE roles
@@ -91,9 +89,10 @@ BEGIN
     END IF;
 
     -- ── Service log visibility enum value ────────────────────────────────────
+    ALTER TABLE service_logs DROP CONSTRAINT IF EXISTS service_logs_visibility_check;
+
     UPDATE service_logs SET visibility = 'associate' WHERE visibility = 'affiliate';
 
-    ALTER TABLE service_logs DROP CONSTRAINT IF EXISTS service_logs_visibility_check;
     ALTER TABLE service_logs ADD CONSTRAINT service_logs_visibility_check
         CHECK (visibility IN ('internal', 'associate', 'client'));
 

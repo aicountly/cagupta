@@ -1,11 +1,13 @@
 /**
  * analytics.js — Google Analytics 4 integration for the public marketing site.
  *
- * Set VITE_GA4_MEASUREMENT_ID in web-public/.env to enable.
+ * Set VITE_GA4_MARKETING_MEASUREMENT_ID in .env (or legacy VITE_GA4_MEASUREMENT_ID).
  * When the env var is absent all calls are no-ops.
  */
 
-const GA4_ID = import.meta.env.VITE_GA4_MEASUREMENT_ID;
+const GA4_ID =
+  import.meta.env.VITE_GA4_MARKETING_MEASUREMENT_ID ||
+  import.meta.env.VITE_GA4_MEASUREMENT_ID;
 let initialized = false;
 
 export function initAnalytics() {

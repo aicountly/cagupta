@@ -5,7 +5,8 @@
 #   CPANEL_REMOTE_ROOT  → portal docroot, e.g. /home/USER/public_html/app
 #   CPANEL_SITE_ROOT    → site root (parent of app/ and api/), e.g. /home/USER/public_html
 #   VITE_* for web build (see "Create web .env" below)
-#   VITE_GA4_MEASUREMENT_ID → optional; same G- ID for web + web-public builds
+#   VITE_GA4_MARKETING_MEASUREMENT_ID / VITE_GA4_PORTAL_MEASUREMENT_ID → optional GA4 (split properties)
+#   VITE_GA4_MEASUREMENT_ID → optional legacy fallback for both builds
 #   VITE_PORTAL_URL     → marketing build only, e.g. https://app.carahulgupta.in
 #
 # Deploy order: portal → app/, API → api/, marketing → site root (rsync excludes app/ + api/).
@@ -43,12 +44,13 @@ jobs:
       - name: Create web .env from secrets
         working-directory: web
         run: |
-          printf 'VITE_API_BASE_URL=%s\nVITE_GOOGLE_CLIENT_ID=%s\nVITE_MSAL_CLIENT_ID=%s\nVITE_MSAL_TENANT_ID=%s\nVITE_MARKETING_URL=%s\nVITE_GA4_MEASUREMENT_ID=%s\n' \
+          printf 'VITE_API_BASE_URL=%s\nVITE_GOOGLE_CLIENT_ID=%s\nVITE_MSAL_CLIENT_ID=%s\nVITE_MSAL_TENANT_ID=%s\nVITE_MARKETING_URL=%s\nVITE_GA4_PORTAL_MEASUREMENT_ID=%s\nVITE_GA4_MEASUREMENT_ID=%s\n' \
             "${{ secrets.VITE_API_BASE_URL }}" \
             "${{ secrets.VITE_GOOGLE_CLIENT_ID }}" \
             "${{ secrets.VITE_MSAL_CLIENT_ID }}" \
             "${{ secrets.VITE_MSAL_TENANT_ID }}" \
             "${{ secrets.VITE_MARKETING_URL }}" \
+            "${{ secrets.VITE_GA4_PORTAL_MEASUREMENT_ID }}" \
             "${{ secrets.VITE_GA4_MEASUREMENT_ID }}" \
             > .env
 
@@ -64,8 +66,9 @@ jobs:
       - name: Create web-public .env for production build
         working-directory: web-public
         run: |
-          printf 'VITE_PORTAL_URL=%s\nVITE_GA4_MEASUREMENT_ID=%s\n' \
+          printf 'VITE_PORTAL_URL=%s\nVITE_GA4_MARKETING_MEASUREMENT_ID=%s\nVITE_GA4_MEASUREMENT_ID=%s\n' \
             "${{ secrets.VITE_PORTAL_URL }}" \
+            "${{ secrets.VITE_GA4_MARKETING_MEASUREMENT_ID }}" \
             "${{ secrets.VITE_GA4_MEASUREMENT_ID }}" \
             > .env
 

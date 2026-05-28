@@ -507,29 +507,26 @@ If `/login` is opened without a `portal=` parameter (e.g. a direct bookmark), th
 
 ### Environment Variables
 
-**`web-public/.env`**
+**Shared frontend `.env`** — copy `web/.env.example` to both `web/.env` and `web-public/.env` (same file).
 
-| Variable | Purpose | Default |
+| Variable | Purpose | Used by |
 |---|---|---|
-| `VITE_PORTAL_URL` | Portal base URL for login dropdown links | `https://app.carahulgupta.in` |
-| `VITE_GA4_MEASUREMENT_ID` | GA4 measurement ID (`G-…`) — same as `web/.env` for one property | — |
-
-**`web/.env`**
-
-| Variable | Purpose | Default |
-|---|---|---|
-| `VITE_API_BASE_URL` | PHP API base URL | *(omit for mock/dev mode)* |
-| `VITE_GOOGLE_CLIENT_ID` | Google OAuth client ID (sign-in; not Analytics) | — |
-| `VITE_MSAL_CLIENT_ID` | Azure App Registration client ID | — |
-| `VITE_MSAL_TENANT_ID` | Azure tenant ID | `common` |
-| `VITE_MARKETING_URL` | "Wrong portal?" escape link target | `https://carahulgupta.in` |
-| `VITE_GA4_MEASUREMENT_ID` | GA4 measurement ID (`G-…`) — same as `web-public/.env` | — |
+| `VITE_PORTAL_URL` | Portal URL for marketing navbar login links | `web-public` |
+| `VITE_API_BASE_URL` | PHP API base URL | `web` |
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth (sign-in; not Analytics) | `web` |
+| `VITE_MSAL_CLIENT_ID` / `VITE_MSAL_TENANT_ID` | Microsoft OAuth | `web` |
+| `VITE_MARKETING_URL` | "Wrong portal?" link on portal login | `web` |
+| `VITE_GA4_MARKETING_MEASUREMENT_ID` | GA4 `G-…` for `carahulgupta.in` | `web-public` |
+| `VITE_GA4_PORTAL_MEASUREMENT_ID` | GA4 `G-…` for `app.carahulgupta.in` | `web` |
+| `VITE_GA4_MEASUREMENT_ID` | Legacy fallback when split IDs are unset | both |
 
 **`server-php/.env`** (Traffic Analytics dashboard)
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `GA4_PROPERTY_ID` | Numeric GA4 property ID for Data API reports | — |
+| `GA4_PROPERTY_ID_MARKETING` | Numeric property ID — marketing site (`?stream=marketing_site` / default) | — |
+| `GA4_PROPERTY_ID_PORTAL` | Numeric property ID — portal (`?stream=portal`) | — |
+| `GA4_PROPERTY_ID` | Legacy fallback | — |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Path to service account JSON (Analytics Data API) | — |
 
 ### GitHub Actions Deployment
@@ -542,7 +539,9 @@ One manual workflow (`.github/workflows/deploy-cpanel.yml`) builds and rsyncs al
 | `CPANEL_SITE_ROOT` | `/home/carahulgupta/public_html` | API + marketing |
 | `VITE_PORTAL_URL` | `https://app.carahulgupta.in` | `web-public` build |
 | `VITE_MARKETING_URL` | `https://carahulgupta.in` | Portal "Wrong portal?" link |
-| `VITE_GA4_MEASUREMENT_ID` | `G-XXXXXXXXXX` | GA4 tag in **both** `web` and `web-public` builds (optional) |
+| `VITE_GA4_MARKETING_MEASUREMENT_ID` | `G-…` | Marketing site GA4 tag (`web-public` build) |
+| `VITE_GA4_PORTAL_MEASUREMENT_ID` | `G-…` | Portal GA4 tag (`web` build) |
+| `VITE_GA4_MEASUREMENT_ID` | `G-…` | Optional legacy fallback for both builds |
 | `MIGRATION_DB_USER` | `carahulgupta` | Table-owner role for `ALTER TABLE` migrations |
 | `MIGRATION_DB_PASS` | *(phpPgAdmin password)* | Password for `MIGRATION_DB_USER` |
 

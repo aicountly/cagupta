@@ -57,8 +57,9 @@ function DemoBanner() {
     <div style={s.demoBanner}>
       <AlertCircle size={15} color="#92400e" />
       <span>
-        Showing <strong>demo data</strong> — add <code>GA4_PROPERTY_ID</code> and{' '}
-        <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> to <code>server-php/.env</code> to see live data.
+        Showing <strong>demo data</strong> — add <code>GA4_PROPERTY_ID_MARKETING</code> (or{' '}
+        <code>GA4_PROPERTY_ID</code>) and <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> to{' '}
+        <code>server-php/.env</code> to see live data.
       </span>
     </div>
   );
@@ -227,8 +228,9 @@ export default function TrafficAnalyticsDashboard() {
               <h2 style={s.sectionTitle}>Lead Funnel Events</h2>
               {leadFunnel.every((e) => e.count === 0) ? (
                 <div style={s.emptyFunnel}>
-                  No lead events tracked yet. Add <code>VITE_GA4_MEASUREMENT_ID</code> to{' '}
-                  <code>web/.env</code> and <code>web-public/.env</code> to start capturing events.
+                  No lead events tracked yet. Add <code>VITE_GA4_MARKETING_MEASUREMENT_ID</code> and{' '}
+                  <code>VITE_GA4_PORTAL_MEASUREMENT_ID</code> to your shared <code>web/.env</code>{' '}
+                  (copy to <code>web-public/.env</code>) to start capturing events.
                 </div>
               ) : (
                 <div style={s.funnelList}>
