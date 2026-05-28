@@ -914,25 +914,25 @@ class Routes
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/portal-types',
                 'handler'    => 'Admin\PortalTypeController@index',
-                'middleware' => ['auth', 'permission:credentials.view'],
+                'middleware' => ['auth', 'permission_any:credentials.view,portal_types.manage'],
             ],
             [
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/portal-types',
                 'handler'    => 'Admin\PortalTypeController@store',
-                'middleware' => ['auth', 'role:super_admin,admin'],
+                'middleware' => ['auth', 'permission:portal_types.manage'],
             ],
             [
                 'method'     => 'PUT',
                 'pattern'    => '/api/admin/portal-types/:id',
                 'handler'    => 'Admin\PortalTypeController@update',
-                'middleware' => ['auth', 'role:super_admin,admin'],
+                'middleware' => ['auth', 'permission:portal_types.manage'],
             ],
             [
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/portal-types/:id',
                 'handler'    => 'Admin\PortalTypeController@destroy',
-                'middleware' => ['auth', 'role:super_admin,admin'],
+                'middleware' => ['auth', 'permission:portal_types.manage'],
             ],
 
             // ── Admin — Leads ─────────────────────────────────────────────────

@@ -59,6 +59,8 @@ const PERMISSION_LABELS = {
   'cash_book.view': 'View cash book',
   'cash_book.create': 'Record cash transactions',
   'cash_book.edit': 'Edit cash book entries',
+  'portal_types.manage': 'Manage portal types',
+  'register_types.manage': 'Manage register types',
 };
 
 const PERMISSION_GROUPS = [
@@ -74,7 +76,7 @@ const PERMISSION_GROUPS = [
   { group: 'Leads',       keys: ['leads.view', 'leads.create', 'leads.edit'] },
   { group: 'Quotations',  keys: ['quotations.setup', 'quotations.manage'] },
   { group: 'Affiliates',  keys: ['affiliates.manage'] },
-  { group: 'Settings',    keys: ['settings.view'] },
+  { group: 'Settings',    keys: ['settings.view', 'portal_types.manage', 'register_types.manage'] },
   { group: 'Users',       keys: ['users.manage', 'users.delegate'] },
 ];
 
@@ -593,6 +595,8 @@ export default function Settings() {
   const canManageUsers     = hasPermission('users.manage') || hasPermission('users.delegate');
   const canConfigureRoles  = hasPermission('users.manage');
   const canManageBillingFirms = hasPermission('settings.view');
+  const canManagePortalTypes = hasPermission('portal_types.manage');
+  const canManageRegisterTypes = hasPermission('register_types.manage');
   /** Same roles as API `role:super_admin,admin` on service category / engagement type mutations. */
   const canManageServiceCatalog =
     user?.role === ROLES.SUPER_ADMIN || user?.role === ROLES.ADMIN;
@@ -1786,6 +1790,7 @@ export default function Settings() {
             <p style={{ fontSize:13, color:'#64748b', marginBottom:16 }}>
               Define what each role can access across the portal. <strong>users.manage</strong> is full team administration;
               <strong> users.delegate</strong> lets managers invite and manage only users they created (staff or viewer roles), for hierarchy delegation.
+              Under <strong>Settings</strong>, <strong>portal_types.manage</strong> and <strong>register_types.manage</strong> control portal and register lookup lists in Other Settings.
             </p>
             {rolesLoading && <div style={{ fontSize:13, color:'#64748b' }}>Loading roles…</div>}
             {roles.length > 0 && roles.map(r => (
@@ -2320,10 +2325,15 @@ export default function Settings() {
           <div style={cardStyle}>
             <h3 style={sectionTitle}>🔑 Portal Types</h3>
             <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>These portal names appear as a dropdown when adding credentials in the Credentials Vault.</p>
+            {!canManagePortalTypes && (
+              <div style={{ fontSize:12, color:'#92400e', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', marginBottom:16 }}>
+                You need the <strong>Manage portal types</strong> permission (<code style={{ background:'#fef3c7', padding:'1px 4px', borderRadius:4 }}>portal_types.manage</code>) to add, edit, or delete portal types. Grant it under Roles &amp; Permissions.
+              </div>
+            )}
             {portalLoading && <div style={{ fontSize:13, color:'#64748b' }}>Loading…</div>}
             {portalTypes.map(pt => (
               <div key={pt.id} style={{ padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
-                {editingPortalId === pt.id ? (
+                {editingPortalId === pt.id && canManagePortalTypes ? (
                   <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
                     <input
                       value={editPortalName}
@@ -2352,31 +2362,35 @@ export default function Settings() {
                         <a href={pt.url} target="_blank" rel="noreferrer" style={{ display:'block', fontSize:11, color:'#2563eb', marginTop:2 }}>{pt.url}</a>
                       )}
                     </div>
-                    <div style={{ display:'flex', gap:4 }}>
-                      <button onClick={() => handleStartEditPortal(pt)} style={iconBtn} title="Edit">✏️</button>
-                      <button onClick={() => promptDeletePortal(pt)} style={iconBtn} title="Delete">🗑️</button>
-                    </div>
+                    {canManagePortalTypes && (
+                      <div style={{ display:'flex', gap:4 }}>
+                        <button onClick={() => handleStartEditPortal(pt)} style={iconBtn} title="Edit">✏️</button>
+                        <button onClick={() => promptDeletePortal(pt)} style={iconBtn} title="Delete">🗑️</button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             ))}
-            <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
-              <input
-                value={newPortal}
-                onChange={e => { setNewPortal(e.target.value); setPortalError(''); }}
-                onKeyDown={e => e.key === 'Enter' && handleAddPortal()}
-                placeholder="Portal name e.g. NSDL e-Gov Portal"
-                style={{ ...inputStyle, flex:'2 1 180px' }}
-              />
-              <input
-                type="url"
-                value={newPortalUrl}
-                onChange={e => setNewPortalUrl(e.target.value)}
-                placeholder="Portal URL e.g. https://portal.gov.in"
-                style={{ ...inputStyle, flex:'3 1 220px' }}
-              />
-              <button onClick={handleAddPortal} style={btnPrimary}>➕ Add</button>
-            </div>
+            {canManagePortalTypes && (
+              <div style={{ display:'flex', gap:8, marginTop:12, flexWrap:'wrap' }}>
+                <input
+                  value={newPortal}
+                  onChange={e => { setNewPortal(e.target.value); setPortalError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && handleAddPortal()}
+                  placeholder="Portal name e.g. NSDL e-Gov Portal"
+                  style={{ ...inputStyle, flex:'2 1 180px' }}
+                />
+                <input
+                  type="url"
+                  value={newPortalUrl}
+                  onChange={e => setNewPortalUrl(e.target.value)}
+                  placeholder="Portal URL e.g. https://portal.gov.in"
+                  style={{ ...inputStyle, flex:'3 1 220px' }}
+                />
+                <button onClick={handleAddPortal} style={btnPrimary}>➕ Add</button>
+              </div>
+            )}
             {portalError && <div style={{ fontSize:11, color:'#dc2626', marginTop:4 }}>{portalError}</div>}
           </div>
           <div style={{ ...cardStyle, marginTop: 20 }}>
@@ -2384,22 +2398,31 @@ export default function Settings() {
             <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>
               These determine which register tabs appear on the Registers page.
             </p>
+            {!canManageRegisterTypes && (
+              <div style={{ fontSize:12, color:'#92400e', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, padding:'10px 14px', marginBottom:16 }}>
+                You need the <strong>Manage register types</strong> permission (<code style={{ background:'#fef3c7', padding:'1px 4px', borderRadius:4 }}>register_types.manage</code>) to add or remove register types. Grant it under Roles &amp; Permissions.
+              </div>
+            )}
             {registerTypes.map(r => (
               <div key={r.key} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 0', borderBottom:'1px solid #f1f5f9' }}>
                 <span style={{ fontSize:13, color:'#334155' }}>{r.icon} {r.label}</span>
-                <button type="button" onClick={() => promptDeleteRegister(r)} style={iconBtn} title="Delete">🗑️</button>
+                {canManageRegisterTypes && (
+                  <button type="button" onClick={() => promptDeleteRegister(r)} style={iconBtn} title="Delete">🗑️</button>
+                )}
               </div>
             ))}
-            <div style={{ display:'flex', gap:8, marginTop:12 }}>
-              <input
-                value={newRegister}
-                onChange={e => { setNewRegister(e.target.value); setRegisterError(''); }}
-                onKeyDown={e => e.key === 'Enter' && handleAddRegister()}
-                placeholder="e.g. PT Register"
-                style={{ ...inputStyle, flex:1 }}
-              />
-              <button onClick={handleAddRegister} style={btnPrimary}>➕ Add</button>
-            </div>
+            {canManageRegisterTypes && (
+              <div style={{ display:'flex', gap:8, marginTop:12 }}>
+                <input
+                  value={newRegister}
+                  onChange={e => { setNewRegister(e.target.value); setRegisterError(''); }}
+                  onKeyDown={e => e.key === 'Enter' && handleAddRegister()}
+                  placeholder="e.g. PT Register"
+                  style={{ ...inputStyle, flex:1 }}
+                />
+                <button onClick={handleAddRegister} style={btnPrimary}>➕ Add</button>
+              </div>
+            )}
             {registerError && <div style={{ fontSize:11, color:'#dc2626', marginTop:4 }}>{registerError}</div>}
           </div>
         </div>
