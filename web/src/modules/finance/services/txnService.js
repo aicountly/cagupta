@@ -675,13 +675,23 @@ export async function setOpeningBalance(payload) {
 }
 
 /** GET /api/admin/txn/bank-ledger */
+function normalizeBankLedgerRow(row) {
+  if (!row || typeof row !== 'object') return row;
+  return {
+    ...row,
+    linkedPublicRef: row.linked_public_ref ?? row.linkedPublicRef ?? '',
+    clientName: row.client_name ?? row.clientName ?? '',
+    txnDate: row.txn_date ?? row.txnDate,
+  };
+}
+
 export async function getBankLedger({ firmBankAccountId, dateFrom = '', dateTo = '' }) {
   const q = new URLSearchParams({ firm_bank_account_id: String(firmBankAccountId) });
   if (dateFrom) q.set('date_from', dateFrom);
   if (dateTo) q.set('date_to', dateTo);
   const res = await fetch(`${API_BASE}/admin/txn/bank-ledger?${q}`, { headers: authHeaders() });
   const data = await parseResponse(res);
-  return data.data || [];
+  return (data.data || []).map(normalizeBankLedgerRow);
 }
 
 /** GET /api/admin/txn/firm-internal */

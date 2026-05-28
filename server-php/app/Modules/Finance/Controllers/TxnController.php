@@ -989,7 +989,10 @@ class TxnController extends BaseController
             }
         }
 
-        $metaKeys = ['txn_date', 'narration', 'notes', 'payment_method', 'reference_number', 'firm_bank_account_id'];
+        $metaKeys = [
+            'txn_date', 'narration', 'notes', 'payment_method', 'reference_number',
+            'firm_bank_account_id', 'billing_profile_code',
+        ];
         $structural = array_key_exists('amount', $body)
             || array_key_exists('allocations', $body)
             || array_key_exists('ledger_class', $body)
@@ -997,11 +1000,17 @@ class TxnController extends BaseController
 
         $ledgerDims = $this->resolveTxnLedgerDimensions($row, $body);
 
-        $resolveBankId = function (array $metaPatch) use ($row, $id): int {
+        $resolveBankId = function (array $metaPatch) use ($row, $id, $body): int {
+            $profileCode = trim((string)(
+                $metaPatch['billing_profile_code']
+                ?? $body['billing_profile_code']
+                ?? $row['billing_profile_code']
+                ?? ''
+            ));
             if (!empty($metaPatch['firm_bank_account_id'])) {
                 $tmpBody = array_merge(
                     $metaPatch,
-                    ['billing_profile_code' => (string)($row['billing_profile_code'] ?? '')]
+                    ['billing_profile_code' => $profileCode]
                 );
                 $this->attachValidatedBankAccount($tmpBody);
 

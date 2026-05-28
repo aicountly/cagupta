@@ -1481,6 +1481,62 @@ class TxnModel
     }
 
     /**
+     * Bank-leg particulars for a client receipt mirror row.
+     *
+     * @param array<string, mixed> $receiptRow
+     */
+    public static function buildReceiptBankLegNarration(array $receiptRow): string
+    {
+        $base = trim((string)($receiptRow['narration'] ?? ''));
+        if ($base === '') {
+            $base = 'Receipt';
+        }
+        $text = 'Cash in — ' . $base;
+        $ref  = trim((string)($receiptRow['public_ref'] ?? ''));
+        if ($ref !== '') {
+            $text .= ' · ' . $ref;
+        }
+
+        return $text;
+    }
+
+    /**
+     * @param array<string, mixed> $paymentRow
+     */
+    public static function buildPaymentExpenseBankLegNarration(array $paymentRow): string
+    {
+        $base = trim((string)($paymentRow['narration'] ?? ''));
+        if ($base === '') {
+            $base = 'Payment';
+        }
+        $text = 'Cash out — ' . $base;
+        $ref  = trim((string)($paymentRow['public_ref'] ?? ''));
+        if ($ref !== '') {
+            $text .= ' · ' . $ref;
+        }
+
+        return $text;
+    }
+
+    /**
+     * @param array<string, mixed> $paymentRow
+     */
+    public static function buildPaymentClientCostBankLegNarration(array $paymentRow): string
+    {
+        $base = trim((string)($paymentRow['narration'] ?? ''));
+        if ($base === '') {
+            $base = 'Client cost';
+        }
+        $text = 'Cash out — ' . $base;
+        $ref  = trim((string)($paymentRow['public_ref'] ?? ''));
+        if ($ref !== '') {
+            $text .= ' · ' . $ref;
+        }
+
+        return $text;
+    }
+
+    /**
      * Firm cash-book row: money in (same credit as client receipt); no client_id.
      *
      * @param array<string, mixed> $src  Client receipt payload used for metadata copy
@@ -1492,7 +1548,7 @@ class TxnModel
             'organization_id'        => null,
             'txn_type'               => self::TXN_TYPE_RECEIPT_BANK_LEG,
             'txn_date'               => $src['txn_date']            ?? date('Y-m-d'),
-            'narration'              => 'Cash in — ' . (string)($src['narration'] ?? 'Receipt'),
+            'narration'              => self::buildReceiptBankLegNarration($src),
             'debit'                  => 0,
             'credit'                 => $amount,
             'amount'                 => $amount,
@@ -1520,7 +1576,7 @@ class TxnModel
             'organization_id'      => null,
             'txn_type'               => self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
             'txn_date'               => $src['txn_date']            ?? date('Y-m-d'),
-            'narration'              => 'Cash out — ' . (string)($src['narration'] ?? 'Payment'),
+            'narration'              => self::buildPaymentExpenseBankLegNarration($src),
             'debit'                  => $amount,
             'credit'                 => 0,
             'amount'                 => $amount,
@@ -1548,7 +1604,7 @@ class TxnModel
             'organization_id'      => null,
             'txn_type'               => self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG,
             'txn_date'               => $src['txn_date']            ?? date('Y-m-d'),
-            'narration'              => 'Cash out — ' . (string)($src['narration'] ?? 'Client cost'),
+            'narration'              => self::buildPaymentClientCostBankLegNarration($src),
             'debit'                  => $amount,
             'credit'                 => 0,
             'amount'                 => $amount,
@@ -2483,6 +2539,7 @@ class TxnModel
 
         $stmt = $this->db->prepare(
             "SELECT t.*,
+                    COALESCE(NULLIF(TRIM(t.public_ref), ''), NULLIF(TRIM(pt.public_ref), '')) AS linked_public_ref,
                     CASE
                         WHEN COALESCE(t.client_id, pt.client_id) IS NOT NULL
                           OR COALESCE(t.organization_id, pt.organization_id) IS NOT NULL THEN
@@ -2893,13 +2950,15 @@ class TxnModel
         $existingId = $stmt->fetchColumn();
         if ($existingId !== false) {
             $this->update((int) $existingId, [
-                'debit'                => 0,
-                'credit'               => $amount,
-                'amount'               => $amount,
-                'firm_bank_account_id' => $bankId,
-                'txn_date'             => $receiptRow['txn_date'] ?? date('Y-m-d'),
-                'payment_method'       => $receiptRow['payment_method'] ?? null,
-                'reference_number'     => $receiptRow['reference_number'] ?? null,
+                'debit'                  => 0,
+                'credit'                 => $amount,
+                'amount'                 => $amount,
+                'firm_bank_account_id'   => $bankId,
+                'txn_date'               => $receiptRow['txn_date'] ?? date('Y-m-d'),
+                'payment_method'         => $receiptRow['payment_method'] ?? null,
+                'reference_number'       => $receiptRow['reference_number'] ?? null,
+                'narration'              => self::buildReceiptBankLegNarration($receiptRow),
+                'billing_profile_code'   => $receiptRow['billing_profile_code'] ?? null,
             ], null);
 
             return;
@@ -2924,13 +2983,15 @@ class TxnModel
         $existingId = $stmt->fetchColumn();
         if ($existingId !== false) {
             $this->update((int) $existingId, [
-                'debit'                => $amount,
-                'credit'               => 0,
-                'amount'               => $amount,
-                'firm_bank_account_id' => $bankId,
-                'txn_date'             => $paymentRow['txn_date'] ?? date('Y-m-d'),
-                'payment_method'       => $paymentRow['payment_method'] ?? null,
-                'reference_number'     => $paymentRow['reference_number'] ?? null,
+                'debit'                  => $amount,
+                'credit'                 => 0,
+                'amount'                 => $amount,
+                'firm_bank_account_id'   => $bankId,
+                'txn_date'               => $paymentRow['txn_date'] ?? date('Y-m-d'),
+                'payment_method'         => $paymentRow['payment_method'] ?? null,
+                'reference_number'       => $paymentRow['reference_number'] ?? null,
+                'narration'              => self::buildPaymentExpenseBankLegNarration($paymentRow),
+                'billing_profile_code'   => $paymentRow['billing_profile_code'] ?? null,
             ], null);
 
             return;
@@ -2955,13 +3016,15 @@ class TxnModel
         $existingId = $stmt->fetchColumn();
         if ($existingId !== false) {
             $this->update((int) $existingId, [
-                'debit'                => $amount,
-                'credit'               => 0,
-                'amount'               => $amount,
-                'firm_bank_account_id' => $bankId,
-                'txn_date'             => $paymentRow['txn_date'] ?? date('Y-m-d'),
-                'payment_method'       => $paymentRow['payment_method'] ?? null,
-                'reference_number'     => $paymentRow['reference_number'] ?? null,
+                'debit'                  => $amount,
+                'credit'                 => 0,
+                'amount'                 => $amount,
+                'firm_bank_account_id'   => $bankId,
+                'txn_date'               => $paymentRow['txn_date'] ?? date('Y-m-d'),
+                'payment_method'         => $paymentRow['payment_method'] ?? null,
+                'reference_number'       => $paymentRow['reference_number'] ?? null,
+                'narration'              => self::buildPaymentClientCostBankLegNarration($paymentRow),
+                'billing_profile_code'   => $paymentRow['billing_profile_code'] ?? null,
             ], null);
 
             return;

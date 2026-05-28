@@ -1411,6 +1411,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
   const [recNotes, setRecNotes] = useState('');
   const [recNarr, setRecNarr] = useState('');
   const [recBankId, setRecBankId] = useState('');
+  const [recBillingProfileCode, setRecBillingProfileCode] = useState('');
   const [recLedgerClass, setRecLedgerClass] = useState('regular');
   const [recMovementKind, setRecMovementKind] = useState('fees');
   const [allocLines, setAllocLines] = useState([]);
@@ -1484,6 +1485,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           setRecNotes(r.notes || '');
           setRecNarr(r.narration || '');
           setRecBankId(r.firmBankAccountId != null ? String(r.firmBankAccountId) : '');
+          setRecBillingProfileCode(r.billingProfileCode || '');
           setRecLedgerClass(r.ledgerClass || 'regular');
           setRecMovementKind(r.ledgerMovementKind === 'reimbursement' ? 'reimbursement' : 'fees');
           const al = (r.allocations && r.allocations.length > 0)
@@ -1543,15 +1545,21 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
     return () => { cancelled = true; };
   }, [txnId]);
 
+  const receiptOrPaymentEdit = row
+    && (row.txnType === 'receipt'
+      || row.txnType === 'receipt_reversal'
+      || row.txnType === 'payment_expense'
+      || row.txnType === 'payment_expense_reversal'
+      || row.txnType === 'payment_client_cost'
+      || row.txnType === 'payment_client_cost_reversal');
+
+  const bankListProfileCode = (row?.txnType === 'receipt' || row?.txnType === 'receipt_reversal')
+    ? recBillingProfileCode
+    : row?.billingProfileCode;
+
   useEffect(() => {
-    if (!row
-      || (row.txnType !== 'receipt'
-        && row.txnType !== 'receipt_reversal'
-        && row.txnType !== 'payment_expense'
-        && row.txnType !== 'payment_expense_reversal'
-        && row.txnType !== 'payment_client_cost'
-        && row.txnType !== 'payment_client_cost_reversal')) return undefined;
-    const code = row.billingProfileCode;
+    if (!receiptOrPaymentEdit) return undefined;
+    const code = bankListProfileCode;
     if (!code) {
       setBanks([]);
       return undefined;
@@ -1563,12 +1571,24 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
         if (cancelled) return;
         const list = Array.isArray(rows) ? rows.filter((b) => b.isActive !== false) : [];
         setBanks(list);
+        if (row?.txnType === 'receipt' || row?.txnType === 'receipt_reversal') {
+          setRecBankId((prev) => {
+            if (!prev) return prev;
+            return list.some((b) => String(b.id) === String(prev)) ? prev : '';
+          });
+        } else if (row?.txnType === 'payment_expense' || row?.txnType === 'payment_expense_reversal'
+          || row?.txnType === 'payment_client_cost' || row?.txnType === 'payment_client_cost_reversal') {
+          setPayBankId((prev) => {
+            if (!prev) return prev;
+            return list.some((b) => String(b.id) === String(prev)) ? prev : '';
+          });
+        }
       })
       .finally(() => {
         if (!cancelled) setBanksLoading(false);
       });
     return () => { cancelled = true; };
-  }, [row]);
+  }, [receiptOrPaymentEdit, bankListProfileCode, row?.txnType]);
 
   useEffect(() => {
     if (!recBankId) return undefined;
@@ -1808,6 +1828,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           }
           return o;
         });
+        if (!recBillingProfileCode) throw new Error('Select billing profile.');
         payload = {
           txn_date: recTxnDate,
           amount,
@@ -1815,6 +1836,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
           reference_number: recRef || null,
           notes: recNotes || null,
           narration: recNarr || null,
+          billing_profile_code: recBillingProfileCode,
           firm_bank_account_id: bankId,
           ledger_class: normalizeLedgerClassForApi(recLedgerClass),
           ledger_movement_kind: recMovementKind === 'reimbursement' ? 'reimbursement' : 'fees',
@@ -1993,6 +2015,14 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                       <AmountInput style={inputStyle} value={recAmount} onChange={(e) => setRecAmount(e.target.value)} />
                     </label>
                   </div>
+                  <label style={labelStyle}>
+                    Billing profile *
+                    <BillingProfileSelect
+                      style={inputStyle}
+                      value={recBillingProfileCode}
+                      onChange={(code) => setRecBillingProfileCode(code)}
+                    />
+                  </label>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                     <label style={labelStyle}>
                       Payment method
@@ -2030,7 +2060,7 @@ function EditLedgerTxnModal({ txnId, onClose, onSaved }) {
                           return coerced;
                         });
                       }}
-                      disabled={!row.billingProfileCode || banksLoading}
+                      disabled={!recBillingProfileCode || banksLoading}
                     >
                       <option value="">{banksLoading ? 'Loading…' : '— Select —'}</option>
                       {banks.map((b) => (

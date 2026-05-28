@@ -78,6 +78,7 @@ export default function BankFirmLedgerPage() {
                   <tr>
                     <th style={thStyle}>Date</th>
                     <th style={thStyle}>Client</th>
+                    <th style={thStyle}>Ref</th>
                     <th style={thStyle}>Particulars</th>
                     <th style={thStyle}>Movement</th>
                     <th style={thStyle}>Balance</th>
@@ -86,7 +87,7 @@ export default function BankFirmLedgerPage() {
                 <tbody>
                   {ledgerRows.length === 0 && (
                     <tr>
-                      <td colSpan={5} style={{ ...tdStyle, textAlign: 'center', color: '#94a3b8' }}>
+                      <td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: '#94a3b8' }}>
                         No entries
                       </td>
                     </tr>
@@ -95,6 +96,9 @@ export default function BankFirmLedgerPage() {
                     <tr key={r.id ?? `o-${i}`}>
                       <td style={tdStyle}>{r.txn_date || r.txnDate || '—'}</td>
                       <td style={tdStyle}>{ledgerClientLabel(r)}</td>
+                      <td style={{ ...tdStyle, fontFamily: 'monospace', fontSize: 12 }}>
+                        {r.linkedPublicRef || r.linked_public_ref || '—'}
+                      </td>
                       <td style={tdStyle}>{r.narration || r.row_type || ''}</td>
                       <td
                         style={{

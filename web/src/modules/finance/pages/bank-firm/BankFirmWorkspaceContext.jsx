@@ -69,7 +69,7 @@ export function BankFirmWorkspaceProvider({ children }) {
 
   const [firmCode, setFirmCode] = useState(() => initialLedgerParams.firm);
   const [accounts, setAccounts] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(() => Boolean(initialLedgerParams.firm));
   const [msg, setMsg] = useState({ text: '', type: '' });
 
   const [ledgerAccountId, setLedgerAccountId] = useState(() => initialLedgerParams.account);
@@ -263,6 +263,11 @@ export function BankFirmWorkspaceProvider({ children }) {
       ledgerRestorePendingRef.current = false;
       return undefined;
     }
+    // Account list fetch finished with no accounts — nothing to restore.
+    if (accounts.length === 0) {
+      ledgerRestorePendingRef.current = false;
+      return undefined;
+    }
     const exists = visibleAccounts.some((a) => Number(a.id) === id);
     if (!exists) {
       ledgerRestorePendingRef.current = false;
@@ -276,6 +281,7 @@ export function BankFirmWorkspaceProvider({ children }) {
     firmCode,
     loading,
     ledgerAccountId,
+    accounts.length,
     visibleAccounts,
     loadLedger,
   ]);
