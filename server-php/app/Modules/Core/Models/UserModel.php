@@ -158,20 +158,24 @@ class UserModel
     private function userListOptionalSelectSql(): string
     {
         if (self::$optionalListColumns === null) {
-            $stmt = $this->db->query(
-                "SELECT column_name
-                 FROM information_schema.columns
-                 WHERE table_schema = 'public'
-                   AND table_name = 'users'
-                   AND column_name IN (
-                       'planned_billable_rate_per_hour',
-                       'shift_target_minutes',
-                       'shift_target_disabled'
-                   )"
-            );
             $found = [];
-            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) ?: [] as $col) {
-                $found[(string)$col] = true;
+            try {
+                $stmt = $this->db->query(
+                    "SELECT column_name
+                     FROM information_schema.columns
+                     WHERE table_schema = 'public'
+                       AND table_name = 'users'
+                       AND column_name IN (
+                           'planned_billable_rate_per_hour',
+                           'shift_target_minutes',
+                           'shift_target_disabled'
+                       )"
+                );
+                foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) ?: [] as $col) {
+                    $found[(string)$col] = true;
+                }
+            } catch (\PDOException) {
+                // Restricted DB users may not read information_schema; omit optional cols.
             }
             self::$optionalListColumns = $found;
         }

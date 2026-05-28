@@ -25,7 +25,7 @@ class PermissionAnyFilter
             api_error('Not authenticated.', 401);
         }
 
-        if (strtolower($user['email']) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
+        if (strtolower((string)($user['email'] ?? '')) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
             return;
         }
 
