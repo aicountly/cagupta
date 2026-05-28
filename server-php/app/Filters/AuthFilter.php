@@ -92,7 +92,7 @@ class AuthFilter
         }
 
         // 4. Super-admin override
-        if (strtolower($user['email']) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
+        if (strtolower((string)($user['email'] ?? '')) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
             $user['role_name'] = 'super_admin';
         }
 

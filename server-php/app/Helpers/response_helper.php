@@ -20,12 +20,26 @@ if (!function_exists('App\Helpers\api_success')) {
     function api_success(mixed $data = null, string $message = 'OK', int $status = 200, array $meta = []): never
     {
         http_response_code($status);
-        echo json_encode(array_merge([
+        $payload = array_merge([
             'success' => true,
             'message' => $message,
             'data'    => $data,
             'errors'  => [],
-        ], $meta), JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR);
+        ], $meta);
+        $flags = JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE;
+        try {
+            $json = json_encode($payload, $flags | JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            error_log('[API] api_success json_encode: ' . $e->getMessage());
+            $json = json_encode([
+                'success' => false,
+                'message' => 'Response encoding failed.',
+                'data'    => null,
+                'errors'  => [],
+            ], $flags) ?: '{"success":false,"message":"Response encoding failed.","data":null,"errors":[]}';
+            http_response_code(500);
+        }
+        echo $json;
         exit;
     }
 }

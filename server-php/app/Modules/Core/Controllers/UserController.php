@@ -321,7 +321,7 @@ class UserController extends BaseController
      */
     public function roles(): never
     {
-        $all = $this->roles->all();
+        $all = array_map(fn (array $r): array => $this->formatRoleRow($r), $this->roles->all());
         if (!$this->userHasManageAll() && $this->userHasDelegate()) {
             $all = array_values(array_filter(
                 $all,
@@ -448,6 +448,36 @@ class UserController extends BaseController
         if (!in_array($role['name'], $allowed, true)) {
             $this->error('Delegated administrators may only assign staff or viewer roles.', 422);
         }
+    }
+
+    /**
+     * Normalise a role row for JSON output (permissions JSONB, booleans).
+     *
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
+    private function formatRoleRow(array $row): array
+    {
+        $perms = $row['permissions'] ?? '{}';
+        if (is_string($perms)) {
+            $decoded = json_decode($perms, true);
+            $row['permissions'] = is_array($decoded) ? $decoded : ['permissions' => []];
+        } elseif (is_object($perms)) {
+            $encoded = json_encode($perms, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+            $decoded = is_string($encoded) ? json_decode($encoded, true) : null;
+            $row['permissions'] = is_array($decoded) ? $decoded : ['permissions' => []];
+        } elseif (!is_array($perms)) {
+            $row['permissions'] = ['permissions' => []];
+        }
+
+        return [
+            'id'           => (int)$row['id'],
+            'name'         => $row['name'],
+            'display_name' => $row['display_name'],
+            'permissions'  => $row['permissions'],
+            'is_system'    => self::coerceBool($row['is_system'] ?? false),
+            'created_at'   => $row['created_at'] ?? null,
+        ];
     }
 
     /**
