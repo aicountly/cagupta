@@ -155,6 +155,7 @@ const pageTitles = {
   '/invoices':                  '🧾 Invoices',
   '/invoices/ledgers':          '📒 Ledgers',
   '/finance/bank-reports':      '🏦 Bank & Firm Txns',
+  '/finance/cash-book':         '💵 Cash book',
   '/finance/invoices-banking':  '💰 Invoices & Banking',
   '/finance/affiliate-payout-cycles': '💳 Affiliate Payout Cycles',
   '/finance/partner-payout-cycles': '💳 Partner Payout Cycles',
@@ -260,8 +261,29 @@ export default function App() {
           <Route
             path="/finance/bank-reports"
             element={(
-              <ProtectedRoute staffOnly requiredAnyPermissions={['invoices.view', 'cash_book.view']}>
+              <ProtectedRoute staffOnly requiredPermission="invoices.view">
                 <Layout routePath="/finance/bank-reports">
+                  <BankFirmWorkspaceProvider>
+                    <BankFirmShell />
+                  </BankFirmWorkspaceProvider>
+                </Layout>
+              </ProtectedRoute>
+            )}
+          >
+            <Route index element={<Navigate to="accounts" replace />} />
+            <Route path="accounts" element={<BankFirmAccountsPage />} />
+            <Route path="ledger" element={<BankFirmLedgerPage />} />
+            <Route path="transfer" element={<BankFirmTransferPage />} />
+            <Route path="inter-transfer" element={<BankFirmInterTransferPage />} />
+            <Route path="expense" element={<BankFirmExpensePage />} />
+            <Route path="inflow" element={<BankFirmInflowPage />} />
+            <Route path="report" element={<BankFirmReportPage />} />
+          </Route>
+          <Route
+            path="/finance/cash-book"
+            element={(
+              <ProtectedRoute staffOnly requiredAnyPermissions={['cash_book.view', 'invoices.view']}>
+                <Layout routePath="/finance/cash-book">
                   <BankFirmWorkspaceProvider>
                     <BankFirmShell />
                   </BankFirmWorkspaceProvider>

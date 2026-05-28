@@ -1,5 +1,5 @@
 ﻿import { useNavigate } from 'react-router-dom';
-import { Receipt, Landmark, ArrowRight, Layers, BookOpen } from 'lucide-react';
+import { Receipt, Landmark, ArrowRight, Layers, BookOpen, Wallet } from 'lucide-react';
 import { useAuth } from '../../../auth/AuthContext';
 
 const HUB_SECTIONS = [
@@ -29,27 +29,27 @@ const HUB_SECTIONS = [
     id: 'cash-book',
     label: 'Cash book',
     description: 'Counter cash and petty cash day book (cash accounts only)',
-    permission: 'cash_book.view',
+    anyOf: ['cash_book.view', 'invoices.view'],
     tools: [
       {
         id: 'cash-book',
         label: 'Cash book',
         description: 'View cash accounts, record expenses and inflows, transfers between cash accounts, and day-book reports.',
-        icon: Landmark,
-        to: '/finance/bank-reports',
+        icon: Wallet,
+        to: '/finance/cash-book',
       },
     ],
   },
   {
     id: 'bank',
     label: 'Bank & Firm Transactions',
-    description: 'Bank accounts, firm accounts, transfers, and expense management',
+    description: 'Firm bank accounts, transfers, and expense management (bank accounts only)',
     permission: 'invoices.view',
     tools: [
       {
         id: 'bank-firm',
         label: 'Bank & Firm Transactions',
-        description: 'Manage bank accounts, firm accounts, inter-account transfers, expenses, and view ledger entries.',
+        description: 'Manage bank accounts, inter-account transfers, expenses, inflows, and bank ledger entries.',
         icon: Landmark,
         to: '/finance/bank-reports',
       },
@@ -59,11 +59,13 @@ const HUB_SECTIONS = [
 
 export default function InvoicesBankingHub() {
   const navigate = useNavigate();
-  const { hasPermission } = useAuth();
+  const { hasPermission, hasAnyPermission } = useAuth();
 
-  const visibleSections = HUB_SECTIONS.filter(
-    (s) => s.permission === null || hasPermission(s.permission),
-  );
+  const visibleSections = HUB_SECTIONS.filter((s) => {
+    if (s.anyOf && !hasAnyPermission(s.anyOf)) return false;
+    if (s.permission && !hasPermission(s.permission)) return false;
+    return true;
+  });
 
   return (
     <div style={styles.page}>
@@ -74,7 +76,7 @@ export default function InvoicesBankingHub() {
         <div>
           <h1 style={styles.headerTitle}>Invoices & Banking</h1>
           <p style={styles.headerSub}>
-            Manage invoices, ledger, bank accounts, and firm transactions.
+            Manage invoices, ledger, bank accounts, and cash book.
           </p>
         </div>
       </div>

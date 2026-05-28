@@ -1,5 +1,5 @@
 ﻿import { NavLink, Outlet } from 'react-router-dom';
-import { Landmark } from 'lucide-react';
+import { Landmark, Wallet } from 'lucide-react';
 import { getBillingProfiles } from '../../../../constants/billingProfiles';
 import DestructiveConfirmModal from '../../../../components/common/DestructiveConfirmModal';
 import { useBankFirmWorkspace } from './BankFirmWorkspaceContext';
@@ -12,22 +12,22 @@ import {
   sectionCard,
 } from './bankFirmStyles';
 
-const BASE = '/finance/bank-reports';
-
-const tabs = [
-  { to: `${BASE}/accounts`, label: 'Accounts' },
-  { to: `${BASE}/ledger`, label: 'Bank ledger' },
-  { to: `${BASE}/transfer`, label: 'Intra Transfer' },
-  { to: `${BASE}/inter-transfer`, label: 'Inter Transfer' },
-  { to: `${BASE}/expense`, label: 'Firm expense' },
-  { to: `${BASE}/inflow`, label: 'Firm inflow' },
-  { to: `${BASE}/report`, label: 'Reports' },
+const TAB_DEFS = [
+  { segment: 'accounts', label: 'Accounts' },
+  { segment: 'ledger', label: 'Bank ledger', cashLabel: 'Cash ledger' },
+  { segment: 'transfer', label: 'Intra Transfer' },
+  { segment: 'inter-transfer', label: 'Inter Transfer' },
+  { segment: 'expense', label: 'Firm expense' },
+  { segment: 'inflow', label: 'Firm inflow' },
+  { segment: 'report', label: 'Reports' },
 ];
 
 /** Shell expects `BankFirmWorkspaceProvider` as an ancestor. Renders `<Outlet />` below workspace chrome. */
 export default function BankFirmShell() {
   const {
     cashBookOnly,
+    bankOnly,
+    workspaceBase,
     accounts,
     firmCode,
     setFirmCode,
@@ -39,16 +39,18 @@ export default function BankFirmShell() {
   } = useBankFirmWorkspace();
 
   const profiles = getBillingProfiles();
-  const shellTabs = cashBookOnly
-    ? tabs.map((t) => (t.label === 'Bank ledger' ? { ...t, label: 'Cash ledger' } : t))
-    : tabs;
+  const HeaderIcon = cashBookOnly ? Wallet : Landmark;
+  const shellTabs = TAB_DEFS.map((t) => ({
+    to: `${workspaceBase}/${t.segment}`,
+    label: cashBookOnly && t.cashLabel ? t.cashLabel : t.label,
+  }));
 
   return (
     <div style={pageWrap}>
       {deleteAccountId != null && (
         <DestructiveConfirmModal
           open
-          title="Delete bank / cash account?"
+          title={cashBookOnly ? 'Delete cash account?' : 'Delete bank account?'}
           busy={deleteAccountBusy}
           confirmLabel="Delete account"
           onClose={closeDeleteModal}
@@ -67,15 +69,17 @@ export default function BankFirmShell() {
 
       <div style={headerCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <div style={iconWrap}><Landmark size={20} color="var(--portal-primary)" /></div>
+          <div style={iconWrap}><HeaderIcon size={20} color="var(--portal-primary)" /></div>
           <div>
             <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>
               {cashBookOnly ? 'Cash book' : 'Bank & Firm Transactions'}
             </h1>
             <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
               {cashBookOnly
-                ? 'Manage counter cash and petty cash — view ledgers, record expenses, inflows, and transfers'
-                : 'Manage bank/cash accounts, view ledgers, record transfers, firm expenses and inflows'}
+                ? 'Manage counter cash and petty cash — view ledgers, record expenses, inflows, and transfers between cash accounts'
+                : bankOnly
+                  ? 'Manage firm bank accounts — view bank ledgers, record transfers, expenses and inflows on bank accounts'
+                  : 'Manage bank/cash accounts, view ledgers, record transfers, firm expenses and inflows'}
             </p>
           </div>
         </div>

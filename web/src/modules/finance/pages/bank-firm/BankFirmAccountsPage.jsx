@@ -26,6 +26,7 @@ const btnEdit = {
 export default function BankFirmAccountsPage() {
   const {
     cashBookOnly,
+    bankOnly,
     canSettings,
     canEditOpeningBalance,
     firmCode,
@@ -57,12 +58,18 @@ export default function BankFirmAccountsPage() {
   } = useBankFirmWorkspace();
 
   const editingAccount = editAccountId != null ? accounts.find((a) => a.id === editAccountId) : null;
+  const accountsTitle = cashBookOnly ? 'Cash accounts' : bankOnly ? 'Bank accounts' : 'Firm accounts';
+  const emptyMessage = cashBookOnly
+    ? 'No cash accounts found for this firm.'
+    : bankOnly
+      ? 'No bank accounts found for this firm.'
+      : 'No accounts found for this firm.';
 
   return (
     <>
       <div style={sectionCard}>
         <div style={sectionHeader}>
-          <span style={sectionTitle}>{cashBookOnly ? 'Cash accounts' : 'Firm accounts'}</span>
+          <span style={sectionTitle}>{accountsTitle}</span>
         </div>
         <div style={{ padding: 20 }}>
           {!firmCode && (
@@ -134,9 +141,7 @@ export default function BankFirmAccountsPage() {
             </div>
           )}
           {firmCode && accounts.length === 0 && !loading && (
-            <div style={{ fontSize: 13, color: '#94a3b8' }}>
-              {cashBookOnly ? 'No cash accounts found for this firm.' : 'No accounts found for this firm.'}
-            </div>
+            <div style={{ fontSize: 13, color: '#94a3b8' }}>{emptyMessage}</div>
           )}
           {canSettings && !cashBookOnly && firmCode && (
             <form
@@ -158,8 +163,8 @@ export default function BankFirmAccountsPage() {
               <div>
                 <label style={labelStyle}>Type</label>
                 <select style={inputStyle} value={newType} onChange={(e) => setNewType(e.target.value)}>
-                  <option value="bank">Bank</option>
-                  <option value="cash">Cash</option>
+                  {!bankOnly && <option value="cash">Cash</option>}
+                  {!cashBookOnly && <option value="bank">Bank</option>}
                 </select>
               </div>
               <div>

@@ -110,7 +110,7 @@ final class LedgerTxnChangeRequestModel
                AND (
                  txn_id = :tid
                  OR (
-                   payload ? 'ids'
+                   jsonb_exists(payload, 'ids')
                    AND (payload->'ids') @> CAST(:idarr AS jsonb)
                  )
                )

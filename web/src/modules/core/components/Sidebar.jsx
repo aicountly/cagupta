@@ -40,7 +40,7 @@ const navSections = [
     label: 'FINANCE',
     items: [
       { to: '/finance/invoices-banking', label: 'Invoices & Banking', icon: Layers, permission: 'invoices.view' },
-      { to: '/finance/bank-reports', label: 'Cash book', icon: Landmark, permission: 'cash_book.view', unlessPermission: 'invoices.view' },
+      { to: '/finance/cash-book', label: 'Cash book', icon: Wallet, permission: 'cash_book.view', unlessPermission: 'invoices.view' },
       { to: '/finance/payout-cycles', label: 'Payout Cycles', icon: Wallet, anyOf: ['affiliates.manage', 'partners.manage'] },
     ],
   },

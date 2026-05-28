@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../../../../auth/AuthContext';
 import {
   listFirmBankAccounts,
@@ -18,9 +19,22 @@ import {
 
 const BankFirmWorkspaceContext = createContext(null);
 
+function filterAccountsByScope(rows, scope) {
+  if (scope === 'cash') return rows.filter((a) => a.accountType === 'cash');
+  if (scope === 'bank') return rows.filter((a) => a.accountType === 'bank');
+  return rows;
+}
+
 export function BankFirmWorkspaceProvider({ children }) {
+  const { pathname } = useLocation();
   const { hasPermission } = useAuth();
-  const cashBookOnly = hasPermission('cash_book.view') && !hasPermission('invoices.view');
+  const forceCashScope = pathname.startsWith('/finance/cash-book');
+  const forceBankScope = pathname.startsWith('/finance/bank-reports');
+  const cashBookOnly = forceCashScope
+    || (hasPermission('cash_book.view') && !hasPermission('invoices.view'));
+  const bankOnly = forceBankScope;
+  const accountScope = cashBookOnly ? 'cash' : bankOnly ? 'bank' : null;
+  const workspaceBase = forceCashScope ? '/finance/cash-book' : '/finance/bank-reports';
   const canSettings = hasPermission('settings.view');
   const canEditOpeningBalance = hasPermission('invoices.edit') || (cashBookOnly && hasPermission('cash_book.edit'));
   const canEditFirmTxn = hasPermission('invoices.edit') || (cashBookOnly && hasPermission('cash_book.edit'));
@@ -112,9 +126,23 @@ export function BankFirmWorkspaceProvider({ children }) {
   }, [refreshAccounts]);
 
   const visibleAccounts = useMemo(
-    () => (cashBookOnly ? accounts.filter((a) => a.accountType === 'cash') : accounts),
-    [accounts, cashBookOnly],
+    () => filterAccountsByScope(accounts, accountScope),
+    [accounts, accountScope],
   );
+
+  const visibleInterFromAccounts = useMemo(
+    () => filterAccountsByScope(interFromAccounts, accountScope),
+    [interFromAccounts, accountScope],
+  );
+
+  const visibleInterToAccounts = useMemo(
+    () => filterAccountsByScope(interToAccounts, accountScope),
+    [interToAccounts, accountScope],
+  );
+
+  useEffect(() => {
+    setNewType(accountScope === 'cash' ? 'cash' : 'bank');
+  }, [accountScope]);
 
   useEffect(() => {
     if (!interFromFirm) {
@@ -482,6 +510,8 @@ export function BankFirmWorkspaceProvider({ children }) {
   const value = useMemo(
     () => ({
       cashBookOnly,
+      bankOnly,
+      workspaceBase,
       canSettings,
       canEditOpeningBalance,
       canEditFirmTxn,
@@ -514,8 +544,8 @@ export function BankFirmWorkspaceProvider({ children }) {
       setInterFromFirm,
       interToFirm,
       setInterToFirm,
-      interFromAccounts,
-      interToAccounts,
+      interFromAccounts: visibleInterFromAccounts,
+      interToAccounts: visibleInterToAccounts,
       interFromAcct,
       setInterFromAcct,
       interToAcct,
@@ -598,11 +628,15 @@ export function BankFirmWorkspaceProvider({ children }) {
     }),
     [
       cashBookOnly,
+      bankOnly,
+      workspaceBase,
       canSettings,
       canEditOpeningBalance,
       canEditFirmTxn,
       firmCode,
       visibleAccounts,
+      visibleInterFromAccounts,
+      visibleInterToAccounts,
       loading,
       msg,
       flash,
@@ -619,8 +653,8 @@ export function BankFirmWorkspaceProvider({ children }) {
       submitXfer,
       interFromFirm,
       interToFirm,
-      interFromAccounts,
-      interToAccounts,
+      visibleInterFromAccounts,
+      visibleInterToAccounts,
       interFromAcct,
       interToAcct,
       interAmt,
