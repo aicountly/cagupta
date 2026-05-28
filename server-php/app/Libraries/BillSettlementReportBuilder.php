@@ -69,7 +69,7 @@ final class BillSettlementReportBuilder
             throw new \InvalidArgumentException('client_id or organization_id is required.');
         }
 
-        $rows = self::filterByDateRange($rows, $dateFrom, $dateTo);
+        $rows = self::applyDateRangeWithCarryForward($rows, $dateFrom, $dateTo, $ledgerClass, $ledgerView);
 
         $ledgerBuilt = LedgerPresentation::buildLedger($rows, $ledgerView);
         $ledgerClosing = 0.0;
@@ -358,6 +358,44 @@ final class BillSettlementReportBuilder
             'fee_total'            => $parts['fee_total'],
             'reim_total'           => $parts['reim_total'],
         ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<int, array<string, mixed>>
+     */
+    private static function applyDateRangeWithCarryForward(
+        array $rows,
+        ?string $dateFrom,
+        ?string $dateTo,
+        string $ledgerClass,
+        string $ledgerView
+    ): array {
+        if ($dateFrom === null || $dateFrom === '') {
+            return self::filterByDateRange($rows, $dateFrom, $dateTo);
+        }
+        if (!LedgerDateRangeCarryForward::isValidYmd($dateFrom)) {
+            return self::filterByDateRange($rows, $dateFrom, $dateTo);
+        }
+
+        $before  = [];
+        $inRange = [];
+        foreach ($rows as $t) {
+            $d = (string)($t['txn_date'] ?? '');
+            if ($d === '') {
+                continue;
+            }
+            if (strcmp($d, $dateFrom) < 0) {
+                $before[] = $t;
+            } elseif ($dateTo === null || $dateTo === '' || strcmp($d, $dateTo) <= 0) {
+                $inRange[] = $t;
+            }
+        }
+
+        $bfBalance = LedgerDateRangeCarryForward::clientLedgerCarryForward($before, $ledgerView);
+        $synthetic = LedgerDateRangeCarryForward::syntheticBalanceBfTxn($bfBalance, $dateFrom, $ledgerClass);
+
+        return array_merge([$synthetic], $inRange);
     }
 
     /**

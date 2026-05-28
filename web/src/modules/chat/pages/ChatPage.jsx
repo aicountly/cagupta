@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../../auth/AuthContext';
 import { ROLES } from '../../../constants/roles';
 import { SUPER_ADMIN_EMAIL } from '../../../constants/config';
+import BrowserNotificationPrompt from '../../../components/BrowserNotificationPrompt';
 import ChatWorkspace from '../components/ChatWorkspace';
 
 export default function ChatPage({ auditPath = '/desk/chat/audit' }) {
@@ -14,7 +15,12 @@ export default function ChatPage({ auditPath = '/desk/chat/audit' }) {
     <Link to={auditPath} style={auditBtn}>Audit log</Link>
   ) : null;
 
-  return <ChatWorkspace auditLink={auditLink} />;
+  return (
+    <>
+      <BrowserNotificationPrompt />
+      <ChatWorkspace auditLink={auditLink} />
+    </>
+  );
 }
 
 const auditBtn = {

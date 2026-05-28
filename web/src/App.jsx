@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { AuthProvider } from './auth/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
 import { ThemeProvider } from './context/ThemeContext';
+import BrowserNotificationManager from './components/BrowserNotificationManager';
 import { initAnalytics, trackPageView } from './utils/analytics';
 import ProtectedRoute from './auth/ProtectedRoute';
 // ── Core module ──────────────────────────────────────────────────────────────
@@ -220,6 +221,7 @@ export default function App() {
     <BrowserRouter basename={ROUTER_BASENAME}>
       <AnalyticsTracker />
       <AuthProvider>
+        <BrowserNotificationManager />
         <ThemeProvider>
         <NotificationProvider>
         <Routes>

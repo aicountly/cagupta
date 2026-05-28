@@ -69,9 +69,10 @@ SUFFIX;
      *   stream_callback?: ?callable(string):void,
      *   model_emit?: ?callable(string $context, string $phase, string $chunk):void,
      *   text_provider?: ?string,
-     *   image_provider?: ?string
+     *   image_provider?: ?string,
+     *   require_prior_approvals?: bool
      * } $cfg
-     * @return array{total_generated: int, log: string[], error?: string}
+     * @return array{total_generated: int, log: string[], error?: string, skipped?: bool, skip_reason?: string}
      */
     public static function run(array $cfg): array
     {
@@ -82,6 +83,7 @@ SUFFIX;
         $optionsPerCat    = max(1, (int)($cfg['options_per_category'] ?? 2));
         $streamCb         = $cfg['stream_callback'] ?? null;
         $modelEmit        = \is_callable($cfg['model_emit'] ?? null) ? $cfg['model_emit'] : null;
+        $requireApprovals = (bool)($cfg['require_prior_approvals'] ?? false);
 
         $log = [];
         $add = static function (string $line) use (&$log, $streamCb): void {
@@ -90,6 +92,23 @@ SUFFIX;
                 ($streamCb)($line);
             }
         };
+
+        if ($requireApprovals && !$dryRun) {
+            $block = self::pendingPriorDayApprovalBlock($pdo);
+            if ($block !== null) {
+                $add('[blog-ai] Skipped — prior-day AI approvals still pending for blog posting.');
+                $add('[blog-ai]   Pending count: ' . $block['count']);
+                $add('[blog-ai]   Oldest pending: ' . $block['oldest_created_at']);
+                $add('[blog-ai]   Resolve pending drafts in Blog AI Approvals before the next cron run.');
+
+                return [
+                    'total_generated' => 0,
+                    'log'             => $log,
+                    'skipped'         => true,
+                    'skip_reason'     => 'pending_prior_approvals',
+                ];
+            }
+        }
 
         $settings = BlogAiSettings::get($pdo);
         $textProvider  = BlogAiSettings::normalizeTextProvider((string)($cfg['text_provider'] ?? $settings['text_provider']));
@@ -283,6 +302,48 @@ SUFFIX;
         $add('[blog-ai] Finished at ' . date('Y-m-d H:i:s') . " — {$totalGenerated} draft(s) generated.");
 
         return ['total_generated' => $totalGenerated, 'log' => $log];
+    }
+
+    /**
+     * Returns block info when any blog_ai_drafts from before today are still pending.
+     * Uses Asia/Kolkata for the calendar-day boundary (matches app timezone).
+     *
+     * @return ?array{count: int, oldest_created_at: string}
+     */
+    public static function pendingPriorDayApprovalBlock(\PDO $pdo): ?array
+    {
+        $tz = new \DateTimeZone('Asia/Kolkata');
+        $startOfToday = (new \DateTimeImmutable('today', $tz))->format('Y-m-d H:i:sP');
+
+        $stmt = $pdo->prepare('
+            SELECT COUNT(*) AS cnt, MIN(created_at) AS oldest
+            FROM blog_ai_drafts
+            WHERE status = :status
+              AND created_at < :start_of_today
+        ');
+        $stmt->execute([
+            ':status'          => 'pending',
+            ':start_of_today'  => $startOfToday,
+        ]);
+        $row = $stmt->fetch(\PDO::FETCH_ASSOC);
+        if (!is_array($row)) {
+            return null;
+        }
+
+        $count = (int)($row['cnt'] ?? 0);
+        if ($count <= 0) {
+            return null;
+        }
+
+        $oldest = $row['oldest'] ?? null;
+        if ($oldest instanceof \DateTimeInterface) {
+            $oldest = $oldest->format('Y-m-d H:i:s');
+        }
+
+        return [
+            'count'              => $count,
+            'oldest_created_at'  => is_string($oldest) && $oldest !== '' ? $oldest : 'unknown',
+        ];
     }
 
     private static function buildArticlePrompt(string $topic, string $catLabel): string

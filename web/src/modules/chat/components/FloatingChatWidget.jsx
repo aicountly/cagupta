@@ -2,6 +2,8 @@
 import { Link, useLocation } from 'react-router-dom';
 import { MessageSquare, X } from 'lucide-react';
 import { useAuth } from '../../../auth/AuthContext';
+import { dispatchTeamChatActiveContext } from '../../../constants/events';
+import BrowserNotificationPrompt from '../../../components/BrowserNotificationPrompt';
 import { fetchChatUnreadCount } from '../services/chatService';
 import ChatWorkspace from './ChatWorkspace';
 
@@ -36,6 +38,13 @@ export default function FloatingChatWidget() {
   useEffect(() => {
     if (open) loadUnread();
   }, [open, loadUnread]);
+
+  useEffect(() => {
+    dispatchTeamChatActiveContext({
+      open,
+      conversationId: open ? Number(selectedConversationId || 0) : 0,
+    });
+  }, [open, selectedConversationId]);
 
   useEffect(() => {
     const handler = (e) => {
@@ -93,14 +102,19 @@ export default function FloatingChatWidget() {
               </button>
             </div>
           </div>
-          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-            <ChatWorkspace
+          <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '0 12px', flexShrink: 0 }}>
+              <BrowserNotificationPrompt />
+            </div>
+            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <ChatWorkspace
               variant="floating"
               syncUrl={false}
               pollingEnabled={open}
               initialConversationId={initialConversationId}
               onConversationChange={setSelectedConversationId}
             />
+            </div>
           </div>
         </div>
       )}

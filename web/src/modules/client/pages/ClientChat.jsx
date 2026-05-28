@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Bot, Send, AlertCircle, RefreshCw, Users } from 'lucide-react';
+import BrowserNotificationPrompt from '../../../components/BrowserNotificationPrompt';
 import ClientLayout from '../components/ClientLayout';
 import {
   fetchClientChatThread, sendClientChatMessage, markClientChatRead,
@@ -76,6 +77,7 @@ export default function ClientChat() {
 
   return (
     <ClientLayout title="Chat">
+      <BrowserNotificationPrompt />
       <div style={headerCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={iconWrap}><Bot size={20} color="#16a34a" /></div>

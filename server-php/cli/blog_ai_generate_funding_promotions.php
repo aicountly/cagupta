@@ -69,6 +69,7 @@ $report = BlogAiGenerator::run([
     'dry_run'              => $dryRun,
     'only_category'        => 'funding_promotions',
     'options_per_category' => $optionsPerCat,
+    'require_prior_approvals' => !$dryRun,
 ]);
 
 if (isset($report['error'])) {

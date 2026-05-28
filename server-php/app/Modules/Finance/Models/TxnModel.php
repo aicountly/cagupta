@@ -9,6 +9,7 @@ use App\Models\RecoveryLogModel;
 use App\Models\LedgerRecoveryStatusModel;
 use App\Libraries\InvoiceLineCommission;
 use App\Libraries\LedgerDimensions;
+use App\Libraries\LedgerDateRangeCarryForward;
 use App\Libraries\LedgerPresentation;
 use App\Libraries\LedgerRecoveryAggregator;
 use App\Libraries\TxnReceiptAllocationService;
@@ -2743,7 +2744,16 @@ class TxnModel
 
         $balance = $opening;
         $out     = [];
-        if ($obAmount !== 0.0 || $openDate !== '') {
+        if ($dateFrom !== '' && LedgerDateRangeCarryForward::isValidYmd($dateFrom)) {
+            $carryForward = LedgerDateRangeCarryForward::bankCarryForwardBalance(
+                $this->db,
+                $accountId,
+                $opening,
+                $dateFrom
+            );
+            $balance = $carryForward;
+            $out[]   = LedgerDateRangeCarryForward::syntheticBankOpeningRow($carryForward, $dateFrom);
+        } elseif ($obAmount !== 0.0 || $openDate !== '') {
             $out[] = [
                 'row_type'       => 'opening',
                 'txn_date'       => $openDate !== '' ? $openDate : null,

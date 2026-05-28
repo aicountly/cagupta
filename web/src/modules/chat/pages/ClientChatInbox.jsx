@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import {
   MessageSquare, Search, RefreshCw, Send, AlertCircle, Bot, Users, User,
 } from 'lucide-react';
+import BrowserNotificationPrompt from '../../../components/BrowserNotificationPrompt';
 import {
   fetchClientChatThreads, fetchClientChatThread, fetchClientChatMessages,
   sendStaffClientChatMessage, markStaffClientChatRead,
@@ -125,6 +126,7 @@ export default function ClientChatInbox() {
 
   return (
     <div>
+      <BrowserNotificationPrompt />
       <div style={headerCard}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={iconWrap}><MessageSquare size={20} color="var(--portal-primary)" /></div>
