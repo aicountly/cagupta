@@ -141,6 +141,17 @@ class TxnModel
         return "COALESCE(NULLIF(TRIM({$tableAlias}.ledger_class), ''), 'regular') = {$paramName}";
     }
 
+    /**
+     * Match ledger_movement_kind for list filters; empty/null is treated as fees (migration 061 default).
+     *
+     * @param string $tableAlias e.g. 't' or 'r'
+     * @param string $paramName  PDO placeholder with leading colon, e.g. ':ledger_movement_kind_filter'
+     */
+    private static function sqlLedgerMovementKindMatch(string $tableAlias, string $paramName): string
+    {
+        return "COALESCE(NULLIF(TRIM({$tableAlias}.ledger_movement_kind), ''), 'fees') = {$paramName}";
+    }
+
     // ── Queries ───────────────────────────────────────────────────────────────
 
     /**
@@ -302,7 +313,8 @@ class TxnModel
         string $paymentMethod = '',
         string $paidFrom = '',
         string $ledgerClassFilter = '',
-        bool $omitCancelledReversed = false
+        bool $omitCancelledReversed = false,
+        string $ledgerMovementKindFilter = ''
     ): array {
         $where  = ['1=1'];
         $params = [];
@@ -384,6 +396,14 @@ class TxnModel
         if ($lcTrim !== '') {
             $where[]                       = self::sqlLedgerClassMatch('t', ':ledger_class_list_filter');
             $params[':ledger_class_list_filter'] = LedgerDimensions::normalizeLedgerClass($lcTrim);
+        }
+        $mkTrim = trim($ledgerMovementKindFilter);
+        if ($mkTrim === LedgerDimensions::KIND_FEES) {
+            $where[]                                 = self::sqlLedgerMovementKindMatch('t', ':ledger_movement_kind_filter');
+            $params[':ledger_movement_kind_filter'] = LedgerDimensions::KIND_FEES;
+        } elseif ($mkTrim === LedgerDimensions::KIND_REIMBURSEMENT) {
+            $where[]                                 = 't.ledger_movement_kind = :ledger_movement_kind_filter';
+            $params[':ledger_movement_kind_filter'] = LedgerDimensions::KIND_REIMBURSEMENT;
         }
 
         $whereClause = implode(' AND ', $where);
@@ -798,6 +818,84 @@ class TxnModel
         );
 
         return (float)$stmt->fetchColumn();
+    }
+
+    /**
+     * Firm-wide invoicing KPI summary for a date range (active receivable entities only; excludes NPA/bad debt).
+     *
+     * @return array<string, mixed>
+     */
+    public function computeFinancePeriodSummary(string $dateFrom, string $dateTo): array
+    {
+        $dateFrom = trim($dateFrom);
+        $dateTo   = trim($dateTo);
+        if ($dateFrom === '' || $dateTo === '') {
+            throw new \InvalidArgumentException('date_from and date_to are required.');
+        }
+        if ($dateFrom > $dateTo) {
+            throw new \InvalidArgumentException('date_from must be on or before date_to.');
+        }
+
+        $stmt = $this->db->query(
+            'SELECT t.*
+             FROM txn t
+             WHERE ' . self::sqlTxnCountsTowardClientReceivable('t') . '
+               AND (t.client_id IS NOT NULL OR t.organization_id IS NOT NULL)
+             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
+        );
+        $all = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($all as &$row) {
+            $this->decodeJsonbInvoiceFields($row);
+        }
+        unset($row);
+
+        $entityPairs = [];
+        foreach ($all as $row) {
+            $cid = isset($row['client_id']) ? (int)$row['client_id'] : 0;
+            $oid = isset($row['organization_id']) ? (int)$row['organization_id'] : 0;
+            if ($cid > 0) {
+                $entityPairs['client:' . $cid] = ['client', $cid];
+            } elseif ($oid > 0) {
+                $entityPairs['organization:' . $oid] = ['organization', $oid];
+            }
+        }
+
+        $statusModel = new LedgerRecoveryStatusModel();
+        $statusMap   = $statusModel->mapForEntities(array_values($entityPairs));
+
+        $activeRows = [];
+        foreach ($all as $row) {
+            $cid = isset($row['client_id']) ? (int)$row['client_id'] : 0;
+            $oid = isset($row['organization_id']) ? (int)$row['organization_id'] : 0;
+            $logKey = $cid > 0 ? 'client:' . $cid : ($oid > 0 ? 'organization:' . $oid : '');
+            if ($logKey === '') {
+                continue;
+            }
+            $statusRow = $statusMap[$logKey] ?? null;
+            if (!LedgerRecoveryStatusModel::entityMatchesBucket($statusRow, LedgerRecoveryStatusModel::BUCKET_ACTIVE)) {
+                continue;
+            }
+            $activeRows[] = $row;
+        }
+
+        $summary = \App\Libraries\FinancePeriodSummary::compute($activeRows, $dateFrom, $dateTo);
+        $summary['tds_pending'] = $this->getTdsProvisionalPendingTotal();
+
+        return $summary;
+    }
+
+    /** Sum of active provisional TDS amounts (all dates). */
+    public function getTdsProvisionalPendingTotal(): float
+    {
+        $stmt = $this->db->query(
+            "SELECT COALESCE(SUM(t.amount), 0)
+             FROM txn t
+             WHERE t.txn_type = 'tds_provisional'
+               AND t.tds_status = 'provisional'
+               AND " . self::sqlTxnVisibleOnEntityLedger('t')
+        );
+
+        return round((float)$stmt->fetchColumn(), 2);
     }
 
     /**
@@ -1503,41 +1601,55 @@ class TxnModel
     private static function resolveBankLegInflowPrefix(int $firmBankAccountId): string
     {
         if ($firmBankAccountId <= 0) {
-            return 'Receipt in — ';
+            return '';
         }
         $acc = (new FirmBankAccountModel())->find($firmBankAccountId);
         if ($acc === null) {
-            return 'Receipt in — ';
+            return '';
         }
         $type = strtolower(trim((string)($acc['account_type'] ?? '')));
-        if ($type === 'bank') {
-            return 'Bank in — ';
-        }
         if ($type === 'cash') {
             return 'Cash in — ';
         }
 
-        return 'Receipt in — ';
+        return '';
     }
 
     private static function resolveBankLegOutflowPrefix(int $firmBankAccountId): string
     {
         if ($firmBankAccountId <= 0) {
-            return 'Payment out — ';
+            return '';
         }
         $acc = (new FirmBankAccountModel())->find($firmBankAccountId);
         if ($acc === null) {
-            return 'Payment out — ';
+            return '';
         }
         $type = strtolower(trim((string)($acc['account_type'] ?? '')));
-        if ($type === 'bank') {
-            return 'Bank out — ';
-        }
         if ($type === 'cash') {
             return 'Cash out — ';
         }
 
-        return 'Payment out — ';
+        return '';
+    }
+
+    /**
+     * Strip legacy cash-book prefixes when displaying a bank (non-cash) account ledger.
+     */
+    public static function normalizeBankLedgerParticulars(string $narration, string $accountType): string
+    {
+        $type = strtolower(trim($accountType));
+        if ($type === 'cash' || $narration === '') {
+            return $narration;
+        }
+
+        $stripped = preg_replace(
+            '/^(?:Cash|Bank|Receipt|Payment)\s+(?:in|out)\s+—\s+/iu',
+            '',
+            $narration,
+            1
+        );
+
+        return is_string($stripped) ? $stripped : $narration;
     }
 
     private static function appendPublicRefToBankLegNarration(string $text, array $row): string
@@ -2587,10 +2699,11 @@ class TxnModel
         if ($acc === null) {
             return [];
         }
-        $obAmount = abs((float)($acc['opening_balance'] ?? 0));
-        $obType   = FirmBankAccountModel::normalizeOpeningBalanceType($acc['opening_balance_type'] ?? 'debit');
-        $opening  = FirmBankAccountModel::signedOpeningBalance($acc);
-        $openDate = (string)($acc['opening_balance_date'] ?? '');
+        $obAmount    = abs((float)($acc['opening_balance'] ?? 0));
+        $obType      = FirmBankAccountModel::normalizeOpeningBalanceType($acc['opening_balance_type'] ?? 'debit');
+        $opening     = FirmBankAccountModel::signedOpeningBalance($acc);
+        $openDate    = (string)($acc['opening_balance_date'] ?? '');
+        $accountType = (string)($acc['account_type'] ?? 'bank');
 
         $where  = ['t.firm_bank_account_id = :aid', "t.status = 'active'"];
         $params = [':aid' => $accountId];
@@ -2652,6 +2765,10 @@ class TxnModel
             $row['movement'] = $mov;
             $row['balance']  = $balance;
             $row['row_type'] = 'txn';
+            $row['narration'] = self::normalizeBankLedgerParticulars(
+                (string)($row['narration'] ?? ''),
+                $accountType
+            );
             $out[] = $row;
         }
 

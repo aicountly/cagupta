@@ -51,6 +51,7 @@ class TxnController extends BaseController
      * Query params: page, per_page, search, txn_type, client_id, organization_id,
      *               expense_purpose, tds_status, status, date_from, date_to,
      *               ledger_class (optional; matches ledger sqlLedgerClassMatch when set),
+     *               ledger_movement_kind (optional; fees | reimbursement — empty/null rows match fees),
      *               omit_cancelled_reversed or omit_cancelled_deleted (optional; when true, exclude cancelled/deleted only — aligned with ledger; reversed rows remain visible)
      */
     public function index(): never
@@ -69,6 +70,7 @@ class TxnController extends BaseController
         $dateFrom  = trim((string)$this->query('date_from', ''));
         $dateTo    = trim((string)$this->query('date_to', ''));
         $ledgerClassFilter = trim((string)$this->query('ledger_class', ''));
+        $ledgerMovementKindFilter = trim((string)$this->query('ledger_movement_kind', ''));
         $omitRaw             = strtolower(trim((string)$this->query('omit_cancelled_reversed', '')));
         $omitDelRaw          = strtolower(trim((string)$this->query('omit_cancelled_deleted', '')));
         $omitCancelledReversed = in_array($omitRaw, ['1', 'true', 'yes'], true)
@@ -78,7 +80,8 @@ class TxnController extends BaseController
             $page, $perPage, $search, $txnType,
             $clientId, $orgId, $tdsStatus, $status, $dateFrom, $dateTo, $expensePurpose, $paymentMethodFilter, $paidFromFilter,
             $ledgerClassFilter,
-            $omitCancelledReversed
+            $omitCancelledReversed,
+            $ledgerMovementKindFilter
         );
 
         $this->success($result['txns'], 'Transactions retrieved', 200, [
@@ -2322,6 +2325,28 @@ class TxnController extends BaseController
             $this->error($e->getMessage(), 422);
         }
         $this->success($payload, 'Bill settlement report');
+    }
+
+    /**
+     * GET /api/admin/finance/summary
+     * Query: date_from, date_to (YYYY-MM-DD, required)
+     */
+    public function financeSummary(): never
+    {
+        $dateFrom = trim((string)$this->query('date_from', ''));
+        $dateTo   = trim((string)$this->query('date_to', ''));
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo)) {
+            $this->error('date_from and date_to (YYYY-MM-DD) are required.', 422);
+        }
+        try {
+            $payload = $this->txn->computeFinancePeriodSummary($dateFrom, $dateTo);
+            $this->success($payload, 'Finance summary retrieved');
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        } catch (\Throwable $e) {
+            error_log('[financeSummary] ' . $e->getMessage());
+            $this->error('Finance summary failed: ' . $e->getMessage(), 500);
+        }
     }
 
     /**

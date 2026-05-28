@@ -171,6 +171,11 @@ export async function getTxns(params = {}) {
   if (params.ledgerClass != null && String(params.ledgerClass).trim() !== '') {
     query.set('ledger_class', normalizeLedgerClassForApi(params.ledgerClass));
   }
+  if (params.ledgerMovementKind === 'reimbursement') {
+    query.set('ledger_movement_kind', 'reimbursement');
+  } else if (params.ledgerMovementKind === 'fees') {
+    query.set('ledger_movement_kind', 'fees');
+  }
   if (params.omitCancelledReversed) {
     query.set('omit_cancelled_reversed', '1');
   }

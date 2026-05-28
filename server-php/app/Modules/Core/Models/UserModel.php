@@ -16,6 +16,9 @@ class UserModel
 {
     private PDO $db;
 
+    /** @var array<string, true>|null column_name => true when present on users */
+    private static ?array $optionalListColumns = null;
+
     public function __construct()
     {
         $this->db = Database::getConnection();
@@ -120,6 +123,7 @@ class UserModel
 
         $whereClause = implode(' AND ', $where);
         $offset      = ($page - 1) * $perPage;
+        $extraCols   = $this->userListOptionalSelectSql();
 
         $countStmt = $this->db->prepare(
             "SELECT COUNT(*) FROM users u LEFT JOIN roles r ON r.id = u.role_id WHERE {$whereClause}"
@@ -129,8 +133,7 @@ class UserModel
 
         $stmt = $this->db->prepare(
             "SELECT u.id, u.name, u.email, u.role_id, u.is_active, u.is_email_verified,
-                    u.avatar_url, u.last_login_at, u.login_provider, u.created_at,
-                    u.planned_billable_rate_per_hour, u.shift_target_minutes, u.shift_target_disabled,
+                    u.avatar_url, u.last_login_at, u.login_provider, u.created_at{$extraCols},
                     r.name AS role_name, r.display_name AS role_display_name
              FROM users u
              LEFT JOIN roles r ON r.id = u.role_id
@@ -146,6 +149,45 @@ class UserModel
         $stmt->execute();
 
         return ['total' => $total, 'users' => $stmt->fetchAll()];
+    }
+
+    /**
+     * Optional users columns for list queries (migrations 025, 041, 060).
+     * Omits columns that are not yet on the DB so paginate does not 500 when migrations lag.
+     */
+    private function userListOptionalSelectSql(): string
+    {
+        if (self::$optionalListColumns === null) {
+            $stmt = $this->db->query(
+                "SELECT column_name
+                 FROM information_schema.columns
+                 WHERE table_schema = 'public'
+                   AND table_name = 'users'
+                   AND column_name IN (
+                       'planned_billable_rate_per_hour',
+                       'shift_target_minutes',
+                       'shift_target_disabled'
+                   )"
+            );
+            $found = [];
+            foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) ?: [] as $col) {
+                $found[(string)$col] = true;
+            }
+            self::$optionalListColumns = $found;
+        }
+
+        $parts = [];
+        if (isset(self::$optionalListColumns['planned_billable_rate_per_hour'])) {
+            $parts[] = 'u.planned_billable_rate_per_hour';
+        }
+        if (isset(self::$optionalListColumns['shift_target_minutes'])) {
+            $parts[] = 'u.shift_target_minutes';
+        }
+        if (isset(self::$optionalListColumns['shift_target_disabled'])) {
+            $parts[] = 'u.shift_target_disabled';
+        }
+
+        return $parts === [] ? '' : ', ' . implode(', ', $parts);
     }
 
     /**

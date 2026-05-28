@@ -48,12 +48,21 @@ export function collectIndianFYStartYears(entries, getDate = ledgerEntryDate) {
   return [...years].sort((a, b) => a - b);
 }
 
-/** Current Indian FY start year (based on local calendar date). */
-export function defaultIndianFYStartYearFromToday() {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = now.getMonth() + 1;
+/** Current Indian FY start year (based on local calendar date). @param {Date} [asOf] */
+export function defaultIndianFYStartYearFromToday(asOf = new Date()) {
+  const y = asOf.getFullYear();
+  const m = asOf.getMonth() + 1;
   return m >= 4 ? y : y - 1;
+}
+
+/** Indian FY start (1 Apr) through today as YYYY-MM-DD — default finance KPI period. */
+export function getIndianFyDatesToToday(asOf = new Date()) {
+  const startYear = defaultIndianFYStartYearFromToday(asOf);
+  const { start } = indianFYBounds(startYear);
+  const y = asOf.getFullYear();
+  const m = String(asOf.getMonth() + 1).padStart(2, '0');
+  const d = String(asOf.getDate()).padStart(2, '0');
+  return { from: start, to: `${y}-${m}-${d}` };
 }
 
 /**

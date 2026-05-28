@@ -1,3 +1,5 @@
+import { getIndianFyDatesToToday } from './indianFinancialYear';
+
 /** Calendar YYYY-MM-DD in the user's local timezone (not UTC — avoids IST-style off-by-one vs toISOString). */
 const toYmd = (d) => {
   const y = d.getFullYear();
@@ -14,9 +16,12 @@ export const DATE_PRESETS = [
   { value: 'last_week',     label: 'Last Week' },
   { value: 'last_7_days',   label: 'Last 7 Days' },
   { value: 'last_30_days',  label: 'Last 30 Days' },
+  { value: 'last_60_days',  label: 'Last 60 Days' },
+  { value: 'last_90_days',  label: 'Last 90 Days' },
   { value: 'last_month',    label: 'Last Month' },
   { value: 'current_month', label: 'Current Month' },
   { value: 'this_year',     label: 'This Year' },
+  { value: 'indian_fy',     label: 'Current FY (India)' },
   { value: 'last_year',     label: 'Last Year' },
   { value: 'custom',        label: 'Custom' },
 ];
@@ -76,6 +81,18 @@ export function getPresetDates(preset) {
       return { from: toYmd(from), to: toYmd(today) };
     }
 
+    case 'last_60_days': {
+      const from = new Date(today);
+      from.setDate(today.getDate() - 59);
+      return { from: toYmd(from), to: toYmd(today) };
+    }
+
+    case 'last_90_days': {
+      const from = new Date(today);
+      from.setDate(today.getDate() - 89);
+      return { from: toYmd(from), to: toYmd(today) };
+    }
+
     case 'last_month': {
       const firstOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
       const lastOfLastMonth = new Date(firstOfThisMonth);
@@ -93,6 +110,9 @@ export function getPresetDates(preset) {
       const first = new Date(today.getFullYear(), 0, 1);
       return { from: toYmd(first), to: toYmd(today) };
     }
+
+    case 'indian_fy':
+      return getIndianFyDatesToToday(today);
 
     case 'last_year': {
       const first = new Date(today.getFullYear() - 1, 0, 1);

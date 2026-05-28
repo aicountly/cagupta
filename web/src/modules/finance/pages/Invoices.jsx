@@ -3,6 +3,7 @@ import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createPaymentClientCost, createTds, finalizeTds,
   createRebate, createCreditNote, getLedger, getLedgerByGroup, getBillSettlementReport, getRecoveryByGroup,
+  getFinanceSummary,
   getOpeningBalance, setOpeningBalance,
   updateTxn, bulkDeleteTxns, reinstateTxn,
   requestLedgerReversalUserOtp, reverseLedgerTxn, cancelLedgerReversalTxn, assignParkedTxn,
@@ -42,6 +43,7 @@ import EntitySearchDropdown from '../../../components/common/EntitySearchDropdow
 import GroupSearchDropdown from '../../../components/common/GroupSearchDropdown';
 import LineItemPresetCombobox from '../../../components/common/LineItemPresetCombobox';
 import DateInput from '../../../components/common/DateInput';
+import DateRangeSelector from '../../../components/common/DateRangeSelector';
 import AmountInput from '../../../components/common/AmountInput';
 import BillingProfileSelect from '../../../components/common/BillingProfileSelect';
 import BillingProfileDefaultNotice from '../../../components/common/BillingProfileDefaultNotice';
@@ -53,6 +55,7 @@ import {
   buildLedgerRowsForIndianFY,
   indianFYLabel,
   indianFYBounds,
+  getIndianFyDatesToToday,
 } from '../../../utils/indianFinancialYear';
 import { ROLES } from '../../../constants/roles';
 import ledgerLogoUrl from '../../../assets/cropped_logo.png';
@@ -4712,6 +4715,23 @@ function normalizeTxnListPagination(pagination) {
   return { total, last_page: lastPage };
 }
 
+const DEFAULT_KPI_FY_DATES = getIndianFyDatesToToday();
+
+function formatFinanceKpiBreakdown(fees, reimb, opening) {
+  const f = (n) => (Number(n) || 0).toLocaleString('en-IN');
+  return `Fees ₹${f(fees)} · Reimb ₹${f(reimb)} · Opening ₹${f(opening)}`;
+}
+
+function formatKpiPeriodLabel(from, to) {
+  if (!from || !to) return '';
+  const fmt = (ymd) => {
+    const [y, m, d] = ymd.split('-');
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${parseInt(d, 10)} ${months[parseInt(m, 10) - 1]} ${y}`;
+  };
+  return `${fmt(from)} – ${fmt(to)}`;
+}
+
 export default function Invoices({ ledgerOnly = false }) {
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
@@ -4753,6 +4773,15 @@ export default function Invoices({ ledgerOnly = false }) {
     return undefined;
   }, [tab, ledgerOnly, searchParams, setSearchParams]);
 
+  // ── Finance KPI summary (period-aware, server-side) ─────────────────────────
+  const [kpiPreset, setKpiPreset] = useState('indian_fy');
+  const [kpiDateFrom, setKpiDateFrom] = useState(DEFAULT_KPI_FY_DATES.from);
+  const [kpiDateTo, setKpiDateTo] = useState(DEFAULT_KPI_FY_DATES.to);
+  const [financeSummary, setFinanceSummary] = useState(null);
+  const [kpiLoading, setKpiLoading] = useState(true);
+  const [kpiError, setKpiError] = useState('');
+  const [kpiReloadSeq, setKpiReloadSeq] = useState(0);
+
   // ── Invoice tab state ───────────────────────────────────────────────────────
   const [statusFilter, setStatusFilter]         = useState('all');
   const [showRaiseInvoice, setShowRaiseInvoice] = useState(false);
@@ -4772,6 +4801,9 @@ export default function Invoices({ ledgerOnly = false }) {
   const [recLoading, setRecLoading]     = useState(false);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedReceiptIds, setSelectedReceiptIds] = useState([]);
+  const [receiptsFilterDateFrom, setReceiptsFilterDateFrom] = useState('');
+  const [receiptsFilterDateTo, setReceiptsFilterDateTo] = useState('');
+  const [receiptsLedgerView, setReceiptsLedgerView] = useState('fees');
 
   // ── Payments (on behalf) tab state ─────────────────────────────────────────
   const [paymentExpenses, setPaymentExpenses] = useState([]);
@@ -4789,6 +4821,21 @@ export default function Invoices({ ledgerOnly = false }) {
   const paymentClientCostFetchParams = useMemo(
     () => ({ txnType: 'payment_client_cost' }),
     [],
+  );
+
+  const receiptFetchParams = useMemo(() => {
+    const params = { txnType: 'receipt' };
+    if (receiptsFilterDateFrom) params.dateFrom = receiptsFilterDateFrom;
+    if (receiptsFilterDateTo) params.dateTo = receiptsFilterDateTo;
+    if (receiptsLedgerView === 'fees') params.ledgerMovementKind = 'fees';
+    else if (receiptsLedgerView === 'reimbursement') params.ledgerMovementKind = 'reimbursement';
+    return params;
+  }, [receiptsFilterDateFrom, receiptsFilterDateTo, receiptsLedgerView]);
+
+  const receiptsFiltersActive = Boolean(
+    receiptsFilterDateFrom
+    || receiptsFilterDateTo
+    || receiptsLedgerView !== 'fees'
   );
 
   // ── TDS tab state ───────────────────────────────────────────────────────────
@@ -5153,7 +5200,7 @@ export default function Invoices({ ledgerOnly = false }) {
       };
     }
     if (targetTab === 'receipts') {
-      return { ...base, txnType: 'receipt' };
+      return { ...base, ...receiptFetchParams };
     }
     if (targetTab === 'payments') {
       return { ...base, ...paymentExpenseFetchParams };
@@ -5178,6 +5225,7 @@ export default function Invoices({ ledgerOnly = false }) {
   }
 
   function reloadActiveTxnList({ page: pageOverride } = {}) {
+    setKpiReloadSeq((s) => s + 1);
     if (pageOverride != null) {
       setTxnListPage((p) => ({ ...p, [tab]: pageOverride }));
     } else {
@@ -5262,6 +5310,10 @@ export default function Invoices({ ledgerOnly = false }) {
   }, [paymentsFilterByLedger, ledgerClientId, ledgerEntityType, ledgerLedgerClass]);
 
   useEffect(() => {
+    setTxnListPage((p) => (p.receipts === 1 ? p : { ...p, receipts: 1 }));
+  }, [receiptsFilterDateFrom, receiptsFilterDateTo, receiptsLedgerView]);
+
+  useEffect(() => {
     setRecoverySearch('');
   }, [recoveryBucket]);
 
@@ -5334,6 +5386,7 @@ export default function Invoices({ ledgerOnly = false }) {
     tdsFilter,
     paymentExpenseFetchParams,
     paymentClientCostFetchParams,
+    receiptFetchParams,
     txnListReloadSeq,
   ]);
 
@@ -5569,14 +5622,32 @@ export default function Invoices({ ledgerOnly = false }) {
     );
   }, [ledger, ledgerFyOptions, ledgerFyStartYear, ledgerFilterDateFrom, ledgerFilterDateTo]);
 
-  // ── Summary cards ───────────────────────────────────────────────────────────
-  const totalBilled    = invoices.reduce((a, i) => a + (i.amount || i.debit || 0), 0);
-  const totalCollected = receipts.reduce(
-    (a, r) => a + signedLedgerTxnAmount(r.txnType, r.amount || r.credit || 0),
-    0,
+  useEffect(() => {
+    if (!kpiDateFrom || !kpiDateTo) return undefined;
+    let cancelled = false;
+    setKpiLoading(true);
+    setKpiError('');
+    getFinanceSummary({ dateFrom: kpiDateFrom, dateTo: kpiDateTo })
+      .then((summary) => {
+        if (!cancelled) setFinanceSummary(summary);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setFinanceSummary(null);
+          setKpiError(err?.message || 'Failed to load finance summary.');
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setKpiLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [kpiDateFrom, kpiDateTo, kpiReloadSeq]);
+
+  const kpiConsolidated = financeSummary?.consolidated;
+  const formatKpiAmount = (value) => (
+    kpiLoading ? '—' : `₹${(Number(value) || 0).toLocaleString('en-IN')}`
   );
-  const outstanding    = totalBilled - totalCollected;
-  const tdsPending     = tdsEntries.filter(t => t.tdsStatus === 'provisional').reduce((a, t) => a + t.amount, 0);
+  const kpiPeriodLabel = formatKpiPeriodLabel(kpiDateFrom, kpiDateTo);
 
   const filteredRecoveryGroups = useMemo(
     () => filterRecoveryGroups(recoveryReport?.groups, recoverySearch, recoverySearchMode),
@@ -6560,20 +6631,84 @@ export default function Invoices({ ledgerOnly = false }) {
         />
       )}
 
-      {/* ── Summary cards ─────────────────────────────────────────────────── */}
+      {/* ── KPI period + summary cards ─────────────────────────────────────── */}
+      <div style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' }}>
+        <DateRangeSelector
+          preset={kpiPreset}
+          onPresetChange={setKpiPreset}
+          dateFrom={kpiDateFrom}
+          onDateFromChange={setKpiDateFrom}
+          dateTo={kpiDateTo}
+          onDateToChange={setKpiDateTo}
+        />
+        {kpiPeriodLabel && (
+          <span style={{ fontSize: 12, color: '#64748b', paddingBottom: 8 }}>
+            Summary for {kpiPeriodLabel} · active receivables (excl. NPA/bad debt)
+          </span>
+        )}
+      </div>
+      {kpiError && (
+        <div style={{ marginBottom: 12, padding: '10px 14px', background: '#fef2f2', color: '#b91c1c', borderRadius: 8, fontSize: 13 }}>
+          {kpiError}
+        </div>
+      )}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:16, marginBottom:24 }}>
         {[
-          { label:'Total Billed',    value:`₹${totalBilled.toLocaleString('en-IN')}`,    color:'#2563eb' },
-          { label:'Total Collected', value:`₹${totalCollected.toLocaleString('en-IN')}`, color:'#16a34a' },
-          { label:'Outstanding',     value:`₹${outstanding.toLocaleString('en-IN')}`,    color:'#d97706' },
-          { label:'TDS Pending',     value:`₹${tdsPending.toLocaleString('en-IN')}`,     color:'#7c3aed' },
-        ].map(s=>(
+          {
+            label: 'Total Billed',
+            value: formatKpiAmount(kpiConsolidated?.billed),
+            breakdown: kpiConsolidated && formatFinanceKpiBreakdown(
+              kpiConsolidated.fees?.billed,
+              kpiConsolidated.reimbursement?.billed,
+              kpiConsolidated.opening,
+            ),
+            color: '#2563eb',
+          },
+          {
+            label: 'Total Collected',
+            value: formatKpiAmount(kpiConsolidated?.collected),
+            breakdown: kpiConsolidated && formatFinanceKpiBreakdown(
+              kpiConsolidated.fees?.collected,
+              kpiConsolidated.reimbursement?.collected,
+              kpiConsolidated.opening,
+            ),
+            color: '#16a34a',
+          },
+          {
+            label: 'Outstanding',
+            value: formatKpiAmount(kpiConsolidated?.outstanding),
+            breakdown: kpiConsolidated && formatFinanceKpiBreakdown(
+              kpiConsolidated.fees?.outstanding,
+              kpiConsolidated.reimbursement?.outstanding,
+              kpiConsolidated.opening,
+            ),
+            color: '#d97706',
+            breakdownNote: 'Closing at period end',
+          },
+          {
+            label: 'TDS Pending',
+            value: formatKpiAmount(financeSummary?.tdsPending),
+            breakdown: 'All active provisional TDS',
+            color: '#7c3aed',
+          },
+        ].map((s) => (
           <div key={s.label} style={{ background:'#fff', borderRadius:10, padding:'16px 20px', boxShadow:'0 1px 3px rgba(0,0,0,.08)', borderLeft:`4px solid ${s.color}` }}>
             <div style={{ fontSize:22, fontWeight:700, color:'#1e293b' }}>{s.value}</div>
             <div style={{ fontSize:12, color:'#64748b', marginTop:4 }}>{s.label}</div>
+            {s.breakdown && !kpiLoading && (
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, lineHeight: 1.4 }}>
+                {s.breakdown}
+                {s.breakdownNote ? ` · ${s.breakdownNote}` : ''}
+              </div>
+            )}
           </div>
         ))}
       </div>
+      {tab === 'receipts' && (
+        <p style={{ fontSize: 11, color: '#94a3b8', margin: '-12px 0 16px' }}>
+          Receipt list filters below do not affect the summary cards above.
+        </p>
+      )}
 
       {/* ── Tabs ──────────────────────────────────────────────────────────── */}
       <div style={{ display:'flex', gap:4, marginBottom:16, borderBottom:'2px solid #e2e8f0', flexWrap:'wrap' }}>
@@ -6625,6 +6760,7 @@ export default function Invoices({ ledgerOnly = false }) {
             display: 'flex',
             alignItems: 'center',
             gap: 12,
+            flexWrap: 'wrap',
           }}
         >
           <label htmlFor="txn-list-search" style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -6655,6 +6791,51 @@ export default function Invoices({ ledgerOnly = false }) {
             style={{ ...inputStyle, flex: 1, minWidth: 200, maxWidth: 520 }}
             autoComplete="off"
           />
+          {tab === 'receipts' && (
+            <>
+              <label style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                Period from
+              </label>
+              <DateInput
+                style={{ ...inputStyle, width: 140, minWidth: 120 }}
+                value={receiptsFilterDateFrom}
+                onChange={(e) => setReceiptsFilterDateFrom(e.target.value)}
+              />
+              <label style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                to
+              </label>
+              <DateInput
+                style={{ ...inputStyle, width: 140, minWidth: 120 }}
+                value={receiptsFilterDateTo}
+                onChange={(e) => setReceiptsFilterDateTo(e.target.value)}
+              />
+              <label htmlFor="receipts-ledger-view" style={{ fontSize: 12, color: '#64748b', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                Ledger view
+              </label>
+              <select
+                id="receipts-ledger-view"
+                style={{ ...inputStyle, width: 168, minWidth: 140 }}
+                value={receiptsLedgerView}
+                onChange={(e) => setReceiptsLedgerView(e.target.value)}
+              >
+                <option value="fees">Fees only</option>
+                <option value="reimbursement">Reimbursement only</option>
+                <option value="all">All (consolidated)</option>
+              </select>
+              {(receiptsFilterDateFrom || receiptsFilterDateTo) && (
+                <button
+                  type="button"
+                  style={{ ...btnSecondary, fontSize: 12, padding: '6px 10px', whiteSpace: 'nowrap' }}
+                  onClick={() => {
+                    setReceiptsFilterDateFrom('');
+                    setReceiptsFilterDateTo('');
+                  }}
+                >
+                  Clear dates
+                </button>
+              )}
+            </>
+          )}
           {tab === 'payments' && (
             <>
               <label
@@ -6891,10 +7072,10 @@ export default function Invoices({ ledgerOnly = false }) {
                 <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading receipts…</td></tr>
               ) : txnListFetchError ? (
                 <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Could not load receipts.</td></tr>
-              ) : receipts.length === 0 && !txnListSearchDebounced ? (
-                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts found. Click "+ Receipt" to record one.</td></tr>
+              ) : receipts.length === 0 && !txnListSearchDebounced && !receiptsFiltersActive ? (
+                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No fees receipts found. Click "+ Receipt" to record one.</td></tr>
               ) : receipts.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts match your search.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 13 : 12} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No receipts match your search or filters.</td></tr>
               ) : receipts.map(r=>(
                 <tr key={r.id} style={ledgerRowStyle(trStyle, r)}>
                   {canDeleteInvoice && (

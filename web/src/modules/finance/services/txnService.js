@@ -246,6 +246,11 @@ export async function getTxns(params = {}) {
   if (params.ledgerClass != null && String(params.ledgerClass).trim() !== '') {
     query.set('ledger_class', normalizeLedgerClassForApi(params.ledgerClass));
   }
+  if (params.ledgerMovementKind === 'reimbursement') {
+    query.set('ledger_movement_kind', 'reimbursement');
+  } else if (params.ledgerMovementKind === 'fees') {
+    query.set('ledger_movement_kind', 'fees');
+  }
   if (params.omitCancelledReversed) {
     query.set('omit_cancelled_reversed', '1');
   }
@@ -522,6 +527,45 @@ export async function getBillSettlementReport({
   const res = await fetch(`${API_BASE}/admin/txn/bill-settlement-report?${query}`, { headers: authHeaders() });
   const data = await parseResponse(res);
   return data.data || {};
+}
+
+/** GET /api/admin/finance/summary — firm-wide billed/collected/outstanding for a date range */
+export async function getFinanceSummary({ dateFrom, dateTo }) {
+  const q = new URLSearchParams();
+  q.set('date_from', dateFrom);
+  q.set('date_to', dateTo);
+  const res = await fetch(`${API_BASE}/admin/finance/summary?${q}`, { headers: authHeaders() });
+  const data = await parseResponse(res);
+  const raw = data.data || {};
+  const c = raw.consolidated || {};
+  const fees = c.fees || {};
+  const reimb = c.reimbursement || {};
+  return {
+    period: {
+      from: raw.period?.from ?? dateFrom,
+      to: raw.period?.to ?? dateTo,
+    },
+    consolidated: {
+      opening: Number(c.opening) || 0,
+      billed: Number(c.billed) || 0,
+      collected: Number(c.collected) || 0,
+      creditNotes: Number(c.credit_notes) || 0,
+      outstanding: Number(c.outstanding) || 0,
+      fees: {
+        opening: Number(fees.opening) || 0,
+        billed: Number(fees.billed) || 0,
+        collected: Number(fees.collected) || 0,
+        outstanding: Number(fees.outstanding) || 0,
+      },
+      reimbursement: {
+        opening: Number(reimb.opening) || 0,
+        billed: Number(reimb.billed) || 0,
+        collected: Number(reimb.collected) || 0,
+        outstanding: Number(reimb.outstanding) || 0,
+      },
+    },
+    tdsPending: Number(raw.tds_pending) || 0,
+  };
 }
 
 /** GET /api/admin/txn/recovery-by-group — receivables by client group (fees / taxes / reimbursement per ledger class) */

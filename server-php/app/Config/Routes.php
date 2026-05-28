@@ -1495,6 +1495,12 @@ class Routes
             ],
             [
                 'method'     => 'GET',
+                'pattern'    => '/api/admin/finance/summary',
+                'handler'    => 'Admin\TxnController@financeSummary',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/recovery-by-group',
                 'handler'    => 'Admin\TxnController@recoveryByGroup',
                 'middleware' => ['auth', 'permission:invoices.view'],
