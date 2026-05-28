@@ -6,6 +6,8 @@ on:
       - 'web/**'
       - 'mobile/**'
       - 'packages/**'
+      - 'server-php/**'
+      - 'scripts/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/ci.yml'
@@ -16,6 +18,8 @@ on:
       - 'web/**'
       - 'mobile/**'
       - 'packages/**'
+      - 'server-php/**'
+      - 'scripts/**'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/ci.yml'
@@ -37,6 +41,12 @@ jobs:
           node-version: '20'
           cache: npm
           cache-dependency-path: package-lock.json
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
 
       - name: Install dependencies
         run: npm ci
@@ -63,3 +73,17 @@ jobs:
 
       - name: Lint mobile
         run: npm run lint --workspace=@cagupta/mobile-app
+
+      - name: Lint PHP syntax
+        run: npm run lint:php
+
+      - name: Route and sync checks
+        run: |
+          npm run check:routes
+          npm run check:sync
+          npm run check:mobile-screens
+          npm run check:txn-routes
+          npm run check:api-parity
+
+      - name: Unit tests
+        run: npm run test

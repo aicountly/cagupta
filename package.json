@@ -20,8 +20,14 @@
     "check:sync": "node scripts/web-mobile-sync-check.js",
     "check:mobile-screens": "node mobile/app/scripts/check-screen-registry.cjs",
     "check:txn-routes": "node scripts/check-txn-routes.cjs",
+    "check:api-parity": "node scripts/check-api-parity.cjs",
+    "test:web": "npm test --workspace=web",
+    "test:backend": "npm test --prefix backend",
+    "test": "npm run test:web && npm run test:backend",
+    "smoke:api": "node scripts/api-smoke.cjs",
+    "smoke:portal-boundary": "node scripts/portal-boundary-smoke.cjs",
     "export:android": "npm run export:android --workspace=@cagupta/mobile-app",
     "export:ios": "npm run export:ios --workspace=@cagupta/mobile-app",
-    "ci": "npm run build:packages && npm run build:web && npm run typecheck:mobile && npm run export:android && npm run export:ios && npm run lint:web && npm run lint:mobile && npm run lint:php && npm run check:routes && npm run check:sync && npm run check:mobile-screens && npm run check:txn-routes"
+    "ci": "npm run build:packages && npm run build:web && npm run typecheck:mobile && npm run export:android && npm run export:ios && npm run lint:web && npm run lint:mobile && npm run lint:php && npm run check:routes && npm run check:sync && npm run check:mobile-screens && npm run check:txn-routes && npm run check:api-parity && npm run test"
   }
 }

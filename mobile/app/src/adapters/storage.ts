@@ -36,5 +36,6 @@ export function getApiBaseUrl(): string {
 }
 
 export function isMockMode(): boolean {
-  return !process.env.EXPO_PUBLIC_API_BASE_URL;
+  // Mock auth only in dev builds; production must always use a real API URL.
+  return __DEV__ && !process.env.EXPO_PUBLIC_API_BASE_URL;
 }

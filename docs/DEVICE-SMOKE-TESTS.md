@@ -2,6 +2,19 @@
 
 Run after `npm run ci` passes locally. Use **Expo Go** or an **EAS preview** build (`mobile/app/eas.json` profile `preview`).
 
+## Round 4 automated prep (2026-05-28)
+
+| Check | Status |
+|-------|--------|
+| `npm run ci` | PASS |
+| Expo export Android | PASS |
+| Expo export iOS | PASS |
+| Mobile tsc | PASS |
+| API parity (associate routes) | PASS |
+| `GET /api/associate/dashboard` (no auth) | 401 (not 404) |
+
+Physical device matrix below requires Expo Go or EAS preview on real hardware.
+
 ## Prerequisites
 
 ```bash
@@ -9,7 +22,7 @@ npm run build:packages
 cd mobile/app && npx expo start
 ```
 
-Set `EXPO_PUBLIC_API_BASE_URL` to your machine IP (physical device) or `http://localhost:8080/api` (emulator).
+Set `EXPO_PUBLIC_API_BASE_URL` to your machine IP (physical device) or `http://localhost:8080/api` (emulator). Copy `mobile/app/.env.example` to `mobile/app/.env` if missing.
 
 PHP backend + PostgreSQL must be running for real API tests.
 

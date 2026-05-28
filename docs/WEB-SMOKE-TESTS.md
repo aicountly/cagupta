@@ -30,13 +30,16 @@ cd web && npm run dev -- --host 0.0.0.0
 | Public blog | `/blog` | ☐ | ☐ |
 | Shared quotation | `/shared/quotation/:token` | ☐ | ☐ |
 
-## Automated prep
+## Automated prep (Round 4)
 
 ```bash
 npm run ci
 node web/scripts/check-routes.cjs
 node scripts/web-mobile-sync-check.js
+node scripts/check-api-parity.cjs
 ```
+
+**Round 4 automated prep:** PASS (2026-05-28). Browser matrix below requires manual execution with PostgreSQL + PHP backend.
 
 ## Sign-off
 
