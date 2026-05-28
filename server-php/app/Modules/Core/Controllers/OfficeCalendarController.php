@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 namespace App\Controllers\Admin;
 
+use App\Config\Database;
 use App\Controllers\BaseController;
 use App\Libraries\OfficeWorkingDays;
 
@@ -16,6 +17,17 @@ use App\Libraries\OfficeWorkingDays;
  */
 class OfficeCalendarController extends BaseController
 {
+    private ?\PDO $db = null;
+
+    private function db(): \PDO
+    {
+        if ($this->db === null) {
+            $this->db = Database::getConnection();
+        }
+
+        return $this->db;
+    }
+
     // ── GET /api/admin/settings/office-calendar ───────────────────────────────
 
     public function show(): never
