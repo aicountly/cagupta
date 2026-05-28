@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Config\Database;
+use App\Libraries\OfficeWorkingDays;
 use App\Libraries\TimesheetEngagementCap;
 use PDO;
 
@@ -769,8 +770,9 @@ class TimeEntryModel
     }
 
     /**
-     * Per-user punch totals vs shift target over an inclusive calendar date range.
-     * Target minutes = (inclusive day count) × shift target (same user set as daily super-admin report).
+     * Per-user punch totals vs shift target over an inclusive date range.
+     * Target minutes = (working day count) × shift target (same user set as daily super-admin report).
+     * Working days exclude configured weekly off days and office holidays.
      *
      * @return array<int, array<string, mixed>>
      */
@@ -791,7 +793,7 @@ class TimeEntryModel
         if ($to < $from) {
             return [];
         }
-        $dayCount = (int)$from->diff($to)->days + 1;
+        $dayCount = OfficeWorkingDays::countWorkingDays($this->db, $dateFrom, $dateTo);
 
         $uidClause = '';
         $params = [

@@ -42,9 +42,12 @@ if (is_readable($envFile)) {
 
 require_once $scriptDir . '/app/Config/Database.php';
 require_once $scriptDir . '/app/Libraries/BrevoMailer.php';
+require_once $scriptDir . '/app/Libraries/OfficeWorkingDays.php';
 require_once $scriptDir . '/app/Modules/Operations/Models/TimeEntryModel.php';
 
+use App\Config\Database;
 use App\Libraries\BrevoMailer;
+use App\Libraries\OfficeWorkingDays;
 use App\Models\TimeEntryModel;
 
 /**
@@ -141,6 +144,12 @@ foreach (array_slice($argv ?? [], 1) as $arg) {
 
 if ($targetDate === null) {
     $targetDate = date('Y-m-d', strtotime('yesterday'));
+}
+
+$pdo = Database::getConnection();
+if (!OfficeWorkingDays::isWorkingDay($pdo, $targetDate)) {
+    echo "[superadmin-timesheet-report] Skipped — office closed on {$targetDate}." . PHP_EOL;
+    exit(0);
 }
 
 $model = new TimeEntryModel();

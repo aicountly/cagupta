@@ -44,7 +44,7 @@ class UserController extends BaseController
 
         $acting      = $this->authUser();
         $delegatorId = 0;
-        if ($acting !== null && !$this->userHasManageAll() && $this->userHasDelegate()) {
+        if ($acting !== null && !$this->actorCanManageAllUsers() && $this->actorHasDelegateUsers()) {
             $p = $acting['role_permissions_array'] ?? [];
             if (!in_array('services.assignees.manage', $p, true)) {
                 $delegatorId = (int)$acting['id'];
@@ -104,7 +104,7 @@ class UserController extends BaseController
 
         $actingUser = $this->authUser();
 
-        if (!$this->userHasManageAll() && $this->userHasDelegate()) {
+        if (!$this->actorCanManageAllUsers() && $this->actorHasDelegateUsers()) {
             $this->assertDelegateAssignableRole((int)($body['role_id'] ?? 0));
         }
 
@@ -191,7 +191,7 @@ class UserController extends BaseController
             }
         }
 
-        if (!$this->userHasManageAll() && $this->userHasDelegate() && array_key_exists('role_id', $body)) {
+        if (!$this->actorCanManageAllUsers() && $this->actorHasDelegateUsers() && array_key_exists('role_id', $body)) {
             $this->assertDelegateAssignableRole((int)$body['role_id']);
         }
         $data = [];
@@ -322,7 +322,7 @@ class UserController extends BaseController
     public function roles(): never
     {
         $all = array_map(fn (array $r): array => $this->formatRoleRow($r), $this->roles->all());
-        if (!$this->userHasManageAll() && $this->userHasDelegate()) {
+        if (!$this->actorCanManageAllUsers() && $this->actorHasDelegateUsers()) {
             $all = array_values(array_filter(
                 $all,
                 static fn (array $r): bool => in_array($r['name'] ?? '', ['staff', 'viewer'], true)
@@ -388,7 +388,8 @@ class UserController extends BaseController
         return in_array('*', $p, true);
     }
 
-    private function userHasManageAll(): bool
+    /** Distinct from BaseController::userHasManageAll(?array) — no name collision on PHP 8. */
+    private function actorCanManageAllUsers(): bool
     {
         $u = $this->authUser();
         if ($u === null) {
@@ -398,17 +399,23 @@ class UserController extends BaseController
             return true;
         }
         $p = $u['role_permissions_array'] ?? [];
+        if (!is_array($p)) {
+            $p = [];
+        }
 
         return in_array('*', $p, true) || in_array('users.manage', $p, true);
     }
 
-    private function userHasDelegate(): bool
+    private function actorHasDelegateUsers(): bool
     {
         $u = $this->authUser();
         if ($u === null) {
             return false;
         }
         $p = $u['role_permissions_array'] ?? [];
+        if (!is_array($p)) {
+            $p = [];
+        }
 
         return in_array('users.delegate', $p, true);
     }
@@ -418,7 +425,7 @@ class UserController extends BaseController
      */
     private function assertUserRowVisible(array $user): void
     {
-        if ($this->userHasManageAll()) {
+        if ($this->actorCanManageAllUsers()) {
             return;
         }
         $acting = $this->authUser();
@@ -429,7 +436,7 @@ class UserController extends BaseController
         if ((int)$user['id'] === $aid) {
             return;
         }
-        if ($this->userHasDelegate() && (int)($user['created_by'] ?? 0) === $aid) {
+        if ($this->actorHasDelegateUsers() && (int)($user['created_by'] ?? 0) === $aid) {
             return;
         }
         $this->error('Access denied.', 403);

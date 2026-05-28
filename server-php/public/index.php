@@ -149,6 +149,47 @@ set_exception_handler(static function (\Throwable $e): void {
     exit(1);
 });
 
+// Fatal errors (E_ERROR, parse, etc.) are not caught by set_exception_handler — without
+// this, production often returns HTTP 500 with an empty body when headers were already sent.
+register_shutdown_function(static function (): void {
+    $err = error_get_last();
+    if ($err === null) {
+        return;
+    }
+    $fatalTypes = [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR];
+    if (!in_array($err['type'], $fatalTypes, true)) {
+        return;
+    }
+    error_log('[API] fatal: ' . $err['message'] . ' @ ' . $err['file'] . ':' . $err['line']);
+    $debugLog = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'debug-441a9d.log';
+    @file_put_contents($debugLog, json_encode([
+        'timestamp' => (int) round(microtime(true) * 1000),
+        'kind'      => 'fatal',
+        'message'   => $err['message'],
+        'file'      => $err['file'],
+        'line'      => $err['line'],
+    ]) . "\n", FILE_APPEND | LOCK_EX);
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: application/json; charset=UTF-8');
+    }
+    $env = strtolower((string)(getenv('APP_ENV') ?: 'development'));
+    $msg = 'Internal server error.';
+    if (in_array($env, ['development', 'local', 'dev'], true)) {
+        $msg = 'Fatal: ' . $err['message'] . ' @ ' . basename($err['file']) . ':' . $err['line'];
+    }
+    $json = json_encode([
+        'success' => false,
+        'message' => $msg,
+        'data'    => null,
+        'errors'  => [],
+    ], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
+    if ($json === false) {
+        $json = '{"success":false,"message":"Internal server error.","data":null,"errors":[]}';
+    }
+    echo $json;
+});
+
 use App\Config\App as AppConfig;
 use App\Config\Routes;
 use App\Filters\AuthFilter;

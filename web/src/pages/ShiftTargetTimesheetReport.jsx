@@ -97,8 +97,7 @@ export default function ShiftTargetTimesheetReport() {
       <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1F3B', marginBottom: 8 }}>Staff punch vs target</h1>
       <p style={{ fontSize: 13, color: '#64748b', marginBottom: 16, maxWidth: 800 }}>
         Total punched time vs each user's individual daily target (default 510 minutes) for the selected date
-        range, inclusive. <strong>Deficit</strong> and <strong>overtime</strong> are for the whole period (only
-        one is non-zero per user). Matches the logic used for the daily super-admin email digest.
+        range, inclusive. <strong>Deficit</strong> and <strong>overtime</strong> use working days only (weekly off and holidays from Settings → Office Calendar).
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 16 }}>
@@ -155,7 +154,11 @@ export default function ShiftTargetTimesheetReport() {
             marginBottom: 16,
           }}
         >
-          <strong>{meta.day_count}</strong> calendar day(s) · Range {meta.date_from} → {meta.date_to} · Target is
+          <strong>{meta.working_day_count ?? meta.day_count}</strong> working day(s)
+          {meta.calendar_day_count != null && meta.calendar_day_count !== (meta.working_day_count ?? meta.day_count) && (
+            <> ({meta.calendar_day_count} calendar day(s))</>
+          )}
+          {' '}· Range {meta.date_from} → {meta.date_to} · Target is
           per-user (see table)
         </div>
       )}

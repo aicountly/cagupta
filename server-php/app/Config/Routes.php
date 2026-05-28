@@ -21,6 +21,14 @@ class Routes
     public static function getRoutes(): array
     {
         return [
+            // ── System diagnostics (no auth — remove or protect after debugging) ─
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/system/diag',
+                'handler'    => 'System\DiagController@index',
+                'middleware' => [],
+            ],
+
             // ── Auth ──────────────────────────────────────────────────────────
             [
                 'method'     => 'POST',
@@ -2637,6 +2645,30 @@ class Routes
                 'pattern'    => '/api/admin/settings/cron-jobs/logs',
                 'handler'    => 'Admin\CronJobLogsController@tail',
                 'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/settings/office-calendar',
+                'handler'    => 'Admin\OfficeCalendarController@show',
+                'middleware' => ['auth', 'permission:settings.view'],
+            ],
+            [
+                'method'     => 'PUT',
+                'pattern'    => '/api/admin/settings/office-calendar',
+                'handler'    => 'Admin\OfficeCalendarController@update',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/settings/office-calendar/holidays',
+                'handler'    => 'Admin\OfficeCalendarController@storeHoliday',
+                'middleware' => ['auth', 'role:super_admin,admin'],
+            ],
+            [
+                'method'     => 'DELETE',
+                'pattern'    => '/api/admin/settings/office-calendar/holidays/:id',
+                'handler'    => 'Admin\OfficeCalendarController@destroyHoliday',
+                'middleware' => ['auth', 'role:super_admin,admin'],
             ],
         ];
     }

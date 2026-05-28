@@ -36,7 +36,7 @@ class RoleFilter
         }
 
         // Super admin always passes
-        if (strtolower($user['email']) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
+        if (strtolower((string)($user['email'] ?? '')) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
             return;
         }
 

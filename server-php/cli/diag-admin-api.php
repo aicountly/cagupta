@@ -4,8 +4,13 @@ declare(strict_types=1);
 /**
  * Diagnose GET /api/admin/roles and /api/admin/users failures.
  *
- * Run on the server (SSH):
- *   php /home/USER/public_html/api/cli/diag-admin-api.php
+ * Do NOT open this file in a browser — you will be redirected to the dashboard.
+ *
+ * Run on the server via SSH only:
+ *   php ~/public_html/api/cli/diag-admin-api.php
+ *
+ * Or use the HTTP diagnostic (after deploy):
+ *   https://carahulgupta.in/api/system/diag
  */
 
 $root = dirname(__DIR__);

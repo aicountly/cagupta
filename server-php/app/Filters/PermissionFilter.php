@@ -34,7 +34,7 @@ class PermissionFilter
         }
 
         // Super admin always passes
-        if (strtolower($user['email']) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
+        if (strtolower((string)($user['email'] ?? '')) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
             return;
         }
 
@@ -46,6 +46,9 @@ class PermissionFilter
 
         // Check permission from the role's permissions array
         $permissions = $user['role_permissions_array'] ?? [];
+        if (!is_array($permissions)) {
+            $permissions = [];
+        }
         if (in_array('*', $permissions, true)) {
             return;
         }

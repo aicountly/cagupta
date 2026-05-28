@@ -31,6 +31,12 @@ import DestructiveConfirmModal from '../../../components/common/DestructiveConfi
 import EngagementTypePricingConfig from '../../../components/crm/EngagementTypePricingConfig';
 import { draftFromEngagementType, draftToApiPayload } from '../../../utils/quotationPricing';
 import PortalThemePicker from '../../../components/settings/PortalThemePicker';
+import {
+  getOfficeCalendar,
+  updateOfficeCalendarWeeklyOff,
+  addOfficeHoliday,
+  deleteOfficeHoliday,
+} from '../services/officeCalendarService';
 
 function registerDeleteBlockedReason(key) {
   try {
@@ -573,6 +579,7 @@ const SETTINGS_SECTIONS = [
   { key: 'roles', label: 'Roles & Permissions', desc: 'Manage access levels and permissions', icon: '🔐' },
   { key: 'billing', label: 'Billing Firms', desc: 'Configure billing entities and profiles', icon: '💳' },
   { key: 'integrations', label: 'Integrations', desc: 'Zoom, email, and third-party connections', icon: '🔗' },
+  { key: 'office_calendar', label: 'Office Calendar', desc: 'Weekly off days and holidays for shift targets', icon: '📅' },
   { key: 'notifications', label: 'Notification Triggers', desc: 'Automated alerts for activities and events', icon: '🔔' },
   { key: 'service_config', label: 'Service Configuration', desc: 'Categories, types, engagement settings', icon: '⚙️' },
   { key: 'other', label: 'Other Settings', desc: 'Portal types, register types, and misc', icon: '📋' },
@@ -665,6 +672,101 @@ export default function Settings() {
   const [settingsDestructivePrompt, setSettingsDestructivePrompt] = useState(null);
   const [settingsDestructiveErr, setSettingsDestructiveErr] = useState('');
   const [settingsDestructiveBusy, setSettingsDestructiveBusy] = useState(false);
+
+  const [officeCalendarLoading, setOfficeCalendarLoading] = useState(false);
+  const [officeCalendarSaving, setOfficeCalendarSaving] = useState(false);
+  const [officeCalendarError, setOfficeCalendarError] = useState('');
+  const [officeCalendarMsg, setOfficeCalendarMsg] = useState('');
+  const [officeCalendarWeeklyOff, setOfficeCalendarWeeklyOff] = useState(1);
+  const [officeCalendarWeekdayOptions, setOfficeCalendarWeekdayOptions] = useState([]);
+  const [officeCalendarHolidays, setOfficeCalendarHolidays] = useState([]);
+  const [officeCalendarHolidayDate, setOfficeCalendarHolidayDate] = useState('');
+  const [officeCalendarHolidayName, setOfficeCalendarHolidayName] = useState('');
+  const [officeCalendarHolidayBusy, setOfficeCalendarHolidayBusy] = useState(false);
+
+  useEffect(() => {
+    if (tab !== 'office_calendar') return;
+    let cancelled = false;
+    (async () => {
+      setOfficeCalendarLoading(true);
+      setOfficeCalendarError('');
+      try {
+        const data = await getOfficeCalendar();
+        if (cancelled) return;
+        setOfficeCalendarWeeklyOff(Number(data.weekly_off_days) || 1);
+        setOfficeCalendarWeekdayOptions(Array.isArray(data.weekday_options) ? data.weekday_options : []);
+        setOfficeCalendarHolidays(Array.isArray(data.holidays) ? data.holidays : []);
+      } catch (e) {
+        if (!cancelled) setOfficeCalendarError(e.message || 'Failed to load office calendar.');
+      } finally {
+        if (!cancelled) setOfficeCalendarLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tab]);
+
+  async function saveOfficeCalendarWeeklyOff() {
+    setOfficeCalendarSaving(true);
+    setOfficeCalendarError('');
+    setOfficeCalendarMsg('');
+    try {
+      const data = await updateOfficeCalendarWeeklyOff(officeCalendarWeeklyOff);
+      setOfficeCalendarWeeklyOff(Number(data.weekly_off_days) || officeCalendarWeeklyOff);
+      setOfficeCalendarMsg('Weekly off days saved.');
+    } catch (e) {
+      setOfficeCalendarError(e.message || 'Failed to save weekly off days.');
+    } finally {
+      setOfficeCalendarSaving(false);
+    }
+  }
+
+  function toggleOfficeCalendarWeeklyOff(dayValue) {
+    setOfficeCalendarWeeklyOff((prev) => {
+      const next = (prev & dayValue) !== 0 ? prev & ~dayValue : prev | dayValue;
+      return next === 127 ? prev : next;
+    });
+    setOfficeCalendarMsg('');
+    setOfficeCalendarError('');
+  }
+
+  async function handleAddOfficeHoliday(e) {
+    e.preventDefault();
+    const date = officeCalendarHolidayDate.trim();
+    const name = officeCalendarHolidayName.trim();
+    if (!date || !name) {
+      setOfficeCalendarError('Holiday date and name are required.');
+      return;
+    }
+    setOfficeCalendarHolidayBusy(true);
+    setOfficeCalendarError('');
+    setOfficeCalendarMsg('');
+    try {
+      const created = await addOfficeHoliday({ date, name });
+      setOfficeCalendarHolidays((prev) => [...prev, created].sort((a, b) => String(a.holiday_date).localeCompare(String(b.holiday_date))));
+      setOfficeCalendarHolidayDate('');
+      setOfficeCalendarHolidayName('');
+      setOfficeCalendarMsg('Holiday added.');
+    } catch (err) {
+      setOfficeCalendarError(err.message || 'Failed to add holiday.');
+    } finally {
+      setOfficeCalendarHolidayBusy(false);
+    }
+  }
+
+  async function handleDeleteOfficeHoliday(id) {
+    setOfficeCalendarHolidayBusy(true);
+    setOfficeCalendarError('');
+    setOfficeCalendarMsg('');
+    try {
+      await deleteOfficeHoliday(id);
+      setOfficeCalendarHolidays((prev) => prev.filter((h) => h.id !== id));
+      setOfficeCalendarMsg('Holiday removed.');
+    } catch (err) {
+      setOfficeCalendarError(err.message || 'Failed to remove holiday.');
+    } finally {
+      setOfficeCalendarHolidayBusy(false);
+    }
+  }
 
   useEffect(() => {
     if (tab !== 'billing') return;
@@ -1872,6 +1974,138 @@ export default function Settings() {
           <div style={{ fontSize:40, marginBottom:12 }}>🚧</div>
           <div style={{ fontWeight:700, fontSize:16, color:'#1e293b' }}>Notifications Configuration</div>
           <div style={{ color:'#64748b', fontSize:13, marginTop:8 }}>This section will allow you to configure email and SMS notification templates and triggers.</div>
+        </div>
+      )}
+
+      {tab==='office_calendar' && (
+        <div style={{ maxWidth: 720 }}>
+          <h2 style={{ margin:'0 0 4px 0', fontSize:18, fontWeight:700, color:'#1e293b' }}>📅 Office Calendar</h2>
+          <p style={{ margin:'0 0 20px 0', fontSize:13, color:'#64748b' }}>
+            Configure days when the office is closed. Shift target reports and daily timesheet emails skip these days when calculating expected punch hours.
+          </p>
+          {!canManageServiceCatalog && (
+            <p style={{ margin:'0 0 16px 0', fontSize:12, color:'#b45309' }}>Only administrators can change weekly off days or manage holidays.</p>
+          )}
+          {officeCalendarLoading && (
+            <div style={{ fontSize:13, color:'#64748b', marginBottom:16 }}>Loading…</div>
+          )}
+          {officeCalendarError && (
+            <div style={{ padding:12, background:'#fef2f2', border:'1px solid #fecaca', borderRadius:8, color:'#dc2626', fontSize:13, marginBottom:16 }}>{officeCalendarError}</div>
+          )}
+          {officeCalendarMsg && (
+            <div style={{ padding:12, background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, color:'#15803d', fontSize:13, marginBottom:16 }}>{officeCalendarMsg}</div>
+          )}
+          <div style={cardStyle}>
+            <h3 style={sectionTitle}>Weekly off days</h3>
+            <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>
+              Checked days are treated as non-working for shift targets. At least one working day must remain.
+            </p>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:10, marginBottom:16 }}>
+              {(officeCalendarWeekdayOptions.length ? officeCalendarWeekdayOptions : [
+                { value: 1, label: 'Sunday' },
+                { value: 2, label: 'Monday' },
+                { value: 4, label: 'Tuesday' },
+                { value: 8, label: 'Wednesday' },
+                { value: 16, label: 'Thursday' },
+                { value: 32, label: 'Friday' },
+                { value: 64, label: 'Saturday' },
+              ]).map((opt) => {
+                const checked = (officeCalendarWeeklyOff & opt.value) !== 0;
+                return (
+                  <label
+                    key={opt.value}
+                    style={{
+                      display:'flex', alignItems:'center', gap:8, cursor: canManageServiceCatalog ? 'pointer' : 'default',
+                      fontSize:13, color:'#334155', padding:'6px 12px', border:`1px solid ${checked ? '#2563eb' : '#e2e8f0'}`,
+                      borderRadius:8, background: checked ? '#eff6ff' : '#fff', userSelect:'none',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      disabled={!canManageServiceCatalog || officeCalendarSaving}
+                      onChange={() => toggleOfficeCalendarWeeklyOff(opt.value)}
+                      style={{ accentColor:'#2563eb' }}
+                    />
+                    {opt.label}
+                  </label>
+                );
+              })}
+            </div>
+            {canManageServiceCatalog && (
+              <button
+                type="button"
+                style={{ ...btnPrimary, opacity: officeCalendarSaving ? 0.7 : 1 }}
+                disabled={officeCalendarSaving}
+                onClick={saveOfficeCalendarWeeklyOff}
+              >
+                {officeCalendarSaving ? 'Saving…' : 'Save weekly off days'}
+              </button>
+            )}
+          </div>
+
+          <div style={{ ...cardStyle, marginTop:16 }}>
+            <h3 style={sectionTitle}>Public holidays</h3>
+            <p style={{ fontSize:13, color:'#64748b', margin:'-12px 0 16px 0' }}>
+              One-off closed dates (e.g. national holidays). These are excluded from shift target calculations on the listed dates.
+            </p>
+            {canManageServiceCatalog && (
+              <form onSubmit={handleAddOfficeHoliday} style={{ display:'flex', flexWrap:'wrap', gap:10, alignItems:'flex-end', marginBottom:16 }}>
+                <div>
+                  <label style={labelStyle}>Date</label>
+                  <input
+                    type="date"
+                    value={officeCalendarHolidayDate}
+                    onChange={(e) => setOfficeCalendarHolidayDate(e.target.value)}
+                    style={inputStyle}
+                    disabled={officeCalendarHolidayBusy}
+                  />
+                </div>
+                <div style={{ flex:1, minWidth:200 }}>
+                  <label style={labelStyle}>Name</label>
+                  <input
+                    value={officeCalendarHolidayName}
+                    onChange={(e) => setOfficeCalendarHolidayName(e.target.value)}
+                    placeholder="e.g. Independence Day"
+                    style={inputStyle}
+                    disabled={officeCalendarHolidayBusy}
+                  />
+                </div>
+                <button type="submit" style={{ ...btnPrimary, opacity: officeCalendarHolidayBusy ? 0.7 : 1 }} disabled={officeCalendarHolidayBusy}>
+                  Add holiday
+                </button>
+              </form>
+            )}
+            {officeCalendarHolidays.length === 0 ? (
+              <div style={{ fontSize:13, color:'#94a3b8' }}>No holidays configured.</div>
+            ) : (
+              <table style={tableStyle}>
+                <thead>
+                  <tr>{['Date', 'Name', ...(canManageServiceCatalog ? [''] : [])].map((h) => <th key={h || 'actions'} style={thStyle}>{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {officeCalendarHolidays.map((h) => (
+                    <tr key={h.id} style={trStyle}>
+                      <td style={{ ...tdStyle, fontFamily:'monospace' }}>{h.holiday_date}</td>
+                      <td style={tdStyle}>{h.name}</td>
+                      {canManageServiceCatalog && (
+                        <td style={tdStyle}>
+                          <button
+                            type="button"
+                            style={{ ...btnOutline, fontSize:12, padding:'4px 10px', color:'#dc2626', borderColor:'#fecaca' }}
+                            disabled={officeCalendarHolidayBusy}
+                            onClick={() => handleDeleteOfficeHoliday(h.id)}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       )}
 

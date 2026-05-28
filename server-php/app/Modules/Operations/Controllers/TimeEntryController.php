@@ -6,6 +6,7 @@ namespace App\Controllers\Admin;
 use App\Config\Auth as AuthConfig;
 use App\Config\Database;
 use App\Controllers\BaseController;
+use App\Libraries\OfficeWorkingDays;
 use App\Libraries\TimesheetEngagementCap;
 use App\Libraries\WorkHoldGate;
 use App\Libraries\BrevoMailer;
@@ -373,6 +374,7 @@ class TimeEntryController extends BaseController
         if ($dayCount > 366) {
             $this->error('Date range cannot exceed 366 days.', 422);
         }
+        $workingDayCount = OfficeWorkingDays::countWorkingDays(Database::getConnection(), $from, $to);
 
         $filterUserId = $this->resolveReportUserIdFilter(
             $actorUserId,
@@ -393,9 +395,11 @@ class TimeEntryController extends BaseController
 
         $this->success([
             'meta' => [
-                'date_from' => $from,
-                'date_to'   => $to,
-                'day_count' => $dayCount,
+                'date_from'          => $from,
+                'date_to'            => $to,
+                'day_count'          => $dayCount,
+                'calendar_day_count' => $dayCount,
+                'working_day_count'  => $workingDayCount,
             ],
             'rows' => $rows,
         ], 'Shift target timesheet report retrieved');

@@ -30,6 +30,9 @@ class PermissionAnyFilter
         }
 
         $permissions = $user['role_permissions_array'] ?? [];
+        if (!is_array($permissions)) {
+            $permissions = [];
+        }
         if (in_array('*', $permissions, true)) {
             return;
         }
