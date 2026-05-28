@@ -39,7 +39,8 @@ const navSections = [
   {
     label: 'FINANCE',
     items: [
-      { to: '/finance/invoices-banking', label: 'Invoices & Banking', icon: Layers },
+      { to: '/finance/invoices-banking', label: 'Invoices & Banking', icon: Layers, permission: 'invoices.view' },
+      { to: '/finance/bank-reports', label: 'Cash book', icon: Landmark, permission: 'cash_book.view', unlessPermission: 'invoices.view' },
       { to: '/finance/payout-cycles', label: 'Payout Cycles', icon: Wallet, anyOf: ['affiliates.manage', 'partners.manage'] },
     ],
   },
@@ -146,6 +147,7 @@ export default function Sidebar() {
       }
     }
     if (item.permission && !hasPermission(item.permission)) return null;
+    if (item.unlessPermission && hasPermission(item.unlessPermission)) return null;
     if (item.anyOf && !hasAnyPermission(item.anyOf)) return null;
 
     // Expandable parent with children

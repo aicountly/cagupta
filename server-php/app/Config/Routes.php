@@ -1361,7 +1361,7 @@ class Routes
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/firm-bank-accounts',
                 'handler'    => 'Admin\FirmBankAccountController@index',
-                'middleware' => ['auth', 'permission:invoices.view'],
+                'middleware' => ['auth', 'permission_any:invoices.view,cash_book.view'],
             ],
             [
                 'method'     => 'POST',
@@ -1373,7 +1373,7 @@ class Routes
                 'method'     => 'PUT',
                 'pattern'    => '/api/admin/firm-bank-accounts/:id',
                 'handler'    => 'Admin\FirmBankAccountController@update',
-                'middleware' => ['auth', 'permission_any:settings.view,invoices.edit'],
+                'middleware' => ['auth', 'permission_any:settings.view,invoices.edit,cash_book.edit'],
             ],
             [
                 'method'     => 'DELETE',
@@ -1491,13 +1491,13 @@ class Routes
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/bank-ledger',
                 'handler'    => 'Admin\TxnController@bankLedger',
-                'middleware' => ['auth', 'permission:invoices.view'],
+                'middleware' => ['auth', 'permission_any:invoices.view,cash_book.view'],
             ],
             [
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/firm-internal',
                 'handler'    => 'Admin\TxnController@firmInternal',
-                'middleware' => ['auth', 'permission:invoices.view'],
+                'middleware' => ['auth', 'permission_any:invoices.view,cash_book.view'],
             ],
             [
                 'method'     => 'GET',
@@ -1563,7 +1563,7 @@ class Routes
                 'method'     => 'POST',
                 'pattern'    => '/api/admin/txn',
                 'handler'    => 'Admin\TxnController@store',
-                'middleware' => ['auth', 'permission:invoices.create'],
+                'middleware' => ['auth', 'permission_any:invoices.create,cash_book.create'],
             ],
             [
                 'method'     => 'POST',
@@ -1629,13 +1629,13 @@ class Routes
                 'method'     => 'PUT',
                 'pattern'    => '/api/admin/txn/:id',
                 'handler'    => 'Admin\TxnController@update',
-                'middleware' => ['auth', 'permission:invoices.edit'],
+                'middleware' => ['auth', 'permission_any:invoices.edit,cash_book.edit'],
             ],
             [
                 'method'     => 'DELETE',
                 'pattern'    => '/api/admin/txn/:id',
                 'handler'    => 'Admin\TxnController@destroy',
-                'middleware' => ['auth', 'permission_any:invoices.edit,invoices.delete'],
+                'middleware' => ['auth', 'permission_any:invoices.edit,invoices.delete,cash_book.edit'],
             ],
 
             // ── Admin — Client Groups ─────────────────────────────────────────

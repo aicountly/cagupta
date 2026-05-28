@@ -114,17 +114,26 @@ final class LedgerTxnChangeService
             return null;
         }
 
-        $txnId = count($ids) === 1 ? $ids[0] : null;
-        if ($txnId !== null) {
-            $existing = (new LedgerTxnChangeRequestModel())->findPendingForTxn($txnId);
+        $txnId = self::resolveCancelAnchorTxnId($ids);
+        $model = new LedgerTxnChangeRequestModel();
+        foreach ($ids as $id) {
+            $existing = $model->findPendingForTxn($id);
             if ($existing !== null) {
                 return [
                     'type'    => 'blocked',
                     'summary' => LedgerTxnChangeRequestModel::toPendingSummary($existing),
                 ];
             }
-        } else {
-            $existing = (new LedgerTxnChangeRequestModel())->findPendingBulkCancel();
+            $existing = $model->findPendingCancelIncludingTxn($id);
+            if ($existing !== null) {
+                return [
+                    'type'    => 'blocked',
+                    'summary' => LedgerTxnChangeRequestModel::toPendingSummary($existing),
+                ];
+            }
+        }
+        if ($txnId === null && count($ids) > 1) {
+            $existing = $model->findPendingBulkCancel();
             if ($existing !== null) {
                 return [
                     'type'    => 'blocked',
@@ -147,11 +156,15 @@ final class LedgerTxnChangeService
             return null;
         }
 
+        $txnSnapshot = count($snapshots) === 1
+            ? $snapshots[0]
+            : ($txnId !== null && isset($snapshots[0]) ? $snapshots[0] : ['bulk' => $snapshots]);
+
         $approvalId = (new LedgerTxnChangeRequestModel())->insertPending(
             $txnId,
             LedgerTxnChangeRequestModel::ACTION_CANCEL,
             ['ids' => $ids],
-            count($snapshots) === 1 ? $snapshots[0] : ['bulk' => $snapshots],
+            $txnSnapshot,
             $actorId,
             ApprovalReason::normalize($requestReason)
         );
@@ -180,10 +193,35 @@ final class LedgerTxnChangeService
 
             return;
         }
-        $pending = (new LedgerTxnChangeRequestModel())->findPendingForTxn($id);
+        $model   = new LedgerTxnChangeRequestModel();
+        $pending = $model->findPendingForTxn($id);
+        if ($pending === null) {
+            $pending = $model->findPendingCancelIncludingTxn($id);
+        }
         $row['pending_ledger_change'] = $pending !== null
             ? LedgerTxnChangeRequestModel::toPendingSummary($pending)
             : null;
+    }
+
+    /**
+     * Out leg id for firm bank transfer pair cancels; single id or null for bulk.
+     *
+     * @param list<int> $ids
+     */
+    private static function resolveCancelAnchorTxnId(array $ids): ?int
+    {
+        if (count($ids) === 1) {
+            return $ids[0];
+        }
+        if (count($ids) === 2) {
+            $txnModel = new TxnModel();
+            $first    = $txnModel->find($ids[0]);
+            if ($first !== null && (string)($first['txn_type'] ?? '') === 'firm_bank_transfer') {
+                return $ids[0];
+            }
+        }
+
+        return null;
     }
 
     /**

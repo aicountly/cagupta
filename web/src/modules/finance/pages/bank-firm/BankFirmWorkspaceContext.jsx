@@ -20,9 +20,10 @@ const BankFirmWorkspaceContext = createContext(null);
 
 export function BankFirmWorkspaceProvider({ children }) {
   const { hasPermission } = useAuth();
+  const cashBookOnly = hasPermission('cash_book.view') && !hasPermission('invoices.view');
   const canSettings = hasPermission('settings.view');
-  const canEditOpeningBalance = hasPermission('invoices.edit');
-  const canEditFirmTxn = hasPermission('invoices.edit');
+  const canEditOpeningBalance = hasPermission('invoices.edit') || (cashBookOnly && hasPermission('cash_book.edit'));
+  const canEditFirmTxn = hasPermission('invoices.edit') || (cashBookOnly && hasPermission('cash_book.edit'));
 
   const [firmCode, setFirmCode] = useState('');
   const [accounts, setAccounts] = useState([]);
@@ -109,6 +110,11 @@ export function BankFirmWorkspaceProvider({ children }) {
   useEffect(() => {
     refreshAccounts();
   }, [refreshAccounts]);
+
+  const visibleAccounts = useMemo(
+    () => (cashBookOnly ? accounts.filter((a) => a.accountType === 'cash') : accounts),
+    [accounts, cashBookOnly],
+  );
 
   useEffect(() => {
     if (!interFromFirm) {
@@ -475,12 +481,13 @@ export function BankFirmWorkspaceProvider({ children }) {
 
   const value = useMemo(
     () => ({
+      cashBookOnly,
       canSettings,
       canEditOpeningBalance,
       canEditFirmTxn,
       firmCode,
       setFirmCode,
-      accounts,
+      accounts: visibleAccounts,
       loading,
       msg,
       flash,
@@ -590,11 +597,12 @@ export function BankFirmWorkspaceProvider({ children }) {
       saveEditOpeningBalance,
     }),
     [
+      cashBookOnly,
       canSettings,
       canEditOpeningBalance,
       canEditFirmTxn,
       firmCode,
-      accounts,
+      visibleAccounts,
       loading,
       msg,
       flash,

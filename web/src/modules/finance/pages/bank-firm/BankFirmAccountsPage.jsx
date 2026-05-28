@@ -25,6 +25,7 @@ const btnEdit = {
 
 export default function BankFirmAccountsPage() {
   const {
+    cashBookOnly,
     canSettings,
     canEditOpeningBalance,
     firmCode,
@@ -61,7 +62,7 @@ export default function BankFirmAccountsPage() {
     <>
       <div style={sectionCard}>
         <div style={sectionHeader}>
-          <span style={sectionTitle}>Firm accounts</span>
+          <span style={sectionTitle}>{cashBookOnly ? 'Cash accounts' : 'Firm accounts'}</span>
         </div>
         <div style={{ padding: 20 }}>
           {!firmCode && (
@@ -133,9 +134,11 @@ export default function BankFirmAccountsPage() {
             </div>
           )}
           {firmCode && accounts.length === 0 && !loading && (
-            <div style={{ fontSize: 13, color: '#94a3b8' }}>No accounts found for this firm.</div>
+            <div style={{ fontSize: 13, color: '#94a3b8' }}>
+              {cashBookOnly ? 'No cash accounts found for this firm.' : 'No accounts found for this firm.'}
+            </div>
           )}
-          {canSettings && firmCode && (
+          {canSettings && !cashBookOnly && firmCode && (
             <form
               onSubmit={addAccount}
               style={{

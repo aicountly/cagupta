@@ -103,13 +103,13 @@ export default function Leads() {
     try {
       const qs = await getLeadQuotations(lead.id);
       let engId = lead.engagementTypeId || null;
-      const draft = qs.find(q => q.status === 'draft');
-      if (draft) {
-        setQuoteEditId(draft.id);
-        setQuoteSnapshot(normalizeSnapshot(draft.pricing_snapshot, draft.price));
-        setQuoteDocs(Array.isArray(draft.documents_required) ? draft.documents_required.join('\n') : '');
-        setQuoteStatus(draft.status);
-        setQuoteEngId(draft.engagement_type_id || engId);
+      const existing = qs.find(q => q.status === 'draft') ?? qs[0] ?? null;
+      if (existing) {
+        setQuoteEditId(existing.id);
+        setQuoteSnapshot(normalizeSnapshot(existing.pricing_snapshot, existing.price));
+        setQuoteDocs(Array.isArray(existing.documents_required) ? existing.documents_required.join('\n') : '');
+        setQuoteStatus(existing.status);
+        setQuoteEngId(existing.engagement_type_id || engId);
       } else {
         setQuoteEditId(null);
         setQuoteEngId(engId);

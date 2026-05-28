@@ -9,6 +9,7 @@ use App\Config\Database;
 use App\Libraries\BillSettlementReportBuilder;
 use App\Controllers\BaseController;
 use App\Libraries\BrevoMailer;
+use App\Libraries\CashBookAccess;
 use App\Libraries\CommissionSyncService;
 use App\Libraries\GstInvoiceTax;
 use App\Libraries\InvoiceCostAnalysis;
@@ -111,6 +112,17 @@ class TxnController extends BaseController
         }
 
         $actingUser = $this->authUser();
+        $typeScopeErr = CashBookAccess::assertAllowedFirmTxnType($actingUser, $txnType);
+        if ($typeScopeErr !== null) {
+            $this->error($typeScopeErr, 403);
+        }
+        if (CashBookAccess::isCashBookOnlyUser($actingUser) && in_array($txnType, ['firm_expense', 'firm_inflow', 'firm_bank_transfer'], true)) {
+            $cashErr = CashBookAccess::assertFirmCreateBodyCashAccounts($txnType, $body);
+            if ($cashErr !== null) {
+                $this->error($cashErr, 403);
+            }
+        }
+
         $createdBy  = $actingUser ? (int)$actingUser['id'] : null;
 
         $body['created_by'] = $createdBy;
@@ -609,8 +621,13 @@ class TxnController extends BaseController
 
         $body = $this->getJsonBody();
         $actingUser = $this->authUser();
-        $actorId    = $actingUser ? (int)$actingUser['id'] : null;
         $type = (string)($row['txn_type'] ?? '');
+        $scopeErr = CashBookAccess::enforceCashBookScopeForTxn($actingUser, $row, 'update');
+        if ($scopeErr !== null) {
+            $this->error($scopeErr, 403);
+        }
+        $this->enforceCashBookScopeForFirmUpdateBody($actingUser, $type, $row, $body);
+        $actorId    = $actingUser ? (int)$actingUser['id'] : null;
         if ($this->txnRequiresTeamApproval($type) && !$this->isSuperAdminActor($actingUser)) {
             $queueBody = $this->normalizeFirmUpdatePayloadForQueue($row, $body);
             $intercept = LedgerTxnChangeService::queueUpdate($id, $queueBody, $actingUser);
@@ -661,6 +678,32 @@ class TxnController extends BaseController
             $this->notifyAdminsInvoiceChange('updated', $row, $updated, $this->authUser());
         }
         $this->success($updated, 'Transaction updated');
+    }
+
+    /**
+     * @param array<string, mixed>|null $user
+     * @param array<string, mixed>      $row
+     * @param array<string, mixed>      $body
+     */
+    private function enforceCashBookScopeForFirmUpdateBody(?array $user, string $type, array $row, array $body): void
+    {
+        if (!CashBookAccess::isCashBookOnlyUser($user)) {
+            return;
+        }
+        if (!in_array($type, ['firm_expense', 'firm_inflow', 'firm_bank_transfer'], true)) {
+            return;
+        }
+        if ($type === 'firm_bank_transfer') {
+            $from = (int)($body['firm_bank_account_id'] ?? $body['from_firm_bank_account_id'] ?? $row['firm_bank_account_id'] ?? 0);
+            $to   = (int)($body['counterparty_firm_bank_account_id'] ?? $body['to_firm_bank_account_id'] ?? $row['counterparty_firm_bank_account_id'] ?? 0);
+            $err  = CashBookAccess::assertCashTransferPair($from, $to);
+        } else {
+            $bankId = (int)($body['firm_bank_account_id'] ?? $row['firm_bank_account_id'] ?? 0);
+            $err    = CashBookAccess::assertCashAccountId($bankId);
+        }
+        if ($err !== null) {
+            $this->error($err, 403);
+        }
     }
 
     /** @return list<string> */
@@ -1368,6 +1411,11 @@ class TxnController extends BaseController
                 422
             );
         }
+        $actingUser = $this->authUser();
+        $scopeErr = CashBookAccess::enforceCashBookScopeForTxn($actingUser, $row, 'delete');
+        if ($scopeErr !== null) {
+            $this->error($scopeErr, 403);
+        }
         $cashMirrorOnly = [
             TxnModel::TXN_TYPE_RECEIPT_BANK_LEG,
             TxnModel::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
@@ -1410,8 +1458,8 @@ class TxnController extends BaseController
         }
 
         if ($this->txnRequiresFirmTeamApproval($type)) {
-            if (!$this->userHasPermission($this->authUser(), 'invoices.edit')) {
-                $this->error('Access denied. Required permission: invoices.edit.', 403);
+            if (!CashBookAccess::canEdit($this->authUser())) {
+                $this->error('Access denied. Required permission: invoices.edit or cash_book.edit.', 403);
             }
             $acting    = $this->authUser();
             $cancelIds = $this->expandCancelIdsForFirmRow($id, $row);
@@ -2697,6 +2745,12 @@ class TxnController extends BaseController
         if ($aid <= 0) {
             $this->error('firm_bank_account_id is required.', 422);
         }
+        if (CashBookAccess::isCashBookOnlyUser($this->authUser())) {
+            $cashErr = CashBookAccess::assertCashAccountId($aid);
+            if ($cashErr !== null) {
+                $this->error($cashErr, 403);
+            }
+        }
         $df = trim((string)$this->query('date_from', ''));
         $dt = trim((string)$this->query('date_to', ''));
         $rows = $this->txn->getBankLedger($aid, $df, $dt);
@@ -2713,7 +2767,8 @@ class TxnController extends BaseController
         $kind    = trim((string)$this->query('kind', 'all'));
         $df      = trim((string)$this->query('date_from', ''));
         $dt      = trim((string)$this->query('date_to', ''));
-        $res = $this->txn->paginateFirmInternal($page, $perPage, $kind, $df, $dt);
+        $cashOnly = CashBookAccess::isCashBookOnlyUser($this->authUser());
+        $res = $this->txn->paginateFirmInternal($page, $perPage, $kind, $df, $dt, $cashOnly);
         foreach ($res['rows'] as &$firmRow) {
             LedgerTxnChangeService::attachPendingToTxnRow($firmRow);
         }

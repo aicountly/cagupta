@@ -27,6 +27,7 @@ const tabs = [
 /** Shell expects `BankFirmWorkspaceProvider` as an ancestor. Renders `<Outlet />` below workspace chrome. */
 export default function BankFirmShell() {
   const {
+    cashBookOnly,
     accounts,
     firmCode,
     setFirmCode,
@@ -38,6 +39,9 @@ export default function BankFirmShell() {
   } = useBankFirmWorkspace();
 
   const profiles = getBillingProfiles();
+  const shellTabs = cashBookOnly
+    ? tabs.map((t) => (t.label === 'Bank ledger' ? { ...t, label: 'Cash ledger' } : t))
+    : tabs;
 
   return (
     <div style={pageWrap}>
@@ -65,9 +69,13 @@ export default function BankFirmShell() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <div style={iconWrap}><Landmark size={20} color="var(--portal-primary)" /></div>
           <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>Bank & Firm Transactions</h1>
+            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: '#0B1F3B' }}>
+              {cashBookOnly ? 'Cash book' : 'Bank & Firm Transactions'}
+            </h1>
             <p style={{ margin: '3px 0 0', fontSize: 13, color: '#64748b' }}>
-              Manage bank/cash accounts, view ledgers, record transfers, firm expenses and inflows
+              {cashBookOnly
+                ? 'Manage counter cash and petty cash — view ledgers, record expenses, inflows, and transfers'
+                : 'Manage bank/cash accounts, view ledgers, record transfers, firm expenses and inflows'}
             </p>
           </div>
         </div>
@@ -113,7 +121,7 @@ export default function BankFirmShell() {
           zIndex: 2,
         }}
       >
-        {tabs.map((t) => (
+        {shellTabs.map((t) => (
           <NavLink
             key={t.to}
             to={t.to}

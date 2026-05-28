@@ -379,7 +379,9 @@ export default function BankFirmReportPage() {
           </p>
           {deleteTxnRow.txnType === 'firm_bank_transfer' && (
             <p style={{ margin: '0 0 8px', fontSize: 12, color: '#64748b' }}>
-              Both legs of this transfer will be cancelled together after Super Admin approval (if required).
+              Both legs of this{' '}
+              {deleteTxnRow.transferScope === 'inter' ? 'inter-firm' : 'intra-firm'} transfer will be
+              cancelled together. Your request will be sent to Super Admin Team Approvals for review.
             </p>
           )}
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#475569' }}>

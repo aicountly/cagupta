@@ -92,6 +92,40 @@ final class LedgerTxnChangeRequestModel
         return $row ?: null;
     }
 
+    /**
+     * Pending cancel anchored on txn_id or listing this id in payload.ids (transfer pair in-leg).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function findPendingCancelIncludingTxn(int $txnId): ?array
+    {
+        if ($txnId <= 0) {
+            return null;
+        }
+
+        $stmt = $this->db->prepare(
+            "SELECT * FROM ledger_txn_change_requests
+             WHERE status = 'pending'
+               AND action = :action
+               AND (
+                 txn_id = :tid
+                 OR (
+                   payload ? 'ids'
+                   AND (payload->'ids') @> CAST(:idarr AS jsonb)
+                 )
+               )
+             ORDER BY id DESC LIMIT 1"
+        );
+        $stmt->execute([
+            ':action' => self::ACTION_CANCEL,
+            ':tid'    => $txnId,
+            ':idarr'  => json_encode([$txnId], JSON_THROW_ON_ERROR),
+        ]);
+        $row = $stmt->fetch();
+
+        return $row ?: null;
+    }
+
     /** @return array<int, array<string, mixed>> */
     public function listPendingWithDetails(): array
     {

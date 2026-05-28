@@ -2445,7 +2445,8 @@ class TxnModel
         int $perPage,
         string $kind,
         string $dateFrom,
-        string $dateTo
+        string $dateTo,
+        bool $cashAccountsOnly = false
     ): array {
         $where  = ["t.status = 'active'", "t.client_id IS NULL", "t.organization_id IS NULL"];
         $params = [];
@@ -2482,6 +2483,10 @@ class TxnModel
         if ($dateTo !== '') {
             $where[]       = 't.txn_date <= :dt';
             $params[':dt'] = $dateTo;
+        }
+        if ($cashAccountsOnly) {
+            $where[] = "fba.account_type = 'cash'";
+            $where[] = "(cpa.id IS NULL OR cpa.account_type = 'cash')";
         }
         $whereClause = implode(' AND ', $where);
         $offset      = ($page - 1) * $perPage;

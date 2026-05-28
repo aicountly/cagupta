@@ -93,6 +93,7 @@ export const PERMISSIONS = {
     'calendar.view', 'calendar.create',
     'chat.use',
     'client.chat.manage',
+    'cash_book.view', 'cash_book.create', 'cash_book.edit',
   ],
   viewer: [
     'dashboard.view',

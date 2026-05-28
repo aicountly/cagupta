@@ -7,7 +7,7 @@ const HUB_SECTIONS = [
     id: 'invoices',
     label: 'Invoices & Ledger',
     description: 'Client billing, payment tracking, and financial ledger',
-    permission: null,
+    permission: 'invoices.view',
     tools: [
       {
         id: 'invoices',
@@ -22,6 +22,21 @@ const HUB_SECTIONS = [
         description: 'View client ledger, bill-by-bill settlement, and recovery list.',
         icon: BookOpen,
         to: '/invoices/ledgers',
+      },
+    ],
+  },
+  {
+    id: 'cash-book',
+    label: 'Cash book',
+    description: 'Counter cash and petty cash day book (cash accounts only)',
+    permission: 'cash_book.view',
+    tools: [
+      {
+        id: 'cash-book',
+        label: 'Cash book',
+        description: 'View cash accounts, record expenses and inflows, transfers between cash accounts, and day-book reports.',
+        icon: Landmark,
+        to: '/finance/bank-reports',
       },
     ],
   },

@@ -50,6 +50,9 @@ function registerDeleteBlockedReason(key) {
 // ── Available permission modules ─────────────────────────────────────────────
 const PERMISSION_LABELS = {
   'services.assignees.manage': 'Manage Assignees',
+  'cash_book.view': 'View cash book',
+  'cash_book.create': 'Record cash transactions',
+  'cash_book.edit': 'Edit cash book entries',
 };
 
 const PERMISSION_GROUPS = [
@@ -58,6 +61,7 @@ const PERMISSION_GROUPS = [
   { group: 'Services',    keys: ['services.view', 'services.create', 'services.edit', 'services.delete', 'services.assignees.manage'] },
   { group: 'Documents',   keys: ['documents.view', 'documents.upload'] },
   { group: 'Invoices',    keys: ['invoices.view', 'invoices.create', 'invoices.edit', 'invoices.delete'] },
+  { group: 'Cash book',   keys: ['cash_book.view', 'cash_book.create', 'cash_book.edit'] },
   { group: 'Calendar',    keys: ['calendar.view', 'calendar.create'] },
   { group: 'Credentials', keys: ['credentials.view'] },
   { group: 'Registers',   keys: ['registers.view'] },

@@ -255,11 +255,11 @@ export default function App() {
           <Route path="/documents" element={<ProtectedRoute staffOnly><Layout routePath="/documents"><Documents /></Layout></ProtectedRoute>} />
           <Route path="/invoices" element={<ProtectedRoute staffOnly><Layout routePath="/invoices"><Invoices /></Layout></ProtectedRoute>} />
           <Route path="/invoices/ledgers" element={<ProtectedRoute staffOnly><Layout routePath="/invoices/ledgers"><Invoices ledgerOnly /></Layout></ProtectedRoute>} />
-          <Route path="/finance/invoices-banking" element={<ProtectedRoute staffOnly><Layout routePath="/finance/invoices-banking"><InvoicesBankingHub /></Layout></ProtectedRoute>} />
+          <Route path="/finance/invoices-banking" element={<ProtectedRoute staffOnly requiredPermission="invoices.view"><Layout routePath="/finance/invoices-banking"><InvoicesBankingHub /></Layout></ProtectedRoute>} />
           <Route
             path="/finance/bank-reports"
             element={(
-              <ProtectedRoute staffOnly requiredPermission="invoices.view">
+              <ProtectedRoute staffOnly requiredAnyPermissions={['invoices.view', 'cash_book.view']}>
                 <Layout routePath="/finance/bank-reports">
                   <BankFirmWorkspaceProvider>
                     <BankFirmShell />

@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
+use App\Libraries\CashBookAccess;
 use App\Models\FirmBankAccountModel;
 
 final class FirmBankAccountController extends BaseController
@@ -23,6 +24,9 @@ final class FirmBankAccountController extends BaseController
             $rows = $this->model->listByFirmCode($code, false);
         } else {
             $rows = $this->model->all();
+        }
+        if (CashBookAccess::isCashBookOnlyUser($this->authUser())) {
+            $rows = CashBookAccess::filterCashAccounts($rows);
         }
         $this->success(array_map([self::class, 'toApi'], $rows));
     }
@@ -66,6 +70,15 @@ final class FirmBankAccountController extends BaseController
         }
         $body = $this->getJsonBody();
         if (!$this->canManageFirmBankAccounts()) {
+            if (CashBookAccess::isCashBookOnlyUser($this->authUser())) {
+                $cashErr = CashBookAccess::assertCashAccountId($id);
+                if ($cashErr !== null) {
+                    $this->error($cashErr, 403);
+                }
+                if (!CashBookAccess::canEdit($this->authUser())) {
+                    $this->error('Access denied. Required permission: cash_book.edit.', 403);
+                }
+            }
             $body = $this->openingBalanceOnlyBody($body, $existing);
             if ($body === []) {
                 $this->error('Access denied. You may only update opening balance.', 403);
