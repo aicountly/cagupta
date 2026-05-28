@@ -27,6 +27,7 @@ export default function BankFirmInterTransferPage() {
     interNote,
     setInterNote,
     submitInterXfer,
+    xferSubmitting,
   } = useBankFirmWorkspace();
 
   const profiles = getBillingProfiles();
@@ -116,8 +117,12 @@ export default function BankFirmInterTransferPage() {
           />
           <input style={inputStyle} type="date" value={interDate} onChange={(e) => setInterDate(e.target.value)} required />
           <input style={inputStyle} placeholder="Narration" value={interNote} onChange={(e) => setInterNote(e.target.value)} />
-          <button type="submit" style={{ ...btnPrimary, opacity: canSubmit ? 1 : 0.6 }} disabled={!canSubmit}>
-            Save transfer
+          <button
+            type="submit"
+            style={{ ...btnPrimary, opacity: canSubmit && !xferSubmitting ? 1 : 0.6 }}
+            disabled={!canSubmit || xferSubmitting}
+          >
+            {xferSubmitting ? 'Saving…' : 'Save transfer'}
           </button>
         </form>
       </div>

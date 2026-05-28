@@ -82,6 +82,7 @@ export function BankFirmWorkspaceProvider({ children }) {
   const [xferAmt, setXferAmt] = useState('');
   const [xferDate, setXferDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [xferNote, setXferNote] = useState('');
+  const [xferSubmitting, setXferSubmitting] = useState(false);
 
   const [interFromFirm, setInterFromFirm] = useState('');
   const [interToFirm, setInterToFirm] = useState('');
@@ -132,20 +133,22 @@ export function BankFirmWorkspaceProvider({ children }) {
     setTimeout(() => setMsg({ text: '', type: '' }), 5000);
   }, []);
 
-  const refreshAccounts = useCallback(async () => {
+  const refreshAccounts = useCallback(async ({ silent = false } = {}) => {
     if (!firmCode) {
       setAccounts([]);
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const rows = await listFirmBankAccounts(firmCode);
       setAccounts(Array.isArray(rows) ? rows : []);
     } catch (e) {
-      flash(e.message || 'Failed to load accounts', 'error');
-      setAccounts([]);
+      if (!silent) {
+        flash(e.message || 'Failed to load accounts', 'error');
+        setAccounts([]);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [firmCode, flash]);
 
@@ -286,25 +289,34 @@ export function BankFirmWorkspaceProvider({ children }) {
     loadLedger,
   ]);
 
-  const loadReport = useCallback(async () => {
+  const loadReport = useCallback(async ({ silent = false } = {}) => {
     try {
       const { rows } = await getFirmInternalTxns({ kind: reportKind, perPage: 100 });
       setReportRows(rows || []);
     } catch (e) {
-      flash(e.message || 'Report failed', 'error');
+      if (!silent) flash(e.message || 'Report failed', 'error');
     }
   }, [reportKind, flash]);
 
+  const refreshAfterFirmTxn = useCallback(() => {
+    void refreshAccounts({ silent: true });
+    void loadReport({ silent: true });
+  }, [refreshAccounts, loadReport]);
+
   const submitXfer = useCallback(async (e) => {
     e.preventDefault();
+    if (xferSubmitting) return;
     const fromId = parseInt(xferFrom, 10);
     const toId = parseInt(xferTo, 10);
     const fromAcct = accounts.find((a) => Number(a.id) === fromId);
     const toAcct = accounts.find((a) => Number(a.id) === toId);
-    if (fromAcct && toAcct && fromAcct.billingFirmCode !== toAcct.billingFirmCode) {
+    const firmFrom = fromAcct?.billingFirmCode || fromAcct?.billing_firm_code;
+    const firmTo = toAcct?.billingFirmCode || toAcct?.billing_firm_code;
+    if (fromAcct && toAcct && firmFrom && firmTo && firmFrom !== firmTo) {
       flash('Intra transfer requires both accounts in the same billing firm.', 'error');
       return;
     }
+    setXferSubmitting(true);
     try {
       await createFirmBankTransfer({
         fromFirmBankAccountId: fromId,
@@ -317,15 +329,17 @@ export function BankFirmWorkspaceProvider({ children }) {
       flash('Transfer recorded successfully', 'success');
       setXferAmt('');
       setXferNote('');
-      refreshAccounts();
-      loadReport();
+      refreshAfterFirmTxn();
     } catch (err) {
       flash(err.message || 'Transfer failed', 'error');
+    } finally {
+      setXferSubmitting(false);
     }
-  }, [xferFrom, xferTo, xferAmt, xferDate, xferNote, accounts, flash, refreshAccounts, loadReport]);
+  }, [xferSubmitting, xferFrom, xferTo, xferAmt, xferDate, xferNote, accounts, flash, refreshAfterFirmTxn]);
 
   const submitInterXfer = useCallback(async (e) => {
     e.preventDefault();
+    if (xferSubmitting) return;
     if (interFromFirm === interToFirm) {
       flash('Inter transfer requires different billing firms on each side.', 'error');
       return;
@@ -336,6 +350,7 @@ export function BankFirmWorkspaceProvider({ children }) {
       flash('From and to accounts must differ.', 'error');
       return;
     }
+    setXferSubmitting(true);
     try {
       await createFirmBankTransfer({
         fromFirmBankAccountId: fromId,
@@ -348,12 +363,13 @@ export function BankFirmWorkspaceProvider({ children }) {
       flash('Inter-firm transfer recorded successfully', 'success');
       setInterAmt('');
       setInterNote('');
-      refreshAccounts();
-      loadReport();
+      refreshAfterFirmTxn();
     } catch (err) {
       flash(err.message || 'Transfer failed', 'error');
+    } finally {
+      setXferSubmitting(false);
     }
-  }, [interFromFirm, interToFirm, interFromAcct, interToAcct, interAmt, interDate, interNote, flash, refreshAccounts, loadReport]);
+  }, [xferSubmitting, interFromFirm, interToFirm, interFromAcct, interToAcct, interAmt, interDate, interNote, flash, refreshAfterFirmTxn]);
 
   const submitExp = useCallback(async (e) => {
     e.preventDefault();
@@ -621,6 +637,7 @@ export function BankFirmWorkspaceProvider({ children }) {
       setXferDate,
       xferNote,
       setXferNote,
+      xferSubmitting,
       submitXfer,
       interFromFirm,
       setInterFromFirm,
@@ -732,6 +749,7 @@ export function BankFirmWorkspaceProvider({ children }) {
       xferAmt,
       xferDate,
       xferNote,
+      xferSubmitting,
       submitXfer,
       interFromFirm,
       interToFirm,

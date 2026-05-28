@@ -17,6 +17,7 @@ export default function BankFirmTransferPage() {
     xferNote,
     setXferNote,
     submitXfer,
+    xferSubmitting,
   } = useBankFirmWorkspace();
 
   return (
@@ -62,8 +63,8 @@ export default function BankFirmTransferPage() {
             />
             <input style={inputStyle} type="date" value={xferDate} onChange={(e) => setXferDate(e.target.value)} required />
             <input style={inputStyle} placeholder="Narration" value={xferNote} onChange={(e) => setXferNote(e.target.value)} />
-            <button type="submit" style={btnPrimary}>
-              Save transfer
+            <button type="submit" style={{ ...btnPrimary, opacity: xferSubmitting ? 0.7 : 1 }} disabled={xferSubmitting}>
+              {xferSubmitting ? 'Saving…' : 'Save transfer'}
             </button>
           </form>
         )}

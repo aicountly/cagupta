@@ -755,6 +755,7 @@ export async function createFirmBankTransfer(payload) {
   const res = await fetch(`${API_BASE}/admin/txn`, {
     method: 'POST',
     headers: authHeaders(),
+    signal: AbortSignal.timeout(60000),
     body: JSON.stringify({
       txn_type: 'firm_bank_transfer',
       from_firm_bank_account_id: payload.fromFirmBankAccountId,

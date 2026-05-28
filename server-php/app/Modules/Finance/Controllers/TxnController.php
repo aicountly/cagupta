@@ -371,8 +371,8 @@ class TxnController extends BaseController
                     $this->recordTxnCreated((int)$ids['out_id'], $createdBy);
                     $this->recordTxnCreated((int)$ids['in_id'], $createdBy);
                     $this->success([
-                        'out' => $this->txn->find($ids['out_id']),
-                        'in'  => $this->txn->find($ids['in_id']),
+                        'out_id' => (int)$ids['out_id'],
+                        'in_id'  => (int)$ids['in_id'],
                     ], 'Transfer recorded', 201);
                 } catch (\InvalidArgumentException $e) {
                     $this->error($e->getMessage(), 422);
