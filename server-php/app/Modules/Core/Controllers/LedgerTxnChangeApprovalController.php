@@ -7,6 +7,7 @@ use App\Controllers\BaseController;
 use App\Libraries\ApprovalDecisionNotifier;
 use App\Libraries\ApprovalPendingNotificationDismisser;
 use App\Libraries\LedgerTxnChangeService;
+use App\Models\AdminAuditLogModel;
 use App\Models\LedgerTxnChangeRequestModel;
 
 /**
@@ -110,6 +111,27 @@ final class LedgerTxnChangeApprovalController extends BaseController
         }
 
         $model->markRejected($id, $actorId, $reason);
+
+        $txnId = (int)($row['txn_id'] ?? 0);
+        if ($txnId > 0) {
+            try {
+                (new AdminAuditLogModel())->insert(
+                    $actorId,
+                    'txn.change_rejected',
+                    'txn',
+                    $txnId,
+                    [
+                        'approval_id' => $id,
+                        'action'      => (string)($row['action'] ?? ''),
+                        'reason'      => $reason,
+                    ],
+                    null,
+                    null
+                );
+            } catch (\Throwable $e) {
+                error_log('[LedgerTxnChangeApprovalController] txn audit log failed: ' . $e->getMessage());
+            }
+        }
 
         $actionLabel = LedgerTxnChangeService::actionLabel((string)($row['action'] ?? ''));
         $summary     = 'Approval #' . $id . ' (' . $actionLabel . ') was rejected.';

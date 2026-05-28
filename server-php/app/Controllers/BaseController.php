@@ -121,4 +121,85 @@ abstract class BaseController
 
         return OtpService::verify((int)$super['id'], $otp);
     }
+
+    /**
+     * @param array<string, mixed>|null $actor
+     */
+    protected function userHasManageAll(?array $actor): bool
+    {
+        if ($actor === null) {
+            return false;
+        }
+        if ($this->isSuperAdminEmail((string)($actor['email'] ?? ''))) {
+            return true;
+        }
+        $list = $actor['role_permissions_array'] ?? [];
+        if (!is_array($list)) {
+            return false;
+        }
+
+        return in_array('users.manage', $list, true) || in_array('*', $list, true);
+    }
+
+    /**
+     * Resolve list/report visibility from optional user_id query (empty | numeric | "all").
+     *
+     * @return array{0: int, 1: bool, 2: bool, 3: ?int, 4: bool}
+     *         [actorUserId, isPrimarySuperAdmin, canViewTeam, scopeUserId, scopeAll]
+     */
+    protected function resolveServiceVisibilityContext(?string $userIdRaw = null): array
+    {
+        $actor = $this->authUser();
+        $actorUserId = $actor ? (int)($actor['id'] ?? 0) : 0;
+        if ($actorUserId <= 0) {
+            $this->error('Unauthorized.', 401);
+        }
+
+        $isPrimarySuperAdmin = $this->isSuperAdminEmail((string)($actor['email'] ?? ''));
+        $canViewTeam = $this->userHasManageAll($actor);
+
+        $raw = $userIdRaw !== null ? trim($userIdRaw) : '';
+        $scopeAll = strtolower($raw) === 'all';
+        $scopeUserId = null;
+
+        if ($raw !== '' && !$scopeAll) {
+            if (!ctype_digit($raw) || (int)$raw <= 0) {
+                $this->error('Invalid user_id.', 422);
+            }
+            $requestedId = (int)$raw;
+            if (!$canViewTeam && !$isPrimarySuperAdmin) {
+                if ($requestedId !== $actorUserId) {
+                    $this->error('You do not have permission to view other users\' data.', 403);
+                }
+            }
+            $scopeUserId = $requestedId;
+        } elseif ($scopeAll && !$canViewTeam && !$isPrimarySuperAdmin) {
+            $this->error('You do not have permission to view all users\' data.', 403);
+        }
+
+        return [$actorUserId, $isPrimarySuperAdmin, $canViewTeam, $scopeUserId, $scopeAll];
+    }
+
+    /**
+     * Effective time-entry user filter for reports (null = all users in range).
+     */
+    protected function resolveReportUserIdFilter(
+        int $actorUserId,
+        bool $isPrimarySuperAdmin,
+        bool $canViewTeam,
+        ?int $scopeUserId,
+        bool $scopeAll
+    ): ?int {
+        if ($scopeAll) {
+            return null;
+        }
+        if ($scopeUserId !== null && $scopeUserId > 0) {
+            return $scopeUserId;
+        }
+        if ($isPrimarySuperAdmin) {
+            return null;
+        }
+
+        return $actorUserId;
+    }
 }

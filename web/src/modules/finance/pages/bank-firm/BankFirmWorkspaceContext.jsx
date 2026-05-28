@@ -1,5 +1,5 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { useLocation } from 'react-router-dom';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../../../auth/AuthContext';
 import {
   listFirmBankAccounts,
@@ -25,8 +25,31 @@ function filterAccountsByScope(rows, scope) {
   return rows;
 }
 
+function readLedgerUrlParams() {
+  if (typeof window === 'undefined') {
+    return { firm: '', account: '', from: '', to: '' };
+  }
+  const sp = new URLSearchParams(window.location.search);
+  return {
+    firm: sp.get('firm') || '',
+    account: sp.get('account') || '',
+    from: sp.get('from') || '',
+    to: sp.get('to') || '',
+  };
+}
+
+function ledgerUrlParamsMatch(searchParams, { firm, account, from, to }) {
+  return (
+    (searchParams.get('firm') || '') === firm
+    && (searchParams.get('account') || '') === account
+    && (searchParams.get('from') || '') === from
+    && (searchParams.get('to') || '') === to
+  );
+}
+
 export function BankFirmWorkspaceProvider({ children }) {
   const { pathname } = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { hasPermission } = useAuth();
   const forceCashScope = pathname.startsWith('/finance/cash-book');
   const forceBankScope = pathname.startsWith('/finance/bank-reports');
@@ -39,14 +62,19 @@ export function BankFirmWorkspaceProvider({ children }) {
   const canEditOpeningBalance = hasPermission('invoices.edit') || (cashBookOnly && hasPermission('cash_book.edit'));
   const canEditFirmTxn = hasPermission('invoices.edit') || (cashBookOnly && hasPermission('cash_book.edit'));
 
-  const [firmCode, setFirmCode] = useState('');
+  const initialLedgerParams = useMemo(() => readLedgerUrlParams(), []);
+  const ledgerRestorePendingRef = useRef(
+    Boolean(initialLedgerParams.firm && initialLedgerParams.account),
+  );
+
+  const [firmCode, setFirmCode] = useState(() => initialLedgerParams.firm);
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ text: '', type: '' });
 
-  const [ledgerAccountId, setLedgerAccountId] = useState('');
-  const [ledgerFrom, setLedgerFrom] = useState('');
-  const [ledgerTo, setLedgerTo] = useState('');
+  const [ledgerAccountId, setLedgerAccountId] = useState(() => initialLedgerParams.account);
+  const [ledgerFrom, setLedgerFrom] = useState(() => initialLedgerParams.from);
+  const [ledgerTo, setLedgerTo] = useState(() => initialLedgerParams.to);
   const [ledgerRows, setLedgerRows] = useState([]);
 
   const [xferFrom, setXferFrom] = useState('');
@@ -124,6 +152,27 @@ export function BankFirmWorkspaceProvider({ children }) {
   useEffect(() => {
     refreshAccounts();
   }, [refreshAccounts]);
+
+  useEffect(() => {
+    const nextValues = {
+      firm: firmCode,
+      account: ledgerAccountId,
+      from: ledgerFrom,
+      to: ledgerTo,
+    };
+    if (ledgerUrlParamsMatch(searchParams, nextValues)) return undefined;
+    const next = new URLSearchParams(searchParams);
+    if (firmCode) next.set('firm', firmCode);
+    else next.delete('firm');
+    if (ledgerAccountId) next.set('account', ledgerAccountId);
+    else next.delete('account');
+    if (ledgerFrom) next.set('from', ledgerFrom);
+    else next.delete('from');
+    if (ledgerTo) next.set('to', ledgerTo);
+    else next.delete('to');
+    setSearchParams(next, { replace: true });
+    return undefined;
+  }, [firmCode, ledgerAccountId, ledgerFrom, ledgerTo, searchParams, setSearchParams]);
 
   const visibleAccounts = useMemo(
     () => filterAccountsByScope(accounts, accountScope),
@@ -203,6 +252,33 @@ export function BankFirmWorkspaceProvider({ children }) {
       flash(e.message || 'Ledger failed', 'error');
     }
   }, [ledgerAccountId, ledgerFrom, ledgerTo, flash]);
+
+  const onLedgerPage = pathname.endsWith('/ledger');
+
+  useEffect(() => {
+    if (!ledgerRestorePendingRef.current || !onLedgerPage) return undefined;
+    if (!firmCode || loading) return undefined;
+    const id = parseInt(ledgerAccountId, 10);
+    if (!id) {
+      ledgerRestorePendingRef.current = false;
+      return undefined;
+    }
+    const exists = visibleAccounts.some((a) => Number(a.id) === id);
+    if (!exists) {
+      ledgerRestorePendingRef.current = false;
+      return undefined;
+    }
+    ledgerRestorePendingRef.current = false;
+    loadLedger();
+    return undefined;
+  }, [
+    onLedgerPage,
+    firmCode,
+    loading,
+    ledgerAccountId,
+    visibleAccounts,
+    loadLedger,
+  ]);
 
   const loadReport = useCallback(async () => {
     try {

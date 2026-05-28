@@ -209,6 +209,10 @@ function addOptionalQuery(q, key, value) {
   if (value == null) return;
   const raw = String(value).trim();
   if (raw === '') return;
+  if (raw === 'all') {
+    q.set(key, 'all');
+    return;
+  }
   const n = Number(raw);
   if (Number.isFinite(n) && n > 0) {
     q.set(key, String(n));

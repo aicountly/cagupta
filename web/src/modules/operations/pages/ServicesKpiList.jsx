@@ -1,8 +1,9 @@
 ﻿import { useState, useEffect } from 'react';
-import { useNavigate, useParams, Navigate } from 'react-router-dom';
+import { useNavigate, useParams, Navigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Search } from 'lucide-react';
 import { getEngagementsWithMeta } from '../../../services/engagementService';
 import { useAuth } from '../../../auth/AuthContext';
+import { scopeUserIdToApiParam } from '../../../hooks/useTeamScopeOptions';
 import { isValidKpiSlug, kpiLabelFromSlug, localDateKey } from '../../../utils/serviceKpiFilters';
 import ListPaginationBar from '../../../components/common/ListPaginationBar';
 import ServicesEngagementTableBlock from '../../../components/services/ServicesEngagementTableBlock';
@@ -12,6 +13,8 @@ const PER_PAGE = 50;
 export default function ServicesKpiList() {
   const { kpiSlug } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const scopeUserIdApi = scopeUserIdToApiParam(searchParams.get('userId') || '');
   const { hasPermission } = useAuth();
   const canDeleteService = hasPermission('services.delete');
   const canEditService = hasPermission('services.edit');
@@ -40,6 +43,7 @@ export default function ServicesKpiList() {
       search,
       kpiSlug,
       asOf: localDateKey(new Date()),
+      userId: scopeUserIdApi,
     })
       .then(({ engagements, total, lastPage }) => {
         setPageServices(engagements);
@@ -52,7 +56,7 @@ export default function ServicesKpiList() {
         setTotalPages(1);
       })
       .finally(() => setLoading(false));
-  }, [kpiSlug, page, search]);
+  }, [kpiSlug, page, search, scopeUserIdApi]);
 
   if (!isValidKpiSlug(kpiSlug)) {
     return <Navigate to="/services" replace />;

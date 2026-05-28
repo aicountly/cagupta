@@ -248,16 +248,17 @@ class TimeEntryController extends BaseController
      */
     public function report(): never
     {
-        $requestedUserId = (int)$this->query('user_id', 0);
-        [$actorUserId, $isSuperAdmin, $scopeUserId] = $this->resolveServiceVisibilityContext(
-            $requestedUserId > 0 ? $requestedUserId : null
+        $userIdRaw = trim((string)$this->query('user_id', ''));
+        [$actorUserId, $isPrimarySuperAdmin, $canViewTeam, $scopeUserId, $scopeAll] = $this->resolveServiceVisibilityContext(
+            $userIdRaw !== '' ? $userIdRaw : null
         );
-        $uid = null;
-        if ($isSuperAdmin) {
-            $uid = $requestedUserId > 0 ? $requestedUserId : null;
-        } else {
-            $uid = $actorUserId;
-        }
+        $uid = $this->resolveReportUserIdFilter(
+            $actorUserId,
+            $isPrimarySuperAdmin,
+            $canViewTeam,
+            $scopeUserId,
+            $scopeAll
+        );
         $from  = trim((string)$this->query('date_from', ''));
         $to    = trim((string)$this->query('date_to', ''));
 
@@ -271,8 +272,10 @@ class TimeEntryController extends BaseController
                 $from,
                 $to,
                 $actorUserId,
-                $isSuperAdmin,
-                $scopeUserId
+                $isPrimarySuperAdmin,
+                $canViewTeam,
+                $scopeUserId,
+                $scopeAll
             );
             $this->success($rows, 'Time entry report retrieved');
         } catch (\Throwable $e) {
@@ -287,9 +290,9 @@ class TimeEntryController extends BaseController
 
     public function reportInsights(): never
     {
-        $requestedUserId = (int)$this->query('user_id', 0);
-        [$actorUserId, $isSuperAdmin, $scopeUserId] = $this->resolveServiceVisibilityContext(
-            $requestedUserId > 0 ? $requestedUserId : null
+        $userIdRaw = trim((string)$this->query('user_id', ''));
+        [$actorUserId, $isPrimarySuperAdmin, $canViewTeam, $scopeUserId, $scopeAll] = $this->resolveServiceVisibilityContext(
+            $userIdRaw !== '' ? $userIdRaw : null
         );
         $from = trim((string)$this->query('date_from', ''));
         $to = trim((string)$this->query('date_to', ''));
@@ -302,19 +305,29 @@ class TimeEntryController extends BaseController
         $billableRaw = strtolower(trim((string)$this->query('billable_type', 'all')));
         $billableType = in_array($billableRaw, ['all', 'billable', 'non_billable'], true) ? $billableRaw : 'all';
 
+        $reportUserId = $this->resolveReportUserIdFilter(
+            $actorUserId,
+            $isPrimarySuperAdmin,
+            $canViewTeam,
+            $scopeUserId,
+            $scopeAll
+        );
+
         $filters = [
             'date_from' => $from,
             'date_to' => $to,
             'bucket' => $bucket,
             'billable_type' => $billableType,
-            'user_id' => $isSuperAdmin ? $requestedUserId : $actorUserId,
+            'user_id' => $reportUserId ?? 0,
             'client_id' => (int)$this->query('client_id', 0),
             'organization_id' => (int)$this->query('organization_id', 0),
             'service_id' => (int)$this->query('service_id', 0),
             'group_id' => (int)$this->query('group_id', 0),
             'actor_user_id' => $actorUserId,
-            'is_super_admin' => $isSuperAdmin,
+            'is_primary_super_admin' => $isPrimarySuperAdmin,
+            'can_view_team' => $canViewTeam,
             'scope_user_id' => $scopeUserId,
+            'scope_all' => $scopeAll,
         ];
 
         try {
@@ -335,9 +348,9 @@ class TimeEntryController extends BaseController
      */
     public function shiftTargetReport(): never
     {
-        $requestedUserId = (int)$this->query('user_id', 0);
-        [$actorUserId, $isSuperAdmin, $scopeUserId] = $this->resolveServiceVisibilityContext(
-            $requestedUserId > 0 ? $requestedUserId : null
+        $userIdRaw = trim((string)$this->query('user_id', ''));
+        [$actorUserId, $isPrimarySuperAdmin, $canViewTeam, $scopeUserId, $scopeAll] = $this->resolveServiceVisibilityContext(
+            $userIdRaw !== '' ? $userIdRaw : null
         );
         $from = trim((string)$this->query('date_from', ''));
         $to = trim((string)$this->query('date_to', ''));
@@ -361,14 +374,13 @@ class TimeEntryController extends BaseController
             $this->error('Date range cannot exceed 366 days.', 422);
         }
 
-        $filterUserId = null;
-        if ($isSuperAdmin) {
-            if ($requestedUserId > 0) {
-                $filterUserId = $requestedUserId;
-            }
-        } else {
-            $filterUserId = $actorUserId;
-        }
+        $filterUserId = $this->resolveReportUserIdFilter(
+            $actorUserId,
+            $isPrimarySuperAdmin,
+            $canViewTeam,
+            $scopeUserId,
+            $scopeAll
+        );
 
         try {
             $rows = $this->entries->listShiftTargetSummaryForDateRange($from, $to, $filterUserId);
@@ -795,42 +807,5 @@ class TimeEntryController extends BaseController
         }
     }
 
-    /**
-     * @param array<string, mixed>|null $actor
-     */
-    private function userHasManageAll(?array $actor): bool
-    {
-        if ($actor === null) {
-            return false;
-        }
-        if ($this->isSuperAdminEmail((string)($actor['email'] ?? ''))) {
-            return true;
-        }
-        $list = $actor['role_permissions_array'] ?? [];
-        if (!is_array($list)) {
-            return false;
-        }
-
-        return in_array('users.manage', $list, true) || in_array('*', $list, true);
-    }
-
-    /**
-     * @return array{0: int, 1: bool, 2: ?int}
-     */
-    private function resolveServiceVisibilityContext(?int $requestedScopeUserId = null): array
-    {
-        $actor = $this->authUser();
-        $actorUserId = $actor ? (int)($actor['id'] ?? 0) : 0;
-        if ($actorUserId <= 0) {
-            $this->error('Unauthorized.', 401);
-        }
-        $isSuperAdmin = $this->isSuperAdminEmail((string)($actor['email'] ?? ''));
-        $scopeUserId = null;
-        if ($isSuperAdmin && $requestedScopeUserId !== null && $requestedScopeUserId > 0) {
-            $scopeUserId = $requestedScopeUserId;
-        }
-
-        return [$actorUserId, $isSuperAdmin, $scopeUserId];
-    }
 }
 

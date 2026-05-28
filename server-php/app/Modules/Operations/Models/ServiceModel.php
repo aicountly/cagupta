@@ -148,8 +148,10 @@ SQL;
         int    $clientId = 0,
         int    $orgId    = 0,
         ?int   $actorUserId = null,
-        bool   $isSuperAdmin = false,
+        bool   $isPrimarySuperAdmin = false,
+        bool   $canViewTeam = false,
         ?int   $scopeUserId = null,
+        bool   $scopeAll = false,
         string $kpiSlug = '',
         string $asOf = ''
     ): array {
@@ -178,7 +180,16 @@ SQL;
             $where[]              = 's.organization_id = :filter_org_id';
             $params[':filter_org_id'] = $orgId;
         }
-        $this->applyServiceVisibilityScope($where, $params, $actorUserId, $isSuperAdmin, $scopeUserId, 's');
+        $this->applyServiceVisibilityScope(
+            $where,
+            $params,
+            $actorUserId,
+            $isPrimarySuperAdmin,
+            $canViewTeam,
+            $scopeUserId,
+            $scopeAll,
+            's'
+        );
 
         $whereClause = implode(' AND ', $where);
         $offset      = ($page - 1) * $perPage;
@@ -304,14 +315,28 @@ SQL;
         array &$where,
         array &$params,
         ?int $actorUserId,
-        bool $isSuperAdmin,
+        bool $isPrimarySuperAdmin,
+        bool $canViewTeam,
         ?int $scopeUserId,
+        bool $scopeAll,
         string $serviceAlias = 's'
     ): void {
+        if ($scopeAll && ($isPrimarySuperAdmin || $canViewTeam)) {
+            return;
+        }
+
         $scopedUserId = null;
-        if ($isSuperAdmin) {
+        if ($isPrimarySuperAdmin) {
             if ($scopeUserId !== null && $scopeUserId > 0) {
                 $scopedUserId = $scopeUserId;
+            } else {
+                return;
+            }
+        } elseif ($canViewTeam) {
+            if ($scopeUserId !== null && $scopeUserId > 0) {
+                $scopedUserId = $scopeUserId;
+            } elseif ($actorUserId !== null && $actorUserId > 0) {
+                $scopedUserId = $actorUserId;
             }
         } elseif ($actorUserId !== null && $actorUserId > 0) {
             $scopedUserId = $actorUserId;
@@ -1241,8 +1266,10 @@ SQL;
     public function computeKpiSnapshot(
         string $asOfYmd,
         ?int $actorUserId = null,
-        bool $isSuperAdmin = false,
-        ?int $scopeUserId = null
+        bool $isPrimarySuperAdmin = false,
+        bool $canViewTeam = false,
+        ?int $scopeUserId = null,
+        bool $scopeAll = false
     ): array
     {
         $d = \DateTimeImmutable::createFromFormat('Y-m-d', $asOfYmd);
@@ -1267,8 +1294,10 @@ SQL;
             $scopeWhere,
             $scopeParams,
             $actorUserId,
-            $isSuperAdmin,
+            $isPrimarySuperAdmin,
+            $canViewTeam,
             $scopeUserId,
+            $scopeAll,
             'services'
         );
         $scopeSql = implode(' AND ', $scopeWhere);

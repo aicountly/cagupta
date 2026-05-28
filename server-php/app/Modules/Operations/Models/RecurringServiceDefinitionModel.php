@@ -578,7 +578,7 @@ class RecurringServiceDefinitionModel
     private static function sqlClientContactLabelSql(): string
     {
         return "COALESCE(NULLIF(TRIM(c.organization_name), ''), "
-            . "NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''), '')";
+            . "NULLIF(TRIM(CONCAT_WS(' ', c.first_name, c.last_name)), ''))";
     }
 
     /** "FY 2024-25" from any date */
@@ -597,7 +597,10 @@ class RecurringServiceDefinitionModel
                 rsd.*,
                 et.name                          AS engagement_type_name,
                 et.register_category             AS register_category,
-                COALESCE(" . self::sqlClientContactLabelSql() . ", o.name)         AS client_name,
+                COALESCE(
+                    NULLIF(TRIM(o.name), ''),
+                    " . self::sqlClientContactLabelSql() . "
+                ) AS client_name,
                 c.pan                            AS client_pan,
                 o.cin                            AS org_cin,
                 u.name                           AS created_by_name

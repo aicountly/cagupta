@@ -16,6 +16,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../../auth/AuthContext';
 import { useStaffUsers } from '../../../hooks/useStaffUsers';
+import { useTeamScopeOptions, scopeUserIdToApiParam } from '../../../hooks/useTeamScopeOptions';
 import { useTimesheetReportFilters } from '../../../hooks/useTimesheetReportFilters';
 import { getTimesheetInsights, TIME_ACTIVITY_TYPES } from '../services/timeEntryService';
 import DateRangeSelector from '../../../components/common/DateRangeSelector';
@@ -26,8 +27,17 @@ function fmtHours(mins) {
 }
 
 export default function TimesheetsReport() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
+  const canViewTeam = hasPermission('users.manage');
   const { staffUsers } = useStaffUsers();
+  const {
+    isPrimarySuperAdmin,
+    showScopeDropdown,
+    selectableUsers,
+    defaultOptionLabel,
+    allTeamOptionLabel,
+    allTeamOptionValue,
+  } = useTeamScopeOptions({ staffUsers, userEmail: user?.email, canViewTeam });
   const canView = hasPermission('services.view');
   const { filters, updateFilter, setPreset, resetFilters } = useTimesheetReportFilters();
   const navigate = useNavigate();
@@ -73,7 +83,7 @@ export default function TimesheetsReport() {
   useEffect(() => {
     if (!canView) return;
     getTimesheetInsights({
-      userId: filters.userId || undefined,
+      userId: scopeUserIdToApiParam(filters.userId),
       clientId: filters.clientId || undefined,
       organizationId: filters.organizationId || undefined,
       serviceId: filters.serviceId || undefined,
@@ -109,19 +119,24 @@ export default function TimesheetsReport() {
       </p>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end', marginBottom: 20 }}>
-        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#475569' }}>
-          User
-          <select
-            value={filters.userId}
-            onChange={(e) => updateFilter('userId', e.target.value)}
-            style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0', minWidth: 200, fontSize: 13 }}
-          >
-            <option value="">All users</option>
-            {staffUsers.map((s) => (
-              <option key={s.id} value={String(s.id)}>{s.name}</option>
-            ))}
-          </select>
-        </label>
+        {showScopeDropdown && (
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 12, fontWeight: 600, color: '#475569' }}>
+            User
+            <select
+              value={filters.userId}
+              onChange={(e) => updateFilter('userId', e.target.value)}
+              style={{ padding: '8px 10px', borderRadius: 8, border: '1px solid #e2e8f0', minWidth: 200, fontSize: 13 }}
+            >
+              <option value="">{defaultOptionLabel}</option>
+              {!isPrimarySuperAdmin && (
+                <option value={allTeamOptionValue}>{allTeamOptionLabel}</option>
+              )}
+              {selectableUsers.map((s) => (
+                <option key={s.id} value={String(s.id)}>{s.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <DateRangeSelector
           preset={filters.preset}
           onPresetChange={setPreset}

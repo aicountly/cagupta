@@ -1772,13 +1772,36 @@ class TxnController extends BaseController
         $body = $this->getJsonBody();
         $actorRowId = $acting ? (int)$acting['id'] : null;
 
+        $beforeParked = $this->txn->find($id);
+        if ($beforeParked === null) {
+            $this->error('Transaction not found.', 404);
+        }
+        $beforeSnap = $this->txnAuditCompactSnapshot($beforeParked);
+
         try {
             $result = $this->txn->assignParkedEntry($id, $body, $actorRowId);
         } catch (\InvalidArgumentException $e) {
             $this->error($e->getMessage(), 422);
         }
 
-        $original = $this->txn->find($id);
+        $afterParked = $this->txn->find($id);
+        $this->auditTxnLog(
+            $actorRowId,
+            'txn.updated',
+            $id,
+            [
+                'txn_type'    => (string)($beforeParked['txn_type'] ?? ''),
+                'via'         => 'parked_assign',
+                'reversal_id' => (int)$result['reversal_id'],
+                'target_id'   => (int)$result['target_id'],
+            ],
+            $beforeSnap,
+            $afterParked !== null ? $this->txnAuditCompactSnapshot($afterParked) : null
+        );
+        $this->recordTxnCreated((int)$result['reversal_id'], $actorRowId);
+        $this->recordTxnCreated((int)$result['target_id'], $actorRowId);
+
+        $original = $afterParked;
         if ($original !== null) {
             $this->txn->attachParkedTransferMeta($original);
         }
@@ -2582,6 +2605,7 @@ class TxnController extends BaseController
         }
 
         $actingUser = $this->authUser();
+        $actorId    = $actingUser ? (int)$actingUser['id'] : null;
         try {
             $payload = [
                 'client_id'              => $clientId,
@@ -2591,15 +2615,35 @@ class TxnController extends BaseController
                 'type'                   => $type,
                 'ledger_class'           => $ledgerClass,
                 'ledger_movement_kind'   => $movementRaw,
-                'created_by'             => $actingUser ? (int)$actingUser['id'] : null,
+                'created_by'             => $actorId,
             ];
             if ($amount > 0 && $txnDateRaw !== '') {
                 $payload['txn_date'] = $txnDateRaw;
             }
+
+            $existingOb = $this->findOpeningBalanceSliceRow(
+                $clientId,
+                $orgId,
+                $profileCode,
+                $ledgerClass,
+                $movementRaw
+            );
+            if ($existingOb !== null) {
+                $this->auditTxnLog(
+                    $actorId,
+                    'txn.cancelled',
+                    (int)$existingOb['id'],
+                    ['txn_type' => 'opening_balance', 'reason' => 'opening_balance_replace'],
+                    $this->txnAuditCompactSnapshot($existingOb),
+                    null
+                );
+            }
+
             $id = $this->txn->setOpeningBalance($payload);
             if ($id === null) {
                 $this->success(null, 'Opening balance cleared');
             }
+            $this->recordTxnCreated((int)$id, $actorId);
             $row = $this->txn->find($id);
             $this->success($row, 'Opening balance saved');
         } catch (\InvalidArgumentException $e) {
@@ -2886,6 +2930,44 @@ class TxnController extends BaseController
         }
 
         return $out;
+    }
+
+    /**
+     * Find an opening_balance txn row for a single entity + billing profile + ledger slice.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function findOpeningBalanceSliceRow(
+        int $clientId,
+        int $orgId,
+        string $profileCode,
+        string $ledgerClass,
+        string $movementKind
+    ): ?array {
+        try {
+            $rows = $this->txn->getOpeningBalance(
+                $clientId > 0 ? $clientId : 0,
+                $orgId > 0 ? $orgId : 0
+            );
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+
+        foreach ($rows as $row) {
+            if (($row['billing_profile_code'] ?? '') !== $profileCode) {
+                continue;
+            }
+            if (LedgerDimensions::normalizeLedgerClass($row['ledger_class'] ?? null) !== $ledgerClass) {
+                continue;
+            }
+            if ((string)($row['ledger_movement_kind'] ?? '') !== $movementKind) {
+                continue;
+            }
+
+            return $row;
+        }
+
+        return null;
     }
 
     /**

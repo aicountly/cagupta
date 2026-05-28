@@ -30,16 +30,49 @@ function formatTxnAuditAction(action) {
     'txn.created':                 'Recorded',
     'txn.updated':                 'Updated',
     'txn.deleted':                 'Deleted',
-    'txn.cancelled':               'Cancelled (ledger)',
+    'txn.cancelled':               'Cancelled / deleted',
     'txn.tds_finalized':           'TDS marked final',
     'ledger_modify_otp_requested': 'Ledger change OTP requested',
     'ledger_reversal_otp_requested': 'Ledger reversal OTP requested (user email)',
     'txn.reversed':                'Transaction reversed',
     'txn.reversal_cancelled':      'Ledger reversal cancelled',
+    'txn.reinstated':              'Reinstated',
     'txn.change_requested':        'Change requested (pending approval)',
+    'txn.change_rejected':         'Change request rejected',
   };
   if (m[action]) return m[action];
   return String(action || '').replace(/^txn\./, '').replace(/_/g, ' ');
+}
+
+const auditEyeBtnStyle = {
+  background: 'none',
+  border:     'none',
+  cursor:     'pointer',
+  fontSize:   13,
+  padding:    '2px 6px',
+  marginRight: 2,
+  color:      '#2563eb',
+};
+
+/** @param {{ txnId: number|null|undefined, onOpenAudit: function, disabled?: boolean, style?: object }} props */
+export function TxnAuditEyeButton({ txnId, onOpenAudit, disabled = false, style }) {
+  if (txnId == null || Number(txnId) <= 0) return null;
+
+  return (
+    <button
+      type="button"
+      style={{ ...auditEyeBtnStyle, ...style, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.5 : 1 }}
+      title="View activity log"
+      aria-label="View activity log"
+      disabled={disabled}
+      onClick={(e) => {
+        e.stopPropagation?.();
+        if (!disabled) onOpenAudit({ id: Number(txnId) });
+      }}
+    >
+      👁 Log
+    </button>
+  );
 }
 
 function formatActivityTs(ts) {

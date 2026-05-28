@@ -17,6 +17,20 @@ button, input, select, textarea { font-family: inherit; }
 ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.date-input-clickable {
+  position: relative;
+  cursor: pointer;
+}
+.date-input-clickable::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
 @media print {
   .invoice-view-overlay {
     position: static !important;

@@ -17,7 +17,9 @@ import {
 import {
   getRecoveryStatus, markNpa, markBadDebt,
 } from '../services/ledgerRecoveryStatusService';
-import { LastUpdatedByCell, TxnAuditLogModal } from '../../../components/finance/TxnAuditActivity';
+import {
+  LastUpdatedByCell, TxnAuditEyeButton, TxnAuditLogModal,
+} from '../../../components/finance/TxnAuditActivity';
 import PendingLedgerChangeBanner from '../../../components/finance/PendingLedgerChangeBanner';
 import ServiceBillingDetailModal from '../../../components/finance/ServiceBillingDetailModal';
 import { useAuth } from '../../../auth/AuthContext';
@@ -404,6 +406,15 @@ function ledgerClassLabel(value) {
   const v = normalizeLedgerClassForApi(value);
   if (v === 'parked') return 'Parked';
   return LEDGER_CLASS_OPTIONS.find((o) => o.value === v)?.label || v;
+}
+
+/** Resolve txn id for audit modal from a ledger or list row. */
+function resolveAuditTxnId(row) {
+  if (!row || row.synthetic || row.txnType === 'brought_forward') return null;
+  const id = Number(row.id);
+  if (id > 0) return id;
+  const src = Number(row.sourceTxnId);
+  return src > 0 ? src : null;
 }
 
 /** Active parked receipt/payment that can still be moved to a final client ledger. */
@@ -4857,7 +4868,7 @@ export default function Invoices({ ledgerOnly = false }) {
   function ledgerTableHeaders(includeActions = false) {
     const headers = ['Date'];
     if (isGroupLedgerScope) headers.push('Entity');
-    headers.push('Entry Type', 'Narration', 'Details', 'Billing Profile', 'Debit (Dr)', 'Credit (Cr)', 'Balance');
+    headers.push('Entry Type', 'Narration', 'Details', 'Billing Profile', 'Debit (Dr)', 'Credit (Cr)', 'Balance', 'Audit');
     if (includeActions) headers.push('Actions');
     return headers;
   }
@@ -6748,6 +6759,7 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={tdStyle}><StatusBadge status={i.invoiceStatus || i.status} /></td>
                   <LastUpdatedByCell txn={i} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
                   <td style={tdStyle} onClick={e => e.stopPropagation()}>
+                    <TxnAuditEyeButton txnId={i.id} onOpenAudit={setTxnAuditModalTxn} />
                     <button type="button" style={iconBtn} onClick={() => setViewInvoiceTxn(i)}>👁 View</button>
                     {isLedgerCancelled(i) && canDeleteInvoice && (
                       <button
@@ -6884,6 +6896,7 @@ export default function Invoices({ ledgerOnly = false }) {
                       txn={r}
                       canEdit={canEditInvoice}
                       canDelete={canDeleteInvoice}
+                      extraBefore={<TxnAuditEyeButton txnId={r.id} onOpenAudit={setTxnAuditModalTxn} />}
                       onEdit={(txn) => setEditLedgerTxnId(txn.id)}
                       onCancelPrompt={(txn) => setLedgerDeletePrompt({
                         title: 'Cancel receipt',
@@ -7046,6 +7059,7 @@ export default function Invoices({ ledgerOnly = false }) {
                       txn={p}
                       canEdit={canEditInvoice}
                       canDelete={canDeleteInvoice}
+                      extraBefore={<TxnAuditEyeButton txnId={p.id} onOpenAudit={setTxnAuditModalTxn} />}
                       onEdit={(txn) => setEditLedgerTxnId(txn.id)}
                       onCancelPrompt={(txn) => setLedgerDeletePrompt({
                         title: 'Cancel payment (on behalf)',
@@ -7190,6 +7204,7 @@ export default function Invoices({ ledgerOnly = false }) {
                       txn={p}
                       canEdit={canEditInvoice}
                       canDelete={canDeleteInvoice}
+                      extraBefore={<TxnAuditEyeButton txnId={p.id} onOpenAudit={setTxnAuditModalTxn} />}
                       onEdit={(txn) => setEditLedgerTxnId(txn.id)}
                       onCancelPrompt={(txn) => setLedgerDeletePrompt({
                         title: 'Cancel client cost payment',
@@ -7299,6 +7314,7 @@ export default function Invoices({ ledgerOnly = false }) {
                         txn={t}
                         canEdit={canEditInvoice}
                         canDelete={canDeleteInvoice}
+                        extraBefore={<TxnAuditEyeButton txnId={t.id} onOpenAudit={setTxnAuditModalTxn} />}
                         onEdit={(txn) => setEditLedgerTxnId(txn.id)}
                         onCancelPrompt={(txn) => setLedgerDeletePrompt({
                           title: 'Cancel TDS entry',
@@ -7369,18 +7385,18 @@ export default function Invoices({ ledgerOnly = false }) {
                     />
                   </th>
                 )}
-                {['Date','Client','Amount','Status','Narration','Billing Profile','Notes','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+                {['Date','Client','Amount','Status','Narration','Billing Profile','Notes','Last updated by','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {rebLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading rebate entries…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading rebate entries…</td></tr>
               ) : txnListFetchError ? (
-                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Could not load rebate entries.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Could not load rebate entries.</td></tr>
               ) : rebates.length === 0 && !txnListSearchDebounced ? (
-                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No rebate/discount entries found. Click "+ Rebate/Discount" to add one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No rebate/discount entries found. Click "+ Rebate/Discount" to add one.</td></tr>
               ) : rebates.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No entries match your search.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No entries match your search.</td></tr>
               ) : rebates.map(r=>(
                 <tr key={r.id} style={ledgerRowStyle(trStyle, r)}>
                   {canDeleteInvoice && (
@@ -7403,11 +7419,13 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={tdStyle}>{r.narration || '—'}</td>
                   <td style={tdStyle}><BillingProfileBadge code={r.billingProfileCode} /></td>
                   <td style={tdStyle}>{r.notes || '—'}</td>
+                  <LastUpdatedByCell txn={r} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
                   <td style={tdStyle}>
                     <LedgerRowActions
                       txn={r}
                       canEdit={false}
                       canDelete={canDeleteInvoice}
+                      extraBefore={<TxnAuditEyeButton txnId={r.id} onOpenAudit={setTxnAuditModalTxn} />}
                       onEdit={() => {}}
                       onCancelPrompt={(txn) => setLedgerDeletePrompt({
                         title: 'Cancel rebate / discount',
@@ -7477,18 +7495,18 @@ export default function Invoices({ ledgerOnly = false }) {
                     />
                   </th>
                 )}
-                {['Date','Client','Amount','Status','Linked Invoice','Narration','Billing Profile','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
+                {['Date','Client','Amount','Status','Linked Invoice','Narration','Billing Profile','Last updated by','Actions'].map(h=><th key={h} style={thStyle}>{h}</th>)}
               </tr>
             </thead>
             <tbody>
               {cnLoading ? (
-                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading credit notes…</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading credit notes…</td></tr>
               ) : txnListFetchError ? (
-                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Could not load credit notes.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Could not load credit notes.</td></tr>
               ) : creditNotes.length === 0 && !txnListSearchDebounced ? (
-                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes found. Click "+ Credit Note" to add one.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes found. Click "+ Credit Note" to add one.</td></tr>
               ) : creditNotes.length === 0 ? (
-                <tr><td colSpan={canDeleteInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes match your search.</td></tr>
+                <tr><td colSpan={canDeleteInvoice ? 10 : 9} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No credit notes match your search.</td></tr>
               ) : creditNotes.map(c=>(
                 <tr key={c.id} style={ledgerRowStyle(trStyle, c)}>
                   {canDeleteInvoice && (
@@ -7511,11 +7529,13 @@ export default function Invoices({ ledgerOnly = false }) {
                   <td style={tdStyle}>{c.linkedTxnId ? `#${c.linkedTxnId}` : '—'}</td>
                   <td style={tdStyle}>{c.narration || '—'}</td>
                   <td style={tdStyle}><BillingProfileBadge code={c.billingProfileCode} /></td>
+                  <LastUpdatedByCell txn={c} onOpenAudit={setTxnAuditModalTxn} tdStyle={tdStyle} />
                   <td style={tdStyle}>
                     <LedgerRowActions
                       txn={c}
                       canEdit={false}
                       canDelete={canDeleteInvoice}
+                      extraBefore={<TxnAuditEyeButton txnId={c.id} onOpenAudit={setTxnAuditModalTxn} />}
                       onEdit={() => {}}
                       onCancelPrompt={(txn) => setLedgerDeletePrompt({
                         title: 'Cancel credit note',
@@ -7877,6 +7897,11 @@ export default function Invoices({ ledgerOnly = false }) {
                               <td style={{ ...tdStyle, color:'#dc2626', fontWeight: e.debit?600:400 }}>{e.debit ? `₹${parseFloat(e.debit).toLocaleString('en-IN')}` : '—'}</td>
                               <td style={{ ...tdStyle, color:'#16a34a', fontWeight: e.credit?600:400 }}>{e.credit ? `₹${parseFloat(e.credit).toLocaleString('en-IN')}` : '—'}</td>
                               <td style={{ ...tdStyle, fontWeight:700 }}>₹{parseFloat(e.balance || 0).toLocaleString('en-IN')}</td>
+                              <td style={tdStyle}>
+                                {resolveAuditTxnId(e) ? (
+                                  <TxnAuditEyeButton txnId={resolveAuditTxnId(e)} onOpenAudit={setTxnAuditModalTxn} />
+                                ) : '—'}
+                              </td>
                               {cls === 'parked' && canEditInvoice && !isGroupLedgerScope && (
                                 <td style={tdStyle}>
                                   {isParkedLedgerEntryUnparkable(e) ? (
@@ -7936,6 +7961,11 @@ export default function Invoices({ ledgerOnly = false }) {
                     <td style={{ ...tdStyle, color:'#dc2626', fontWeight: e.debit?600:400 }}>{e.debit ? `₹${parseFloat(e.debit).toLocaleString('en-IN')}` : '—'}</td>
                     <td style={{ ...tdStyle, color:'#16a34a', fontWeight: e.credit?600:400 }}>{e.credit ? `₹${parseFloat(e.credit).toLocaleString('en-IN')}` : '—'}</td>
                     <td style={{ ...tdStyle, fontWeight:700 }}>₹{parseFloat(e.balance || 0).toLocaleString('en-IN')}</td>
+                    <td style={tdStyle}>
+                      {resolveAuditTxnId(e) ? (
+                        <TxnAuditEyeButton txnId={resolveAuditTxnId(e)} onOpenAudit={setTxnAuditModalTxn} />
+                      ) : '—'}
+                    </td>
                     {ledgerLedgerClass === 'parked' && canEditInvoice && !isGroupLedgerScope && (
                       <td style={tdStyle}>
                         {isParkedLedgerEntryUnparkable(e) ? (

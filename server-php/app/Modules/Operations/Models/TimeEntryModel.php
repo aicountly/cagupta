@@ -845,8 +845,10 @@ class TimeEntryModel
         string $dateFrom,
         string $dateTo,
         ?int $actorUserId = null,
-        bool $isSuperAdmin = false,
-        ?int $scopeUserId = null
+        bool $isPrimarySuperAdmin = false,
+        bool $canViewTeam = false,
+        ?int $scopeUserId = null,
+        bool $scopeAll = false
     ): array {
         if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateFrom) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateTo)) {
             return [];
@@ -886,8 +888,10 @@ class TimeEntryModel
             $sql,
             $params,
             $actorUserId,
-            $isSuperAdmin,
+            $isPrimarySuperAdmin,
+            $canViewTeam,
             $scopeUserId,
+            $scopeAll,
             's'
         );
         $sql .= ' GROUP BY te.user_id, u.name, te.service_id, s.service_type,
@@ -935,8 +939,10 @@ class TimeEntryModel
         [$whereSql, $params] = $this->buildInsightsWhere(
             $filters,
             isset($filters['actor_user_id']) ? (int)$filters['actor_user_id'] : null,
-            !empty($filters['is_super_admin']),
-            isset($filters['scope_user_id']) ? (int)$filters['scope_user_id'] : null
+            !empty($filters['is_primary_super_admin']),
+            !empty($filters['can_view_team']),
+            isset($filters['scope_user_id']) ? (int)$filters['scope_user_id'] : null,
+            !empty($filters['scope_all'])
         );
 
         $summaryStmt = $this->db->prepare(
@@ -1075,12 +1081,14 @@ class TimeEntryModel
         $clientRows = $clientStmt->fetchAll();
 
         $serviceRows = $this->reportByUserService(
-            isset($filters['user_id']) ? (int)$filters['user_id'] : null,
+            isset($filters['user_id']) && (int)$filters['user_id'] > 0 ? (int)$filters['user_id'] : null,
             $dateFrom,
             $dateTo,
             isset($filters['actor_user_id']) ? (int)$filters['actor_user_id'] : null,
-            !empty($filters['is_super_admin']),
-            isset($filters['scope_user_id']) ? (int)$filters['scope_user_id'] : null
+            !empty($filters['is_primary_super_admin']),
+            !empty($filters['can_view_team']),
+            isset($filters['scope_user_id']) ? (int)$filters['scope_user_id'] : null,
+            !empty($filters['scope_all'])
         );
 
         $financeByClientStmt = $this->db->prepare(
@@ -1208,8 +1216,10 @@ class TimeEntryModel
     private function buildInsightsWhere(
         array $filters,
         ?int $actorUserId = null,
-        bool $isSuperAdmin = false,
-        ?int $scopeUserId = null
+        bool $isPrimarySuperAdmin = false,
+        bool $canViewTeam = false,
+        ?int $scopeUserId = null,
+        bool $scopeAll = false
     ): array
     {
         $where = [
@@ -1254,7 +1264,16 @@ class TimeEntryModel
         } elseif ($billableType === 'non_billable') {
             $where[] = 'te.is_billable = false';
         }
-        $this->applyServiceVisibilityScope($where, $params, $actorUserId, $isSuperAdmin, $scopeUserId, 's');
+        $this->applyServiceVisibilityScope(
+            $where,
+            $params,
+            $actorUserId,
+            $isPrimarySuperAdmin,
+            $canViewTeam,
+            $scopeUserId,
+            $scopeAll,
+            's'
+        );
 
         return [implode(' AND ', $where), $params];
     }
@@ -1267,14 +1286,28 @@ class TimeEntryModel
         array|string &$where,
         array &$params,
         ?int $actorUserId,
-        bool $isSuperAdmin,
+        bool $isPrimarySuperAdmin,
+        bool $canViewTeam,
         ?int $scopeUserId,
+        bool $scopeAll,
         string $serviceAlias = 's'
     ): void {
+        if ($scopeAll && ($isPrimarySuperAdmin || $canViewTeam)) {
+            return;
+        }
+
         $scopedUserId = null;
-        if ($isSuperAdmin) {
+        if ($isPrimarySuperAdmin) {
             if ($scopeUserId !== null && $scopeUserId > 0) {
                 $scopedUserId = $scopeUserId;
+            } else {
+                return;
+            }
+        } elseif ($canViewTeam) {
+            if ($scopeUserId !== null && $scopeUserId > 0) {
+                $scopedUserId = $scopeUserId;
+            } elseif ($actorUserId !== null && $actorUserId > 0) {
+                $scopedUserId = $actorUserId;
             }
         } elseif ($actorUserId !== null && $actorUserId > 0) {
             $scopedUserId = $actorUserId;

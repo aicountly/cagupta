@@ -61,14 +61,14 @@ class ServiceController extends BaseController
         $asOf     = trim((string)$this->query('as_of', ''));
         $clientId = (int)$this->query('client_id', 0);
         $orgId    = (int)$this->query('organization_id', 0);
-        $scopeUserId = (int)$this->query('user_id', 0);
+        $userIdRaw = trim((string)$this->query('user_id', ''));
 
         if ($kpiSlug !== '' && $asOf === '') {
             $asOf = date('Y-m-d');
         }
 
-        [$actorUserId, $isSuperAdmin, $effectiveScopeUserId] = $this->resolveServiceVisibilityContext(
-            $scopeUserId > 0 ? $scopeUserId : null
+        [$actorUserId, $isPrimarySuperAdmin, $canViewTeam, $scopeUserId, $scopeAll] = $this->resolveServiceVisibilityContext(
+            $userIdRaw !== '' ? $userIdRaw : null
         );
 
         try {
@@ -80,8 +80,10 @@ class ServiceController extends BaseController
                 $clientId,
                 $orgId,
                 $actorUserId,
-                $isSuperAdmin,
-                $effectiveScopeUserId,
+                $isPrimarySuperAdmin,
+                $canViewTeam,
+                $scopeUserId,
+                $scopeAll,
                 $kpiSlug,
                 $asOf
             );
@@ -108,18 +110,25 @@ class ServiceController extends BaseController
     public function kpiSnapshot(): never
     {
         $asOf = trim((string)$this->query('as_of', ''));
-        $scopeUserId = (int)$this->query('user_id', 0);
+        $userIdRaw = trim((string)$this->query('user_id', ''));
         if ($asOf === '' || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $asOf)) {
             $asOf = (new \DateTimeImmutable('today'))->format('Y-m-d');
         }
 
-        [$actorUserId, $isSuperAdmin, $effectiveScopeUserId] = $this->resolveServiceVisibilityContext(
-            $scopeUserId > 0 ? $scopeUserId : null
+        [$actorUserId, $isPrimarySuperAdmin, $canViewTeam, $scopeUserId, $scopeAll] = $this->resolveServiceVisibilityContext(
+            $userIdRaw !== '' ? $userIdRaw : null
         );
 
         try {
             $this->success(
-                $this->services->computeKpiSnapshot($asOf, $actorUserId, $isSuperAdmin, $effectiveScopeUserId),
+                $this->services->computeKpiSnapshot(
+                    $asOf,
+                    $actorUserId,
+                    $isPrimarySuperAdmin,
+                    $canViewTeam,
+                    $scopeUserId,
+                    $scopeAll
+                ),
                 'KPI snapshot',
                 200
             );
@@ -1703,24 +1712,5 @@ class ServiceController extends BaseController
         } catch (\Throwable $e) {
             error_log('[ServiceController] Register sync on completion failed: ' . $e->getMessage());
         }
-    }
-
-    /**
-     * @return array{0: ?int, 1: bool, 2: ?int}
-     */
-    private function resolveServiceVisibilityContext(?int $requestedScopeUserId = null): array
-    {
-        $actor = $this->authUser();
-        $actorUserId = $actor ? (int)($actor['id'] ?? 0) : 0;
-        if ($actorUserId <= 0) {
-            $this->error('Unauthorized.', 401);
-        }
-        $isSuperAdmin = $this->isSuperAdminEmail((string)($actor['email'] ?? ''));
-        $scopeUserId = null;
-        if ($isSuperAdmin && $requestedScopeUserId !== null && $requestedScopeUserId > 0) {
-            $scopeUserId = $requestedScopeUserId;
-        }
-
-        return [$actorUserId, $isSuperAdmin, $scopeUserId];
     }
 }

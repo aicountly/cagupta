@@ -1,9 +1,10 @@
-﻿import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
+﻿import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { getEngagementsWithMeta, getServiceKpiSnapshot } from '../../../services/engagementService';
 import { getMyTemporaryCharges } from '../../../services/leaveService';
 import { useAuth } from '../../../auth/AuthContext';
 import { useStaffUsers } from '../../../hooks/useStaffUsers';
+import { appendScopeToPath, scopeUserIdToApiParam, useTeamScopeOptions } from '../../../hooks/useTeamScopeOptions';
 import ListPaginationBar from '../../../components/common/ListPaginationBar';
 import {
   Plus, Search, SlidersHorizontal,
@@ -130,8 +131,16 @@ function KpiCard({ item, to }) {
 export default function Services() {
   const navigate = useNavigate();
   const { hasPermission, user } = useAuth();
-  const isSuperAdmin = String(user?.email || '').toLowerCase() === 'rahul@cagupta.in';
+  const canViewTeam = hasPermission('users.manage');
   const { staffUsers } = useStaffUsers();
+  const {
+    isPrimarySuperAdmin,
+    showScopeDropdown,
+    selectableUsers,
+    defaultOptionLabel,
+    allTeamOptionLabel,
+    allTeamOptionValue,
+  } = useTeamScopeOptions({ staffUsers, userEmail: user?.email, canViewTeam });
   const canDeleteService = hasPermission('services.delete');
   const canEditService = hasPermission('services.edit');
   const [searchParams, setSearchParams] = useSearchParams();
@@ -149,7 +158,7 @@ export default function Services() {
   const [expandServiceId, setExpandServiceId] = useState(null);
   const onExpandConsumed = useCallback(() => setExpandServiceId(null), []);
 
-  const scopeUserIdNum = isSuperAdmin && scopeUserId ? Number(scopeUserId) : null;
+  const scopeUserIdApi = scopeUserIdToApiParam(scopeUserId);
 
   // Temporary charge state
   const [tempCharges, setTempCharges] = useState([]);
@@ -183,10 +192,10 @@ export default function Services() {
   }, []);
 
   useEffect(() => {
-    getServiceKpiSnapshot({ userId: scopeUserIdNum })
+    getServiceKpiSnapshot({ userId: scopeUserIdApi })
       .then((snap) => setKpiSnapshot(snap))
       .catch(() => setKpiSnapshot(null));
-  }, [scopeUserIdNum]);
+  }, [scopeUserIdApi]);
 
   useEffect(() => {
     setLoading(true);
@@ -195,7 +204,7 @@ export default function Services() {
       perPage: PER_PAGE,
       search,
       status: filterStatus,
-      userId: scopeUserIdNum,
+      userId: scopeUserIdApi,
     })
       .then(({ engagements, total, lastPage }) => {
         setPageServices(engagements);
@@ -208,20 +217,14 @@ export default function Services() {
         setTotalPages(1);
       })
       .finally(() => setLoading(false));
-  }, [page, search, filterStatus, scopeUserIdNum]);
-
-  const selectableUsers = useMemo(() => {
-    return staffUsers
-      .filter((s) => Number(s.id) > 0)
-      .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
-  }, [staffUsers]);
-
-  const kpis = kpiData(kpiSnapshot);
-  const hasTempCharges = tempChargesLoaded && tempCharges.length > 0;
+  }, [page, search, filterStatus, scopeUserIdApi]);
 
   const shouldRemoveFromList = useCallback((updated) => (
     !engagementMatchesStatusFilter(updated.status, filterStatus)
   ), [filterStatus]);
+
+  const kpis = kpiData(kpiSnapshot);
+  const hasTempCharges = tempChargesLoaded && tempCharges.length > 0;
 
   const handleRowRemoved = useCallback(() => {
     setServerTotal((t) => Math.max(0, t - 1));
@@ -243,7 +246,11 @@ export default function Services() {
       {activeTab === TAB_ALL && (
         <div style={kpiRow}>
           {kpis.map((k) => (
-            <KpiCard key={k.label} item={k} to={`/services/focus/${k.slug}`} />
+            <KpiCard
+              key={k.label}
+              item={k}
+              to={appendScopeToPath(`/services/focus/${k.slug}`, scopeUserId)}
+            />
           ))}
         </div>
       )}
@@ -290,13 +297,16 @@ export default function Services() {
                 style={searchInputStyle}
               />
             </div>
-            {isSuperAdmin && (
+            {showScopeDropdown && (
               <select
                 value={scopeUserId}
                 onChange={(e) => handleScopeUserChange(e.target.value)}
                 style={selectStyle}
               >
-                <option value="">All Users</option>
+                <option value="">{defaultOptionLabel}</option>
+                {!isPrimarySuperAdmin && (
+                  <option value={allTeamOptionValue}>{allTeamOptionLabel}</option>
+                )}
                 {selectableUsers.map((u) => (
                   <option key={u.id} value={String(u.id)}>{u.name}</option>
                 ))}

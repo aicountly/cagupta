@@ -183,7 +183,9 @@ function buildServicesListParams({
   if (organizationId != null && organizationId !== '' && Number(organizationId) > 0) {
     params.set('organization_id', String(organizationId));
   }
-  if (userId != null && userId !== '' && Number(userId) > 0) {
+  if (userId === 'all') {
+    params.set('user_id', 'all');
+  } else if (userId != null && userId !== '' && Number(userId) > 0) {
     params.set('user_id', String(userId));
   }
   return params;
@@ -253,7 +255,9 @@ export async function getAllEngagements(options = {}) {
 export async function getServiceKpiSnapshot({ userId = null } = {}) {
   const asOf = localDateKey(new Date());
   const params = new URLSearchParams({ as_of: asOf });
-  if (userId != null && userId !== '' && Number(userId) > 0) {
+  if (userId === 'all') {
+    params.set('user_id', 'all');
+  } else if (userId != null && userId !== '' && Number(userId) > 0) {
     params.set('user_id', String(userId));
   }
   const res = await fetch(
