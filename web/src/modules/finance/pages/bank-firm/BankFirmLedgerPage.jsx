@@ -1,5 +1,6 @@
 ﻿import { BookOpen } from 'lucide-react';
 import DateInput from '../../../../components/common/DateInput';
+import { TxnAuditEyeButton, TxnAuditLogModal } from '../../../../components/finance/TxnAuditActivity';
 import { useBankFirmWorkspace } from './BankFirmWorkspaceContext';
 import {
   btnPrimary,
@@ -20,6 +21,16 @@ function ledgerClientLabel(row) {
   return name || '—';
 }
 
+function resolveBankLedgerAuditTxnId(row) {
+  if (!row || row.row_type === 'opening') return null;
+  const linked = Number(row.linked_txn_id ?? row.linkedTxnId);
+  if (linked > 0 && /_bank_leg$/.test(String(row.txn_type ?? row.txnType ?? ''))) {
+    return linked;
+  }
+  const id = Number(row.id);
+  return id > 0 ? id : null;
+}
+
 export default function BankFirmLedgerPage() {
   const {
     firmCode,
@@ -32,6 +43,9 @@ export default function BankFirmLedgerPage() {
     setLedgerTo,
     ledgerRows,
     loadLedger,
+    auditTxn,
+    openAuditFirmTxn,
+    closeAuditFirmTxn,
   } = useBankFirmWorkspace();
 
   return (
@@ -82,12 +96,13 @@ export default function BankFirmLedgerPage() {
                     <th style={thStyle}>Particulars</th>
                     <th style={thStyle}>Movement</th>
                     <th style={thStyle}>Balance</th>
+                    <th style={thStyle}>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {ledgerRows.length === 0 && (
                     <tr>
-                      <td colSpan={6} style={{ ...tdStyle, textAlign: 'center', color: '#94a3b8' }}>
+                      <td colSpan={7} style={{ ...tdStyle, textAlign: 'center', color: '#94a3b8' }}>
                         No entries
                       </td>
                     </tr>
@@ -112,6 +127,12 @@ export default function BankFirmLedgerPage() {
                       <td style={{ ...tdStyle, fontWeight: 600 }}>
                         {r.balance != null ? `₹${Number(r.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '—'}
                       </td>
+                      <td style={tdStyle}>
+                        <TxnAuditEyeButton
+                          txnId={resolveBankLedgerAuditTxnId(r)}
+                          onOpenAudit={openAuditFirmTxn}
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -120,6 +141,8 @@ export default function BankFirmLedgerPage() {
           </>
         )}
       </div>
+
+      {auditTxn && <TxnAuditLogModal txn={auditTxn} onClose={closeAuditFirmTxn} />}
     </div>
   );
 }

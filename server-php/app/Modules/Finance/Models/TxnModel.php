@@ -1481,59 +1481,126 @@ class TxnModel
     }
 
     /**
+     * Use payment_method for auto-generated client narrations; keep custom text as-is.
+     *
+     * @param array<string, mixed> $row
+     */
+    private static function standardClientLineForBankLeg(array $row, string $linePrefix): string
+    {
+        $narr   = trim((string)($row['narration'] ?? ''));
+        $method = trim((string)($row['payment_method'] ?? ''));
+        if ($method === '') {
+            $method = 'Transfer';
+        }
+        $escaped = preg_quote($linePrefix, '/');
+        if ($narr === '' || preg_match('/^' . $escaped . '.+$/u', $narr) === 1) {
+            return $linePrefix . $method;
+        }
+
+        return $narr;
+    }
+
+    private static function resolveBankLegInflowPrefix(int $firmBankAccountId): string
+    {
+        if ($firmBankAccountId <= 0) {
+            return 'Receipt in — ';
+        }
+        $acc = (new FirmBankAccountModel())->find($firmBankAccountId);
+        if ($acc === null) {
+            return 'Receipt in — ';
+        }
+        $type = strtolower(trim((string)($acc['account_type'] ?? '')));
+        if ($type === 'bank') {
+            return 'Bank in — ';
+        }
+        if ($type === 'cash') {
+            return 'Cash in — ';
+        }
+
+        return 'Receipt in — ';
+    }
+
+    private static function resolveBankLegOutflowPrefix(int $firmBankAccountId): string
+    {
+        if ($firmBankAccountId <= 0) {
+            return 'Payment out — ';
+        }
+        $acc = (new FirmBankAccountModel())->find($firmBankAccountId);
+        if ($acc === null) {
+            return 'Payment out — ';
+        }
+        $type = strtolower(trim((string)($acc['account_type'] ?? '')));
+        if ($type === 'bank') {
+            return 'Bank out — ';
+        }
+        if ($type === 'cash') {
+            return 'Cash out — ';
+        }
+
+        return 'Payment out — ';
+    }
+
+    private static function appendPublicRefToBankLegNarration(string $text, array $row): string
+    {
+        $ref = trim((string)($row['public_ref'] ?? ''));
+        if ($ref !== '') {
+            $text .= ' · ' . $ref;
+        }
+
+        return $text;
+    }
+
+    /**
      * Bank-leg particulars for a client receipt mirror row.
      *
      * @param array<string, mixed> $receiptRow
      */
-    public static function buildReceiptBankLegNarration(array $receiptRow): string
+    public static function buildReceiptBankLegNarration(array $receiptRow, int $firmBankAccountId = 0): string
     {
-        $base = trim((string)($receiptRow['narration'] ?? ''));
-        if ($base === '') {
-            $base = 'Receipt';
-        }
-        $text = 'Cash in — ' . $base;
-        $ref  = trim((string)($receiptRow['public_ref'] ?? ''));
-        if ($ref !== '') {
-            $text .= ' · ' . $ref;
-        }
+        $bankId = $firmBankAccountId > 0
+            ? $firmBankAccountId
+            : (int)($receiptRow['firm_bank_account_id'] ?? 0);
+        $base = self::standardClientLineForBankLeg($receiptRow, 'Receipt — ');
+        $text = self::resolveBankLegInflowPrefix($bankId) . $base;
 
-        return $text;
+        return self::appendPublicRefToBankLegNarration($text, $receiptRow);
     }
 
     /**
      * @param array<string, mixed> $paymentRow
      */
-    public static function buildPaymentExpenseBankLegNarration(array $paymentRow): string
+    public static function buildPaymentExpenseBankLegNarration(array $paymentRow, int $firmBankAccountId = 0): string
     {
-        $base = trim((string)($paymentRow['narration'] ?? ''));
-        if ($base === '') {
-            $base = 'Payment';
-        }
-        $text = 'Cash out — ' . $base;
-        $ref  = trim((string)($paymentRow['public_ref'] ?? ''));
-        if ($ref !== '') {
-            $text .= ' · ' . $ref;
-        }
+        $bankId = $firmBankAccountId > 0
+            ? $firmBankAccountId
+            : (int)($paymentRow['firm_bank_account_id'] ?? 0);
+        $base = self::standardClientLineForBankLeg($paymentRow, 'Payment — ');
+        $text = self::resolveBankLegOutflowPrefix($bankId) . $base;
 
-        return $text;
+        return self::appendPublicRefToBankLegNarration($text, $paymentRow);
     }
 
     /**
      * @param array<string, mixed> $paymentRow
      */
-    public static function buildPaymentClientCostBankLegNarration(array $paymentRow): string
+    public static function buildPaymentClientCostBankLegNarration(array $paymentRow, int $firmBankAccountId = 0): string
     {
-        $base = trim((string)($paymentRow['narration'] ?? ''));
-        if ($base === '') {
-            $base = 'Client cost';
+        $bankId = $firmBankAccountId > 0
+            ? $firmBankAccountId
+            : (int)($paymentRow['firm_bank_account_id'] ?? 0);
+        $narr   = trim((string)($paymentRow['narration'] ?? ''));
+        $method = trim((string)($paymentRow['payment_method'] ?? ''));
+        if ($method === '') {
+            $method = 'Transfer';
         }
-        $text = 'Cash out — ' . $base;
-        $ref  = trim((string)($paymentRow['public_ref'] ?? ''));
-        if ($ref !== '') {
-            $text .= ' · ' . $ref;
+        if ($narr === '' || preg_match('/^Client cost — .+$/u', $narr) === 1) {
+            $base = 'Client cost — ' . $method;
+        } else {
+            $base = $narr;
         }
+        $text = self::resolveBankLegOutflowPrefix($bankId) . $base;
 
-        return $text;
+        return self::appendPublicRefToBankLegNarration($text, $paymentRow);
     }
 
     /**
@@ -1548,7 +1615,7 @@ class TxnModel
             'organization_id'        => null,
             'txn_type'               => self::TXN_TYPE_RECEIPT_BANK_LEG,
             'txn_date'               => $src['txn_date']            ?? date('Y-m-d'),
-            'narration'              => self::buildReceiptBankLegNarration($src),
+            'narration'              => self::buildReceiptBankLegNarration($src, $bankId),
             'debit'                  => 0,
             'credit'                 => $amount,
             'amount'                 => $amount,
@@ -1576,7 +1643,7 @@ class TxnModel
             'organization_id'      => null,
             'txn_type'               => self::TXN_TYPE_PAYMENT_EXPENSE_BANK_LEG,
             'txn_date'               => $src['txn_date']            ?? date('Y-m-d'),
-            'narration'              => self::buildPaymentExpenseBankLegNarration($src),
+            'narration'              => self::buildPaymentExpenseBankLegNarration($src, $bankId),
             'debit'                  => $amount,
             'credit'                 => 0,
             'amount'                 => $amount,
@@ -1604,7 +1671,7 @@ class TxnModel
             'organization_id'      => null,
             'txn_type'               => self::TXN_TYPE_PAYMENT_CLIENT_COST_BANK_LEG,
             'txn_date'               => $src['txn_date']            ?? date('Y-m-d'),
-            'narration'              => self::buildPaymentClientCostBankLegNarration($src),
+            'narration'              => self::buildPaymentClientCostBankLegNarration($src, $bankId),
             'debit'                  => $amount,
             'credit'                 => 0,
             'amount'                 => $amount,
@@ -2957,7 +3024,7 @@ class TxnModel
                 'txn_date'               => $receiptRow['txn_date'] ?? date('Y-m-d'),
                 'payment_method'         => $receiptRow['payment_method'] ?? null,
                 'reference_number'       => $receiptRow['reference_number'] ?? null,
-                'narration'              => self::buildReceiptBankLegNarration($receiptRow),
+                'narration'              => self::buildReceiptBankLegNarration($receiptRow, $bankId),
                 'billing_profile_code'   => $receiptRow['billing_profile_code'] ?? null,
             ], null);
 
@@ -2990,7 +3057,7 @@ class TxnModel
                 'txn_date'               => $paymentRow['txn_date'] ?? date('Y-m-d'),
                 'payment_method'         => $paymentRow['payment_method'] ?? null,
                 'reference_number'       => $paymentRow['reference_number'] ?? null,
-                'narration'              => self::buildPaymentExpenseBankLegNarration($paymentRow),
+                'narration'              => self::buildPaymentExpenseBankLegNarration($paymentRow, $bankId),
                 'billing_profile_code'   => $paymentRow['billing_profile_code'] ?? null,
             ], null);
 
@@ -3023,7 +3090,7 @@ class TxnModel
                 'txn_date'               => $paymentRow['txn_date'] ?? date('Y-m-d'),
                 'payment_method'         => $paymentRow['payment_method'] ?? null,
                 'reference_number'       => $paymentRow['reference_number'] ?? null,
-                'narration'              => self::buildPaymentClientCostBankLegNarration($paymentRow),
+                'narration'              => self::buildPaymentClientCostBankLegNarration($paymentRow, $bankId),
                 'billing_profile_code'   => $paymentRow['billing_profile_code'] ?? null,
             ], null);
 

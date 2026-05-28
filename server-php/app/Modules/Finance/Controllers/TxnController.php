@@ -938,11 +938,17 @@ class TxnController extends BaseController
         ?string $newMethod,
         string $prefix
     ): ?string {
-        if ($previousMethod === null || $newMethod === null || $previousMethod === $newMethod) {
+        $newMethod = trim((string)($newMethod ?? ''));
+        if ($newMethod === '') {
             return $narration;
         }
         $trimmed = trim((string)($narration ?? ''));
-        if ($trimmed === $prefix . $previousMethod) {
+        $escaped = preg_quote($prefix, '/');
+        if ($trimmed === '' || preg_match('/^' . $escaped . '.+$/u', $trimmed) === 1) {
+            return $prefix . $newMethod;
+        }
+        $prev = trim((string)($previousMethod ?? ''));
+        if ($prev !== '' && $trimmed === $prefix . $prev) {
             return $prefix . $newMethod;
         }
 
@@ -3017,7 +3023,11 @@ class TxnController extends BaseController
             $actorId,
             'txn.created',
             $id,
-            ['txn_type' => (string)($r['txn_type'] ?? '')],
+            [
+                'txn_type'       => (string)($r['txn_type'] ?? ''),
+                'payment_method' => $r['payment_method'] ?? null,
+                'public_ref'     => $r['public_ref'] ?? null,
+            ],
             null,
             $snap
         );

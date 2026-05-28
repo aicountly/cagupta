@@ -1,5 +1,40 @@
 import { useState, useEffect } from 'react';
+import { summarizeSnapshotDiff } from '../../modules/crm/services/masterAuditService';
 import { fetchTxnAuditLog } from '../../modules/finance/services/txnService';
+
+const TXN_SNAPSHOT_LABELS = {
+  txn_type:                       'Type',
+  txn_date:                       'Date',
+  narration:                      'Narration',
+  debit:                          'Debit',
+  credit:                         'Credit',
+  amount:                         'Amount',
+  billing_profile_code:           'Billing firm',
+  invoice_number:                 'Invoice no.',
+  invoice_status:                 'Invoice status',
+  due_date:                       'Due date',
+  subtotal:                       'Subtotal',
+  tax_percent:                    'Tax %',
+  tax_amount:                     'Tax amount',
+  payment_method:                 'Payment method',
+  reference_number:               'Reference no.',
+  expense_purpose:                'Expense purpose',
+  paid_from:                      'Paid from',
+  tds_status:                     'TDS status',
+  tds_section:                    'TDS section',
+  tds_rate:                       'TDS rate',
+  linked_txn_id:                  'Linked txn',
+  notes:                          'Notes',
+  status:                         'Status',
+  public_ref:                     'Ref',
+  ledger_class:                   'Ledger class',
+  ledger_movement_kind:           'Movement kind',
+  firm_bank_account_id:           'Bank account',
+  counterparty_firm_bank_account_id: 'Counterparty account',
+  firm_expense_category:          'Expense category',
+};
+
+const TXN_SNAPSHOT_KEY_ORDER = Object.keys(TXN_SNAPSHOT_LABELS);
 
 const AUDIT_MODAL_OVERLAY = {
   position:       'fixed',
@@ -84,6 +119,90 @@ function formatActivityTs(ts) {
   } catch {
     return String(ts);
   }
+}
+
+function formatSnapshotValue(value) {
+  if (value == null || value === '') return null;
+  if (typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
+/** Human-readable field list from a txn audit snapshot (create events). */
+function formatTxnSnapshotFields(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return [];
+  const keys = [...new Set([...TXN_SNAPSHOT_KEY_ORDER, ...Object.keys(snapshot)])];
+  const lines = [];
+  for (const k of keys) {
+    if (!Object.prototype.hasOwnProperty.call(snapshot, k)) continue;
+    const raw = formatSnapshotValue(snapshot[k]);
+    if (raw == null) continue;
+    const label = TXN_SNAPSHOT_LABELS[k] || k.replace(/_/g, ' ');
+    let display = raw;
+    if (k === 'notes' && display.length > 120) {
+      display = `${display.slice(0, 117)}…`;
+    }
+    lines.push(`${label}: ${display}`);
+  }
+  return lines;
+}
+
+function formatMetadataLines(meta) {
+  if (!meta || typeof meta !== 'object') return [];
+  return Object.entries(meta)
+    .filter(([, v]) => v != null && v !== '')
+    .map(([k, v]) => {
+      const label = TXN_SNAPSHOT_LABELS[k] || k.replace(/_/g, ' ');
+      const display = typeof v === 'object' ? JSON.stringify(v) : String(v);
+      return `${label}: ${display}`;
+    });
+}
+
+function txnAuditEntryLines(row) {
+  const before = row.before_snapshot || row.beforeSnapshot;
+  const after = row.after_snapshot || row.afterSnapshot;
+  const meta = row.metadata && typeof row.metadata === 'object' ? row.metadata : null;
+
+  if (before && after) {
+    const diffs = summarizeSnapshotDiff(before, after).map((line) => {
+      const sep = line.indexOf(': ');
+      if (sep < 0) return line;
+      const key = line.slice(0, sep).replace(/ /g, '_');
+      const label = TXN_SNAPSHOT_LABELS[key] || line.slice(0, sep);
+      return `${label}${line.slice(sep)}`;
+    });
+    if (diffs.length > 0) return diffs;
+  }
+  if (!before && after) {
+    const fields = formatTxnSnapshotFields(after);
+    if (fields.length > 0) return fields;
+  }
+
+  if (!meta) return [];
+  const metaLines = formatMetadataLines(meta);
+  if (metaLines.length > 0) return metaLines;
+
+  return [];
+}
+
+const auditDetailListStyle = {
+  margin:       '8px 0 0',
+  paddingLeft:  16,
+  fontSize:     12,
+  color:        '#475569',
+  lineHeight:   1.5,
+};
+
+/** @param {{ row: object }} props */
+function TxnAuditEntryDetails({ row }) {
+  const lines = txnAuditEntryLines(row);
+  if (lines.length === 0) return null;
+  return (
+    <ul style={auditDetailListStyle}>
+      {lines.map((line) => (
+        <li key={line}>{line}</li>
+      ))}
+    </ul>
+  );
 }
 
 /** @param {{ txn: object, onOpenAudit: function, tdStyle: object }} props */
@@ -207,11 +326,7 @@ export function TxnAuditLogModal({ txn, onClose }) {
                     {(row.actor_name || 'System')}
                     {row.created_at ? ` · ${formatActivityTs(row.created_at)}` : ''}
                   </div>
-                  {row.metadata && typeof row.metadata === 'object' && Object.keys(row.metadata).length > 0 && (
-                    <pre style={{ marginTop: 8, fontSize: 11, background: '#f8fafc', padding: 8, borderRadius: 6, overflow: 'auto', maxHeight: 120 }}>
-                      {JSON.stringify(row.metadata, null, 2)}
-                    </pre>
-                  )}
+                  <TxnAuditEntryDetails row={row} />
                 </li>
               ))}
             </ul>
