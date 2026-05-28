@@ -185,7 +185,7 @@ class ServiceController extends BaseController
                 if ($row === null) {
                     $this->error('Organization not found.', 404);
                 }
-                $r = (int)($row['referring_affiliate_user_id'] ?? 0);
+                $r = (int)($row['referring_associate_user_id'] ?? 0);
                 $refAff         = $r > 0 ? $r : null;
                 $commissionMode = $this->normalizeCommissionMode($row['commission_mode'] ?? 'referral_only');
                 $clientFacing   = !empty($row['client_facing_restricted']);
@@ -195,7 +195,7 @@ class ServiceController extends BaseController
             if ($row === null) {
                 $this->error('Contact not found.', 404);
             }
-            $r = (int)($row['referring_affiliate_user_id'] ?? 0);
+            $r = (int)($row['referring_associate_user_id'] ?? 0);
             $refAff         = $r > 0 ? $r : null;
             $commissionMode = $this->normalizeCommissionMode($row['commission_mode'] ?? 'referral_only');
             $clientFacing   = !empty($row['client_facing_restricted']);
@@ -262,7 +262,7 @@ class ServiceController extends BaseController
             'subcategory_name'     => $body['subcategory_name']     ?? null,
             'engagement_type_id'   => $body['engagement_type_id']   ?? null,
             'engagement_type_name' => $body['engagement_type_name'] ?? null,
-            'referring_affiliate_user_id' => $refAff,
+            'referring_associate_user_id' => $refAff,
             'referral_start_date'  => null,
             'commission_mode'      => $commissionMode,
             'client_facing_restricted' => $clientFacing,
@@ -878,7 +878,7 @@ class ServiceController extends BaseController
                     'service_id'  => $id,
                     'log_type'    => 'status_change',
                     'message'     => "Status changed from \"{$fromLabel}\" to \"{$toLabel}\" by {$actorName}.",
-                    'visibility'  => 'affiliate',
+                    'visibility'  => 'associate',
                     'created_by'  => $actorId,
                 ]);
             } catch (\Throwable $e) {
@@ -956,7 +956,7 @@ class ServiceController extends BaseController
                 'service_id'  => $id,
                 'log_type'    => 'status_change',
                 'message'     => "Engagement reopened (set to \"{$toLabel}\") by {$actorName}. Reason: {$reason}",
-                'visibility'  => 'affiliate',
+                'visibility'  => 'associate',
                 'created_by'  => $actorId,
             ]);
         } catch (\Throwable $e) {

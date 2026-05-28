@@ -135,7 +135,7 @@ class AppointmentModel
         $stmt = $this->db->prepare(
             'INSERT INTO calendar_events (
                 title, description, event_date, start_time, end_time,
-                event_type, client_id, assigned_to, client_name, staff_name, status, created_by,
+                event_type, client_id, assigned_to, client_name, stassoc_name, status, created_by,
                 fee_rule_id, pricing_model, unit_amount, billable_hours, fee_subtotal,
                 billing_profile_code, billing_profile_snapshot, billing_organization_id,
                 payment_terms, advance_amount, advance_percent, amount_due_now, amount_collected,
@@ -144,7 +144,7 @@ class AppointmentModel
                 invoice_line_description, invoice_line_kind
              ) VALUES (
                 :title, :description, :event_date, :start_time, :end_time,
-                :event_type, :client_id, :assigned_to, :client_name, :staff_name, :status, :created_by,
+                :event_type, :client_id, :assigned_to, :client_name, :stassoc_name, :status, :created_by,
                 :fee_rule_id, :pricing_model, :unit_amount, :billable_hours, :fee_subtotal,
                 :billing_profile_code, CAST(:billing_profile_snapshot AS jsonb), :billing_organization_id,
                 :payment_terms, :advance_amount, :advance_percent, :amount_due_now, :amount_collected,
@@ -163,7 +163,7 @@ class AppointmentModel
             ':client_id'                  => $data['client_id']   ?? null,
             ':assigned_to'                => $data['assigned_to'] ?? null,
             ':client_name'                => $data['client_name'] ?? null,
-            ':staff_name'                 => $data['staff_name']  ?? null,
+            ':stassoc_name'                 => $data['stassoc_name']  ?? null,
             ':status'                     => $data['status']      ?? 'scheduled',
             ':created_by'                 => $data['created_by']  ?? null,
             ':fee_rule_id'                => $data['fee_rule_id'] ?? null,
@@ -206,7 +206,7 @@ class AppointmentModel
 
         $allowed = [
             'title', 'description', 'event_date', 'start_time', 'end_time',
-            'event_type', 'client_name', 'staff_name', 'status', 'client_id',
+            'event_type', 'client_name', 'stassoc_name', 'status', 'client_id',
             'fee_rule_id', 'pricing_model', 'unit_amount', 'billable_hours', 'fee_subtotal',
             'billing_profile_code', 'billing_organization_id',
             'payment_terms', 'advance_amount', 'advance_percent', 'amount_due_now', 'amount_collected',

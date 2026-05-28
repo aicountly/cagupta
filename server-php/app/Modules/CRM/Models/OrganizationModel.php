@@ -153,17 +153,17 @@ class OrganizationModel
                 name, \"type\", gstin, pan, cin, email, secondary_email, phone, secondary_phone,
                 address, city, state, country, pincode, website, notes,
                 reference, group_id, primary_contact_id, organization_status, is_active, created_by,
-                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted,
+                referring_associate_user_id, referral_start_date, commission_mode, client_facing_restricted,
                 default_billing_profile_code
              ) VALUES (
                 :name, :type, :gstin, :pan, :cin, :email, :secondary_email, :phone, :secondary_phone,
                 :address, :city, :state, :country, :pincode, :website, :notes,
                 :reference, :group_id, :primary_contact_id, :organization_status, {$isActiveLit}, :created_by,
-                :referring_affiliate_user_id, :referral_start_date, :commission_mode, {$cfLit},
+                :referring_associate_user_id, :referral_start_date, :commission_mode, {$cfLit},
                 :default_billing_profile_code
              ) RETURNING id"
         );
-        $refAff = isset($data['referring_affiliate_user_id']) ? (int)$data['referring_affiliate_user_id'] : 0;
+        $refAff = isset($data['referring_associate_user_id']) ? (int)$data['referring_associate_user_id'] : 0;
         $this->executeWithTypedBindings($stmt, [
             ':name'               => $data['name'],
             ':type'               => $data['type']       ?? null,
@@ -186,7 +186,7 @@ class OrganizationModel
             ':primary_contact_id' => self::optionalPositiveInt($data['primary_contact_id'] ?? null),
             ':organization_status' => $data['organization_status'] ?? 'active',
             ':created_by'         => $data['created_by'] ?? null,
-            ':referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
+            ':referring_associate_user_id' => $refAff > 0 ? $refAff : null,
             ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
             ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
             ':default_billing_profile_code' => $data['default_billing_profile_code'] ?? null,
@@ -217,10 +217,10 @@ class OrganizationModel
                 $params[":{$field}"] = $data[$field];
             }
         }
-        if (array_key_exists('referring_affiliate_user_id', $data)) {
-            $ra = (int)$data['referring_affiliate_user_id'];
-            $setClauses[]                    = 'referring_affiliate_user_id = :referring_affiliate_user_id';
-            $params[':referring_affiliate_user_id'] = $ra > 0 ? $ra : null;
+        if (array_key_exists('referring_associate_user_id', $data)) {
+            $ra = (int)$data['referring_associate_user_id'];
+            $setClauses[]                    = 'referring_associate_user_id = :referring_associate_user_id';
+            $params[':referring_associate_user_id'] = $ra > 0 ? $ra : null;
         }
         if (array_key_exists('client_facing_restricted', $data)) {
             $setClauses[] = 'client_facing_restricted = ' . self::sqlBoolLiteral((bool) $data['client_facing_restricted']);

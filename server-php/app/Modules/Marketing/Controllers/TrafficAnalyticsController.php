@@ -179,7 +179,7 @@ class TrafficAnalyticsController extends BaseController
         }
 
         $startDate = date('Y-m-d', strtotime("-{$days} days"));
-        $events    = ['lead_form_submit', 'blog_lead_submit', 'blog_cta_click', 'affiliate_link_click'];
+        $events    = ['lead_form_submit', 'blog_lead_submit', 'blog_cta_click', 'associate_link_click'];
 
         $report = $this->callGa4Report($token, $propertyId, [
             'dateRanges'        => [['startDate' => $startDate, 'endDate' => 'today']],
@@ -479,7 +479,7 @@ Analytics summary (last 30 days):
 - CRM leads captured: {$crmLeads}
 
 Output ONLY a valid JSON array of exactly 6 objects. Each object must have these exact fields:
-  "category": one of ["SEO","Content","Campaigns","Lead Funnel","Affiliate","Social"]
+  "category": one of ["SEO","Content","Campaigns","Lead Funnel","Associate","Social"]
   "title": short title (max 8 words)
   "recommendation": specific, actionable advice (2-3 sentences)
   "priority": one of ["high","medium","low"]
@@ -614,7 +614,7 @@ PROMPT;
             'lead_form_submit'   => 23,
             'blog_lead_submit'   => 14,
             'blog_cta_click'     => 89,
-            'affiliate_link_click' => 47,
+            'associate_link_click' => 47,
             '_demo' => true,
         ];
     }

@@ -1,0 +1,11 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@cagupta/shared-constants": ["../../packages/shared-constants/dist/index.d.ts"],
+      "@cagupta/shared-services": ["../../packages/shared-services/dist/index.d.ts"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"]
+}

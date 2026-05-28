@@ -113,20 +113,6 @@ require_once dirname(__DIR__) . '/app/Helpers/response_helper.php';
 // Uncaught exceptions (e.g. in controller constructor) must return JSON; otherwise clients see 500 with an empty body.
 set_exception_handler(static function (\Throwable $e): void {
     error_log('[API] uncaught: ' . $e->getMessage() . ' @ ' . $e->getFile() . ':' . $e->getLine());
-    $debugLog = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'debug-441a9d.log';
-    $agentPayload = [
-        'sessionId'   => '441a9d',
-        'runId'       => 'pre-fix',
-        'timestamp'   => (int) round(microtime(true) * 1000),
-        'location'    => 'index.php:exception_handler',
-        'message'     => 'uncaught',
-        'data'        => [
-            'hypothesisId'     => 'H0',
-            'exceptionClass'   => $e::class,
-            'exceptionMessage' => $e->getMessage(),
-        ],
-    ];
-    @file_put_contents($debugLog, json_encode($agentPayload) . "\n", FILE_APPEND | LOCK_EX);
     if (!headers_sent()) {
         http_response_code(500);
         header('Content-Type: application/json; charset=UTF-8');
@@ -161,14 +147,6 @@ register_shutdown_function(static function (): void {
         return;
     }
     error_log('[API] fatal: ' . $err['message'] . ' @ ' . $err['file'] . ':' . $err['line']);
-    $debugLog = dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'debug-441a9d.log';
-    @file_put_contents($debugLog, json_encode([
-        'timestamp' => (int) round(microtime(true) * 1000),
-        'kind'      => 'fatal',
-        'message'   => $err['message'],
-        'file'      => $err['file'],
-        'line'      => $err['line'],
-    ]) . "\n", FILE_APPEND | LOCK_EX);
     if (!headers_sent()) {
         http_response_code(500);
         header('Content-Type: application/json; charset=UTF-8');
@@ -196,11 +174,15 @@ use App\Filters\AuthFilter;
 use App\Filters\PermissionFilter;
 use App\Filters\PermissionAnyFilter;
 use App\Filters\RoleFilter;
+use App\Filters\StaffOnlyFilter;
 
 use function App\Helpers\api_error;
 
 // ── Set timezone ──────────────────────────────────────────────────────────────
 $appConfig = new AppConfig();
+if (in_array($appConfig->environment, ['production', 'prod'], true) && getenv('APP_ENV') === false) {
+    error_log('[cagupta] WARNING: APP_ENV is not set; defaulting to development behaviour.');
+}
 date_default_timezone_set($appConfig->timezone);
 
 // ── CORS headers ──────────────────────────────────────────────────────────────
@@ -291,6 +273,8 @@ foreach ($routes as $route) {
         } elseif (str_starts_with($mw, 'permission_any:')) {
             $list = array_values(array_filter(array_map('trim', explode(',', substr($mw, 15)))));
             (new PermissionAnyFilter($list))->handle();
+        } elseif ($mw === 'staff') {
+            (new StaffOnlyFilter())->handle();
         }
     }
 

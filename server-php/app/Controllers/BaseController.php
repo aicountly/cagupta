@@ -92,7 +92,7 @@ abstract class BaseController
      */
     protected function isSuperAdminEmail(string $email): bool
     {
-        return strtolower($email) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL);
+        return strtolower($email) !== '' && AuthConfig::isSuperAdminEmail($email);
     }
 
     /**

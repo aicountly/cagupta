@@ -79,7 +79,7 @@ class AppointmentController extends BaseController
                 'event_type'   => $body['event_type']  ?? $body['mode'] ?? 'in_person',
                 'client_id'    => isset($body['client_id']) ? (int)$body['client_id'] : null,
                 'client_name'  => $body['client_name'] ?? null,
-                'staff_name'   => $body['staff_name']  ?? null,
+                'stassoc_name'   => $body['stassoc_name']  ?? null,
                 'status'       => $body['status']      ?? 'scheduled',
                 'created_by'   => $createdBy,
             ];
@@ -164,7 +164,7 @@ class AppointmentController extends BaseController
         $data  = [];
 
         $allowed = ['title', 'description', 'event_date', 'start_time', 'end_time',
-                    'event_type', 'client_name', 'staff_name', 'status', 'client_id',
+                    'event_type', 'client_name', 'stassoc_name', 'status', 'client_id',
                     'billing_organization_id', 'fee_rule_id', 'payment_terms',
                     'advance_amount', 'advance_percent', 'billing_profile_code',
                     'billing_profile_snapshot', 'invoice_line_description', 'invoice_line_kind',

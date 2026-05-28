@@ -93,7 +93,7 @@ class ServiceLogController extends BaseController
      * Body: {
      *   log_type:       'note'|'follow_up'|'document_request'|'internal_message'
      *   message:        string (required)
-     *   visibility?:    'internal'|'affiliate'|'client'
+     *   visibility?:    'internal'|'associate'|'client'
      *   follow_up_date?: YYYY-MM-DD (required for follow_up type)
      * }
      */
@@ -120,8 +120,8 @@ class ServiceLogController extends BaseController
         }
 
         $visibility = strtolower(trim((string)($body['visibility'] ?? 'internal')));
-        if (!in_array($visibility, ['internal', 'affiliate', 'client'], true)) {
-            $this->error("visibility must be 'internal', 'affiliate', or 'client'.", 422);
+        if (!in_array($visibility, ['internal', 'associate', 'client'], true)) {
+            $this->error("visibility must be 'internal', 'associate', or 'client'.", 422);
         }
 
         $followUpDate = null;
@@ -150,9 +150,9 @@ class ServiceLogController extends BaseController
         $entry = $this->logs->find($newId);
 
         // ── Activity trigger: fire email on visible log entries ─────────────
-        // Visibility 'client' or 'affiliate' triggers a notification email.
+        // Visibility 'client' or 'associate' triggers a notification email.
         // In testing mode, email goes to the static test address only.
-        if (in_array($visibility, ['client', 'affiliate'], true)) {
+        if (in_array($visibility, ['client', 'associate'], true)) {
             $this->dispatchActivityTrigger('service_log_created', [
                 'service_id'    => $serviceId,
                 'service'       => $service,
@@ -174,7 +174,7 @@ class ServiceLogController extends BaseController
      *
      * Body: {
      *   message?:        string
-     *   visibility?:     'internal'|'affiliate'|'client'
+     *   visibility?:     'internal'|'associate'|'client'
      *   follow_up_date?: YYYY-MM-DD|null
      *   is_pinned?:      bool
      *   resolve?:        bool   (true = mark resolved)
@@ -197,8 +197,8 @@ class ServiceLogController extends BaseController
 
         if (array_key_exists('visibility', $body)) {
             $v = strtolower(trim((string)$body['visibility']));
-            if (!in_array($v, ['internal', 'affiliate', 'client'], true)) {
-                $this->error("visibility must be 'internal', 'affiliate', or 'client'.", 422);
+            if (!in_array($v, ['internal', 'associate', 'client'], true)) {
+                $this->error("visibility must be 'internal', 'associate', or 'client'.", 422);
             }
             // internal_message cannot change its visibility
             if ((string)($entry['log_type'] ?? '') === 'internal_message') {
@@ -256,8 +256,8 @@ class ServiceLogController extends BaseController
     // ── POST /api/admin/services/:sid/logs/:lid/remind ────────────────────────
 
     /**
-     * Send a reminder email to the client/affiliate for a log entry.
-     * Only meaningful for entries with visibility = 'client' or 'affiliate'
+     * Send a reminder email to the client/associate for a log entry.
+     * Only meaningful for entries with visibility = 'client' or 'associate'
      * and a follow_up_date set.
      *
      * Records reminder_sent_at on the log entry.
@@ -272,7 +272,7 @@ class ServiceLogController extends BaseController
 
         $visibility = (string)($entry['visibility'] ?? 'internal');
         if ($visibility === 'internal') {
-            $this->error('Reminders can only be sent for entries visible to clients or affiliates.', 422);
+            $this->error('Reminders can only be sent for entries visible to clients or associates.', 422);
         }
 
         // Resolve recipient email from the service's client/org
@@ -313,7 +313,7 @@ class ServiceLogController extends BaseController
 
     /**
      * Determine the minimum visibility level the authenticated actor can see.
-     * Staff roles see everything (internal). Affiliates see affiliate + client.
+     * Staff roles see everything (internal). Associates see associate + client.
      */
     private function resolveMinVisibility(): string
     {
@@ -323,8 +323,8 @@ class ServiceLogController extends BaseController
         }
 
         $role = strtolower(trim((string)($actor['role_name'] ?? '')));
-        if ($role === 'affiliate') {
-            return 'affiliate';
+        if ($role === 'associate') {
+            return 'associate';
         }
 
         // super_admin, admin, manager, staff, viewer

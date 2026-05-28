@@ -1,0 +1,26 @@
+{
+  "name": "cagupta",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "web",
+    "mobile/app"
+  ],
+  "scripts": {
+    "build:web": "npm run build --workspace=web",
+    "build:constants": "npm run build --workspace=@cagupta/shared-constants",
+    "build:services": "npm run build --workspace=@cagupta/shared-services",
+    "build:packages": "npm run build:constants && npm run build:services",
+    "typecheck:mobile": "npm run typecheck --workspace=@cagupta/mobile-app",
+    "lint:web": "npm run lint --workspace=web",
+    "lint:mobile": "npm run lint --workspace=@cagupta/mobile-app",
+    "lint:php": "node server-php/scripts/php-lint.cjs",
+    "check:routes": "node web/scripts/check-routes.cjs",
+    "check:sync": "node scripts/web-mobile-sync-check.js",
+    "check:mobile-screens": "node mobile/app/scripts/check-screen-registry.cjs",
+    "check:txn-routes": "node scripts/check-txn-routes.cjs",
+    "export:android": "npm run export:android --workspace=@cagupta/mobile-app",
+    "export:ios": "npm run export:ios --workspace=@cagupta/mobile-app",
+    "ci": "npm run build:packages && npm run build:web && npm run typecheck:mobile && npm run export:android && npm run export:ios && npm run lint:web && npm run lint:mobile && npm run lint:php && npm run check:routes && npm run check:sync && npm run check:mobile-screens && npm run check:txn-routes"
+  }
+}

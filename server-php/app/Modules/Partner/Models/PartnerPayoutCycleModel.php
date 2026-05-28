@@ -4,7 +4,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Config\Database;
-use App\Libraries\AffiliatePayoutCycleSchedule;
+use App\Libraries\AssociatePayoutCycleSchedule;
 use PDO;
 
 final class PartnerPayoutCycleModel
@@ -73,7 +73,7 @@ final class PartnerPayoutCycleModel
      */
     public function ensureOpenForPeriodEnd(string $periodEndYmd): array
     {
-        $seg = AffiliatePayoutCycleSchedule::segmentForPeriodEnd($periodEndYmd);
+        $seg = AssociatePayoutCycleSchedule::segmentForPeriodEnd($periodEndYmd);
         $id  = $this->insertOpen($seg);
         $row = $this->find($id);
         if ($row === null) {
@@ -88,7 +88,7 @@ final class PartnerPayoutCycleModel
      */
     public function listForYearMerged(int $year): array
     {
-        $segments = AffiliatePayoutCycleSchedule::segmentsForYear($year);
+        $segments = AssociatePayoutCycleSchedule::segmentsForYear($year);
         $stmt     = $this->db->prepare(
             'SELECT * FROM partner_payout_cycles
              WHERE period_start >= :y1 AND period_end <= :y2

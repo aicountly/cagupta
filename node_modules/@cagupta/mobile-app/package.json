@@ -1,0 +1,43 @@
+{
+  "name": "@cagupta/mobile-app",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "private": true,
+  "scripts": {
+    "prestart": "npm run build:packages --prefix ../..",
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "export:android": "expo export --platform android --output-dir .expo-export-test",
+    "export:ios": "expo export --platform ios --output-dir .expo-export-test-ios"
+  },
+  "dependencies": {
+    "@cagupta/shared-constants": "*",
+    "@cagupta/shared-services": "*",
+    "@react-navigation/bottom-tabs": "^7.3.10",
+    "@react-navigation/native": "^7.1.6",
+    "@react-navigation/native-stack": "^7.3.10",
+    "@tanstack/react-query": "^5.74.4",
+    "expo": "~56.0.6",
+    "expo-device": "~56.0.4",
+    "expo-linking": "~56.0.12",
+    "expo-notifications": "~56.0.14",
+    "expo-secure-store": "~56.0.4",
+    "expo-status-bar": "~56.0.4",
+    "react": "19.2.3",
+    "react-native": "0.85.3",
+    "react-native-safe-area-context": "~5.6.0",
+    "react-native-screens": "~4.16.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.1",
+    "@types/react": "~19.2.2",
+    "eslint": "^9.39.1",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "globals": "^16.5.0",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.46.0"
+  }
+}

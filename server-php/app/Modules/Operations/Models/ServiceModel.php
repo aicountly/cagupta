@@ -627,7 +627,7 @@ SQL;
                 subcategory_id, subcategory_name,
                 engagement_type_id, engagement_type_name,
                 tasks,
-                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted,
+                referring_associate_user_id, referral_start_date, commission_mode, client_facing_restricted,
                 source_support_ticket_id,
                 relevant_period_frequency, relevant_period_from, relevant_period_to, relevant_period_label
              ) VALUES (
@@ -639,7 +639,7 @@ SQL;
                 :subcategory_id, :subcategory_name,
                 :engagement_type_id, :engagement_type_name,
                 :tasks,
-                :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted,
+                :referring_associate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted,
                 :source_support_ticket_id,
                 :relevant_period_frequency, :relevant_period_from, :relevant_period_to, :relevant_period_label
              ) RETURNING id'
@@ -666,8 +666,8 @@ SQL;
             ':engagement_type_id'  => $data['engagement_type_id']  ?? null,
             ':engagement_type_name'=> $data['engagement_type_name'] ?? null,
             ':tasks'               => isset($data['tasks']) ? json_encode($data['tasks']) : '[]',
-            ':referring_affiliate_user_id' => isset($data['referring_affiliate_user_id']) && (int)$data['referring_affiliate_user_id'] > 0
-                ? (int)$data['referring_affiliate_user_id'] : null,
+            ':referring_associate_user_id' => isset($data['referring_associate_user_id']) && (int)$data['referring_associate_user_id'] > 0
+                ? (int)$data['referring_associate_user_id'] : null,
             ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
             ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
             ':client_facing_restricted' => !empty($data['client_facing_restricted']) ? 'true' : 'false',
@@ -820,14 +820,14 @@ SQL;
      * Count service engagements tied to a category (directly, via subcategory, or engagement type).
      */
     /**
-     * Services linked to an affiliate referrer.
+     * Services linked to an associate referrer.
      *
      * @return array{total: int, services: array<int, array<string, mixed>>}
      */
-    public function paginateForReferringAffiliate(int $affiliateUserId, int $page = 1, int $perPage = 30): array
+    public function paginateForReferringAssociate(int $associateUserId, int $page = 1, int $perPage = 30): array
     {
-        $whereClause = 's.referring_affiliate_user_id = :aid';
-        $params      = [':aid' => $affiliateUserId];
+        $whereClause = 's.referring_associate_user_id = :aid';
+        $params      = [':aid' => $associateUserId];
         $offset      = ($page - 1) * $perPage;
 
         $countStmt = $this->db->prepare("SELECT COUNT(*) FROM services s WHERE {$whereClause}");
@@ -848,7 +848,7 @@ SQL;
              ORDER BY s.created_at DESC
              LIMIT :limit OFFSET :offset"
         );
-        $stmt->bindValue(':aid', $affiliateUserId, PDO::PARAM_INT);
+        $stmt->bindValue(':aid', $associateUserId, PDO::PARAM_INT);
         $stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
         $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();

@@ -16,20 +16,16 @@ final class InboundEmailModel
     }
 
     /**
+     * Insert an inbound email row and return its ID.
+     * On duplicate MessageId (PostgreSQL SQLSTATE 23505) returns the existing row's ID
+     * and sets $isDuplicate = true instead of throwing.
+     *
      * @param array<string, mixed> $row
+     * @return array{int, bool} [id, isDuplicate]
      */
-    public function insert(array $row): int
+    public function insertOrGetExisting(array $row): array
     {
-        $stmt = $this->db->prepare(
-            'INSERT INTO inbound_emails (
-                message_id, from_email, from_name, to_emails, subject,
-                body_text, body_html, raw_payload, received_at, matched_client_id
-            ) VALUES (
-                :mid, :from_em, :from_nm, :to_em, :subj,
-                :txt, :html, CAST(:raw AS jsonb), COALESCE(CAST(:received_at AS timestamptz), NOW()), :mc
-            ) RETURNING id'
-        );
-        $stmt->execute([
+        $params = [
             ':mid'         => $row['message_id'] ?? null,
             ':from_em'     => $row['from_email'],
             ':from_nm'     => $row['from_name'] ?? null,
@@ -40,9 +36,45 @@ final class InboundEmailModel
             ':raw'         => json_encode($row['raw_payload'] ?? [], JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE),
             ':received_at' => $row['received_at'] ?? null,
             ':mc'          => isset($row['matched_client_id']) ? (int)$row['matched_client_id'] : null,
-        ]);
+        ];
 
-        return (int)$stmt->fetchColumn();
+        try {
+            $stmt = $this->db->prepare(
+                'INSERT INTO inbound_emails (
+                    message_id, from_email, from_name, to_emails, subject,
+                    body_text, body_html, raw_payload, received_at, matched_client_id
+                ) VALUES (
+                    :mid, :from_em, :from_nm, :to_em, :subj,
+                    :txt, :html, CAST(:raw AS jsonb), COALESCE(CAST(:received_at AS timestamptz), NOW()), :mc
+                ) RETURNING id'
+            );
+            $stmt->execute($params);
+            return [(int)$stmt->fetchColumn(), false];
+        } catch (\PDOException $e) {
+            // 23505 = unique_violation (duplicate message_id)
+            if (str_starts_with((string)$e->getCode(), '23505') || str_contains($e->getMessage(), '23505')) {
+                $mid = $params[':mid'];
+                if ($mid !== null && $mid !== '') {
+                    $s2 = $this->db->prepare('SELECT id FROM inbound_emails WHERE message_id = :mid LIMIT 1');
+                    $s2->execute([':mid' => $mid]);
+                    $existingId = $s2->fetchColumn();
+                    if ($existingId !== false) {
+                        return [(int)$existingId, true];
+                    }
+                }
+            }
+            throw $e;
+        }
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @deprecated Use insertOrGetExisting() instead
+     */
+    public function insert(array $row): int
+    {
+        [$id] = $this->insertOrGetExisting($row);
+        return $id;
     }
 
     /** @return array<int, array<string, mixed>> */
@@ -104,8 +136,8 @@ final class InboundEmailModel
     public function addAttachments(int $inboundEmailId, array $atts): void
     {
         $stmt = $this->db->prepare(
-            'INSERT INTO inbound_email_attachments (inbound_email_id, filename, content_type, size_bytes, external_ref)
-             VALUES (:eid, :fn, :ct, :sz, :er)'
+            'INSERT INTO inbound_email_attachments (inbound_email_id, filename, content_type, size_bytes, external_ref, stored_url)
+             VALUES (:eid, :fn, :ct, :sz, :er, :su)'
         );
         foreach ($atts as $a) {
             $stmt->execute([
@@ -114,6 +146,7 @@ final class InboundEmailModel
                 ':ct'  => $a['content_type'] ?? null,
                 ':sz'  => isset($a['size_bytes']) ? (int)$a['size_bytes'] : null,
                 ':er'  => $a['external_ref'] ?? null,
+                ':su'  => $a['stored_url'] ?? null,
             ]);
         }
     }

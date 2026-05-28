@@ -28,7 +28,7 @@ class CalendarSyncController extends BaseController
 {
     private function stateSecret(): string
     {
-        return trim((string)(getenv('CALENDAR_STATE_SECRET') ?: 'change-me-cal-state'));
+        return \App\Libraries\OAuthStateSecret::calendar();
     }
 
     private function buildState(int $userId, string $provider): string

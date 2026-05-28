@@ -5,7 +5,7 @@ namespace App\Controllers\Admin;
 
 use App\Controllers\BaseController;
 use App\Config\Auth as AuthConfig;
-use App\Models\AffiliateProfileModel;
+use App\Models\AssociateProfileModel;
 use App\Models\UserModel;
 use App\Models\RoleModel;
 use App\Libraries\BrevoMailer;
@@ -139,8 +139,8 @@ class UserController extends BaseController
         ]);
 
         $roleRow = isset($body['role_id']) ? $this->roles->find((int)$body['role_id']) : null;
-        if ($roleRow !== null && ($roleRow['name'] ?? '') === 'affiliate') {
-            (new AffiliateProfileModel())->insertPending($newId, null);
+        if ($roleRow !== null && ($roleRow['name'] ?? '') === 'associate') {
+            (new AssociateProfileModel())->insertPending($newId, null);
         }
 
         $user = $this->users->find($newId);
@@ -338,7 +338,7 @@ class UserController extends BaseController
      *
      * - super_admin role: can never be modified (anyone).
      * - admin role: only super_admin (wildcard "*" or hardcoded email) may edit it.
-     * - manager / staff / viewer / affiliate / client: any user with users.manage may edit.
+     * - manager / staff / viewer / associate / client: any user with users.manage may edit.
      *
      * Body: { permissions: string[] }
      */

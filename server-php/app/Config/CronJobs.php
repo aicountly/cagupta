@@ -75,13 +75,13 @@ class CronJobs
                 'purpose'   => 'Emails users in the Accounts role a list of service engagements that are still in billing_closure = open, prompting them to action billing closures.',
             ],
             [
-                'file'      => 'cli/notify-affiliate-payout-cycle-sla.php',
-                'log_file'  => 'logs/affiliate-payout-sla.log',
+                'file'      => 'cli/notify-associate-payout-cycle-sla.php',
+                'log_file'  => 'logs/associate-payout-sla.log',
                 'cron'      => '0 9 * * *',
                 'frequency' => 'Daily',
                 'timing'    => '9:00 AM daily',
                 'category'  => 'notification',
-                'purpose'   => 'Creates in-app SLA reminder notifications for affiliate payout cycles that have been finalised but not yet disbursed, based on the 3-day disbursal SLA from period_end.',
+                'purpose'   => 'Creates in-app SLA reminder notifications for associate payout cycles that have been finalised but not yet disbursed, based on the 3-day disbursal SLA from period_end.',
             ],
             [
                 'file'      => 'cli/notify-partner-payout-cycle-sla.php',
@@ -90,7 +90,7 @@ class CronJobs
                 'frequency' => 'Daily',
                 'timing'    => '9:00 AM daily',
                 'category'  => 'notification',
-                'purpose'   => 'Creates in-app SLA reminder notifications for partner payout cycles that have been finalised but not yet disbursed, mirroring the affiliate SLA logic.',
+                'purpose'   => 'Creates in-app SLA reminder notifications for partner payout cycles that have been finalised but not yet disbursed, mirroring the associate SLA logic.',
             ],
             [
                 'file'      => 'cli/notify-invoice-cost-variance-yesterday.php',

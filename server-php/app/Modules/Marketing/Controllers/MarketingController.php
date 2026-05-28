@@ -739,7 +739,7 @@ class MarketingController extends BaseController
         $this->success(['id' => (int)$this->db->lastInsertId()], 'Campaign created', 201);
     }
 
-    // ── Affiliate Prospects ───────────────────────────────────────────────────
+    // ── Associate Prospects ───────────────────────────────────────────────────
 
     public function prospectIndex(): never
     {
@@ -753,7 +753,7 @@ class MarketingController extends BaseController
         if ($status !== '') { $where[] = 'status = :status'; $params[':status'] = $status; }
         if ($search !== '') { $where[] = "(name ILIKE :s OR organization ILIKE :s)"; $params[':s'] = "%{$search}%"; }
 
-        $sql  = 'SELECT * FROM marketing_affiliate_prospects WHERE ' . implode(' AND ', $where) . ' ORDER BY created_at DESC LIMIT 500';
+        $sql  = 'SELECT * FROM marketing_associate_prospects WHERE ' . implode(' AND ', $where) . ' ORDER BY created_at DESC LIMIT 500';
         $stmt = $this->db->prepare($sql);
         $stmt->execute($params);
         $this->success($stmt->fetchAll(\PDO::FETCH_ASSOC));
@@ -768,7 +768,7 @@ class MarketingController extends BaseController
         if ($name === '') $this->error('name is required.', 422);
 
         $stmt = $this->db->prepare('
-            INSERT INTO marketing_affiliate_prospects
+            INSERT INTO marketing_associate_prospects
                 (name, type, organization, mobile, email, source, status, created_by)
             VALUES
                 (:name, :type, :org, :mobile, :email, :source, \'new\', :uid)
@@ -801,7 +801,7 @@ class MarketingController extends BaseController
         }
         if (empty($updates)) $this->error('No fields to update.', 422);
 
-        $stmt = $this->db->prepare('UPDATE marketing_affiliate_prospects SET ' . implode(', ', $updates) . ', updated_at = NOW() WHERE id = :id');
+        $stmt = $this->db->prepare('UPDATE marketing_associate_prospects SET ' . implode(', ', $updates) . ', updated_at = NOW() WHERE id = :id');
         $stmt->execute($params);
         $this->success([], 'Prospect updated');
     }

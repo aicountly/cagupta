@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - 'web/**'
+      - 'mobile/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ci.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'web/**'
+      - 'mobile/**'
+      - 'packages/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ci.yml'
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npm run build:packages
+
+      - name: Build web
+        run: npm run build:web
+
+      - name: Typecheck mobile
+        run: npm run typecheck --workspace=@cagupta/mobile-app
+
+      - name: Expo export (Android bundle smoke test)
+        working-directory: mobile/app
+        run: npx expo export --platform android --output-dir .expo-export-test
+
+      - name: Expo export (iOS bundle smoke test)
+        working-directory: mobile/app
+        run: npx expo export --platform ios --output-dir .expo-export-test-ios
+
+      - name: Lint web
+        run: npm run lint --workspace=web
+
+      - name: Lint mobile
+        run: npm run lint --workspace=@cagupta/mobile-app

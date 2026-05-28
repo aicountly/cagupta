@@ -11,7 +11,7 @@ use PDO;
  *
  * Visibility levels (hierarchical):
  *   internal  → staff only (all entries visible)
- *   affiliate → affiliate + client entries visible
+ *   associate → associate + client entries visible
  *   client    → client entries only
  */
 class ServiceLogModel
@@ -19,7 +19,7 @@ class ServiceLogModel
     private PDO $db;
 
     /** Ordered visibility hierarchy (broadest first). */
-    private const VISIBILITY_ORDER = ['internal', 'affiliate', 'client'];
+    private const VISIBILITY_ORDER = ['internal', 'associate', 'client'];
 
     public function __construct()
     {
@@ -32,8 +32,8 @@ class ServiceLogModel
      * Return all log entries for a service, filtered to the caller's visibility level.
      *
      * $minVisibility controls the minimum visibility of entries to return:
-     *   'internal'  → return all entries (internal + affiliate + client)
-     *   'affiliate' → return affiliate + client entries
+     *   'internal'  → return all entries (internal + associate + client)
+     *   'associate' → return associate + client entries
      *   'client'    → return client entries only
      *
      * Pinned entries are sorted first; within each group, newest entries appear first.
@@ -44,8 +44,8 @@ class ServiceLogModel
     {
         $allowed = match ($minVisibility) {
             'client'    => ['client'],
-            'affiliate' => ['affiliate', 'client'],
-            default     => ['internal', 'affiliate', 'client'],
+            'associate' => ['associate', 'client'],
+            default     => ['internal', 'associate', 'client'],
         };
 
         $inPlaceholders = implode(

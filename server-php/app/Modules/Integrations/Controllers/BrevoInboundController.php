@@ -57,6 +57,10 @@ final class BrevoInboundController extends BaseController
             $this->error('Processing failed', 500);
         }
 
+        if ($res['duplicate'] ?? false) {
+            $this->success(['email_id' => $res['email_id']], 'Already processed', 200);
+        }
+
         $this->success($res, 'Accepted', 201);
     }
 }

@@ -16,6 +16,11 @@ class DiagController extends BaseController
 {
     public function index(): never
     {
+        $env = strtolower((string)(getenv('APP_ENV') ?: 'development'));
+        if (!in_array($env, ['development', 'local', 'dev'], true)) {
+            $this->error('Not found.', 404);
+        }
+
         $flags = JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR;
         $out   = [
             'php_version'       => PHP_VERSION,

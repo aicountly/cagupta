@@ -258,18 +258,18 @@ class ClientModel
                 email, secondary_email, phone, secondary_phone, pan, gstin, website,
                 address_line1, address_line2, city, state, pincode, country,
                 notes, reference, group_id, is_active, contact_status, created_by,
-                referring_affiliate_user_id, referral_start_date, commission_mode, client_facing_restricted,
+                referring_associate_user_id, referral_start_date, commission_mode, client_facing_restricted,
                 default_billing_profile_code
              ) VALUES (
                 :type, :first_name, :last_name, :organization_name,
                 :email, :secondary_email, :phone, :secondary_phone, :pan, :gstin, :website,
                 :address_line1, :address_line2, :city, :state, :pincode, :country,
                 :notes, :reference, :group_id, :is_active, :contact_status, :created_by,
-                :referring_affiliate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted,
+                :referring_associate_user_id, :referral_start_date, :commission_mode, :client_facing_restricted,
                 :default_billing_profile_code
              ) RETURNING id'
         );
-        $refAff = isset($data['referring_affiliate_user_id']) ? (int)$data['referring_affiliate_user_id'] : 0;
+        $refAff = isset($data['referring_associate_user_id']) ? (int)$data['referring_associate_user_id'] : 0;
         $contactStatus = self::normalizeContactStatus($data['contact_status'] ?? null, $data['is_active'] ?? true);
         $stmt->execute([
             ':type'              => $data['type']              ?? 'individual',
@@ -295,7 +295,7 @@ class ClientModel
             ':is_active'         => ($contactStatus !== 'inactive') ? 'true' : 'false',
             ':contact_status'    => $contactStatus,
             ':created_by'        => $data['created_by']        ?? null,
-            ':referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
+            ':referring_associate_user_id' => $refAff > 0 ? $refAff : null,
             ':referral_start_date' => !empty($data['referral_start_date']) ? $data['referral_start_date'] : null,
             ':commission_mode'     => $data['commission_mode'] ?? 'referral_only',
             ':client_facing_restricted' => ((bool)($data['client_facing_restricted'] ?? false)) ? 'true' : 'false',
@@ -328,10 +328,10 @@ class ClientModel
                 $params[":{$field}"] = $data[$field];
             }
         }
-        if (array_key_exists('referring_affiliate_user_id', $data)) {
-            $ra = (int)$data['referring_affiliate_user_id'];
-            $setClauses[]                    = 'referring_affiliate_user_id = :referring_affiliate_user_id';
-            $params[':referring_affiliate_user_id'] = $ra > 0 ? $ra : null;
+        if (array_key_exists('referring_associate_user_id', $data)) {
+            $ra = (int)$data['referring_associate_user_id'];
+            $setClauses[]                    = 'referring_associate_user_id = :referring_associate_user_id';
+            $params[':referring_associate_user_id'] = $ra > 0 ? $ra : null;
         }
         if (array_key_exists('client_facing_restricted', $data)) {
             $setClauses[]                       = 'client_facing_restricted = :client_facing_restricted';

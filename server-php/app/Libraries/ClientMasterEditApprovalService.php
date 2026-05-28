@@ -368,7 +368,7 @@ final class ClientMasterEditApprovalService
             'reference'                   => 'Reference',
             'group_id'                    => 'Client group',
             'is_active'                   => 'Active',
-            'referring_affiliate_user_id' => 'Referring affiliate',
+            'referring_associate_user_id' => 'Referring associate',
             'referral_start_date'         => 'Referral start date',
             'commission_mode'             => 'Commission mode',
             'client_facing_restricted'    => 'Client-facing restricted',

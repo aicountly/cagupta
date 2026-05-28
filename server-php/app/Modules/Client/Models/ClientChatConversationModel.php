@@ -143,7 +143,7 @@ final class ClientChatConversationModel
     {
         $this->db->prepare(
             'UPDATE chat_conversations
-             SET staff_last_read_message_id = GREATEST(COALESCE(staff_last_read_message_id, 0), :mid),
+             SET stassoc_last_read_message_id = GREATEST(COALESCE(stassoc_last_read_message_id, 0), :mid),
                  needs_attention = FALSE
              WHERE id = :cid'
         )->execute([':mid' => $messageId, ':cid' => $conversationId]);

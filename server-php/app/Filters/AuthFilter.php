@@ -39,7 +39,7 @@ class AuthFilter
         try {
             $payload = JWT::decode($token, AuthConfig::jwtSecret());
         } catch (\Throwable $e) {
-            api_error('Invalid or expired token: ' . $e->getMessage(), 401);
+            api_error('Invalid or expired token.', 401);
         }
 
         // 2. Verify the session exists in the DB (allows server-side revocation)
@@ -92,7 +92,7 @@ class AuthFilter
         }
 
         // 4. Super-admin override
-        if (strtolower((string)($user['email'] ?? '')) === strtolower(AuthConfig::SUPER_ADMIN_EMAIL)) {
+        if (AuthConfig::isSuperAdminEmail((string)($user['email'] ?? ''))) {
             $user['role_name'] = 'super_admin';
         }
 

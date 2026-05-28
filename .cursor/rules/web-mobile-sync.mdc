@@ -1,0 +1,66 @@
+---
+description: When changing shared logic or portal UI, update both web and mobile. Run Gate A/B verification before finishing.
+globs: web/**/*.{jsx,js,ts,tsx}, mobile/**/*.{jsx,js,ts,tsx}, packages/**/*
+alwaysApply: false
+---
+
+# Web + Mobile Sync Policy
+
+This repo has **web** (`web/`), **mobile** (`mobile/app/`), and **shared packages** (`packages/`).
+
+## When to update BOTH web and mobile
+
+| Change type | Shared location | Mobile mirror |
+|-------------|-----------------|---------------|
+| Portal labels/keys | `packages/shared-constants/src/portals.ts` | Auto via import; check `LoginScreen.tsx` |
+| Roles/permissions | `packages/shared-constants/src/roles.ts` | Auto via import |
+| Auth / API clients | `packages/shared-services/` | `mobile/app/src/adapters/` + shared-services |
+| Portal screen logic | `web/src/modules/{portal}/` | `mobile/app/src/portals/{portal}/` |
+
+## Web-only (no mobile update required)
+
+Tailwind layout, Sidebar/TopBar, marketing pages, FullCalendar, jspdf, admin Core screens not yet built on mobile.
+
+## Mandatory verification (every batch)
+
+### Gate A — BEFORE new code
+
+```bash
+cd web && npm run build
+# when mobile exists:
+cd mobile/app && npx tsc --noEmit
+```
+
+### Gate B — AFTER code, BEFORE commit
+
+```bash
+cd web && npm run build
+cd mobile/app && npx tsc --noEmit   # when mobile exists
+rg -i "Affiliate [Pp]ortal|For Affiliate Member" web/ mobile/ packages/ --glob "*.{js,jsx,ts,tsx}"
+rg "PORTAL_META\s*=" web/ mobile/ --glob "*.{js,jsx,ts,tsx}" | rg -v "shared-constants|SHARED_PORTAL"
+```
+
+Expected: 0 stale user-facing "Affiliate portal" strings; no duplicate `PORTAL_META` outside shared package.
+
+## Verification Report (paste in every batch)
+
+```
+## Batch N Verification Report
+Gate A: web build PASS/FAIL | mobile tsc PASS/FAIL/N/A
+Gate B: web build PASS/FAIL | mobile tsc PASS/FAIL/N/A | naming grep PASS/FAIL
+Defects fixed: ...
+Blockers: ...
+```
+
+Do NOT start the next batch until all gates PASS.
+
+## Portal naming (current)
+
+| UI label | Key | Role |
+|----------|-----|------|
+| Core | `staff` | staff roles |
+| Associate | `associate` | `associate` |
+| My CA | `client` | `client` |
+| Partner | `partner` | `partner` |
+
+Legacy URL `?portal=affiliate` maps to `associate` via `normalizePortalSlug()`.

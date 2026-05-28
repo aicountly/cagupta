@@ -115,8 +115,8 @@ class QuotationShareService
             exit;
         }
 
-        $absPath = $this->docuBankRoot() . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string)$row['pdf_path']);
-        if (!is_readable($absPath)) {
+        $absPath = $this->resolvePdfPath((string)$row['pdf_path']);
+        if ($absPath === null || !is_readable($absPath)) {
             http_response_code(404);
             header('Content-Type: application/json');
             echo json_encode(['success' => false, 'message' => 'PDF file not found.']);
@@ -316,5 +316,28 @@ class QuotationShareService
             return rtrim($configured, '/\\');
         }
         return dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'docu_bank';
+    }
+
+    /** Resolve stored relative path under docu bank; blocks path traversal. */
+    private function resolvePdfPath(string $relPath): ?string
+    {
+        $relPath = trim(str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $relPath));
+        if ($relPath === '' || str_contains($relPath, '..')) {
+            return null;
+        }
+        $root = realpath($this->docuBankRoot());
+        if ($root === false) {
+            return null;
+        }
+        $candidate = $root . DIRECTORY_SEPARATOR . $relPath;
+        $resolved  = realpath($candidate);
+        if ($resolved === false) {
+            return null;
+        }
+        $prefix = $root . DIRECTORY_SEPARATOR;
+        if ($resolved !== $root && !str_starts_with($resolved, $prefix)) {
+            return null;
+        }
+        return $resolved;
     }
 }

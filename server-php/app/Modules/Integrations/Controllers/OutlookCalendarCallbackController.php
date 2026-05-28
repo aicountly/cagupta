@@ -18,7 +18,7 @@ class OutlookCalendarCallbackController extends BaseController
 {
     private function stateSecret(): string
     {
-        return trim((string)(getenv('CALENDAR_STATE_SECRET') ?: 'change-me-cal-state'));
+        return \App\Libraries\OAuthStateSecret::calendar();
     }
 
     public function handle(): never

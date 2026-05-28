@@ -24,12 +24,12 @@ const PORTAL_OPTIONS = [
     iconClass: 'login-dd__icon--client',
   },
   {
-    key: 'affiliate',
-    label: 'Affiliate',
-    sub: 'For Affiliate Member',
-    href: PORTAL_LINKS.affiliate,
+    key: 'associate',
+    label: 'Associate',
+    sub: 'For Accountants & Bankers',
+    href: PORTAL_LINKS.associate,
     Icon: Handshake,
-    iconClass: 'login-dd__icon--affiliate',
+    iconClass: 'login-dd__icon--associate',
   },
   {
     key: 'partner',

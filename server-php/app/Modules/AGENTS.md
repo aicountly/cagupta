@@ -14,7 +14,7 @@ by scanning `Modules/*/` automatically.
 | **CRM**         | Contacts, organizations, client groups, leads, quotations, engagement types, service categories |
 | **Operations**  | Services, service logs, time entries, recurring definitions, registers, credentials, portal types, appointments, leaves, KYC, calendar sync |
 | **Finance**     | Invoices, transactions (txn), opening balances, Razorpay events |
-| **Affiliate**   | Affiliate profiles, commission rates, accruals, payouts, bank details, upline tracking |
+| **Associate**   | Associate profiles, commission rates, accruals, payouts, bank details, upline tracking |
 | **Partner**     | Partner profiles, assignments, payout accruals/requests, bank details |
 | **Client**      | Client portal identity, OTP login, client sessions, client-facing service logs |
 | **Integrations**| Zoom, Google/Outlook/Apple calendar callbacks, Razorpay webhooks |

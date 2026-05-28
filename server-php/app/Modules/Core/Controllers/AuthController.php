@@ -10,6 +10,8 @@ use App\Libraries\BrevoMailer;
 use App\Libraries\JWT;
 use App\Libraries\OtpService;
 use App\Libraries\PasswordHasher;
+use App\Libraries\RateLimiter;
+use App\Libraries\SsoTokenVerifier;
 use App\Models\UserModel;
 use App\Models\SessionModel;
 use App\Models\ClientLoginOtpModel;
@@ -46,6 +48,14 @@ class AuthController extends BaseController
         $this->clientSessions = new ClientSessionModel();
     }
 
+    private function enforceAuthRateLimit(string $action): void
+    {
+        $key = RateLimiter::clientKey('auth:' . $action);
+        if (!RateLimiter::attempt($key, 30, 900)) {
+            $this->error('Too many attempts. Please try again later.', 429);
+        }
+    }
+
     // ── POST /api/auth/login ─────────────────────────────────────────────────
 
     /**
@@ -60,6 +70,7 @@ class AuthController extends BaseController
      */
     public function login(): never
     {
+        $this->enforceAuthRateLimit('login');
         $body  = $this->getJsonBody();
         $portal = strtolower(trim((string)($body['portal'] ?? '')));
         if ($portal === 'client') {
@@ -125,6 +136,7 @@ class AuthController extends BaseController
      */
     public function verifyOtp(): never
     {
+        $this->enforceAuthRateLimit('verify-otp');
         $body  = $this->getJsonBody();
         $portal = strtolower(trim((string)($body['portal'] ?? '')));
         if ($portal === 'client') {
@@ -160,6 +172,7 @@ class AuthController extends BaseController
      */
     public function requestOtp(): never
     {
+        $this->enforceAuthRateLimit('request-otp');
         $body  = $this->getJsonBody();
         $portal = strtolower(trim((string)($body['portal'] ?? '')));
         if ($portal === 'client') {
@@ -227,22 +240,15 @@ class AuthController extends BaseController
             $this->error('email and sso_token are required.', 422);
         }
 
-        // Extract provider user ID from JWT payload (sub claim).
-        // Storing only the short sub (~21 chars) instead of the full token
-        // prevents column overflow on VARCHAR/TEXT length limits.
-        $providerUserId = $ssoToken; // fallback
-        try {
-            $parts = explode('.', $ssoToken);
-            if (count($parts) === 3) {
-                $padded  = str_pad(strtr($parts[1], '-_', '+/'), (int)ceil(strlen($parts[1]) / 4) * 4, '=', STR_PAD_RIGHT);
-                $payload = json_decode(base64_decode($padded), true);
-                if (!empty($payload['sub'])) {
-                    $providerUserId = (string)$payload['sub'];
-                }
-            }
-        } catch (\Throwable $e) {
-            // keep fallback
+        $verified = \App\Libraries\SsoTokenVerifier::verify($provider, $ssoToken);
+        if ($verified === null) {
+            $this->error('Invalid or expired SSO token.', 401);
         }
+        if ($verified['email'] !== $email) {
+            $this->error('SSO email does not match the verified token.', 403);
+        }
+
+        $providerUserId = $verified['sub'];
 
         // Look up existing user — access is invite-only, no auto-registration
         $user = $this->users->findByEmail($email);

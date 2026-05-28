@@ -7,7 +7,7 @@ export const PORTAL_URL = (
 
 export const PORTAL_LINKS = {
   staff: `${PORTAL_URL}/login?portal=staff`,
-  affiliate: `${PORTAL_URL}/login?portal=affiliate`,
+  associate: `${PORTAL_URL}/login?portal=associate`,
   client: `${PORTAL_URL}/login?portal=client`,
   partner: `${PORTAL_URL}/login?portal=partner`,
 };

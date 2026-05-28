@@ -11,8 +11,22 @@ namespace App\Config;
  */
 class Auth
 {
-    /** Hardcoded super-admin e-mail address. */
+    /** Default super-admin e-mail — override via SUPER_ADMIN_EMAIL in .env (comma-separated). */
     public const SUPER_ADMIN_EMAIL = 'rahul@cagupta.in';
+
+    public static function superAdminEmails(): array
+    {
+        $raw = getenv('SUPER_ADMIN_EMAIL') ?: self::SUPER_ADMIN_EMAIL;
+        return array_values(array_filter(array_map(
+            static fn (string $e) => strtolower(trim($e)),
+            explode(',', (string)$raw),
+        )));
+    }
+
+    public static function isSuperAdminEmail(string $email): bool
+    {
+        return in_array(strtolower(trim($email)), self::superAdminEmails(), true);
+    }
 
     /** HS256 JWT signing secret — MUST be overridden in .env (JWT_SECRET). */
     public const JWT_SECRET = '';

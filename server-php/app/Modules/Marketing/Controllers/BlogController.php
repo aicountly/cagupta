@@ -7,6 +7,8 @@ use App\Controllers\BaseController;
 use App\Libraries\BlogAiGenerator;
 use App\Libraries\BlogAiSettings;
 use App\Libraries\BrevoMailer;
+use App\Libraries\RateLimiter;
+use App\Libraries\TurnstileVerifier;
 
 /**
  * BlogController — Blog Posts & AI Draft Management
@@ -1086,6 +1088,15 @@ class BlogController extends BaseController
     public function publicLeadSubmit(): never
     {
         $body    = $this->getJsonBody();
+        if (trim((string)($body['website'] ?? '')) !== '') {
+            $this->success(['id' => 0], 'Thank you! We will be in touch soon.', 201);
+        }
+        if (!RateLimiter::attempt(RateLimiter::clientKey('public-lead'), 10, 3600)) {
+            $this->error('Too many submissions. Please try again later.', 429);
+        }
+        if (!TurnstileVerifier::verify($body['turnstile_token'] ?? null)) {
+            $this->error('CAPTCHA verification failed. Please try again.', 422);
+        }
         $name    = trim((string)($body['name']    ?? ''));
         $email   = trim((string)($body['email']   ?? ''));
         $phone   = trim((string)($body['phone']   ?? ''));

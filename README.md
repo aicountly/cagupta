@@ -1,6 +1,6 @@
 # 🏢 CA Gupta Office Management Portal
 
-A **full-stack automated office-management portal** designed specifically for a **Chartered Accountancy practice** handling **100+ clients** with a team of **15+ professionals**. The portal centralises, automates, and streamlines all core operations — from client onboarding and compliance tracking to invoicing, appointments, and affiliate management.
+A **full-stack automated office-management portal** designed specifically for a **Chartered Accountancy practice** handling **100+ clients** with a team of **15+ professionals**. The portal centralises, automates, and streamlines all core operations — from client onboarding and compliance tracking to invoicing, appointments, and associate management.
 
 The system comprises:
 
@@ -20,7 +20,7 @@ Instead of juggling multiple tools (Excel, Tally, WhatsApp, emails, and random f
 - A **single pane of glass** for managing clients, services, tasks, documents, and finances.
 - Automated compliance workflows (recurring services, registers, reminders, document sharing).
 - A **secure client portal** for document viewing, service status, and ledger access.
-- An **affiliate portal** for referral partners to track commissions, payouts, and sub-affiliates.
+- An **associate portal** for referral partners to track commissions, payouts, and sub-associates.
 - **Native calendar sync** with Google, Outlook, and Apple CalDAV.
 - **Online appointment booking** with Razorpay payment and automatic Zoom meeting creation.
 
@@ -31,7 +31,7 @@ Instead of juggling multiple tools (Excel, Tally, WhatsApp, emails, and random f
 ### 1. Authentication & Access Control
 - Email OTP login, Google OAuth, and Microsoft (MSAL) OAuth for the **staff portal**.
 - Separate OTP-based login for the **client portal**.
-- Three portal types served from the same app: `staff`, `client`, `affiliate`.
+- Four portal types served from the same app: `staff`, `client`, `associate`, `partner`.
 - Role-based access control (RBAC) — `super_admin`, `admin`, `manager`, `staff`, `viewer`.
 - Delegate permissions — granular per-user permission overrides on top of roles.
 - JWT sessions stored in DB (server-side revocation on logout).
@@ -75,7 +75,7 @@ Instead of juggling multiple tools (Excel, Tally, WhatsApp, emails, and random f
 - Aged receivables and outstanding balance tracking.
 - **Razorpay integration** for online appointment payments (webhook-verified).
 - Appointment invoice auto-generation on payment confirmation.
-- Affiliate commission accrual and sync per invoice line item.
+- Associate commission accrual and sync per invoice line item.
 
 ### 7. Appointments & Calendar
 - Staff-wise appointment slots with configurable **fee rules** per engagement type.
@@ -99,14 +99,14 @@ Instead of juggling multiple tools (Excel, Tally, WhatsApp, emails, and random f
 - Follow-up reminders and lead lifecycle tracking.
 - **Pending Follow-Ups** dashboard for overdue lead actions.
 
-### 11. Affiliate Portal
-- Dedicated portal for referral affiliates (`/affiliate/*` routes).
+### 11. Associate Portal
+- Dedicated portal for referral associates (`/associate/*` routes).
 - Dashboard with commission summary, pending payouts, and active services.
-- Sub-affiliate tree (upline tracker).
+- Sub-associate tree (upline tracker).
 - Commission accrual per invoice line with configurable rates.
 - Payout request workflow.
 - Bank detail management.
-- Firm-level commission defaults with per-affiliate overrides.
+- Firm-level commission defaults with per-associate overrides.
 
 ### 12. Client Portal
 - Dedicated self-service portal for clients (`/client/*` routes).
@@ -152,7 +152,7 @@ Instead of juggling multiple tools (Excel, Tally, WhatsApp, emails, and random f
 |---|---|
 | 001–010 | Initial schema, SSO, OTP, service categories, payments, opening balances, client groups, leads, portal types |
 | 011–020 | Transactions, contact–org linking, engagement subcategories, quotation setup, GST breakdown, delegate permissions |
-| 021–030 | Audit log, affiliate commissions, billing closure, time entries, appointments + Zoom + Razorpay, client referral, service assignees, app grants, client portal login |
+| 021–030 | Audit log, associate commissions, billing closure, time entries, appointments + Zoom + Razorpay, client referral, service assignees, app grants, client portal login |
 | 031–040 | Super-admin digest, client group uniqueness, contact/org status fields, time-entry timers, staff leaves, temp assignments, service logs |
 | 041–044 | Shift targets, calendar sync, KYC documents, **recurring service definitions + extended registers** |
 
@@ -181,46 +181,79 @@ psql -h <host> -U <user> -d <dbname> -f server-php/database/migrations/044_regis
 
 ---
 
-## 📱 Mobile Applications (Planned — Phase 12 & 13)
+## 📱 Mobile Application (iOS + Android)
 
-Two separate React Native apps will be built from a **shared monorepo** (`mobile/`) for maximum code reuse while maintaining distinct user experiences and permission boundaries.
+Single Expo app at **`mobile/app/`** — **CA Rahul Gupta Office** — with four portals matching the web app:
 
-| Concern | Team App (`ca-team-app`) | Client App (`ca-client-app`) |
-|---|---|---|
-| **Users** | 15+ CA staff, partners, managers | 100+ clients and their representatives |
-| **Operations** | Heavy read + write (tasks, invoices, docs, credentials) | Primarily read + limited write (view docs, book appointments, submit requests) |
-| **Security** | Access to all clients, internal dashboards, credentials vault | Isolated to own data only |
-| **Distribution** | Internal (MDM / Enterprise) or Play Store / App Store | Public — Play Store & App Store |
+| Portal | Key | Users |
+|--------|-----|-------|
+| Core | `staff` | CA staff & team |
+| Associate | `associate` | Accountants & Bankers |
+| My CA | `client` | Clients |
+| Partner | `partner` | Professionals |
+
+**Shared packages** (npm workspaces): `packages/shared-constants`, `packages/shared-services`.
 
 ### Mobile Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Framework | React Native (Expo or bare workflow) |
+| Framework | Expo + React Native |
 | Language | TypeScript |
-| Navigation | React Navigation v7+ |
-| State | Redux Toolkit + TanStack Query |
-| Forms | React Hook Form + Zod |
-| HTTP | Axios (shared interceptors from `shared-services`) |
-| Push Notifications | Firebase Cloud Messaging (FCM) + APNs |
-| File Handling | `react-native-document-picker` + `react-native-camera` |
-| Secure Storage | `react-native-keychain` / `expo-secure-store` (biometric auth) |
-| Offline | WatermelonDB / MMKV for low-connectivity caching |
-| PDF Viewer | `react-native-pdf` |
-| Charts | Victory Native |
-| Testing | Jest + React Native Testing Library + Detox |
-| CI/CD | GitHub Actions + Fastlane + EAS Build |
+| Navigation | React Navigation v7 |
+| State | TanStack Query |
+| HTTP | `@cagupta/shared-services` (fetch + JWT) |
+| Secure Storage | expo-secure-store |
+| CI/CD | EAS Build (`mobile/app/eas.json`) |
 
-### Mock API for Mobile Dev
-
-During mobile development the `mock-api/` JSON server will stand in for the live PHP backend:
+### Running the mobile app
 
 ```bash
-cd mock-api
-npx json-server --watch db.json --port 3001
+cp mobile/app/.env.example mobile/app/.env
+cd mobile/app && npx expo start
 ```
 
-Point the mobile apps at `http://localhost:3001` via the `EXPO_PUBLIC_API_BASE_URL` env variable in `mobile/apps/team-app/.env`.
+Set `EXPO_PUBLIC_API_BASE_URL=http://localhost:8080/api` (use your machine LAN IP for a physical device).
+
+### Build
+
+```bash
+npm run build:packages   # from repo root
+npm run ci               # packages + web build + mobile typecheck (matches CI)
+cd mobile/app && npm run typecheck
+cd web && npm run build
+```
+
+### EAS Build (preview / production)
+
+Requires [Expo EAS CLI](https://docs.expo.dev/build/setup/) and an Expo account:
+
+```bash
+cd mobile/app
+eas build --profile preview --platform android   # internal APK
+eas build --profile production --platform all    # store builds
+```
+
+Profiles are defined in `mobile/app/eas.json` (`development`, `preview`, `production`).
+
+### Mobile MVP scope (vs web)
+
+| Portal | Mobile screens | Deferred to web |
+|--------|----------------|-----------------|
+| **Core** | Dashboard, Contacts, Services, More (profile, inbox) | Finance, CRM, calendar, documents, settings, team chat UI |
+| **Associate** | All 9 nav tabs (dashboard → profile) | — |
+| **Partner** | All 6 nav tabs | — |
+| **Client** | Active, Done, Ledger, Chat, Profile, service detail | — |
+
+Deep links use scheme `carahulgupta://` (see `mobile/app/AGENTS.md`). Push notification scaffold is in place; backend token registration is not wired yet.
+
+### CI
+
+GitHub Actions workflow [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on PRs/pushes that touch `web/`, `mobile/`, or `packages/`:
+
+- `npm run build:packages`
+- `npm run build:web`
+- `npm run typecheck` (mobile)
 
 ---
 
@@ -236,7 +269,7 @@ Point the mobile apps at `http://localhost:3001` via the `EXPO_PUBLIC_API_BASE_U
 │   │   │   ├── /common           # ClientSearchDropdown, DateInput, StatusBadge,
 │   │   │   │                     # ListPaginationBar, RegisterSubFilters, etc.
 │   │   │   ├── /documents        # KycDocumentTab
-│   │   │   ├── /layout           # Sidebar, TopBar, AffiliateLayout, ClientLayout
+│   │   │   ├── /layout           # Sidebar, TopBar, AssociateLayout, ClientLayout
 │   │   │   ├── /leaves           # HandoverAssignmentModal
 │   │   │   ├── /registers        # RegisterEntryModal
 │   │   │   └── /services         # AddLogModal, AddTaskModal, ServiceLogPanel,
@@ -246,14 +279,14 @@ Point the mobile apps at `http://localhost:3001` via the `EXPO_PUBLIC_API_BASE_U
 │   │   ├── /hooks                # useElapsedTimer, useServiceTimer, useStaffUsers,
 │   │   │                         # useTimesheetReportFilters
 │   │   ├── /pages
-│   │   │   ├── /affiliate        # AffiliateDashboard, AffiliateCommissions,
-│   │   │   │                     # AffiliateServices, AffiliateBank, AffiliatePayouts,
-│   │   │   │                     # AffiliateSubAffiliates
+│   │   │   ├── /associate        # AssociateDashboard, AssociateCommissions,
+│   │   │   │                     # AssociateServices, AssociateBank, AssociatePayouts,
+│   │   │   │                     # AssociateSubAssociates
 │   │   │   ├── /client           # ClientActiveServices, ClientCompletedServices,
 │   │   │   │                     # ClientLedger, ClientProfile, ClientServiceDetails
 │   │   │   ├── Dashboard, DashboardMetricDetail
 │   │   │   ├── Clients, Contacts, ContactCreatePage, Organizations, OrganizationCreatePage
-│   │   │   ├── ClientGroups, AdminAffiliates
+│   │   │   ├── ClientGroups, AdminAssociates
 │   │   │   ├── Services, NewServiceEngagement, ServiceEngagementEdit,
 │   │   │   │   ServiceEngagementManage, ServiceEngagementFiles, ServicesKpiList
 │   │   │   ├── RecurringServices
@@ -287,7 +320,7 @@ Point the mobile apps at `http://localhost:3001` via the `EXPO_PUBLIC_API_BASE_U
 │   │   ├── /Config               # App, Auth, Database, Routes
 │   │   ├── /Controllers
 │   │   │   ├── /Admin            # All admin-facing CRUD controllers
-│   │   │   ├── /Affiliate        # AffiliatePortalController
+│   │   │   ├── /Associate        # AssociatePortalController
 │   │   │   ├── /Auth             # AuthController (JWT, OTP, SSO)
 │   │   │   ├── /Client           # ClientPortalController, Client ServiceLogController
 │   │   │   ├── /Integrations     # Google/Outlook/Apple calendar callbacks, ZoomCallback
@@ -317,25 +350,23 @@ Point the mobile apps at `http://localhost:3001` via the `EXPO_PUBLIC_API_BASE_U
 │   │   └── /__tests__
 │   └── package.json
 │
-├── /mobile                       # 🗓 PLANNED — React Native Mobile Apps (monorepo)
-│   ├── /packages
-│   │   ├── /shared-ui            # Reusable UI components (buttons, cards, modals)
-│   │   ├── /shared-services      # API clients, auth logic, push notification handlers
-│   │   ├── /shared-types         # TypeScript interfaces (Client, Invoice, Task, etc.)
-│   │   └── /shared-utils         # Date formatting, currency helpers, validators
-│   ├── /apps
-│   │   ├── /team-app             # Internal CA team app (ca-team-app)
-│   │   └── /client-app           # Client-facing app (ca-client-app)
-│   ├── nx.json / turbo.json      # Monorepo orchestration
-│   └── package.json
+├── /mobile                       # Expo React Native app (iOS + Android)
+│   └── /app                        # Single app — CA Rahul Gupta Office (4 portals)
+│       ├── /src/portals            # core | associate | partner | client screens
+│       ├── /src/navigation         # Role-based tab navigators + deep links
+│       ├── /src/adapters           # Secure storage + API client
+│       ├── app.json                # Expo config (scheme: carahulgupta)
+│       └── eas.json                # EAS Build profiles (preview, production)
 │
-├── /mock-api                     # 🗓 PLANNED — JSON mock server for mobile dev
-│   ├── db.json                   # Seed data for all entities
-│   └── routes.json               # Route overrides
+├── /packages                     # npm workspace shared packages
+│   ├── /shared-constants         # Portals, roles, permissions, deep-link helpers
+│   └── /shared-services          # Auth + API clients (web + mobile)
 │
 ├── .github
 │   └── /workflows
-│       └── deploy-cpanel.yml     # Manual build + rsync to cPanel
+│       ├── ci.yml                  # PR CI: packages + web build + mobile tsc + expo export
+│       ├── deploy-cpanel.yml       # Manual build + rsync to cPanel
+│       └── deploy-github-pages.yml # Demo portal deploy
 │
 └── README.md
 ```
@@ -348,10 +379,10 @@ Point the mobile apps at `http://localhost:3001` via the `EXPO_PUBLIC_API_BASE_U
 
 | Layer | Technology |
 |---|---|
-| Framework | React 18 + Vite |
+| Framework | React 19 + Vite 7 |
 | Routing | React Router v6 |
 | Styling | Tailwind CSS |
-| HTTP | Axios (with debug-console interceptor) |
+| HTTP | `fetch` + `@cagupta/shared-services` (chat); other services use fetch with global 401 handler |
 | Auth | JWT + Google OAuth (`@react-oauth/google`) + Microsoft MSAL |
 | Forms | Controlled components + custom validation |
 | Calendar UI | FullCalendar |
@@ -361,7 +392,7 @@ Point the mobile apps at `http://localhost:3001` via the `EXPO_PUBLIC_API_BASE_U
 
 | Layer | Technology |
 |---|---|
-| Language | PHP 8.1 |
+| Language | PHP 8.3 |
 | Architecture | Lightweight MVC (CodeIgniter-style, no framework dependency) |
 | Database | PostgreSQL 14 via PDO prepared statements |
 | Auth | JWT (HS256) + bcrypt passwords + OTP |
@@ -460,7 +491,7 @@ The marketing site (`web-public/`) and the portal (`web/`) are fully decoupled. 
 
 ```
 https://app.carahulgupta.in/login?portal=staff
-https://app.carahulgupta.in/login?portal=affiliate
+https://app.carahulgupta.in/login?portal=associate
 https://app.carahulgupta.in/login?portal=client
 ```
 
@@ -481,16 +512,25 @@ If `/login` is opened without a `portal=` parameter (e.g. a direct bookmark), th
 | Variable | Purpose | Default |
 |---|---|---|
 | `VITE_PORTAL_URL` | Portal base URL for login dropdown links | `https://app.carahulgupta.in` |
+| `VITE_GA4_MEASUREMENT_ID` | GA4 measurement ID (`G-…`) — same as `web/.env` for one property | — |
 
 **`web/.env`**
 
 | Variable | Purpose | Default |
 |---|---|---|
 | `VITE_API_BASE_URL` | PHP API base URL | *(omit for mock/dev mode)* |
-| `VITE_GOOGLE_CLIENT_ID` | Google OAuth client ID | — |
+| `VITE_GOOGLE_CLIENT_ID` | Google OAuth client ID (sign-in; not Analytics) | — |
 | `VITE_MSAL_CLIENT_ID` | Azure App Registration client ID | — |
 | `VITE_MSAL_TENANT_ID` | Azure tenant ID | `common` |
 | `VITE_MARKETING_URL` | "Wrong portal?" escape link target | `https://carahulgupta.in` |
+| `VITE_GA4_MEASUREMENT_ID` | GA4 measurement ID (`G-…`) — same as `web-public/.env` | — |
+
+**`server-php/.env`** (Traffic Analytics dashboard)
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `GA4_PROPERTY_ID` | Numeric GA4 property ID for Data API reports | — |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Path to service account JSON (Analytics Data API) | — |
 
 ### GitHub Actions Deployment
 
@@ -502,6 +542,7 @@ One manual workflow (`.github/workflows/deploy-cpanel.yml`) builds and rsyncs al
 | `CPANEL_SITE_ROOT` | `/home/carahulgupta/public_html` | API + marketing |
 | `VITE_PORTAL_URL` | `https://app.carahulgupta.in` | `web-public` build |
 | `VITE_MARKETING_URL` | `https://carahulgupta.in` | Portal "Wrong portal?" link |
+| `VITE_GA4_MEASUREMENT_ID` | `G-XXXXXXXXXX` | GA4 tag in **both** `web` and `web-public` builds (optional) |
 | `MIGRATION_DB_USER` | `carahulgupta` | Table-owner role for `ALTER TABLE` migrations |
 | `MIGRATION_DB_PASS` | *(phpPgAdmin password)* | Password for `MIGRATION_DB_USER` |
 
@@ -561,15 +602,14 @@ All endpoints return: `{ success, message, data: { token, user }, errors, debug 
 | **Phase 2** | Services & Engagement management, time tracking, service logs, multi-assignee | ✅ Complete |
 | **Phase 3** | Invoicing, GST transactions, ledger, opening balances, Razorpay payments | ✅ Complete |
 | **Phase 4** | Calendar, appointment booking, Zoom integration, Google/Outlook/Apple calendar sync | ✅ Complete |
-| **Phase 5** | Credentials vault, Leads & Quotations, Affiliate portal, Client portal | ✅ Complete |
+| **Phase 5** | Credentials vault, Leads & Quotations, Associate portal, Client portal | ✅ Complete |
 | **Phase 6** | Compliance Registers (GST/TDS/IT/ROC/PF), Recurring Service Definitions | ✅ Complete (migration 044) |
 | **Phase 7** | Leave management, timesheet reporting, shift targets, cron digests | ✅ Complete |
 | **Phase 8** | KYC document management, exception reports, global search, client groups | ✅ Complete |
 | **Phase 9** | **Recurring register auto-population** — backend scheduler to create register rows from `recurring_service_definitions` | 🔄 In Progress |
 | **Phase 10** | **Client Portal enhancements** — appointment booking from client side, document upload requests, in-app messaging | 🗓 Planned |
-| **Phase 11** | **Mock API server** — `mock-api/` JSON server (`json-server`) to unblock mobile development without requiring a live backend | 🗓 Planned |
-| **Phase 12** | **React Native Team App** (`mobile/apps/team-app`) — Dashboard, Task Manager, Client directory, Document Hub, Invoicing, Credentials Vault, push notifications, biometric auth | 🗓 Planned |
-| **Phase 13** | **React Native Client App** (`mobile/apps/client-app`) — Active/completed services, document viewer, ledger, appointment booking, in-app messaging | 🗓 Planned |
+| **Phase 11** | **Mobile app (Expo)** — single iOS/Android app with Core, Associate, My CA, Partner portals; shared npm packages; deep links; push scaffold | ✅ Complete |
+| **Phase 12** | **Mobile production** — EAS store builds, push token API, Core portal screen expansion (finance, calendar, chat UI) | 🗓 Planned |
 | **Phase 14** | **Tally integration**, AI-assisted compliance search, advanced analytics dashboards | 🗓 Planned |
 
 ---

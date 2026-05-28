@@ -299,9 +299,9 @@ class ContactController extends BaseController
         if (array_key_exists('group_id', $body)) {
             $data['group_id'] = $this->normalizeOptionalPositiveInt($body['group_id'] ?? null);
         }
-        if (array_key_exists('referring_affiliate_user_id', $body)) {
-            $ra = (int)$body['referring_affiliate_user_id'];
-            $data['referring_affiliate_user_id'] = $ra > 0 ? $ra : null;
+        if (array_key_exists('referring_associate_user_id', $body)) {
+            $ra = (int)$body['referring_associate_user_id'];
+            $data['referring_associate_user_id'] = $ra > 0 ? $ra : null;
         }
         if (array_key_exists('referral_start_date', $body)) {
             $data['referral_start_date'] = !empty($body['referral_start_date']) ? trim((string)$body['referral_start_date']) : null;
@@ -688,12 +688,12 @@ class ContactController extends BaseController
      */
     private function referralFieldsFromBody(array $body): array
     {
-        $refAff = isset($body['referring_affiliate_user_id']) ? (int)$body['referring_affiliate_user_id'] : 0;
+        $refAff = isset($body['referring_associate_user_id']) ? (int)$body['referring_associate_user_id'] : 0;
         $m      = (string)($body['commission_mode'] ?? 'referral_only');
         $mode   = in_array($m, ['referral_only', 'direct_interaction'], true) ? $m : 'referral_only';
 
         return [
-            'referring_affiliate_user_id' => $refAff > 0 ? $refAff : null,
+            'referring_associate_user_id' => $refAff > 0 ? $refAff : null,
             'referral_start_date'         => !empty($body['referral_start_date']) ? trim((string)$body['referral_start_date']) : null,
             'commission_mode'             => $mode,
             'client_facing_restricted'    => !empty($body['client_facing_restricted']),

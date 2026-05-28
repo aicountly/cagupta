@@ -16,13 +16,13 @@ INSERT INTO roles (name, display_name, permissions, is_system) VALUES
 (
     'admin',
     'Administrator',
-    '{"permissions": ["dashboard.view","clients.view","clients.create","clients.edit","clients.delete","services.view","services.create","services.edit","services.delete","services.assignees.manage","documents.view","documents.upload","invoices.view","invoices.create","invoices.edit","invoices.delete","calendar.view","calendar.create","credentials.view","registers.view","leads.view","leads.create","leads.edit","quotations.setup","quotations.manage","settings.view","users.manage","users.delegate","affiliates.manage"]}',
+    '{"permissions": ["dashboard.view","clients.view","clients.create","clients.edit","clients.delete","services.view","services.create","services.edit","services.delete","services.assignees.manage","documents.view","documents.upload","invoices.view","invoices.create","invoices.edit","invoices.delete","calendar.view","calendar.create","credentials.view","registers.view","leads.view","leads.create","leads.edit","quotations.setup","quotations.manage","settings.view","users.manage","users.delegate","associates.manage"]}',
     TRUE
 ),
 (
     'manager',
     'Manager',
-    '{"permissions": ["dashboard.view","clients.view","clients.create","clients.edit","services.view","services.create","services.edit","documents.view","documents.upload","invoices.view","invoices.create","calendar.view","calendar.create","registers.view","leads.view","leads.create","quotations.manage","users.delegate","affiliates.manage"]}',
+    '{"permissions": ["dashboard.view","clients.view","clients.create","clients.edit","services.view","services.create","services.edit","documents.view","documents.upload","invoices.view","invoices.create","calendar.view","calendar.create","registers.view","leads.view","leads.create","quotations.manage","users.delegate","associates.manage"]}',
     TRUE
 ),
 (
@@ -38,9 +38,9 @@ INSERT INTO roles (name, display_name, permissions, is_system) VALUES
     TRUE
 ),
 (
-    'affiliate',
-    'Affiliate',
-    '{"permissions": ["affiliate.portal","affiliate.profile","affiliate.payouts.request","affiliate.sub_affiliates.create","affiliate.bank.manage"]}',
+    'associate',
+    'Associate',
+    '{"permissions": ["associate.portal","associate.profile","associate.payouts.request","associate.sub_associates.create","associate.bank.manage"]}',
     TRUE
 ),
 (

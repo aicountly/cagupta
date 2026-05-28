@@ -15,7 +15,7 @@ class ZoomCallbackController extends BaseController
 {
     private function stateSecret(): string
     {
-        return trim((string)(getenv('ZOOM_STATE_SECRET') ?: 'change-me-zoom-state'));
+        return \App\Libraries\OAuthStateSecret::zoom();
     }
 
     private function parseJwtAccountId(string $jwt): ?string

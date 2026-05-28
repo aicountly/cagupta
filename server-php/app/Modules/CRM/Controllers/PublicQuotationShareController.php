@@ -14,7 +14,7 @@ class PublicQuotationShareController extends BaseController
     public function download(string $token): never
     {
         $token = trim($token);
-        if ($token === '') {
+        if ($token === '' || !preg_match('/^[a-f0-9]{32}$/', $token)) {
             $this->error('Invalid token.', 404);
         }
         (new QuotationShareService())->streamPdfByToken($token);
