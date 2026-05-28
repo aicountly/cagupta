@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "build:web": "npm run build --workspace=web",
+    "build:github": "npm run build:github --workspace=web",
     "build:constants": "npm run build --workspace=@cagupta/shared-constants",
     "build:services": "npm run build --workspace=@cagupta/shared-services",
     "build:packages": "npm run build:constants && npm run build:services",
