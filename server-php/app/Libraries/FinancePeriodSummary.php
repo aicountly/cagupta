@@ -49,8 +49,11 @@ final class FinancePeriodSummary
             }
         }
 
-        $openingAgg  = LedgerRecoveryAggregator::compute($rowsBefore);
-        $closingAgg  = LedgerRecoveryAggregator::compute($rowsThrough);
+        // Opening/closing receivable must match getTotalReceivable() / recovery list: per entity and
+        // ledger class, only positive closings count — credits in one class must not net away
+        // receivable in another, and one entity's credit must not reduce another's receivable.
+        $openingAgg  = self::computePositiveReceivableClosing($rowsBefore);
+        $closingAgg  = self::computePositiveReceivableClosing($rowsThrough);
         $periodMoves = self::accumulateInPeriod($rowsInPeriod, $invoiceById);
 
         $feesOpening = round($openingAgg['fees'] + $openingAgg['taxes'], 2);
@@ -175,6 +178,76 @@ final class FinancePeriodSummary
             'fees_collected'  => round($feesCollected, 2),
             'reimb_collected' => round($reimbCollected, 2),
         ];
+    }
+
+    /**
+     * Sum positive ledger-class closings per entity — same rules as TxnModel::getTotalReceivable().
+     *
+     * @param array<int, array<string, mixed>> $rows pre-filtered visible rows (any order)
+     * @return array{
+     *   consolidated_closing: float,
+     *   fees: float,
+     *   taxes: float,
+     *   reimbursement: float
+     * }
+     */
+    private static function computePositiveReceivableClosing(array $rows): array
+    {
+        $consolidated  = 0.0;
+        $fees          = 0.0;
+        $taxes         = 0.0;
+        $reimbursement = 0.0;
+
+        foreach (self::groupRowsByEntityLedgerClass($rows) as $groupRows) {
+            $agg = LedgerRecoveryAggregator::compute($groupRows);
+            $closing = (float)$agg['consolidated_closing'];
+            if ($closing <= 0.00001) {
+                continue;
+            }
+            $consolidated += $closing;
+            $fees += (float)$agg['fees'];
+            $taxes += (float)$agg['taxes'];
+            $reimbursement += (float)$agg['reimbursement'];
+        }
+
+        return [
+            'consolidated_closing' => round($consolidated, 2),
+            'fees'                 => round($fees, 2),
+            'taxes'                => round($taxes, 2),
+            'reimbursement'        => round($reimbursement, 2),
+        ];
+    }
+
+    /**
+     * @param array<int, array<string, mixed>> $rows
+     * @return array<string, list<array<string, mixed>>>
+     */
+    private static function groupRowsByEntityLedgerClass(array $rows): array
+    {
+        /** @var array<string, list<array<string, mixed>>> $groups */
+        $groups = [];
+        foreach ($rows as $t) {
+            $cid = isset($t['client_id']) ? (int)$t['client_id'] : 0;
+            $oid = isset($t['organization_id']) ? (int)$t['organization_id'] : 0;
+            if ($cid > 0) {
+                $entityKey = 'client:' . $cid;
+            } elseif ($oid > 0) {
+                $entityKey = 'organization:' . $oid;
+            } else {
+                continue;
+            }
+            $lc = LedgerDimensions::normalizeLedgerClass($t['ledger_class'] ?? null);
+            if ($lc === LedgerDimensions::CLASS_CLIENT_COSTS) {
+                continue;
+            }
+            $key = $entityKey . ':' . $lc;
+            if (!isset($groups[$key])) {
+                $groups[$key] = [];
+            }
+            $groups[$key][] = $t;
+        }
+
+        return $groups;
     }
 
     /** @param array<string, mixed> $t */
