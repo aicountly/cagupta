@@ -532,6 +532,105 @@ class TxnModel
     }
 
     /**
+     * Merged ledger for all contacts and organizations in a client group.
+     * Opening balances from all members are consolidated into one synthetic row.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function getLedgerByGroup(int $groupId, string $ledgerClass = LedgerDimensions::CLASS_REGULAR, string $ledgerView = LedgerDimensions::VIEW_CONSOLIDATED, int $limit = 0): array
+    {
+        $groupModel = new ClientGroupModel();
+        if ($groupModel->find($groupId) === null) {
+            throw new \InvalidArgumentException('Client group not found.');
+        }
+
+        $stmt = $this->db->prepare(
+            'SELECT t.*,
+                    CASE WHEN COALESCE(t.organization_id, 0) = 0 AND COALESCE(t.client_id, 0) > 0
+                         THEN \'client\' ELSE \'organization\' END AS _entity_type,
+                    CASE WHEN COALESCE(t.organization_id, 0) = 0 AND COALESCE(t.client_id, 0) > 0
+                         THEN t.client_id ELSE t.organization_id END AS _entity_id,
+                    COALESCE(
+                        NULLIF(TRIM(o.name), \'\'),
+                        NULLIF(TRIM(COALESCE(c.first_name, \'\') || \' \' || COALESCE(c.last_name, \'\')), \'\'),
+                        \'Unknown\'
+                    ) AS _entity_name
+             FROM txn t
+             LEFT JOIN clients c ON c.id = t.client_id AND COALESCE(t.organization_id, 0) = 0
+             LEFT JOIN organizations o ON o.id = t.organization_id AND COALESCE(t.client_id, 0) = 0
+             WHERE (
+                 (c.group_id = :group_id AND ' . self::sqlTxnOwnedExclusivelyByClient('t') . ' AND COALESCE(t.client_id, 0) > 0)
+                 OR
+                 (o.group_id = :group_id AND ' . self::sqlTxnOwnedExclusivelyByOrganization('t') . ' AND COALESCE(t.organization_id, 0) > 0)
+             )
+               AND ' . self::sqlTxnCountsTowardClientReceivable('t') . '
+               AND ' . self::sqlLedgerClassMatch('t', ':ledger_class') . '
+             ORDER BY t.txn_date ASC, t.txn_type ASC, t.id ASC'
+        );
+        $stmt->execute([
+            ':group_id'     => $groupId,
+            ':ledger_class' => LedgerDimensions::normalizeLedgerClass($ledgerClass),
+        ]);
+        $rawRows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+        foreach ($rawRows as &$row) {
+            $this->decodeJsonbInvoiceFields($row);
+        }
+        unset($row);
+
+        /** @var array<int, array{entity_type: string, entity_id: int, entity_name: string}> $metaById */
+        $metaById = [];
+        $obRows   = [];
+        $otherRows = [];
+        foreach ($rawRows as $row) {
+            $txnId = (int)($row['id'] ?? 0);
+            if ($txnId > 0) {
+                $metaById[$txnId] = [
+                    'entity_type' => (string)($row['_entity_type'] ?? ''),
+                    'entity_id'   => (int)($row['_entity_id'] ?? 0),
+                    'entity_name' => (string)($row['_entity_name'] ?? ''),
+                ];
+            }
+            unset($row['_entity_type'], $row['_entity_id'], $row['_entity_name']);
+            if (($row['txn_type'] ?? '') === 'opening_balance') {
+                $obRows[] = $row;
+            } else {
+                $otherRows[] = $row;
+            }
+        }
+
+        $mergedRows = $otherRows;
+        $consolidatedOb = LedgerPresentation::consolidateOpeningBalances($obRows, $ledgerView);
+        if ($consolidatedOb !== null) {
+            array_unshift($mergedRows, $consolidatedOb);
+        }
+
+        $entries = LedgerPresentation::buildLedger($mergedRows, $ledgerView);
+
+        foreach ($entries as &$entry) {
+            $entryType = (string)($entry['entry_type'] ?? '');
+            if ($entryType === 'opening_balance' && (int)($entry['id'] ?? 0) === 0) {
+                $entry['entity_type'] = null;
+                $entry['entity_id']   = null;
+                $entry['entity_name'] = null;
+                continue;
+            }
+            $srcId = (int)($entry['source_txn_id'] ?? $entry['id'] ?? 0);
+            if ($srcId > 0 && isset($metaById[$srcId])) {
+                $entry['entity_type'] = $metaById[$srcId]['entity_type'];
+                $entry['entity_id']   = $metaById[$srcId]['entity_id'];
+                $entry['entity_name'] = $metaById[$srcId]['entity_name'];
+            }
+        }
+        unset($entry);
+
+        if ($limit > 0) {
+            $entries = array_slice($entries, 0, $limit);
+        }
+
+        return $entries;
+    }
+
+    /**
      * Raw txn rows for reporting (decoded JSON), same filter as getLedgerByClient.
      *
      * @return array<int, array<string, mixed>>

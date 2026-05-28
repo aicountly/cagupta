@@ -2193,6 +2193,35 @@ class TxnController extends BaseController
     }
 
     /**
+     * Return merged ledger with running balance for all members of a client group.
+     * Query params: group_id (required), ledger_class?, ledger_view?, limit?
+     */
+    public function ledgerByGroup(): never
+    {
+        $groupId = (int)$this->query('group_id', 0);
+        if ($groupId <= 0) {
+            $this->error('group_id is required.', 422);
+        }
+
+        $ledgerClass = LedgerDimensions::normalizeLedgerClass($this->query('ledger_class', ''));
+        $viewRaw     = trim((string)$this->query('ledger_view', 'consolidated'));
+        $limit       = max(0, (int)$this->query('limit', 0));
+        try {
+            $ledgerView = LedgerDimensions::assertLedgerView($viewRaw !== '' ? $viewRaw : 'consolidated');
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
+        try {
+            $entries = $this->txn->getLedgerByGroup($groupId, $ledgerClass, $ledgerView, $limit);
+        } catch (\InvalidArgumentException $e) {
+            $this->error($e->getMessage(), 422);
+        }
+
+        $this->success($entries, 'Group ledger retrieved');
+    }
+
+    /**
      * GET /api/admin/txn/ledger-reconciliation
      * Query: client_id or organization_id (one required), ledger_class?
      */

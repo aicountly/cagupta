@@ -96,3 +96,33 @@ export async function updateLeadQuotation(leadId, quotationId, payload) {
   const data = await parseResponse(res);
   return data.data;
 }
+
+export async function updateLeadQuotationDocuments(leadId, quotationId, payload) {
+  const res = await fetch(`${API_BASE}/admin/leads/${leadId}/quotations/${quotationId}/documents`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(payload),
+  });
+  const data = await parseResponse(res);
+  return data.data;
+}
+
+export async function shareLeadQuotation(leadId, quotationId, formData) {
+  const token = localStorage.getItem('auth_token');
+  const res = await fetch(`${API_BASE}/admin/leads/${leadId}/quotations/${quotationId}/share`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  const data = await parseResponse(res);
+  return data.data;
+}
+
+export async function downloadPublicQuotationPdf(token) {
+  const res = await fetch(`${API_BASE}/public/quotation-shares/${encodeURIComponent(token)}`);
+  if (!res.ok) {
+    const json = await res.json().catch(() => ({}));
+    throw new Error(json.message || `Download failed (${res.status})`);
+  }
+  return res.blob();
+}

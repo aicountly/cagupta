@@ -59,6 +59,7 @@ export function exportLedgerExcel({
   fyLabel,
   dateFrom,
   dateTo,
+  includeEntityColumn = false,
 }) {
   if (!rows?.length) return;
 
@@ -69,9 +70,9 @@ export function exportLedgerExcel({
     ws[addr] = cell;
   };
 
-  set(r, 0, { t: 's', v: 'Client ledger statement' });
+  set(r, 0, { t: 's', v: includeEntityColumn ? 'Group ledger statement' : 'Client ledger statement' });
   r += 1;
-  set(r, 0, { t: 's', v: `Client: ${clientName || '—'}` });
+  set(r, 0, { t: 's', v: `${includeEntityColumn ? 'Group' : 'Client'}: ${clientName || '—'}` });
   r += 1;
   set(r, 0, { t: 's', v: `Financial year: ${fyLabel || '—'}` });
   r += 1;
@@ -86,7 +87,9 @@ export function exportLedgerExcel({
   r += 2;
 
   const headerRow = r;
-  const headers = ['Date', 'Entry type', 'Narration', 'Details', 'Billing profile', 'Debit (₹)', 'Credit (₹)', 'Balance (₹)'];
+  const headers = ['Date'];
+  if (includeEntityColumn) headers.push('Entity');
+  headers.push('Entry type', 'Narration', 'Details', 'Billing profile', 'Debit (₹)', 'Credit (₹)', 'Balance (₹)');
   headers.forEach((h, c) => set(headerRow, c, { t: 's', v: h }));
 
   const numFmt = '#,##0.00';
@@ -94,22 +97,28 @@ export function exportLedgerExcel({
   for (const e of rows) {
     const c0 = 0;
     const detail = buildLedgerDetailLine(e);
-    set(dataRow, c0 + 0, { t: 's', v: ledgerRowDate(e) });
-    set(dataRow, c0 + 1, { t: 's', v: txnTypeLabel(e.txnType) });
-    set(dataRow, c0 + 2, { t: 's', v: String(e.narration ?? '').slice(0, 500) || '—' });
-    set(dataRow, c0 + 3, { t: 's', v: String(detail || '').slice(0, 500) || '—' });
-    set(dataRow, c0 + 4, { t: 's', v: String(e.billingProfileCode || '').trim() || '—' });
+    let col = 0;
+    set(dataRow, col, { t: 's', v: ledgerRowDate(e) });
+    col += 1;
+    if (includeEntityColumn) {
+      set(dataRow, col, { t: 's', v: String(e.entityName || '').trim() || '—' });
+      col += 1;
+    }
+    set(dataRow, col, { t: 's', v: txnTypeLabel(e.txnType) });
+    set(dataRow, col + 1, { t: 's', v: String(e.narration ?? '').slice(0, 500) || '—' });
+    set(dataRow, col + 2, { t: 's', v: String(detail || '').slice(0, 500) || '—' });
+    set(dataRow, col + 3, { t: 's', v: String(e.billingProfileCode || '').trim() || '—' });
 
     const dr = numOrEmpty(e.debit);
     const cr = numOrEmpty(e.credit);
     if (dr != null) {
-      set(dataRow, c0 + 5, { t: 'n', v: dr, z: numFmt });
+      set(dataRow, col + 4, { t: 'n', v: dr, z: numFmt });
     }
     if (cr != null) {
-      set(dataRow, c0 + 6, { t: 'n', v: cr, z: numFmt });
+      set(dataRow, col + 5, { t: 'n', v: cr, z: numFmt });
     }
     const bal = Number(e.balance);
-    set(dataRow, c0 + 7, {
+    set(dataRow, col + 6, {
       t: 'n',
       v: Number.isNaN(bal) ? 0 : bal,
       z: numFmt,
@@ -118,13 +127,15 @@ export function exportLedgerExcel({
     dataRow += 1;
   }
 
+  const lastCol = headers.length - 1;
   const lastRow = dataRow - 1;
   ws['!ref'] = XLSX.utils.encode_range({
     s: { r: 0, c: 0 },
-    e: { r: lastRow, c: 7 },
+    e: { r: lastRow, c: lastCol },
   });
   ws['!cols'] = [
     { wch: 12 },
+    ...(includeEntityColumn ? [{ wch: 22 }] : []),
     { wch: 14 },
     { wch: 28 },
     { wch: 40 },
@@ -169,6 +180,7 @@ export async function exportLedgerPdf({
   dateFrom,
   dateTo,
   logoSrc,
+  includeEntityColumn = false,
 }) {
   if (!rows?.length) return;
 
@@ -210,7 +222,7 @@ export async function exportLedgerPdf({
   doc.setFontSize(10);
   doc.setTextColor(71, 85, 105);
   const meta = [
-    `Name: ${clientName || '—'}`,
+    `${includeEntityColumn ? 'Group' : 'Name'}: ${clientName || '—'}`,
     `Financial year: ${fyLabel || '—'}`,
   ];
   if (dateFrom || dateTo) {
@@ -223,20 +235,29 @@ export async function exportLedgerPdf({
   });
   y += 4;
 
-  const body = rows.map((e) => [
-    ledgerRowDate(e),
-    txnTypeLabel(e.txnType),
-    String(e.narration ?? '').slice(0, 120) || '—',
-    String(buildLedgerDetailLine(e) || '').slice(0, 160) || '—',
-    String(e.billingProfileCode || '').trim() || '—',
-    e.debit ? formatInrPdf(e.debit) : '—',
-    e.credit ? formatInrPdf(e.credit) : '—',
-    formatInrPdf(e.balance),
-  ]);
+  const body = rows.map((e) => {
+    const row = [ledgerRowDate(e)];
+    if (includeEntityColumn) row.push(String(e.entityName || '').trim() || '—');
+    row.push(
+      txnTypeLabel(e.txnType),
+      String(e.narration ?? '').slice(0, 120) || '—',
+      String(buildLedgerDetailLine(e) || '').slice(0, 160) || '—',
+      String(e.billingProfileCode || '').trim() || '—',
+      e.debit ? formatInrPdf(e.debit) : '—',
+      e.credit ? formatInrPdf(e.credit) : '—',
+      formatInrPdf(e.balance),
+    );
+    return row;
+  });
 
+  const pdfHead = [['Date']];
+  if (includeEntityColumn) pdfHead[0].push('Entity');
+  pdfHead[0].push('Entry type', 'Narration', 'Details', 'Billing profile', 'Debit (Rs.)', 'Credit (Rs.)', 'Balance (Rs.)');
+
+  const colOffset = includeEntityColumn ? 1 : 0;
   autoTable(doc, {
     startY: y,
-    head: [['Date', 'Entry type', 'Narration', 'Details', 'Billing profile', 'Debit (Rs.)', 'Credit (Rs.)', 'Balance (Rs.)']],
+    head: pdfHead,
     body,
     theme: 'striped',
     styles: {
@@ -255,21 +276,21 @@ export async function exportLedgerPdf({
     },
     columnStyles: {
       0: { cellWidth: 22 },
-      1: { cellWidth: 24 },
-      2: { cellWidth: 42 },
-      3: { cellWidth: 48 },
-      4: { cellWidth: 26 },
-      5: {
+      [1 + colOffset]: { cellWidth: 24 },
+      [2 + colOffset]: { cellWidth: 42 },
+      [3 + colOffset]: { cellWidth: 48 },
+      [4 + colOffset]: { cellWidth: 26 },
+      [5 + colOffset]: {
         halign: 'right',
         cellWidth: 28,
         cellPadding: { left: 2.5, right: 4.5, top: 2.5, bottom: 2.5 },
       },
-      6: {
+      [6 + colOffset]: {
         halign: 'right',
         cellWidth: 28,
         cellPadding: { left: 2.5, right: 4.5, top: 2.5, bottom: 2.5 },
       },
-      7: {
+      [7 + colOffset]: {
         halign: 'right',
         cellWidth: 30,
         fontStyle: 'bold',

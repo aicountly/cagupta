@@ -27,13 +27,15 @@ class BrevoMailer
      * @param string $toName    Recipient display name.
      * @param string $subject   Email subject line.
      * @param string $htmlBody  Rendered HTML body.
+     * @param array<int, array{name: string, content: string}> $attachments Base64-encoded file content.
      * @return bool TRUE if accepted by Brevo, FALSE on any failure.
      */
     public static function send(
         string $toEmail,
         string $toName,
         string $subject,
-        string $htmlBody
+        string $htmlBody,
+        array $attachments = []
     ): bool {
         $apiKey = (string)(getenv('BREVO_API_KEY') ?: '');
         if ($apiKey === '') {
@@ -49,12 +51,22 @@ class BrevoMailer
         $senderEmail = (string)(getenv('SENDER_EMAIL') ?: 'office@carahulgupta.in');
         $senderName  = (string)(getenv('SENDER_NAME')  ?: 'CA Rahul Gupta');
 
-        $payload = json_encode([
+        $body = [
             'sender'      => ['email' => $senderEmail, 'name' => $senderName],
             'to'          => [['email' => $toEmail, 'name' => $toName]],
             'subject'     => $subject,
             'htmlContent' => $htmlBody,
-        ], self::JSON_FLAGS);
+        ];
+        if ($attachments !== []) {
+            $body['attachment'] = array_values(array_map(
+                static fn (array $a) => [
+                    'name'    => (string)($a['name'] ?? 'attachment.pdf'),
+                    'content' => (string)($a['content'] ?? ''),
+                ],
+                $attachments
+            ));
+        }
+        $payload = json_encode($body, self::JSON_FLAGS);
 
         if ($payload === false) {
             error_log('[BrevoMailer] JSON encoding failed.');

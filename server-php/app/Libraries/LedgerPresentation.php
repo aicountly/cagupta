@@ -39,6 +39,66 @@ final class LedgerPresentation
     }
 
     /**
+     * Merge multiple opening_balance txn rows into one synthetic row for group ledger view.
+     *
+     * @param array<int, array<string, mixed>> $obRows
+     * @return array<string, mixed>|null
+     */
+    public static function consolidateOpeningBalances(array $obRows, string $ledgerView): ?array
+    {
+        $ledgerView = LedgerDimensions::assertLedgerView($ledgerView);
+        $filtered   = [];
+        foreach ($obRows as $t) {
+            if (($t['txn_type'] ?? '') !== 'opening_balance') {
+                continue;
+            }
+            if ($ledgerView === LedgerDimensions::VIEW_CONSOLIDATED) {
+                $filtered[] = $t;
+            } elseif ($ledgerView === LedgerDimensions::VIEW_FEES) {
+                if (self::movementKindForSlicedNonInvoiceRow($t) === LedgerDimensions::KIND_FEES) {
+                    $filtered[] = $t;
+                }
+            } elseif (self::movementKindForSlicedNonInvoiceRow($t) === LedgerDimensions::KIND_REIMBURSEMENT) {
+                $filtered[] = $t;
+            }
+        }
+        if ($filtered === []) {
+            return null;
+        }
+
+        $net          = 0.0;
+        $earliestDate = '';
+        $ledgerClass  = LedgerDimensions::CLASS_REGULAR;
+        foreach ($filtered as $t) {
+            $net += (float)($t['debit'] ?? 0) - (float)($t['credit'] ?? 0);
+            $d = (string)($t['txn_date'] ?? '');
+            if ($d !== '' && ($earliestDate === '' || $d < $earliestDate)) {
+                $earliestDate = $d;
+            }
+            $ledgerClass = LedgerDimensions::normalizeLedgerClass($t['ledger_class'] ?? null);
+        }
+        if (abs($net) < 0.00001) {
+            return null;
+        }
+
+        $debit  = $net > 0 ? round($net, 2) : 0.0;
+        $credit = $net < 0 ? round(-$net, 2) : 0.0;
+
+        return [
+            'id'                   => 0,
+            'txn_type'             => 'opening_balance',
+            'txn_date'             => $earliestDate !== '' ? $earliestDate : date('Y-m-d'),
+            'narration'            => 'Consolidated opening balance',
+            'debit'                => $debit,
+            'credit'               => $credit,
+            'amount'               => round(abs($net), 2),
+            'ledger_class'         => $ledgerClass,
+            'billing_profile_code' => null,
+            'status'               => 'active',
+        ];
+    }
+
+    /**
      * Fees / reimbursement slice: non-invoice rows use ledger_movement_kind; empty matches migration 061 default (fees).
      */
     private static function movementKindForSlicedNonInvoiceRow(array $t): string

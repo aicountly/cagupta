@@ -2,7 +2,7 @@
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   getTxns, getTxn, createTxn, createReceipt, createPaymentExpense, createPaymentClientCost, createTds, finalizeTds,
-  createRebate, createCreditNote, getLedger, getBillSettlementReport, getRecoveryByGroup,
+  createRebate, createCreditNote, getLedger, getLedgerByGroup, getBillSettlementReport, getRecoveryByGroup,
   getOpeningBalance, setOpeningBalance,
   updateTxn, bulkDeleteTxns, reinstateTxn,
   requestLedgerReversalUserOtp, reverseLedgerTxn, cancelLedgerReversalTxn, assignParkedTxn,
@@ -37,6 +37,7 @@ import StatusBadge from '../../../components/common/StatusBadge';
 import ListPaginationBar from '../../../components/common/ListPaginationBar';
 import ClientSearchDropdown from '../../../components/common/ClientSearchDropdown';
 import EntitySearchDropdown from '../../../components/common/EntitySearchDropdown';
+import GroupSearchDropdown from '../../../components/common/GroupSearchDropdown';
 import LineItemPresetCombobox from '../../../components/common/LineItemPresetCombobox';
 import DateInput from '../../../components/common/DateInput';
 import AmountInput from '../../../components/common/AmountInput';
@@ -4780,7 +4781,10 @@ export default function Invoices({ ledgerOnly = false }) {
   const activeTxnListPage = txnListPage[tab] ?? 1;
 
   // ── Ledger tab state ────────────────────────────────────────────────────────
+  const [ledgerScope, setLedgerScope]             = useState('entity');
   const [ledgerClientId, setLedgerClientId]       = useState('');
+  const [ledgerGroupId, setLedgerGroupId]         = useState('');
+  const [ledgerGroupName, setLedgerGroupName]     = useState('');
   const [billReport, setBillReport]               = useState(null);
   const [billLoading, setBillLoading]             = useState(false);
   const [ledgerClientName, setLedgerClientName]   = useState('');
@@ -4829,6 +4833,34 @@ export default function Invoices({ ledgerOnly = false }) {
   // ── Ledger "all classes" + limit state ───────────────────────────────────────
   const [ledgerLimit, setLedgerLimit] = useState(0);
   const [ledgerAllClasses, setLedgerAllClasses] = useState(null);
+
+  const isGroupLedgerScope = ledgerScope === 'group';
+  const ledgerScopeReady = isGroupLedgerScope ? !!ledgerGroupId : !!ledgerClientId;
+  const ledgerScopeDisplayName = isGroupLedgerScope ? ledgerGroupName : ledgerClientName;
+
+  function switchLedgerScope(nextScope) {
+    setLedgerScope(nextScope);
+    if (nextScope === 'entity') {
+      setLedgerGroupId('');
+      setLedgerGroupName('');
+    } else {
+      setLedgerClientId('');
+      setLedgerClientName('');
+      setLedgerEntityType('contact');
+      setLedgerRecoveryStatus(null);
+    }
+    setLedger([]);
+    setLedgerAllClasses(null);
+    setLedgerLimit(0);
+  }
+
+  function ledgerTableHeaders(includeActions = false) {
+    const headers = ['Date'];
+    if (isGroupLedgerScope) headers.push('Entity');
+    headers.push('Entry Type', 'Narration', 'Details', 'Billing Profile', 'Debit (Dr)', 'Credit (Cr)', 'Balance');
+    if (includeActions) headers.push('Actions');
+    return headers;
+  }
 
   const paymentExpenseFetchParams = useMemo(() => {
     const params = { txnType: 'payment_expense' };
@@ -5266,11 +5298,65 @@ export default function Invoices({ ledgerOnly = false }) {
 
   // ── Ledger reload ───────────────────────────────────────────────────────────
   useEffect(() => {
-    if ((tab !== 'ledger' && tab !== 'bill_settlement') || !ledgerClientId) return;
+    if (tab !== 'ledger' && tab !== 'bill_settlement') return;
+    if (tab === 'bill_settlement' && !ledgerClientId) return;
+    if (tab === 'ledger' && !ledgerScopeReady) return;
+
     setLedgerLoading(true);
     setLedgerAllClasses(null);
 
     const isAll = ledgerLedgerClass === 'all';
+    const limitOpt = ledgerLimit > 0 ? { limit: ledgerLimit } : {};
+
+    const finishLedgerLoad = (entries, allClasses = null) => {
+      if (allClasses) {
+        setLedgerAllClasses(allClasses);
+        setLedger(allClasses.regular || []);
+        const allEntries = [
+          ...(allClasses.regular || []),
+          ...(allClasses.memorandum || []),
+          ...(allClasses.optional || []),
+          ...(allClasses.parked || []),
+        ];
+        setLedgerFyStartYear((prev) => {
+          const fys = collectIndianFYStartYearsWithFallback(allEntries);
+          if (prev != null && fys.includes(prev)) return prev;
+          return fys[fys.length - 1];
+        });
+      } else {
+        setLedger(entries);
+        setLedgerFyStartYear((prev) => {
+          const fys = collectIndianFYStartYearsWithFallback(entries);
+          if (prev != null && fys.includes(prev)) return prev;
+          return fys[fys.length - 1];
+        });
+      }
+    };
+
+    if (tab === 'ledger' && isGroupLedgerScope) {
+      const groupBase = { groupId: ledgerGroupId, ledgerView: ledgerLedgerView, ...limitOpt };
+      if (isAll) {
+        const classes = ['regular', 'memorandum', 'optional', 'parked'];
+        Promise.all(
+          classes.map((lc) =>
+            getLedgerByGroup({ ...groupBase, ledgerClass: lc }).catch(() => [])
+          )
+        ).then(([regular, memorandum, optional, parked]) => {
+          setOpeningBalances([]);
+          finishLedgerLoad(null, { regular, memorandum, optional, parked });
+        }).finally(() => setLedgerLoading(false));
+      } else {
+        getLedgerByGroup({ ...groupBase, ledgerClass: ledgerLedgerClass })
+          .catch(() => [])
+          .then((entries) => {
+            setOpeningBalances([]);
+            finishLedgerLoad(entries);
+          })
+          .finally(() => setLedgerLoading(false));
+      }
+      return undefined;
+    }
+
     const entityBase = ledgerEntityType === 'organization'
       ? { organizationId: ledgerClientId }
       : { clientId: ledgerClientId };
@@ -5278,43 +5364,41 @@ export default function Invoices({ ledgerOnly = false }) {
     const obPromise = getOpeningBalance(entityBase).catch(() => []);
 
     if (isAll) {
-      // Fetch all three ledger classes in parallel
       const classes = ['regular', 'memorandum', 'optional', 'parked'];
       const fetches = classes.map((lc) =>
-        getLedger({ ...entityBase, ledgerClass: lc, ledgerView: ledgerLedgerView, limit: ledgerLimit || undefined }).catch(() => [])
+        getLedger({ ...entityBase, ledgerClass: lc, ledgerView: ledgerLedgerView, ...limitOpt }).catch(() => [])
       );
       Promise.all([Promise.all(fetches), obPromise]).then(([[regular, memorandum, optional, parked], obs]) => {
-        setLedgerAllClasses({ regular, memorandum, optional, parked });
-        setLedger(regular); // keep regular as primary for FY selector
         setOpeningBalances(obs);
-        setLedgerFyStartYear((prev) => {
-          const allEntries = [...regular, ...memorandum, ...optional, ...parked];
-          const fys = collectIndianFYStartYearsWithFallback(allEntries);
-          if (prev != null && fys.includes(prev)) return prev;
-          return fys[fys.length - 1];
-        });
+        finishLedgerLoad(null, { regular, memorandum, optional, parked });
       }).finally(() => setLedgerLoading(false));
     } else {
-      const ledgerParam = {
-        ...entityBase,
-        ledgerClass: ledgerLedgerClass,
-        ledgerView:  ledgerLedgerView,
-        ...(ledgerLimit > 0 ? { limit: ledgerLimit } : {}),
-      };
       Promise.all([
-        getLedger(ledgerParam).catch(() => []),
+        getLedger({
+          ...entityBase,
+          ledgerClass: ledgerLedgerClass,
+          ledgerView: ledgerLedgerView,
+          ...limitOpt,
+        }).catch(() => []),
         obPromise,
       ]).then(([entries, obs]) => {
-        setLedger(entries);
         setOpeningBalances(obs);
-        setLedgerFyStartYear((prev) => {
-          const fys = collectIndianFYStartYearsWithFallback(entries);
-          if (prev != null && fys.includes(prev)) return prev;
-          return fys[fys.length - 1];
-        });
+        finishLedgerLoad(entries);
       }).finally(() => setLedgerLoading(false));
     }
-  }, [tab, ledgerClientId, ledgerEntityType, ledgerLedgerClass, ledgerLedgerView, ledgerLimit]);
+    return undefined;
+  }, [
+    tab,
+    ledgerClientId,
+    ledgerEntityType,
+    ledgerScope,
+    ledgerGroupId,
+    isGroupLedgerScope,
+    ledgerScopeReady,
+    ledgerLedgerClass,
+    ledgerLedgerView,
+    ledgerLimit,
+  ]);
 
   useEffect(() => {
     if (tab !== 'bill_settlement' || !ledgerClientId) {
@@ -5388,7 +5472,7 @@ export default function Invoices({ ledgerOnly = false }) {
   useEffect(() => {
     setLedgerFilterDateFrom('');
     setLedgerFilterDateTo('');
-  }, [ledgerClientId, ledgerLedgerClass, ledgerLedgerView]);
+  }, [ledgerClientId, ledgerGroupId, ledgerScope, ledgerLedgerClass, ledgerLedgerView]);
 
   useEffect(() => {
     setBillingPage(1);
@@ -7459,22 +7543,61 @@ export default function Invoices({ ledgerOnly = false }) {
         <div style={cardStyle}>
           <div style={ledgerToolbarBarStyle}>
             <div style={ledgerToolbarGroupStyle}>
-              <span style={ledgerToolbarLabelStyle}>Client:</span>
-              <div style={{ flex: '0 0 clamp(200px, 26vw, 300px)', minWidth: 0 }}>
-                <EntitySearchDropdown
-                  value={ledgerClientId}
-                  displayValue={ledgerClientName}
-                  entityType={ledgerEntityType}
-                  onChange={c => {
-                    setLedgerClientId(String(c.id));
-                    setLedgerClientName(c.displayName);
-                    setLedgerEntityType(c.entityType);
-                  }}
-                  placeholder="Search contact or organization…"
-                />
+              <span style={ledgerToolbarLabelStyle}>Scope:</span>
+              <div style={{ display: 'flex', gap: 4 }}>
+                {[
+                  { key: 'entity', label: 'Client' },
+                  { key: 'group', label: 'Group' },
+                ].map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => switchLedgerScope(opt.key)}
+                    style={{
+                      padding: '6px 12px',
+                      borderRadius: 6,
+                      border: ledgerScope === opt.key ? '1px solid #6366f1' : '1px solid #cbd5e1',
+                      background: ledgerScope === opt.key ? '#eef2ff' : '#fff',
+                      color: ledgerScope === opt.key ? '#4338ca' : '#475569',
+                      fontWeight: ledgerScope === opt.key ? 600 : 500,
+                      fontSize: 12,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
               </div>
             </div>
-            {ledgerClientId && ledgerRecoveryStatus?.status && (
+            <div style={ledgerToolbarGroupStyle}>
+              <span style={ledgerToolbarLabelStyle}>{isGroupLedgerScope ? 'Group:' : 'Client:'}</span>
+              <div style={{ flex: '0 0 clamp(200px, 26vw, 300px)', minWidth: 0 }}>
+                {isGroupLedgerScope ? (
+                  <GroupSearchDropdown
+                    value={ledgerGroupId}
+                    displayValue={ledgerGroupName}
+                    onChange={(g) => {
+                      setLedgerGroupId(String(g.id));
+                      setLedgerGroupName(g.displayName);
+                    }}
+                    placeholder="Search client group…"
+                  />
+                ) : (
+                  <EntitySearchDropdown
+                    value={ledgerClientId}
+                    displayValue={ledgerClientName}
+                    entityType={ledgerEntityType}
+                    onChange={c => {
+                      setLedgerClientId(String(c.id));
+                      setLedgerClientName(c.displayName);
+                      setLedgerEntityType(c.entityType);
+                    }}
+                    placeholder="Search contact or organization…"
+                  />
+                )}
+              </div>
+            </div>
+            {!isGroupLedgerScope && ledgerClientId && ledgerRecoveryStatus?.status && (
               <div style={ledgerToolbarGroupStyle}>
                 <span
                   style={{
@@ -7500,7 +7623,7 @@ export default function Invoices({ ledgerOnly = false }) {
               </div>
             )}
             <div style={ledgerToolbarScrollTailStyle}>
-            {ledgerClientId && (
+            {ledgerScopeReady && (
               <>
                 <div style={ledgerToolbarGroupStyle}>
                   <span style={ledgerToolbarLabelStyle}>Ledger type:</span>
@@ -7528,7 +7651,7 @@ export default function Invoices({ ledgerOnly = false }) {
                 </div>
               </>
             )}
-            {ledgerClientId && !ledgerLoading && (
+            {ledgerScopeReady && !ledgerLoading && (
               <>
                 <div style={ledgerToolbarGroupStyle}>
                   <span style={ledgerToolbarLabelStyle}>Financial year:</span>
@@ -7578,7 +7701,7 @@ export default function Invoices({ ledgerOnly = false }) {
                 )}
               </>
             )}
-            {ledgerClientId && !ledgerLoading && ledgerDisplayRows.length > 0 && (
+            {ledgerScopeReady && !ledgerLoading && ledgerDisplayRows.length > 0 && (
               <div style={ledgerToolbarGroupStyle}>
                 <button
                   type="button"
@@ -7592,10 +7715,11 @@ export default function Invoices({ ledgerOnly = false }) {
                             : '');
                     exportLedgerExcel({
                       rows: ledgerDisplayRows,
-                      clientName: ledgerClientName,
+                      clientName: ledgerScopeDisplayName,
                       fyLabel: fy,
                       dateFrom: ledgerFilterDateFrom,
                       dateTo: ledgerFilterDateTo,
+                      includeEntityColumn: isGroupLedgerScope,
                     });
                   }}
                 >
@@ -7613,11 +7737,12 @@ export default function Invoices({ ledgerOnly = false }) {
                             : '');
                     exportLedgerPdf({
                       rows: ledgerDisplayRows,
-                      clientName: ledgerClientName,
+                      clientName: ledgerScopeDisplayName,
                       fyLabel: fy,
                       dateFrom: ledgerFilterDateFrom,
                       dateTo: ledgerFilterDateTo,
                       logoSrc: ledgerLogoUrl,
+                      includeEntityColumn: isGroupLedgerScope,
                     }).catch(() => {});
                   }}
                 >
@@ -7625,7 +7750,7 @@ export default function Invoices({ ledgerOnly = false }) {
                 </button>
               </div>
             )}
-            {ledgerClientId && (
+            {!isGroupLedgerScope && ledgerClientId && (
               <div style={{ ...ledgerToolbarGroupStyle, gap: 8, flexWrap: 'wrap' }}>
                 <button
                   type="button"
@@ -7659,7 +7784,7 @@ export default function Invoices({ ledgerOnly = false }) {
             )}
             </div>
           </div>
-          {ledgerClientId && (
+          {ledgerScopeReady && (
             <div style={{
               padding: '8px 16px',
               borderBottom: '1px solid #f1f5f9',
@@ -7671,6 +7796,11 @@ export default function Invoices({ ledgerOnly = false }) {
               alignItems: 'center',
             }}
             >
+              {isGroupLedgerScope && (
+                <span>
+                  Consolidated ledger for group <strong>{ledgerGroupName}</strong>. Opening balances from all members are merged into one row.
+                </span>
+              )}
               {ledgerLedgerView === 'fees' && (
                 <span style={{ color: '#b45309' }}>
                   Fees only hides reimbursement movement rows (including reimbursement payments on behalf). Use Consolidated or Reimbursement only to see those lines.
@@ -7688,7 +7818,7 @@ export default function Invoices({ ledgerOnly = false }) {
               )}
             </div>
           )}
-          {ledgerClientId && ledgerLimit > 0 && (
+          {ledgerScopeReady && ledgerLimit > 0 && (
             <div style={{ padding: '6px 16px', background: '#fffbeb', borderBottom: '1px solid #fde68a', fontSize: 12, color: '#92400e', display: 'flex', alignItems: 'center', gap: 12 }}>
               Showing last {ledgerLimit} transactions.
               <button type="button" onClick={() => setLedgerLimit(0)} style={{ fontSize: 11, padding: '2px 10px', borderRadius: 5, border: '1px solid #b45309', background: 'none', color: '#b45309', cursor: 'pointer' }}>
@@ -7696,9 +7826,11 @@ export default function Invoices({ ledgerOnly = false }) {
               </button>
             </div>
           )}
-          {!ledgerClientId ? (
+          {!ledgerScopeReady ? (
             <div style={{ padding:32, textAlign:'center', color:'#94a3b8', fontSize:13 }}>
-              Search for a client above to view their ledger.
+              {isGroupLedgerScope
+                ? 'Search for a client group above to view the consolidated group ledger.'
+                : 'Search for a client above to view their ledger.'}
             </div>
           ) : ledgerLedgerClass === 'all' ? (
             // ── All-classes consolidated view ──────────────────────────────────
@@ -7719,8 +7851,7 @@ export default function Invoices({ ledgerOnly = false }) {
                       <table style={{ ...tableStyle, marginBottom: 0 }}>
                         <thead>
                           <tr>
-                            {(['Date','Entry Type','Narration','Details','Billing Profile','Debit (Dr)','Credit (Cr)','Balance']
-                              .concat(cls === 'parked' && canEditInvoice ? ['Actions'] : [])).map(h=>(
+                            {ledgerTableHeaders(cls === 'parked' && canEditInvoice && !isGroupLedgerScope).map(h=>(
                               <th key={h} style={thStyle}>{h}</th>
                             ))}
                           </tr>
@@ -7736,6 +7867,9 @@ export default function Invoices({ ledgerOnly = false }) {
                               }}
                             >
                               <td style={tdStyle}>{e.txnDate || e.date || '—'}</td>
+                              {isGroupLedgerScope && (
+                                <td style={tdStyle}>{e.entityName || '—'}</td>
+                              )}
                               <td style={tdStyle}><TxnTypeBadge type={e.txnType} /></td>
                               <td style={{ ...tdStyle, fontStyle: e.txnType === 'opening_balance' || e.txnType === 'brought_forward' ? 'italic' : 'normal' }}>{e.narration || '—'}</td>
                               <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 280, fontSize: 12, color: '#64748b' }}>{buildLedgerDetailLine(e) || '—'}</td>
@@ -7743,7 +7877,7 @@ export default function Invoices({ ledgerOnly = false }) {
                               <td style={{ ...tdStyle, color:'#dc2626', fontWeight: e.debit?600:400 }}>{e.debit ? `₹${parseFloat(e.debit).toLocaleString('en-IN')}` : '—'}</td>
                               <td style={{ ...tdStyle, color:'#16a34a', fontWeight: e.credit?600:400 }}>{e.credit ? `₹${parseFloat(e.credit).toLocaleString('en-IN')}` : '—'}</td>
                               <td style={{ ...tdStyle, fontWeight:700 }}>₹{parseFloat(e.balance || 0).toLocaleString('en-IN')}</td>
-                              {cls === 'parked' && canEditInvoice && (
+                              {cls === 'parked' && canEditInvoice && !isGroupLedgerScope && (
                                 <td style={tdStyle}>
                                   {isParkedLedgerEntryUnparkable(e) ? (
                                     <button
@@ -7772,17 +7906,16 @@ export default function Invoices({ ledgerOnly = false }) {
             <table style={tableStyle}>
               <thead>
                 <tr>
-                  {(['Date','Entry Type','Narration','Details','Billing Profile','Debit (Dr)','Credit (Cr)','Balance']
-                    .concat(ledgerLedgerClass === 'parked' && canEditInvoice ? ['Actions'] : [])).map(h=>(
+                  {ledgerTableHeaders(ledgerLedgerClass === 'parked' && canEditInvoice && !isGroupLedgerScope).map(h=>(
                     <th key={h} style={thStyle}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {ledgerLoading ? (
-                  <tr><td colSpan={ledgerLedgerClass === 'parked' && canEditInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading ledger…</td></tr>
+                  <tr><td colSpan={ledgerTableHeaders(ledgerLedgerClass === 'parked' && canEditInvoice && !isGroupLedgerScope).length} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>Loading ledger…</td></tr>
                 ) : ledger.length === 0 ? (
-                  <tr><td colSpan={ledgerLedgerClass === 'parked' && canEditInvoice ? 9 : 8} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>No ledger entries for this client.</td></tr>
+                  <tr><td colSpan={ledgerTableHeaders(ledgerLedgerClass === 'parked' && canEditInvoice && !isGroupLedgerScope).length} style={{ ...tdStyle, textAlign:'center', padding:24, color:'#94a3b8' }}>{isGroupLedgerScope ? 'No ledger entries for this group.' : 'No ledger entries for this client.'}</td></tr>
                 ) : ledgerDisplayRows.map((e, i) => (
                   <tr
                     key={e.synthetic ? e.id : `${e.id ?? 'row'}-${i}`}
@@ -7793,6 +7926,9 @@ export default function Invoices({ ledgerOnly = false }) {
                     }}
                   >
                     <td style={tdStyle}>{e.txnDate || e.date || '—'}</td>
+                    {isGroupLedgerScope && (
+                      <td style={tdStyle}>{e.entityName || '—'}</td>
+                    )}
                     <td style={tdStyle}><TxnTypeBadge type={e.txnType} /></td>
                     <td style={{ ...tdStyle, fontStyle: e.txnType === 'opening_balance' || e.txnType === 'brought_forward' ? 'italic' : 'normal' }}>{e.narration || '—'}</td>
                     <td style={{ ...tdStyle, whiteSpace: 'normal', maxWidth: 280, fontSize: 12, color: '#64748b' }}>{buildLedgerDetailLine(e) || '—'}</td>
@@ -7800,7 +7936,7 @@ export default function Invoices({ ledgerOnly = false }) {
                     <td style={{ ...tdStyle, color:'#dc2626', fontWeight: e.debit?600:400 }}>{e.debit ? `₹${parseFloat(e.debit).toLocaleString('en-IN')}` : '—'}</td>
                     <td style={{ ...tdStyle, color:'#16a34a', fontWeight: e.credit?600:400 }}>{e.credit ? `₹${parseFloat(e.credit).toLocaleString('en-IN')}` : '—'}</td>
                     <td style={{ ...tdStyle, fontWeight:700 }}>₹{parseFloat(e.balance || 0).toLocaleString('en-IN')}</td>
-                    {ledgerLedgerClass === 'parked' && canEditInvoice && (
+                    {ledgerLedgerClass === 'parked' && canEditInvoice && !isGroupLedgerScope && (
                       <td style={tdStyle}>
                         {isParkedLedgerEntryUnparkable(e) ? (
                           <button
@@ -8229,7 +8365,7 @@ export default function Invoices({ ledgerOnly = false }) {
                 </div>
               </>
             )}
-            {ledgerClientId && !ledgerLoading && (
+            {ledgerScopeReady && !ledgerLoading && (
               <>
                 <div style={ledgerToolbarGroupStyle}>
                   <span style={ledgerToolbarLabelStyle}>Financial year:</span>

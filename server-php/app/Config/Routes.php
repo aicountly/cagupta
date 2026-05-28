@@ -976,6 +976,18 @@ class Routes
                 'handler'    => 'Admin\LeadQuotationController@update',
                 'middleware' => ['auth', 'permission:quotations.manage'],
             ],
+            [
+                'method'     => 'PATCH',
+                'pattern'    => '/api/admin/leads/:id/quotations/:id/documents',
+                'handler'    => 'Admin\LeadQuotationController@updateDocuments',
+                'middleware' => ['auth', 'permission:quotations.manage'],
+            ],
+            [
+                'method'     => 'POST',
+                'pattern'    => '/api/admin/leads/:id/quotations/:id/share',
+                'handler'    => 'Admin\LeadQuotationController@share',
+                'middleware' => ['auth', 'permission:quotations.manage'],
+            ],
 
             [
                 'method'     => 'GET',
@@ -1461,6 +1473,12 @@ class Routes
                 'method'     => 'GET',
                 'pattern'    => '/api/admin/txn/ledger',
                 'handler'    => 'Admin\TxnController@ledger',
+                'middleware' => ['auth', 'permission:invoices.view'],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/admin/txn/ledger-by-group',
+                'handler'    => 'Admin\TxnController@ledgerByGroup',
                 'middleware' => ['auth', 'permission:invoices.view'],
             ],
             [
@@ -2526,6 +2544,12 @@ class Routes
                 'method'     => 'POST',
                 'pattern'    => '/api/public/leads',
                 'handler'    => 'Admin\BlogController@publicLeadSubmit',
+                'middleware' => [],
+            ],
+            [
+                'method'     => 'GET',
+                'pattern'    => '/api/public/quotation-shares/:token',
+                'handler'    => 'PublicQuotationShareController@download',
                 'middleware' => [],
             ],
 

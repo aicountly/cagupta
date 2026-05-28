@@ -196,6 +196,9 @@ function normalizeTxn(t) {
     pairTxnId: t.pair_txn_id != null ? parseInt(t.pair_txn_id, 10) || null : null,
     firmBankAccountName: t.firm_bank_account_name || '',
     counterpartyBankAccountName: t.counterparty_bank_account_name || '',
+    entityType:         t.entity_type || null,
+    entityId:           t.entity_id != null ? parseInt(t.entity_id, 10) || null : null,
+    entityName:         t.entity_name || '',
   };
 }
 
@@ -467,6 +470,18 @@ export async function getLedger(clientIdOrObj) {
     params.set('client_id', clientIdOrObj);
   }
   const res  = await fetch(`${API_BASE}/admin/txn/ledger?${params}`, { headers: authHeaders() });
+  const data = await parseResponse(res);
+  return (data.data || []).map(normalizeTxn);
+}
+
+/** GET /api/admin/txn/ledger-by-group?group_id=... */
+export async function getLedgerByGroup({ groupId, ledgerClass, ledgerView, limit } = {}) {
+  const params = new URLSearchParams();
+  if (groupId) params.set('group_id', String(groupId));
+  if (ledgerClass) params.set('ledger_class', normalizeLedgerClassForApi(ledgerClass));
+  if (ledgerView) params.set('ledger_view', ledgerView);
+  if (limit) params.set('limit', String(limit));
+  const res = await fetch(`${API_BASE}/admin/txn/ledger-by-group?${params}`, { headers: authHeaders() });
   const data = await parseResponse(res);
   return (data.data || []).map(normalizeTxn);
 }

@@ -36,6 +36,7 @@ import ClientEngagementGaps from './modules/crm/pages/ClientEngagementGaps';
 import Clients from './modules/crm/pages/Clients';
 import ClientGroups from './modules/crm/pages/ClientGroups';
 import Leads from './modules/crm/pages/Leads';
+import SharedQuotationDownload from './modules/crm/pages/SharedQuotationDownload';
 
 // ── Operations module ────────────────────────────────────────────────────────
 import Services from './modules/operations/pages/Services';
@@ -430,6 +431,7 @@ export default function App() {
           {/* ── Public blog (no auth) ── */}
           <Route path="/blog" element={<PublicBlogList />} />
           <Route path="/blog/:slug" element={<PublicBlogPost />} />
+          <Route path="/shared/quotation/:token" element={<SharedQuotationDownload />} />
           <Route path="/marketing" element={<ProtectedRoute staffOnly><Navigate to="/marketing/tools" replace /></ProtectedRoute>} />
           {/* Legacy redirects for removed marketing pages */}
           <Route path="/marketing/affiliate" element={<Navigate to="/admin/affiliates" replace />} />

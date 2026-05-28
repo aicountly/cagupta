@@ -17,11 +17,12 @@ import {
   getLeadQuotations,
   createLeadQuotation,
   updateLeadQuotation,
+  updateLeadQuotationDocuments,
 } from '../services/quotationService';
 import QuotationPricingEditor from '../../../components/crm/QuotationPricingEditor';
+import QuotationShareModal from '../../../components/crm/QuotationShareModal';
 import {
   normalizeSnapshot,
-  formatShareText,
   emptySnapshot,
 } from '../../../utils/quotationPricing';
 
@@ -65,12 +66,22 @@ export default function Leads() {
   const [quoteModal, setQuoteModal] = useState(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteSnapshot, setQuoteSnapshot] = useState(emptySnapshot());
-  const [quoteDocs, setQuoteDocs] = useState('');
-  const [quoteStatus, setQuoteStatus] = useState('draft');
   const [quoteEngId, setQuoteEngId] = useState(null);
   const [quoteEditId, setQuoteEditId] = useState(null);
   const [quoteSaving, setQuoteSaving] = useState(false);
   const [quoteMsg, setQuoteMsg] = useState('');
+
+  const [docsModal, setDocsModal] = useState(null);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [docsText, setDocsText] = useState('');
+  const [docsEditId, setDocsEditId] = useState(null);
+  const [docsStatus, setDocsStatus] = useState('draft');
+  const [docsSaving, setDocsSaving] = useState(false);
+  const [docsMsg, setDocsMsg] = useState('');
+
+  const [shareModal, setShareModal] = useState(null);
+  const [shareQuotation, setShareQuotation] = useState(null);
+  const [quotationByLead, setQuotationByLead] = useState({});
 
   useEffect(() => {
     setLoading(true);
@@ -96,6 +107,38 @@ export default function Leads() {
     } catch { /* ignore */ }
   }
 
+  async function refreshLeadQuotation(leadId) {
+    try {
+      const qs = await getLeadQuotations(leadId);
+      const primary = qs.find((q) => q.status === 'draft') ?? qs[0] ?? null;
+      setQuotationByLead((prev) => ({ ...prev, [leadId]: primary }));
+      return primary;
+    } catch {
+      return null;
+    }
+  }
+
+  useEffect(() => {
+    if (selected?.id) {
+      refreshLeadQuotation(selected.id);
+    }
+  }, [selected?.id]);
+
+  function isQuotationShareable(q) {
+    if (!q) return false;
+    if (q.shareable) return true;
+    const pricingFinal = q.status === 'final' || q.status === 'sent';
+    const docsFinal = q.documents_status === 'final';
+    const docs = Array.isArray(q.documents_required) ? q.documents_required : [];
+    return pricingFinal && docsFinal && docs.some((d) => String(d).trim());
+  }
+
+  function quotationStatusLabel(status) {
+    if (status === 'final') return 'Final';
+    if (status === 'sent') return 'Sent';
+    return 'Draft';
+  }
+
   async function openQuotationModal(lead) {
     setQuoteModal(lead);
     setQuoteLoading(true);
@@ -107,21 +150,17 @@ export default function Leads() {
       if (existing) {
         setQuoteEditId(existing.id);
         setQuoteSnapshot(normalizeSnapshot(existing.pricing_snapshot, existing.price));
-        setQuoteDocs(Array.isArray(existing.documents_required) ? existing.documents_required.join('\n') : '');
-        setQuoteStatus(existing.status);
         setQuoteEngId(existing.engagement_type_id || engId);
+        setQuotationByLead((prev) => ({ ...prev, [lead.id]: existing }));
       } else {
         setQuoteEditId(null);
         setQuoteEngId(engId);
         if (engId) {
           const def = await getQuotationDefaultByEngagementType(engId);
           setQuoteSnapshot(normalizeSnapshot(def?.pricing_snapshot));
-          setQuoteDocs(Array.isArray(def?.documents_required) ? def.documents_required.join('\n') : '');
         } else {
           setQuoteSnapshot(emptySnapshot());
-          setQuoteDocs('');
         }
-        setQuoteStatus('draft');
       }
     } catch (e) {
       setQuoteMsg(e.message || 'Could not load quotation data.');
@@ -130,26 +169,26 @@ export default function Leads() {
     }
   }
 
-  async function handleSaveQuotation() {
+  async function handleSaveQuotation(finalize = false) {
     if (!quoteModal || !hasPermission('quotations.manage')) return;
     setQuoteSaving(true);
     setQuoteMsg('');
     try {
-      const docs = quoteDocs.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
       const payload = {
         engagement_type_id: quoteEngId || null,
         pricing_snapshot: quoteSnapshot,
-        documents_required: docs,
-        status: quoteStatus,
+        status: finalize ? 'final' : 'draft',
       };
+      let saved;
       if (quoteEditId) {
-        await updateLeadQuotation(quoteModal.id, quoteEditId, payload);
+        saved = await updateLeadQuotation(quoteModal.id, quoteEditId, payload);
       } else {
-        await createLeadQuotation(quoteModal.id, payload);
+        saved = await createLeadQuotation(quoteModal.id, payload);
+        setQuoteEditId(saved.id);
       }
-      addNotification('Quotation saved', 'lead');
+      setQuotationByLead((prev) => ({ ...prev, [quoteModal.id]: saved }));
+      addNotification(finalize ? 'Quotation finalised' : 'Quotation draft saved', 'lead');
       await refreshPendingSummary();
-      setQuoteModal(null);
     } catch (e) {
       setQuoteMsg(e.message || 'Save failed.');
     } finally {
@@ -157,15 +196,76 @@ export default function Leads() {
     }
   }
 
-  function handleShareQuotation() {
-    if (!quoteModal) return;
-    const docs = quoteDocs.split(/\r?\n/).filter(s => s.trim());
-    const text = formatShareText(quoteModal.contactName, quoteSnapshot, docs);
-    navigator.clipboard.writeText(text).then(() => {
-      addNotification('Quotation copied to clipboard', 'lead');
-    }).catch(() => {
-      addNotification('Could not copy — select and copy manually.', 'warning');
-    });
+  async function openDocumentsModal(lead) {
+    setDocsModal(lead);
+    setDocsLoading(true);
+    setDocsMsg('');
+    try {
+      const qs = await getLeadQuotations(lead.id);
+      const existing = qs.find((q) => q.status === 'draft') ?? qs[0] ?? null;
+      if (!existing) {
+        setDocsEditId(null);
+        setDocsText('');
+        setDocsStatus('draft');
+        setDocsMsg('Create and save a quotation first, then edit the document list here.');
+        return;
+      }
+      setDocsEditId(existing.id);
+      setDocsStatus(existing.documents_status || 'draft');
+      let docs = Array.isArray(existing.documents_required) ? existing.documents_required : [];
+      if (!docs.length && existing.engagement_type_id) {
+        const def = await getQuotationDefaultByEngagementType(existing.engagement_type_id);
+        docs = Array.isArray(def?.documents_required) ? def.documents_required : [];
+      }
+      setDocsText(docs.join('\n'));
+      setQuotationByLead((prev) => ({ ...prev, [lead.id]: existing }));
+    } catch (e) {
+      setDocsMsg(e.message || 'Could not load document list.');
+    } finally {
+      setDocsLoading(false);
+    }
+  }
+
+  async function handleSaveDocuments(finalize = false) {
+    if (!docsModal || !docsEditId || !hasPermission('quotations.manage')) return;
+    setDocsSaving(true);
+    setDocsMsg('');
+    try {
+      const docs = docsText.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+      const saved = await updateLeadQuotationDocuments(docsModal.id, docsEditId, {
+        documents_required: docs,
+        documents_status: finalize ? 'final' : 'draft',
+      });
+      setDocsStatus(saved.documents_status || (finalize ? 'final' : 'draft'));
+      setQuotationByLead((prev) => ({ ...prev, [docsModal.id]: saved }));
+      addNotification(finalize ? 'Document list finalised' : 'Document list saved', 'lead');
+    } catch (e) {
+      setDocsMsg(e.message || 'Save failed.');
+    } finally {
+      setDocsSaving(false);
+    }
+  }
+
+  async function openShareModal(lead) {
+    const q = quotationByLead[lead.id] || await refreshLeadQuotation(lead.id);
+    if (!q) {
+      addNotification('Create a quotation and finalise documents before sharing.', 'warning');
+      return;
+    }
+    if (!isQuotationShareable(q)) {
+      addNotification('Finalise both the quotation pricing and document list before sharing.', 'warning');
+      return;
+    }
+    setShareQuotation(q);
+    setShareModal(lead);
+  }
+
+  async function handleShared() {
+    if (shareModal?.id) {
+      const q = await refreshLeadQuotation(shareModal.id);
+      if (q) setShareQuotation(q);
+      await refreshPendingSummary();
+    }
   }
 
   const byStage = stages.reduce((acc,s)=>({ ...acc,[s]:leads.filter(l=>l.stage===s) }), {});
@@ -480,7 +580,23 @@ export default function Leads() {
                       style={iconBtn}
                       onClick={(e) => { e.stopPropagation(); openQuotationModal(l); }}
                     >
-                      📄 Quotation
+                      📄
+                    </button>
+                    <button
+                      type="button"
+                      style={iconBtn}
+                      title="Edit document list"
+                      onClick={(e) => { e.stopPropagation(); openDocumentsModal(l); }}
+                    >
+                      📋
+                    </button>
+                    <button
+                      type="button"
+                      style={{ ...iconBtn, opacity: isQuotationShareable(quotationByLead[l.id]) ? 1 : 0.45 }}
+                      title="View / share PDF"
+                      onClick={(e) => { e.stopPropagation(); openShareModal(l); }}
+                    >
+                      📤
                     </button>
                   </td>
                 </tr>
@@ -502,12 +618,46 @@ export default function Leads() {
               <span>{v}</span>
             </div>
           ))}
+          {quotationByLead[selected.id] && (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:12 }}>
+              <span style={statusChip('#e0e7ff', '#3730a3')}>
+                Quotation: {quotationStatusLabel(quotationByLead[selected.id].status)}
+              </span>
+              <span style={statusChip('#fef3c7', '#92400e')}>
+                Documents: {quotationStatusLabel(quotationByLead[selected.id].documents_status || 'draft')}
+              </span>
+              {isQuotationShareable(quotationByLead[selected.id]) && (
+                <span style={statusChip('#dcfce7', '#166534')}>Ready to share</span>
+              )}
+            </div>
+          )}
           <button
             type="button"
             style={{ ...btnPrimary, width:'100%', marginTop:16 }}
             onClick={() => openQuotationModal(selected)}
           >
             📄 Create / edit quotation
+          </button>
+          <button
+            type="button"
+            style={{ ...btnModalSecondary, width:'100%', marginTop:8 }}
+            onClick={() => openDocumentsModal(selected)}
+          >
+            📋 Edit document list
+          </button>
+          <button
+            type="button"
+            style={{
+              ...btnPrimary,
+              width:'100%',
+              marginTop:8,
+              background: isQuotationShareable(quotationByLead[selected.id]) ? '#16a34a' : '#94a3b8',
+              cursor: isQuotationShareable(quotationByLead[selected.id]) ? 'pointer' : 'not-allowed',
+            }}
+            disabled={!isQuotationShareable(quotationByLead[selected.id])}
+            onClick={() => openShareModal(selected)}
+          >
+            📤 View / share PDF
           </button>
         </div>
       )}
@@ -537,7 +687,6 @@ export default function Leads() {
                         try {
                           const def = await getQuotationDefaultByEngagementType(id);
                           setQuoteSnapshot(normalizeSnapshot(def?.pricing_snapshot));
-                          setQuoteDocs(Array.isArray(def?.documents_required) ? def.documents_required.join('\n') : '');
                         } catch { /* ignore */ }
                       } else {
                         setQuoteSnapshot(emptySnapshot());
@@ -560,30 +709,99 @@ export default function Leads() {
                       onChange={setQuoteSnapshot}
                     />
                   </div>
-                  <label style={labelStyle}>Documents required (one per line)</label>
-                  <textarea value={quoteDocs} onChange={e => setQuoteDocs(e.target.value)} style={{ ...inputStyle, minHeight:100, marginBottom:12 }} />
-                  <label style={labelStyle}>Status</label>
-                  <select value={quoteStatus} onChange={e => setQuoteStatus(e.target.value)} style={{ ...inputStyle, marginBottom:12 }}>
-                    <option value="draft">Draft</option>
-                    <option value="final">Final</option>
-                    <option value="sent">Sent</option>
-                  </select>
                   {quoteMsg && <div style={{ fontSize:12, color:'#dc2626', marginBottom:8 }}>{quoteMsg}</div>}
                 </>
               )}
             </div>
             <div style={modalFooter}>
-              <button type="button" style={btnModalSecondary} onClick={handleShareQuotation}>Copy text</button>
               <button type="button" style={btnModalSecondary} onClick={() => setQuoteModal(null)}>Close</button>
               {hasPermission('quotations.manage') && (
-                <button type="button" style={btnPrimary} disabled={quoteSaving || quoteLoading} onClick={handleSaveQuotation}>
-                  {quoteSaving ? 'Saving…' : 'Save quotation'}
-                </button>
+                <>
+                  <button
+                    type="button"
+                    style={btnModalSecondary}
+                    disabled={quoteSaving || quoteLoading}
+                    onClick={() => handleSaveQuotation(false)}
+                  >
+                    {quoteSaving ? 'Saving…' : 'Save draft'}
+                  </button>
+                  <button
+                    type="button"
+                    style={btnPrimary}
+                    disabled={quoteSaving || quoteLoading}
+                    onClick={() => handleSaveQuotation(true)}
+                  >
+                    {quoteSaving ? 'Saving…' : 'Save & finalise quotation'}
+                  </button>
+                </>
               )}
             </div>
           </div>
         </div>
       )}
+
+      {docsModal && (
+        <div style={{ ...modalOverlay, zIndex: 600 }}>
+          <div style={{ ...modalBox, maxWidth: 520 }}>
+            <div style={modalHeader}>
+              <div>
+                <h3 style={modalTitle}>Documents — {docsModal.contactName}</h3>
+                <p style={modalSubtitle}>Customise the required document checklist for this prospective client.</p>
+              </div>
+              <button type="button" onClick={() => setDocsModal(null)} style={btnModalClose} aria-label="Close">✕</button>
+            </div>
+            <div style={{ ...modalFormBody, paddingBottom: 16 }}>
+              {docsLoading && <div style={{ color:'#64748b', fontSize:13 }}>Loading…</div>}
+              {!docsLoading && !docsEditId && (
+                <div style={{ fontSize:13, color:'#64748b', lineHeight:1.5 }}>{docsMsg || 'No quotation found for this lead yet.'}</div>
+              )}
+              {!docsLoading && docsEditId && (
+                <>
+                  <label style={labelStyle}>Documents required (one per line)</label>
+                  <textarea
+                    value={docsText}
+                    onChange={(e) => setDocsText(e.target.value)}
+                    style={{ ...inputStyle, minHeight: 180, marginBottom: 12 }}
+                  />
+                  <div style={{ fontSize: 12, color: '#64748b' }}>
+                    Status: <strong>{quotationStatusLabel(docsStatus)}</strong>
+                  </div>
+                  {docsMsg && <div style={{ fontSize:12, color:'#dc2626', marginTop:8 }}>{docsMsg}</div>}
+                </>
+              )}
+            </div>
+            {docsEditId && hasPermission('quotations.manage') && (
+              <div style={modalFooter}>
+                <button type="button" style={btnModalSecondary} onClick={() => setDocsModal(null)}>Close</button>
+                <button
+                  type="button"
+                  style={btnModalSecondary}
+                  disabled={docsSaving || docsLoading}
+                  onClick={() => handleSaveDocuments(false)}
+                >
+                  {docsSaving ? 'Saving…' : 'Save draft'}
+                </button>
+                <button
+                  type="button"
+                  style={btnPrimary}
+                  disabled={docsSaving || docsLoading}
+                  onClick={() => handleSaveDocuments(true)}
+                >
+                  {docsSaving ? 'Saving…' : 'Save & finalise documents'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <QuotationShareModal
+        open={Boolean(shareModal && shareQuotation)}
+        onClose={() => { setShareModal(null); setShareQuotation(null); }}
+        lead={shareModal}
+        quotation={shareQuotation}
+        onShared={handleShared}
+      />
 
       {showNewLeadModal && (
         <div style={modalOverlay}>
@@ -815,3 +1033,6 @@ const labelStyle = { display:'block', fontSize:12, color:'#64748b', fontWeight:6
 const inputStyle = { width:'100%', padding:'8px 10px', border:'1px solid #e2e8f0', borderRadius:6, fontSize:13, boxSizing:'border-box' };
 const toggleBtn = { padding:'6px 14px', background:'#f1f5f9', color:'#64748b', border:'1px solid #e2e8f0', borderRadius:6, cursor:'pointer', fontSize:12, fontWeight:600 };
 const toggleBtnActive = { background:'#2563eb', color:'#fff', border:'1px solid #2563eb' };
+const statusChip = (bg, color) => ({
+  fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: bg, color,
+});

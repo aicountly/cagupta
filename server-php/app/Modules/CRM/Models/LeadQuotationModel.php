@@ -35,6 +35,26 @@ class LeadQuotationModel
     }
 
     /**
+     * Primary quotation row for a lead (latest updated).
+     *
+     * @return array<string, mixed>|null
+     */
+    public function primaryForLead(int $leadId): ?array
+    {
+        $stmt = $this->db->prepare(
+            'SELECT q.*, et.name AS engagement_type_name
+             FROM lead_quotations q
+             LEFT JOIN engagement_types et ON et.id = q.engagement_type_id
+             WHERE q.lead_id = :lid
+             ORDER BY q.updated_at DESC, q.id DESC
+             LIMIT 1'
+        );
+        $stmt->execute([':lid' => $leadId]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    /**
      * @return array<string, mixed>|null
      */
     public function find(int $id): ?array
@@ -61,48 +81,52 @@ class LeadQuotationModel
         array $documentsRequired,
         array $pricingSnapshot,
         string $status,
+        string $documentsStatus,
         ?int $createdBy
     ): int {
         $json     = json_encode(array_values($documentsRequired), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         $snapJson = json_encode($pricingSnapshot, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         $stmt = $this->db->prepare(
-            'INSERT INTO lead_quotations (lead_id, engagement_type_id, price, documents_required, pricing_snapshot, status, created_by, created_at, updated_at)
-             VALUES (:lid, :eid, :price, CAST(:docs AS jsonb), CAST(:snap AS jsonb), :st, :uid, NOW(), NOW())
+            'INSERT INTO lead_quotations
+                (lead_id, engagement_type_id, price, documents_required, pricing_snapshot,
+                 status, documents_status, created_by, created_at, updated_at)
+             VALUES
+                (:lid, :eid, :price, CAST(:docs AS jsonb), CAST(:snap AS jsonb),
+                 :st, :dst, :uid, NOW(), NOW())
              RETURNING id'
         );
         $stmt->execute([
-            ':lid'   => $leadId,
-            ':eid'   => $engagementTypeId,
-            ':price' => $price,
-            ':docs'  => $json,
-            ':snap'  => $snapJson,
-            ':st'    => $status,
-            ':uid'   => $createdBy,
+            ':lid'  => $leadId,
+            ':eid'  => $engagementTypeId,
+            ':price'=> $price,
+            ':docs' => $json,
+            ':snap' => $snapJson,
+            ':st'   => $status,
+            ':dst'  => $documentsStatus,
+            ':uid'  => $createdBy,
         ]);
         return (int)$stmt->fetchColumn();
     }
 
     /**
-     * @param array<int, string> $documentsRequired
+     * Update pricing fields only (does not change documents_required).
+     *
      * @param array<string, mixed> $pricingSnapshot
      */
-    public function update(
+    public function updatePricing(
         int $id,
         ?float $price,
-        array $documentsRequired,
         array $pricingSnapshot,
         string $status,
         ?int $engagementTypeId,
         bool $setEngagementTypeId
     ): bool {
-        $json     = json_encode(array_values($documentsRequired), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         $snapJson = json_encode($pricingSnapshot, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         if ($setEngagementTypeId) {
             $stmt = $this->db->prepare(
                 'UPDATE lead_quotations SET
                     engagement_type_id = :eid,
                     price = :price,
-                    documents_required = CAST(:docs AS jsonb),
                     pricing_snapshot = CAST(:snap AS jsonb),
                     status = :st,
                     updated_at = NOW()
@@ -112,7 +136,6 @@ class LeadQuotationModel
                 ':id'    => $id,
                 ':eid'   => $engagementTypeId,
                 ':price' => $price,
-                ':docs'  => $json,
                 ':snap'  => $snapJson,
                 ':st'    => $status,
             ]);
@@ -120,7 +143,6 @@ class LeadQuotationModel
         $stmt = $this->db->prepare(
             'UPDATE lead_quotations SET
                 price = :price,
-                documents_required = CAST(:docs AS jsonb),
                 pricing_snapshot = CAST(:snap AS jsonb),
                 status = :st,
                 updated_at = NOW()
@@ -129,10 +151,37 @@ class LeadQuotationModel
         return $stmt->execute([
             ':id'    => $id,
             ':price' => $price,
-            ':docs'  => $json,
             ':snap'  => $snapJson,
             ':st'    => $status,
         ]);
+    }
+
+    /**
+     * @param array<int, string> $documentsRequired
+     */
+    public function updateDocuments(int $id, array $documentsRequired, string $documentsStatus): bool
+    {
+        $json = json_encode(array_values($documentsRequired), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        $stmt = $this->db->prepare(
+            'UPDATE lead_quotations SET
+                documents_required = CAST(:docs AS jsonb),
+                documents_status = :dst,
+                updated_at = NOW()
+             WHERE id = :id'
+        );
+        return $stmt->execute([
+            ':id'   => $id,
+            ':docs' => $json,
+            ':dst'  => $documentsStatus,
+        ]);
+    }
+
+    public function markSent(int $id): bool
+    {
+        $stmt = $this->db->prepare(
+            'UPDATE lead_quotations SET status = \'sent\', updated_at = NOW() WHERE id = :id'
+        );
+        return $stmt->execute([':id' => $id]);
     }
 
     /**
@@ -145,6 +194,31 @@ class LeadQuotationModel
         );
         $stmt->execute([':lid' => $leadId]);
         return (bool)$stmt->fetchColumn();
+    }
+
+    /**
+     * True when quotation pricing and documents are both finalized.
+     */
+    public function isShareable(array $row): bool
+    {
+        $status = (string)($row['status'] ?? 'draft');
+        $docSt  = (string)($row['documents_status'] ?? 'draft');
+        if (!in_array($status, ['final', 'sent'], true) || $docSt !== 'final') {
+            return false;
+        }
+        $docs = $row['documents_required'] ?? [];
+        if (is_string($docs)) {
+            $docs = json_decode($docs, true) ?? [];
+        }
+        if (!is_array($docs)) {
+            return false;
+        }
+        foreach ($docs as $d) {
+            if (trim((string)$d) !== '') {
+                return true;
+            }
+        }
+        return false;
     }
 
     public function countLeadsNeedingQuotation(): int

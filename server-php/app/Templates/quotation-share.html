@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Quotation — CA Rahul Gupta</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .container { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    .logo-strip { background: #ffffff; padding: 20px 32px; text-align: center; border-bottom: 3px solid #F37920; }
+    .logo-strip img { height: 52px; width: auto; display: block; margin: 0 auto; }
+    .header { background: #1a3c6e; padding: 24px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; }
+    .body { padding: 28px 32px; color: #333333; line-height: 1.6; font-size: 14px; }
+    .btn { display: inline-block; background: #F37920; color: #ffffff !important; text-decoration: none; padding: 12px 24px; border-radius: 6px; font-weight: 600; margin: 16px 0; }
+    .footer { background: #f4f6f8; padding: 16px 32px; text-align: center; font-size: 12px; color: #888888; }
+    .note { font-size: 13px; color: #64748b; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo-strip">
+      <img src="https://carahulgupta.in/cropped_logo.png" alt="CA Rahul Gupta" height="52" style="display:block;margin:0 auto;" />
+    </div>
+    <div class="header">
+      <h1>Quotation for {{clientName}}</h1>
+    </div>
+    <div class="body">
+      <p>Dear {{clientName}},</p>
+      <p>Please find attached our quotation along with the list of documents required for your engagement{{engagementLabel}}.</p>
+      <p>You can also download the same document using the secure link below:</p>
+      <p style="text-align:center;">
+        <a class="btn" href="{{shareUrl}}">Download quotation PDF</a>
+      </p>
+      <p class="note">This link expires on {{expiresAt}}. The quotation PDF is also attached to this email for your convenience.</p>
+      <p>If you have any questions, please reply to this email or contact our office.</p>
+      <p>Regards,<br /><strong>CA Rahul Gupta</strong><br />Rahul B Gupta &amp; Co.</p>
+    </div>
+    <div class="footer">
+      <p>&copy; CA Rahul Gupta Office Portal</p>
+    </div>
+  </div>
+</body>
+</html>
